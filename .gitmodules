@@ -1,37 +1,37 @@
 [submodule "pyca.cryptography"]
 	path = pyca-cryptography
-	url = https://github.com/pyca/cryptography.git
+	url = https://github.com/Blitzy-Sandbox/cryptography.git
 
 [submodule "krb5"]
 	path = krb5
-	url = https://github.com/krb5/krb5
+	url = https://github.com/Blitzy-Sandbox/krb5
 
 [submodule "gost-engine"]
 	path = gost-engine
-	url = https://github.com/gost-engine/engine
+	url = https://github.com/Blitzy-Sandbox/engine
 	update = rebase
 [submodule "wycheproof"]
 	path = wycheproof
-	url = https://github.com/google/wycheproof
+	url = https://github.com/Blitzy-Sandbox/wycheproof
 [submodule "tlsfuzzer"]
 	path = tlsfuzzer
-	url = https://github.com/tlsfuzzer/tlsfuzzer
+	url = https://github.com/Blitzy-Sandbox/tlsfuzzer
 [submodule "python-ecdsa"]
 	path = python-ecdsa
-	url = https://github.com/tlsfuzzer/python-ecdsa
+	url = https://github.com/Blitzy-Sandbox/python-ecdsa
 [submodule "tlslite-ng"]
 	path = tlslite-ng
-	url = https://github.com/tlsfuzzer/tlslite-ng
+	url = https://github.com/Blitzy-Sandbox/tlslite-ng
 [submodule "oqs-provider"]
 	path = oqs-provider
-	url = https://github.com/open-quantum-safe/oqs-provider.git
+	url = https://github.com/Blitzy-Sandbox/oqs-provider.git
 [submodule "cloudflare-quiche"]
 	path = cloudflare-quiche
-	url = https://github.com/cloudflare/quiche
+	url = https://github.com/Blitzy-Sandbox/quiche
 [submodule "fuzz/corpora"]
 	path = fuzz/corpora
-	url = https://github.com/openssl/fuzz-corpora
+	url = https://github.com/Blitzy-Sandbox/fuzz-corpora
 	branch = main
 [submodule "pkcs11-provider"]
 	path = pkcs11-provider
-	url = https://github.com/latchset/pkcs11-provider.git
+	url = https://github.com/Blitzy-Sandbox/pkcs11-provider.git
