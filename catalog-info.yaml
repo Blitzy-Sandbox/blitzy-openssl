@@ -5,9 +5,9 @@ metadata:
   description: "OpenSSL TLS/SSL and crypto library fork — exploring AI-assisted cryptography development"
   tags:
     - c
-    - scaffolded
+    - library
+    - security
   labels:
-    blitzy.com/status: scaffolded
     blitzy.com/language: c
   annotations:
     github.com/project-slug: Blitzy-Sandbox/blitzy-openssl
