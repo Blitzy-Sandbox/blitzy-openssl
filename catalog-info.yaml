@@ -1,0 +1,25 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: blitzy-openssl
+  description: "OpenSSL TLS/SSL and crypto library fork — exploring AI-assisted cryptography development"
+  tags:
+    - c
+    - scaffolded
+  labels:
+    blitzy.com/status: scaffolded
+    blitzy.com/language: c
+  annotations:
+    github.com/project-slug: Blitzy-Sandbox/blitzy-openssl
+    backstage.io/source-location: url:https://github.com/Blitzy-Sandbox/blitzy-openssl/tree/master/
+  links:
+    - url: https://github.com/Blitzy-Sandbox/blitzy-openssl
+      title: GitHub Repository
+    - url: https://github.com/Blitzy-Sandbox/blitzy-openssl/tree/master/blitzy/documentation
+      title: Blitzy Documentation
+      icon: docs
+spec:
+  type: library
+  lifecycle: experimental
+  owner: blitzy-sandbox
+  system: blitzy-sandbox-projects
