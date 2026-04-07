@@ -1,3 +1,4 @@
+docs_dir: doc
 site_name: 'blitzy-openssl'
 nav:
   - Home: index.md
