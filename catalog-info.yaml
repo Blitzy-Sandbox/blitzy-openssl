@@ -23,4 +23,4 @@ spec:
   type: library
   lifecycle: experimental
   owner: blitzy-sandbox
-  system: blitzy-sandbox-projects
+  system: blitzy-c-cpp
