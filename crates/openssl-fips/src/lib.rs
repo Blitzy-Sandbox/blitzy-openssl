@@ -4,3 +4,5 @@
 //! It is independently compilable and depends only on openssl-common and selected openssl-crypto items.
 
 #![forbid(unsafe_code)]
+
+pub mod state;
