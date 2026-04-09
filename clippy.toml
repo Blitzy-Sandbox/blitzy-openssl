@@ -1,15 +1,86 @@
-# Workspace-wide clippy configuration for OpenSSL Rust workspace
-# See: https://doc.rust-lang.org/clippy/configuration.html
+# =============================================================================
+# Workspace-wide Clippy Configuration — OpenSSL Rust Workspace
+# =============================================================================
+#
+# This file configures clippy lint thresholds and type restrictions for the
+# entire OpenSSL Rust workspace. It is searched for at the workspace root by
+# cargo-clippy automatically.
+#
+# Lint severity levels (allow/warn/deny/forbid) are configured separately in
+# [workspace.lints.clippy] in the workspace Cargo.toml. This file provides
+# supplementary configuration that cannot be expressed via Cargo.toml lints,
+# such as numeric thresholds and type-specific restrictions.
+#
+# References:
+#   - AAP §0.4.1: clippy.toml is a required workspace root file
+#   - AAP §0.8.1 Rule R2: Sync primitive context matching
+#   - AAP §0.8.1 Rule R6: Lossless numeric casts (supplementary thresholds)
+#   - Clippy configuration docs: https://doc.rust-lang.org/clippy/configuration.html
+#
+# =============================================================================
 
-# Minimum Supported Rust Version (matches rust-toolchain.toml)
+# -----------------------------------------------------------------------------
+# Minimum Supported Rust Version (MSRV)
+# -----------------------------------------------------------------------------
+# Must match the channel declared in rust-toolchain.toml (1.81.0) and the
+# rust-version field in workspace Cargo.toml. Clippy uses this to suppress
+# suggestions for language features or API stabilizations that are unavailable
+# on the target MSRV, preventing CI failures on the minimum-supported version.
 msrv = "1.81.0"
 
-# Maximum cognitive complexity for functions
+# -----------------------------------------------------------------------------
+# Rule R2 — Sync Primitive Context Matching
+# -----------------------------------------------------------------------------
+# The built-in await_holding_lock lint (denied in Cargo.toml) already catches
+# std::sync::MutexGuard and std::sync::RwLockReadGuard/RwLockWriteGuard held
+# across .await suspension points. This configuration extends enforcement to
+# additional non-async-safe types used in the workspace:
+#
+#   - parking_lot lock guards: The workspace depends on parking_lot 0.12.x
+#     for faster synchronous mutexes. These guards must not be held across
+#     .await points in the QUIC async stack (openssl-ssl::quic::*).
+#
+# Each entry specifies the fully-qualified type path and a human-readable
+# reason that appears in the clippy diagnostic output, guiding developers
+# to use tokio::sync equivalents in async contexts.
+#
+# Format: list of strings or { path = "...", reason = "..." } objects.
+# See: https://doc.rust-lang.org/clippy/configuration.html
+await-holding-invalid-types = [
+    { path = "parking_lot::MutexGuard", reason = "Use tokio::sync::Mutex in async code (Rule R2: §0.8.1)" },
+    { path = "parking_lot::RwLockReadGuard", reason = "Use tokio::sync::RwLock in async code (Rule R2: §0.8.1)" },
+    { path = "parking_lot::RwLockWriteGuard", reason = "Use tokio::sync::RwLock in async code (Rule R2: §0.8.1)" },
+]
+
+# -----------------------------------------------------------------------------
+# Complexity Thresholds
+# -----------------------------------------------------------------------------
+# Cryptographic library code is inherently more complex than typical application
+# code due to algorithm implementations, state machines, and protocol handling.
+# These thresholds are tuned to avoid excessive false positives while still
+# flagging functions that have grown unreasonably complex.
+
+# Maximum cognitive complexity score for a single function.
+# Default: 25. Raised to 30 for cryptographic algorithm implementations
+# (e.g., AES key schedule, X.509 chain verification, TLS handshake FSM)
+# where irreducible complexity is inherent to the specification.
 cognitive-complexity-threshold = 30
 
-# Additional thresholds
+# Maximum number of function parameters before triggering too_many_arguments.
+# Default: 7. Raised to 10 for cryptographic APIs that require multiple
+# algorithm-specific parameters (key, IV, AAD, tag length, padding mode, etc.)
+# and provider dispatch functions with context + params + callback signatures.
 too-many-arguments-threshold = 10
+
+# Maximum type complexity score before triggering type_complexity.
+# Default: 250. Raised to 500 for deeply nested generic types common in
+# trait-based provider dispatch (Box<dyn Provider<Output = Result<...>>>),
+# async futures with layered combinators in the QUIC stack, and parameterized
+# ASN.1 template types.
 type-complexity-threshold = 500
 
-# Maximum number of lines in a single function
+# Maximum number of lines in a single function before triggering too_many_lines.
+# Default: 100. Raised to 200 for protocol state machine handlers
+# (TLS/DTLS/QUIC handshake transitions) and large match-based command
+# dispatchers (CLI subcommand routing) where splitting would reduce clarity.
 too-many-lines-threshold = 200
