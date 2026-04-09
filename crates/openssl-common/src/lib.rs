@@ -4,5 +4,6 @@
 
 #![forbid(unsafe_code)]
 
+pub mod constant_time;
 pub mod error;
 pub mod types;
