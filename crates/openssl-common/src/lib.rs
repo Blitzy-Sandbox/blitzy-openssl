@@ -3,3 +3,5 @@
 //! This crate provides shared types and utilities used across the OpenSSL Rust workspace.
 
 #![forbid(unsafe_code)]
+
+pub mod error;
