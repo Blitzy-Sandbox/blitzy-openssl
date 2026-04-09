@@ -1,3 +1,28 @@
+# =============================================================================
+# openssl-common — Shared Foundation Crate Manifest
+# =============================================================================
+#
+# This is the foundational crate for the OpenSSL Rust workspace providing
+# shared types, error handling, configuration parsing, typed parameter system,
+# observability infrastructure, secure memory primitives, and constant-time
+# comparison utilities used by all other workspace crates.
+#
+# Design constraints:
+#   - Fully synchronous — no async runtime dependency (AAP §0.4.4)
+#   - No workspace crate dependencies — this is the dependency root
+#   - No unsafe code permitted (Rule R8: unsafe confined to openssl-ffi only)
+#   - No openssl-sys dependency (banned by deny.toml, AAP §0.6.4)
+#
+# Source references (C files this crate replaces):
+#   crypto/err/err.c, crypto/params.c, crypto/param_build.c, crypto/params_dup.c,
+#   crypto/time.c, crypto/mem.c, crypto/mem_sec.c, crypto/mem_clr.c,
+#   include/internal/safe_math.h, include/internal/constant_time.h,
+#   include/openssl/types.h, crypto/conf/conf_def.c, crypto/conf/conf_api.c,
+#   crypto/conf/conf_lib.c
+#
+# AAP References: §0.4.1, §0.5.1, §0.6.1, §0.7.6, §0.7.7, §0.8.5
+# =============================================================================
+
 [package]
 name = "openssl-common"
 version = "0.1.0"
@@ -5,26 +30,132 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Shared foundation types, error handling, config, and observability for the OpenSSL Rust workspace"
+description = "Shared foundation crate for the OpenSSL Rust workspace: error handling, configuration, parameter system, observability, and foundational primitives"
+publish = false
+
+# =============================================================================
+# Runtime Dependencies
+# =============================================================================
+# All versions inherited from workspace root Cargo.toml via `workspace = true`.
+# Workspace pins specific versions for Rust 1.81.0 MSRV compatibility.
+# See root Cargo.toml and DECISION_LOG.md for version-pin rationale.
+#
+# Dependency inventory per AAP §0.6.1.
+# All packages sourced from crates.io — enforced by deny.toml.
 
 [dependencies]
+
+# ---------------------------------------------------------------------------
+# Error Handling (AAP §0.6.1, §0.7.7)
+# ---------------------------------------------------------------------------
+# Ergonomic derive macro for per-crate error enums (CryptoError, SslError,
+# ProviderError, FipsError). Replaces the C ERR_* thread-local error stack
+# with idiomatic Rust Result<T, E> propagation via the ? operator.
 thiserror = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Observability — Structured Logging (AAP §0.6.1, §0.8.5)
+# ---------------------------------------------------------------------------
+# Structured logging with spans for distributed tracing and correlation IDs.
+# Ships with initial implementation per the Observability rule — not follow-up.
 tracing = { workspace = true }
+
+# Subscriber implementations: JSON formatting for machine-parseable logs,
+# env-filter for runtime log level control via RUST_LOG environment variable.
 tracing-subscriber = { workspace = true }
+
+# OpenTelemetry span export for distributed tracing across crate boundaries.
+# Enables correlation of operations spanning openssl-crypto → openssl-ssl.
+tracing-opentelemetry = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Observability — Metrics (AAP §0.6.1, §0.8.5)
+# ---------------------------------------------------------------------------
+# Lightweight metrics facade providing counters, gauges, and histograms.
+# Used across all crates for performance and operational monitoring.
 metrics = { workspace = true }
+
+# Prometheus scrape endpoint for metrics export. Enables integration with
+# Prometheus/Grafana monitoring stacks per the observability rule.
+metrics-exporter-prometheus = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Serialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Serialization framework for config structs, session data, and X.509
+# interchange formats. The derive feature enables #[derive(Serialize, Deserialize)].
 serde = { workspace = true }
+
+# JSON serialization for configuration files and diagnostics output.
+# Used by config.rs for JSON config parsing and observability.rs for
+# structured diagnostic output.
 serde_json = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Secure Memory and Constant-Time Primitives (AAP §0.6.1, §0.7.6)
+# ---------------------------------------------------------------------------
+# Secure memory zeroing for key material. Replaces OPENSSL_cleanse() from
+# crypto/mem_clr.c. All types holding key material derive Zeroize for
+# automatic zeroing on Drop. The derive feature enables #[derive(Zeroize)].
 zeroize = { workspace = true }
+
+# Constant-time operations for cryptographic primitives. Replaces the
+# hand-rolled constant_time.h comparisons from include/internal/constant_time.h.
+# Provides ConstantTimeEq, ConditionallySelectable, and Choice types.
 subtle = { workspace = true }
-once_cell = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Utility Types (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Correlation IDs for observability tracing requirement. Generates v4 UUIDs
+# for request/operation correlation across crate boundaries.
 uuid = { workspace = true }
+
+# Lazy static initialization for provider singletons and global registries.
+# Used for one-time initialization patterns replacing C RUN_ONCE semantics.
+once_cell = { workspace = true }
+
+# Typed bitfield flags for shared type definitions. Used for SSL options,
+# X.509 extension flags, cipher mode flags, and provider capability flags.
 bitflags = { workspace = true }
+
+# Faster mutex/rwlock for non-async shared state. Used with // LOCK-SCOPE:
+# annotations per Rule R7 for concurrency lock granularity documentation.
+# Provides parking_lot::Mutex and parking_lot::RwLock as drop-in replacements
+# for std::sync equivalents with better performance characteristics.
 parking_lot = { workspace = true }
 
+# =============================================================================
+# Dev Dependencies
+# =============================================================================
+# Test-only dependencies per AAP §0.6.2.
+# Not included in release builds.
+
 [dev-dependencies]
+
+# Property-based testing for crypto correctness verification.
+# Generates random inputs to verify invariants (e.g., param round-trip,
+# constant-time comparison properties, safe-math overflow behavior).
 proptest = { workspace = true }
-tempfile = { workspace = true }
+
+# Initialize tracing subscribers in test harness for log capture during
+# test execution. Enables structured log assertions in integration tests.
 test-log = { workspace = true }
+
+# Temporary file and directory management in tests. Used for config file
+# parsing tests, PEM/DER round-trip tests, and secure memory file tests.
+tempfile = { workspace = true }
+
+# =============================================================================
+# Lint Configuration
+# =============================================================================
+# Inherits all workspace lint settings from root Cargo.toml.
+# This enforces:
+#   - Rule R6: deny(clippy::cast_possible_truncation, cast_sign_loss, cast_possible_wrap)
+#   - Rule R8: deny(unsafe_code) — zero unsafe outside openssl-ffi
+#   - Rule R9: deny(clippy::all) — warning-free build with RUSTFLAGS="-D warnings"
+#   - Rule R2: deny(clippy::await_holding_lock) — no locks across .await
+# See root Cargo.toml [workspace.lints] for complete lint policy.
 
 [lints]
 workspace = true
