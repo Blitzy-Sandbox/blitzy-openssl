@@ -4,3 +4,5 @@
 //! including TLS 1.0-1.3, DTLS, QUIC v1, and ECH support.
 
 #![forbid(unsafe_code)]
+
+pub mod method;
