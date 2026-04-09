@@ -237,6 +237,10 @@ ct = []      # Certificate Transparency, RFC 6962 (replaces OPENSSL_NO_CT)
 cmp = []     # CMP client, RFC 4210/4211 (replaces OPENSSL_NO_CMP)
 ts = []      # Timestamping, RFC 3161 (replaces OPENSSL_NO_TS)
 
+# --- Provider build modes ---
+fips_module = []     # FIPS module build: only FIPS provider is predefined (replaces #ifdef FIPS_MODULE)
+static_legacy = []   # Statically link legacy provider into predefined list (replaces #ifdef STATIC_LEGACY)
+
 # ===========================================================================
 # Dev Dependencies (AAP §0.6.2)
 # ===========================================================================

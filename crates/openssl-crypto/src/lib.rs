@@ -4,3 +4,5 @@
 //! including EVP abstraction, BIO I/O, X.509, ASN.1, and all algorithm families.
 
 #![forbid(unsafe_code)]
+
+pub mod provider;
