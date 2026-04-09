@@ -273,6 +273,7 @@ default = [
     "ts",     # Timestamping command (RFC 3161)
     "srp",    # SRP command (deprecated, legacy support)
     "fips",   # FIPS installation command (fipsinstall)
+    "ec",     # Elliptic curve commands (ec, ecparam)
 ]
 
 # --- QUIC Transport ---
@@ -317,6 +318,14 @@ ts = ["openssl-crypto/ts"]
 # Propagates to: openssl-ssl/srp feature
 # Replaces: OPENSSL_NO_SRP / #ifndef OPENSSL_NO_SRP
 srp = ["openssl-ssl/srp"]
+
+# --- EC ---
+# Elliptic curve commands: ec (key utility) and ecparam (parameter generation).
+# This feature gates both the `ec` and `ecparam` subcommands, matching the
+# `commands/mod.rs` CliCommand enum gating. Propagation to openssl-crypto/ec
+# will be added once the crypto crate defines the feature.
+# Replaces: OPENSSL_NO_EC / #ifndef OPENSSL_NO_EC
+ec = []
 
 # --- FIPS ---
 # FIPS installation command (fipsinstall) for FIPS module setup and
