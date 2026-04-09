@@ -28,6 +28,7 @@ Table of Contents
  - [Overview](#overview)
  - [Download](#download)
  - [Build and Install](#build-and-install)
+ - [Rust Workspace (openssl-rs)](#rust-workspace-openssl-rs)
  - [Documentation](#documentation)
  - [License](#license)
  - [Support](#support)
@@ -123,6 +124,210 @@ document.
 
 Specific notes on upgrading to OpenSSL 3.x from previous versions can be found
 in the [ossl-guide-migration(7ossl)] manual page.
+
+Rust Workspace (openssl-rs)
+===========================
+
+This repository includes a complete Rust workspace under the `crates/`
+directory containing an idiomatic Rust rewrite of the OpenSSL C source code.
+The workspace targets Rust edition 2021 with a minimum supported Rust version
+(MSRV) of 1.81.0. The original C source tree is preserved alongside the Rust
+crates for validation reference and continued FFI consumer compatibility.
+
+Quick Start
+-----------
+
+The following steps enable a complete build-and-test cycle from a clean machine.
+No additional configuration is required beyond the Rust toolchain.
+
+### Prerequisites
+
+Install the Rust toolchain at the project's MSRV:
+
+    rustup install 1.81.0
+    rustup default 1.81.0
+
+Optionally install auxiliary tools for coverage and security auditing:
+
+    cargo install cargo-llvm-cov cargo-deny cargo-audit
+
+### Build
+
+Build all crates in release mode:
+
+    cargo build --workspace --release
+
+Build with warnings-as-errors (matches CI configuration):
+
+    RUSTFLAGS="-D warnings" cargo build --workspace
+
+### Test
+
+Run the full test suite across all crates:
+
+    cargo test --workspace
+
+### Lint
+
+Run Clippy with all project lints enforced:
+
+    cargo clippy --workspace -- -D warnings
+
+Check formatting:
+
+    cargo fmt --all -- --check
+
+### Coverage
+
+Generate an LLVM source-based coverage report and enforce the 80% line
+coverage threshold:
+
+    cargo llvm-cov --workspace --fail-under-lines 80
+
+### Security Audit
+
+Run dependency ban checks (advisory, license, and source policy):
+
+    cargo deny check
+
+Scan for known vulnerabilities in the RustSec advisory database:
+
+    cargo audit
+
+Workspace Structure
+-------------------
+
+The workspace is organized into seven crates under the `crates/` directory:
+
+| Crate | Description |
+|-------|-------------|
+| `openssl-common` | Shared types, error handling, config, observability |
+| `openssl-crypto` | libcrypto equivalent (algorithms, EVP, BIO, X.509) |
+| `openssl-ssl` | libssl equivalent (TLS/DTLS/QUIC/ECH) |
+| `openssl-provider` | Provider system (trait-based dispatch) |
+| `openssl-fips` | FIPS module (self-test, KATs, integrity) |
+| `openssl-cli` | CLI binary (clap-based subcommands) |
+| `openssl-ffi` | C ABI compatibility layer (cbindgen) |
+
+The dependency graph flows downward: `openssl-cli` depends on `openssl-ssl`
+and `openssl-crypto`, which both depend on `openssl-common`. The `openssl-ffi`
+crate re-exports safe wrappers as `extern "C"` functions so that existing C
+consumers can continue to link against the library.
+
+Domain Context
+--------------
+
+### Provider-Based Dispatch
+
+All cryptographic algorithms are delivered through a provider architecture.
+The C `OSSL_DISPATCH` function pointer tables are replaced by Rust traits
+(`DigestProvider`, `CipherProvider`, `SignatureProvider`, and others), with
+the default, legacy, base, null, and FIPS providers each implementing the
+relevant traits. Algorithm selection uses `Box<dyn AlgorithmProvider>` for
+runtime dispatch while eliminating function pointer unsafety.
+
+### Async Boundaries
+
+The QUIC stack (`openssl-ssl::quic`) uses `tokio` for its event-driven
+reactor pattern. All other code — including `openssl-crypto`, the TLS/DTLS
+state machine, and the record layer — is fully synchronous. Exactly one
+`tokio::runtime::Runtime` instance is created in `openssl-cli::main()`, and
+all other async components receive a `tokio::runtime::Handle` (rule R1).
+Nested `block_on` calls are forbidden.
+
+### FIPS Isolation
+
+The `openssl-fips` crate is independently compilable and depends only on
+`openssl-common` and selected items from `openssl-crypto`. It never imports
+from `openssl-ssl`, `openssl-cli`, or `openssl-provider`. Self-test Known
+Answer Tests (KATs) execute at module load time, and the FIPS state machine
+follows the sequence: `PowerOn → SelfTesting → Operational | Error`.
+
+Common Pitfalls
+---------------
+
+New developers should be aware of the following project-wide rules enforced
+by CI and workspace lint configuration:
+
+- **No `unsafe` outside `openssl-ffi`** (rule R8).
+  The `#[deny(unsafe_code)]` lint is set at the workspace level. Only the
+  `openssl-ffi` crate is permitted to use `unsafe` blocks, and each block
+  must carry a `// SAFETY:` justification comment.
+
+- **No bare `as` casts for narrowing** (rule R6).
+  The workspace denies `clippy::cast_possible_truncation`,
+  `clippy::cast_sign_loss`, and `clippy::cast_possible_wrap`. Use
+  `TryFrom`, `saturating_cast`, or `clamp` instead.
+
+- **No holding `std::sync::Mutex` across `.await`** (rule R2).
+  The `clippy::await_holding_lock` lint is set to `deny`. Use
+  `tokio::sync::Mutex` when a lock must be held across an await point
+  and prefer `std::sync::Mutex` in synchronous code.
+
+- **Config field propagation** (rule R3).
+  Every field on every config, options, or state struct must have both a
+  write-site and a read-site reachable from the entry point. Unread fields
+  must be annotated with `// UNREAD: reserved`.
+
+- **Warning-free builds** (rule R9).
+  CI runs with `RUSTFLAGS="-D warnings"`. Module-level `#[allow(warnings)]`
+  or `#[allow(unused)]` attributes are forbidden. Individual `#[allow]`
+  annotations require a justification comment.
+
+Deliverable Artifacts
+---------------------
+
+The following documentation artifacts accompany the Rust workspace:
+
+| Artifact | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Crate boundary justifications, runtime topology, consistency delta |
+| [DECISION_LOG.md](DECISION_LOG.md) | Non-trivial decision rationale table |
+| [TRACEABILITY.md](TRACEABILITY.md) | Bidirectional C → Rust mapping (100% coverage) |
+| [FEATURE_PARITY.md](FEATURE_PARITY.md) | Source feature → Rust implementation status matrix |
+| [CONFIG_PROPAGATION_AUDIT.md](CONFIG_PROPAGATION_AUDIT.md) | Per-field write-site → read-site audit |
+| [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) | Workload benchmarks: wall-clock and memory, Rust vs C |
+| [UNSAFE_AUDIT.md](UNSAFE_AUDIT.md) | Count, locations, and justifications of `unsafe` blocks |
+| [GATE_COMPLIANCE.md](GATE_COMPLIANCE.md) | 18-line pass/fail summary for all validation gates |
+
+Extension Guidance
+------------------
+
+Suggested next tasks for contributors:
+
+1. **Platform-specific acceleration** — Add `core::arch` intrinsics for
+   AES-NI, SHA-NI, and ARM NEON in dedicated `accel` submodules to close
+   any remaining performance gap with the C plus assembly baseline.
+
+2. **Additional FIPS KAT vectors** — Expand the Known Answer Test suite in
+   `openssl-fips` with test vectors from NIST CAVP and ACVP programs.
+
+3. **Async TLS** — Explore `AsyncRead` / `AsyncWrite` wrappers for the TLS
+   state machine, enabling native async TLS without `spawn_blocking` bridges.
+
+4. **Fuzz targets** — Port the 38 existing C fuzz harnesses in `fuzz/` to
+   Rust using `cargo-fuzz` and `libfuzzer-sys`.
+
+5. **WASM support** — Investigate the `wasm32-unknown-unknown` target for
+   `openssl-crypto` (excluding platform-specific modules).
+
+6. **Provider plugin API** — Design a stable dynamic loading interface for
+   third-party Rust providers registered at runtime.
+
+C Source Preservation
+---------------------
+
+The original C source tree (`crypto/`, `ssl/`, `providers/`, `apps/`,
+`include/`, `test/`) is preserved in its entirety alongside the Rust
+workspace. These files serve as:
+
+- The **validation reference** for feature parity verification
+- The **FFI consumer baseline** ensuring existing C callers continue to link
+- The **test oracle** against which Rust output is compared
+
+Do **not** delete, move, or modify the original C source files. The existing
+C-based build system (`Configure`, `Configurations/`, `util/`) and the CI
+workflows under `.github/workflows/` remain fully operational.
 
 Documentation
 =============
