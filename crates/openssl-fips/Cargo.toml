@@ -1,3 +1,47 @@
+# =============================================================================
+# openssl-fips — FIPS 140-3 Compliance Module Crate Manifest
+# =============================================================================
+#
+# Rust rewrite of the OpenSSL FIPS 140-3 compliance module (providers/fips/
+# directory, ~7,600 lines of C across 7 source files + 1 header).
+#
+# This crate implements:
+#   - Power-On Self-Test (POST) orchestration with state machine
+#     (INIT → SELFTEST → RUNNING | ERROR)
+#   - Known Answer Tests (KATs) for digest, cipher, MAC, KDF, DRBG,
+#     signature, KEM, key exchange, and asymmetric keygen categories
+#   - Module integrity verification via HMAC-SHA256
+#   - FIPS approved/unapproved service indicator mechanism
+#   - Deferred self-test support with fine-grained locking
+#
+# CRITICAL — FIPS Boundary Isolation (AAP §0.7.3):
+#   - MUST depend ONLY on openssl-common and openssl-crypto from workspace
+#   - MUST NOT depend on openssl-ssl, openssl-cli, openssl-provider, or openssl-ffi
+#   - This isolation is essential for FIPS 140-3 certification
+#   - The crate boundary enforces that private items cannot leak across crates
+#
+# Rules enforced:
+#   R6: Lossless numeric casts — deny(clippy::cast_possible_truncation) via workspace
+#   R7: Concurrency lock granularity — parking_lot for POST serialization,
+#       deferred-test locking (replaces CRYPTO_RWLOCK in self_test.c/fipsprov.c)
+#   R8: Zero unsafe outside FFI — this crate is 100% safe Rust, no unsafe allowed
+#   R9: Warning-free build — workspace lint inheritance with RUSTFLAGS="-D warnings"
+#   Observability: tracing for POST execution tracing and self-test events (AAP §0.8.5)
+#   Synchronous only: NO tokio, NO async runtime — all KAT and POST ops are synchronous
+#
+# Source references (C files this crate replaces):
+#   providers/fips/fipsprov.c     (1,498 lines) — FIPS provider dispatch, FIPS_GLOBAL, config
+#   providers/fips/self_test.c    (469 lines)   — POST orchestration, state machine, integrity
+#   providers/fips/self_test_kats.c (1,338 lines) — KAT execution engine per category
+#   providers/fips/self_test_data.c (3,974 lines) — Compiled-in FIPS 140-3 IG 10.3.A vectors
+#   providers/fips/fipsindicator.c  (129 lines)  — Approved/unapproved indicator state
+#   providers/fips/fips_entry.c     (19 lines)   — ABI entry point trampoline
+#   providers/fips/self_test.h      (182 lines)  — Self-test interface, categories, structs
+#
+# AAP References: §0.4.1, §0.5.1, §0.6.1, §0.6.4, §0.7.3, §0.7.6, §0.7.7,
+#                 §0.8.1 (R6-R9), §0.8.5
+# =============================================================================
+
 [package]
 name = "openssl-fips"
 version = "0.1.0"
@@ -5,19 +49,225 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "FIPS module with self-test, KATs, and integrity verification for the OpenSSL Rust workspace"
+description = "Rust rewrite of the OpenSSL FIPS 140-3 compliance module: Power-On Self-Test (POST), Known Answer Tests (KATs), integrity verification, and FIPS approved service indicator mechanism"
+publish = false
+
+# =============================================================================
+# Runtime Dependencies
+# =============================================================================
+# All versions inherited from workspace root Cargo.toml via `workspace = true`.
+# Workspace pins specific versions for Rust 1.81.0 MSRV compatibility.
+# See root Cargo.toml and DECISION_LOG.md for version-pin rationale.
+#
+# Dependency inventory per AAP §0.6.1.
+# All packages sourced from crates.io — enforced by deny.toml.
+#
+# FIPS BOUNDARY ENFORCEMENT:
+#   The ONLY workspace crate dependencies permitted are openssl-common and
+#   openssl-crypto. Any addition of openssl-ssl, openssl-cli, openssl-provider,
+#   or openssl-ffi is a FIPS boundary violation and MUST NOT be introduced.
 
 [dependencies]
+
+# ---------------------------------------------------------------------------
+# Workspace Crate Dependencies — FIPS Boundary (AAP §0.7.3)
+# ---------------------------------------------------------------------------
+# Shared foundation crate: error types, config parsing, typed parameter system
+# (ParamSet), time (OsslTime), safe_math, constant_time primitives, secure
+# memory (mem.rs), and observability infrastructure. Used by all FIPS modules
+# for error reporting, parameter handling, and structured logging.
 openssl-common = { workspace = true }
+
+# Selected crypto primitives needed for KAT execution. The FIPS module performs
+# Known Answer Tests against EVP-equivalent APIs: digest, cipher, MAC, KDF,
+# DRBG, signature, KEM, key exchange, and asymmetric keygen operations.
+# This dependency is explicitly permitted under FIPS boundary isolation rules
+# because the self-test must exercise the actual cryptographic implementations.
 openssl-crypto = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Error Handling (AAP §0.6.1, §0.7.7)
+# ---------------------------------------------------------------------------
+# Ergonomic derive macro for the FipsError enum. Replaces C ERR_* thread-local
+# error stack with idiomatic Rust Result<T, FipsError> propagation via the ?
+# operator. Error variants map to FIPS-specific failure modes: POST failure,
+# KAT failure, integrity check failure, indicator state errors.
+# Note: workspace pins thiserror 1.0.x for Rust 1.81.0 MSRV compatibility.
 thiserror = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Observability — Structured Logging (AAP §0.6.1, §0.8.5)
+# ---------------------------------------------------------------------------
+# Structured logging with spans and correlation IDs for POST execution tracing
+# and self-test events. Ships with initial implementation per the Observability
+# rule — not as follow-up. Every self-test stage, KAT category execution,
+# integrity verification step, and state transition is instrumented with
+# tracing spans for operational monitoring and debugging.
 tracing = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Secure Memory (AAP §0.6.1, §0.7.6)
+# ---------------------------------------------------------------------------
+# Secure memory zeroing for KAT test vectors and key material after use.
+# Replaces OPENSSL_cleanse() / OPENSSL_PEDANTIC_ZEROIZATION patterns from
+# self_test.c line 261. All types holding key material or test vectors derive
+# Zeroize for automatic zeroing on Drop. Features = ["derive"] enables
+# #[derive(Zeroize, ZeroizeOnDrop)] macros.
 zeroize = { workspace = true }
 
+# ---------------------------------------------------------------------------
+# Constant-Time Operations (AAP §0.6.1, §0.7.6)
+# ---------------------------------------------------------------------------
+# Constant-time comparison for integrity verification HMAC comparison.
+# Replaces timing-vulnerable memcmp in self_test.c line 253 with
+# subtle::ConstantTimeEq to prevent side-channel attacks during module
+# integrity verification. Critical for FIPS 140-3 compliance.
+subtle = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Concurrency — Fine-Grained Locking (Rule R7)
+# ---------------------------------------------------------------------------
+# Fine-grained locks for POST serialization and deferred test locking.
+# Replaces C concurrency primitives:
+#   - CRYPTO_RWLOCK *self_test_lock (self_test.c line 54)
+#   - CRYPTO_RWLOCK *deferred_lock (fipsprov.c line 107, FIPS_GLOBAL struct)
+# Each lock carries a // LOCK-SCOPE: annotation per Rule R7 documenting
+# its purpose and contention characteristics. Non-poisoning semantics
+# prevent cascading failures from panics during self-test.
+parking_lot = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Lazy Initialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Thread-safe lazy initialization for self-test lock and one-time init
+# stages. Replaces C CRYPTO_ONCE / RUN_ONCE_STATIC pattern:
+#   - CRYPTO_ONCE fips_self_test_init (self_test.c line 56)
+#   - CRYPTO_ONCE fips_self_test_states_lock_init (self_test.c line 73)
+#   - DEFINE_RUN_ONCE_STATIC(do_fips_self_test_init) pattern
+# Provides once_cell::sync::Lazy and once_cell::sync::OnceCell for
+# guaranteed single-initialization of FIPS-global resources.
+once_cell = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Hex Encoding (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Hex encoding/decoding for module integrity checksum data. Replaces
+# OPENSSL_hexstr2buf in self_test.c line 336 for converting hexadecimal
+# module checksum strings to/from binary data during integrity verification.
+hex = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Serialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Serialization framework for FIPS configuration parameters and test vector
+# catalogs. Enables #[derive(Serialize, Deserialize)] on FIPS config structs
+# (SELF_TEST_POST_PARAMS equivalent) and KAT data structures.
+serde = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Typed Bitfield Flags (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Typed bitfield flags replacing C #define bitmask constants from self_test.h:
+#   - CIPHER_MODE_ENCRYPT (1), CIPHER_MODE_DECRYPT (2), CIPHER_MODE_ALL (3)
+#     (self_test.h lines 84-86)
+#   - SIGNATURE_MODE_VERIFY_ONLY (1), SIGNATURE_MODE_SIGN_ONLY (2),
+#     SIGNATURE_MODE_DIGESTED (4), SIGNATURE_MODE_SIG_DIGESTED (8)
+#     (self_test.h lines 116-119)
+# Provides compile-time type safety for KAT mode flags.
+bitflags = { workspace = true }
+
+# =============================================================================
+# Dev Dependencies (AAP §0.6.2)
+# =============================================================================
+# Test-only dependencies. Not included in release builds.
+
 [dev-dependencies]
+
+# Property-based testing for KAT vector validation. Generates random inputs
+# to verify invariants (e.g., self-test idempotency, state machine transitions,
+# indicator state consistency, integrity check round-trip properties).
+# Workspace pins to =1.5.0 for Rust 1.81.0 MSRV compatibility.
 proptest = { workspace = true }
-tempfile = { workspace = true }
+
+# Initialize tracing subscribers in test harness for log capture during
+# test execution. Enables structured log assertions in FIPS self-test
+# integration tests and POST event tracing verification.
 test-log = { workspace = true }
+
+# Temporary file and directory management in tests. Used for integrity
+# verification tests that require a mock module file on disk, and for
+# testing FIPS configuration file parsing with temporary config files.
+# Workspace pins to =3.12.0 for Rust 1.81.0 MSRV compatibility.
+tempfile = { workspace = true }
+
+# Snapshot testing for self-test output validation. Captures and compares
+# POST execution logs, KAT result summaries, and indicator state output
+# against known-good snapshots for regression detection.
+insta = { workspace = true }
+
+# Mock generation for trait-based provider testing. Used to mock BIO
+# callbacks (bio_new_file_cb, bio_read_ex_cb, bio_free_cb from
+# SELF_TEST_POST_PARAMS in self_test.h lines 27-30) for isolated
+# integrity verification testing without actual file I/O.
+mockall = { workspace = true }
+
+# =============================================================================
+# Feature Flags
+# =============================================================================
+# Replace C preprocessor OPENSSL_NO_* compile-time guards with Rust feature
+# flags. Per AAP §0.4.3 design pattern:
+#   C:    #if !defined(OPENSSL_NO_FIPS_POST)
+#   Rust: #[cfg(feature = "post")]
+#
+# Each feature maps to a specific conditional compilation guard in the
+# C source files, controlling which KAT categories are compiled in.
+
+[features]
+# POST enabled by default — mirrors C behavior without OPENSSL_NO_FIPS_POST.
+# The FIPS module always runs POST unless explicitly disabled.
+default = ["post"]
+
+# FIPS Power-On Self-Test: integrity verification + KAT execution at module
+# load time. Replaces `#if !defined(OPENSSL_NO_FIPS_POST)` guard from
+# self_test.c line 57. When disabled, the module skips POST (test-only mode).
+post = []
+
+# DH Known Answer Test support: enables DH key agreement KAT in the self-test
+# suite. Replaces `#if !defined(OPENSSL_NO_DH)` from self_test_kats.c line 22.
+# Part of the SELF_TEST_KA_ENABLED category (key agreement).
+dh = []
+
+# EC Known Answer Test support: enables ECDSA/ECDH KATs in the self-test suite.
+# Replaces `#if !defined(OPENSSL_NO_EC)` from self_test_kats.c line 22.
+# Part of the SELF_TEST_KA_ENABLED category (key agreement).
+ec = []
+
+# ML-DSA Known Answer Test support: enables ML-DSA (FIPS 204) post-quantum
+# signature KATs. Replaces `#if !defined(OPENSSL_NO_ML_DSA)` from
+# self_test_kats.c line 26. Part of SELF_TEST_ASYM_KEYGEN_ENABLED category.
+ml-dsa = []
+
+# SLH-DSA Known Answer Test support: enables SLH-DSA (FIPS 205) post-quantum
+# hash-based signature KATs. Replaces `#if !defined(OPENSSL_NO_SLH_DSA)` from
+# self_test_kats.c line 26. Part of SELF_TEST_ASYM_KEYGEN_ENABLED category.
+slh-dsa = []
+
+# ML-KEM Known Answer Test support: enables ML-KEM (FIPS 203) post-quantum
+# key encapsulation KATs. Replaces `#if !defined(OPENSSL_NO_ML_KEM)` from
+# self_test_kats.c line 30. Part of SELF_TEST_KEM_ENABLED category.
+ml-kem = []
+
+# =============================================================================
+# Lint Configuration
+# =============================================================================
+# Inherits all workspace lint settings from root Cargo.toml.
+# This enforces:
+#   - Rule R6: deny(clippy::cast_possible_truncation, cast_sign_loss, cast_possible_wrap)
+#   - Rule R8: deny(unsafe_code) — zero unsafe outside openssl-ffi
+#   - Rule R9: deny(clippy::all) — warning-free build with RUSTFLAGS="-D warnings"
+#   - Rule R2: deny(clippy::await_holding_lock) — no locks across .await
+#              (not applicable here since FIPS is synchronous, but inherited for consistency)
+# See root Cargo.toml [workspace.lints] for complete lint policy.
 
 [lints]
 workspace = true
