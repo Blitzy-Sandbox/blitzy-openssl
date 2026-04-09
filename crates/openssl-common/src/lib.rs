@@ -8,3 +8,6 @@ pub mod constant_time;
 pub mod error;
 pub mod observability;
 pub mod types;
+
+#[cfg(test)]
+mod tests;
