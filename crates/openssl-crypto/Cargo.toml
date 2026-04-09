@@ -1,3 +1,36 @@
+# ===========================================================================
+# openssl-crypto — Rust rewrite of OpenSSL libcrypto
+# ===========================================================================
+#
+# This is the LARGEST crate in the workspace, translating ~327,616 lines of C
+# from the crypto/ directory (70 top-level .c files, 50+ algorithm subdirectories)
+# into idiomatic Rust. It covers:
+#
+#   - EVP high-level API (crypto/evp/*.c — 84 files)
+#   - X.509 PKI (crypto/x509/*.c — 98 files)
+#   - ASN.1/DER encoding (crypto/asn1/*.c — 65 files)
+#   - Elliptic curves (crypto/ec/*.c — 49 files)
+#   - BigNum arithmetic (crypto/bn/*.c — 39 files)
+#   - BIO I/O abstraction (crypto/bio/*.c — 28 files)
+#   - RSA operations (crypto/rsa/*.c — 26 files)
+#   - Symmetric ciphers: AES, ChaCha20, DES, legacy (crypto/aes/, chacha/, des/)
+#   - Hash functions: SHA, MD5, legacy (crypto/sha/, md5/)
+#   - MAC operations: HMAC, CMAC, Poly1305, SipHash
+#   - KDF: HKDF, PBKDF2, Argon2, scrypt, KBKDF
+#   - Random generation: DRBG, seeding (crypto/rand/*.c — 9 files)
+#   - Post-quantum: ML-KEM, ML-DSA, SLH-DSA, LMS
+#   - Protocol extensions: HPKE, OCSP, CT, CMP, Timestamping
+#   - Provider dispatch, library context, CPU detection, threading
+#
+# Rules enforced:
+#   R6: Lossless numeric casts — deny(clippy::cast_possible_truncation) via workspace
+#   R7: Fine-grained locking — parking_lot for per-subsystem locks
+#   R8: Zero unsafe outside FFI — this crate is 100% safe Rust
+#   R9: Warning-free build — workspace lint inheritance
+#   Observability: tracing for structured logging (AAP §0.8.5)
+#   Synchronous only: NO tokio, NO async runtime (AAP §0.4.4)
+# ===========================================================================
+
 [package]
 name = "openssl-crypto"
 version = "0.1.0"
@@ -5,38 +38,253 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Cryptographic library (libcrypto equivalent) for the OpenSSL Rust workspace"
+publish = false
+description = "Rust rewrite of OpenSSL libcrypto: core algorithms, EVP abstraction, BIO I/O, X.509 PKI, ASN.1, BigNum, symmetric/asymmetric/post-quantum cryptography"
+
+# ===========================================================================
+# Runtime Dependencies
+# ===========================================================================
 
 [dependencies]
-openssl-common = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Workspace crate dependency
+# ---------------------------------------------------------------------------
+# Shared foundation crate: error types (CryptoError, CryptoResult), config
+# parsing, typed parameter system (ParamSet), time (OsslTime), safe_math,
+# constant_time primitives, secure memory, and observability infrastructure.
+# This is the ONLY workspace path dependency — openssl-crypto MUST NOT depend
+# on openssl-ssl, openssl-provider, openssl-fips, openssl-cli, or openssl-ffi.
+openssl-common = { path = "../openssl-common" }
+
+# ---------------------------------------------------------------------------
+# Error handling
+# ---------------------------------------------------------------------------
+# Ergonomic derive macro for custom error types. Replaces C ERR_* thread-local
+# error stack with idiomatic Rust error enums (AAP §0.7.7).
 thiserror = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Observability (AAP §0.8.5 — ship with initial implementation)
+# ---------------------------------------------------------------------------
+# Structured logging with spans and correlation IDs for distributed tracing
+# across crate boundaries. Every init stage, algorithm fetch, and key
+# operation is instrumented.
 tracing = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Serialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Framework for config, session, X.509 interchange, and diagnostics output.
+# Used by CT, CMP, timestamp, and certificate modules.
 serde = { workspace = true }
+serde_json = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Secure memory (AAP §0.7.6, Rule R8)
+# ---------------------------------------------------------------------------
+# Secure memory zeroing for all key material structs. Replaces
+# OPENSSL_cleanse() from crypto/mem_clr.c. All types holding key material
+# derive ZeroizeOnDrop for automatic zeroing. Features = ["derive"] for
+# #[derive(Zeroize, ZeroizeOnDrop)] macros.
 zeroize = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Constant-time operations (AAP §0.7.6)
+# ---------------------------------------------------------------------------
+# Constant-time comparison and conditional selection primitives for crypto.
+# Replaces hand-rolled constant-time code from include/internal/constant_time.h.
 subtle = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Random number generation (crypto/rand/*.c — 9 files, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Cryptographic RNG: OsRng for platform entropy + DRBG seeding.
+# Provides CryptoRng, RngCore traits and OsRng implementation.
 rand = { workspace = true }
+# Core RNG traits: SeedableRng for DRBG instantiation from entropy.
 rand_core = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Byte buffer management (crypto/bio/*.c — 28 files, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Efficient byte buffer management for BIO I/O abstraction layer.
+# Provides Bytes and BytesMut for zero-copy buffer handling.
 bytes = { workspace = true }
-bitflags = { workspace = true }
-num-bigint = { workspace = true }
-num-integer = { workspace = true }
-num-traits = { workspace = true }
-der = { workspace = true }
-x509-cert = { workspace = true }
-pem-rfc7468 = { workspace = true }
-pkcs8 = { workspace = true }
-spki = { workspace = true }
-base64ct = { workspace = true }
-hex = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Concurrency (Rule R7 — fine-grained locking)
+# ---------------------------------------------------------------------------
+# Faster mutex/rwlock for non-async shared state. Used by LibContext
+# (per-subsystem RwLock for provider store, EVP method store, name map,
+# property definitions, global properties, DRBG), session cache, and
+# provider registry. Non-poisoning semantics.
 parking_lot = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Lazy initialization (crypto/init.c RUN_ONCE, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Thread-safe lazy static initialization for provider singletons and
+# init-once stages. Replaces C CRYPTO_ONCE / RUN_ONCE_STATIC pattern.
 once_cell = { workspace = true }
 
+# ---------------------------------------------------------------------------
+# Typed bitfield flags (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Type-safe bitfield flags for X.509 verification flags, EVP control flags,
+# SSL option flags, and CPU capability detection flags. Replaces C
+# #define bitmask constants with exhaustive Rust bitflags structs.
+bitflags = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# BigNum arithmetic (crypto/bn/*.c — 39 files, AAP §0.5.1, §0.6.1)
+# ---------------------------------------------------------------------------
+# Arbitrary-precision integer library for all BigNum operations: RSA key
+# generation, DSA parameter generation, DH key exchange, EC point arithmetic,
+# primality testing, Montgomery multiplication. The "rand" feature enables
+# BigUint::random_below() for key generation.
+num-bigint = { workspace = true, features = ["rand"] }
+# Integer trait extensions: gcd, lcm, div_floor, mod_floor for BigNum arithmetic.
+num-integer = { workspace = true }
+# Generic numeric trait definitions used by BigNum operations.
+num-traits = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# ASN.1/DER encoding (crypto/asn1/*.c — 65 files, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# RustCrypto ASN.1 DER encoding/decoding. Replaces C ASN1_* template system.
+der = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# X.509 certificates (crypto/x509/*.c — 98 files, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# RustCrypto X.509 certificate parsing and generation. Replaces C X509_*
+# functions for certificate chain building, verification, and extensions.
+x509-cert = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# PEM encoding (crypto/pem/*.c — 11 files, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# RFC 7468-compliant PEM encoding/decoding. Replaces C PEM_read_bio/PEM_write_bio.
+pem-rfc7468 = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# PKCS#8 private key encoding (crypto/pkcs7/*.c, crypto/pkcs12/*.c, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# PKCS#8 private key serialization/deserialization.
+pkcs8 = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# SPKI types (crypto/x509/*.c, crypto/ec/*.c, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# SubjectPublicKeyInfo types for public key encoding/decoding.
+spki = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Base64 encoding (crypto/pem/*.c, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Constant-time Base64 encoding/decoding for PEM and SCT processing.
+# Prevents timing side-channel attacks when processing key material.
+base64ct = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Hex encoding (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Hex encoding for diagnostics output and key representation.
+hex = { workspace = true }
+
+# ===========================================================================
+# Feature Flags
+# ===========================================================================
+# Replace C preprocessor OPENSSL_NO_* compile-time guards with Rust feature
+# flags. Per AAP §0.4.3 design pattern:
+#   C:    #ifndef OPENSSL_NO_EC
+#   Rust: #[cfg(feature = "ec")]
+# All major algorithms are enabled by default.
+
+[features]
+default = [
+    "ec", "rsa", "dh", "dsa",         # Asymmetric algorithms
+    "aes", "sha", "chacha", "des",     # Symmetric algorithms
+    "pqc",                              # Post-quantum
+    "hpke", "cms", "ocsp", "ct",       # Protocol extensions
+    "cmp", "ts",                        # Certificate/timestamp management
+]
+
+# --- Asymmetric algorithms ---
+ec = []      # Elliptic curves: ECDSA, ECDH, EdDSA, X25519/X448 (replaces OPENSSL_NO_EC)
+rsa = []     # RSA: keygen, OAEP, PSS (replaces OPENSSL_NO_RSA)
+dh = []      # Diffie-Hellman key exchange (replaces OPENSSL_NO_DH)
+dsa = []     # DSA sign/verify (replaces OPENSSL_NO_DSA)
+
+# --- Symmetric algorithms ---
+aes = []     # AES block cipher: GCM/CCM/OCB/SIV/XTS/wrap (replaces OPENSSL_NO_AES)
+sha = []     # SHA-1/2/3/SHAKE digests (replaces OPENSSL_NO_SHA)
+chacha = []  # ChaCha20-Poly1305 AEAD (replaces OPENSSL_NO_CHACHA)
+des = []     # DES/3DES legacy cipher (replaces OPENSSL_NO_DES)
+
+# --- Post-quantum algorithms ---
+pqc = []     # ML-KEM (FIPS 203), ML-DSA (FIPS 204), SLH-DSA (FIPS 205), LMS (SP 800-208)
+
+# --- Legacy algorithms ---
+legacy = []  # Blowfish, CAST5, IDEA, SEED, RC2, RC4, RC5 (replaces OPENSSL_NO_BF etc.)
+
+# --- Protocol extensions ---
+hpke = []    # HPKE, RFC 9180 — Hybrid Public Key Encryption (replaces OPENSSL_NO_HPKE)
+cms = []     # CMS/PKCS#7 signed/enveloped data (replaces OPENSSL_NO_CMS)
+ocsp = []    # OCSP client, RFC 6960 (replaces OPENSSL_NO_OCSP)
+ct = []      # Certificate Transparency, RFC 6962 (replaces OPENSSL_NO_CT)
+cmp = []     # CMP client, RFC 4210/4211 (replaces OPENSSL_NO_CMP)
+ts = []      # Timestamping, RFC 3161 (replaces OPENSSL_NO_TS)
+
+# ===========================================================================
+# Dev Dependencies (AAP §0.6.2)
+# ===========================================================================
+
 [dev-dependencies]
+# Benchmarking framework for Gate 3 performance baselines (≥2 workloads).
+# html_reports feature enables criterion's HTML report generation.
+criterion = { workspace = true, features = ["html_reports"] }
+
+# Property-based testing for crypto correctness validation.
 proptest = { workspace = true }
+
+# Temporary file/dir management in integration and unit tests.
 tempfile = { workspace = true }
+
+# Initialize tracing subscriber in test harness for log output.
 test-log = { workspace = true }
-mockall = { workspace = true }
+
+# Snapshot testing for deterministic ASN.1/PEM/X.509 output validation.
 insta = { workspace = true }
+
+# Mock generation for trait-based provider testing via #[automock].
+mockall = { workspace = true }
+
+# ===========================================================================
+# Benchmark Harness
+# ===========================================================================
+# Required for criterion benchmarks. The benchmark file lives at
+# benches/crypto_bench.rs and is NOT run through the default test harness.
+
+[[bench]]
+name = "crypto_bench"
+harness = false
+
+# ===========================================================================
+# Lint Configuration
+# ===========================================================================
+# Inherits ALL workspace lint settings including:
+#   - deny(clippy::cast_possible_truncation) — Rule R6 (Lossless Numeric Casts)
+#   - deny(clippy::cast_sign_loss) — Rule R6
+#   - deny(clippy::cast_possible_wrap) — Rule R6
+#   - deny(clippy::await_holding_lock) — Rule R2 (not applicable here, but inherited)
+#   - deny(unsafe_code) — Rule R8 (Zero Unsafe Outside FFI)
+#   - deny(clippy::todo) — Zero placeholder policy
+#   - warn(clippy::unwrap_used) — No unwrap in library code
+#   - warn(clippy::expect_used) — No expect in library code
+# Ensures Rule R9 (Warning-Free Build) compliance.
+# NO crate-level #[allow(warnings)] or #[allow(unused)] permitted.
 
 [lints]
 workspace = true
