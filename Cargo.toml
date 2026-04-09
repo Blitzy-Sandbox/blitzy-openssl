@@ -1,3 +1,18 @@
+# =============================================================================
+# OpenSSL Rust Workspace — Root Cargo Manifest
+# =============================================================================
+#
+# This is the workspace root manifest for the OpenSSL C-to-Rust rewrite.
+# It defines workspace members, shared dependencies with version pins,
+# edition/MSRV settings, lint profiles enforcing Rules R2/R6/R8/R9, and
+# build profile configurations.
+#
+# See ARCHITECTURE.md for crate boundary justifications.
+# See DECISION_LOG.md for version-pin rationale.
+#
+# AAP References: §0.4.1, §0.5.1, §0.5.2, §0.6.1, §0.6.2, §0.8.1, §0.8.6
+# =============================================================================
+
 [workspace]
 resolver = "2"
 members = [
@@ -10,57 +25,196 @@ members = [
     "crates/openssl-ffi",
 ]
 
+# =============================================================================
+# Workspace Package Metadata
+# =============================================================================
+# Inherited by all member crates via `edition.workspace = true` etc.
+# Edition 2021 per AAP §0.8.6; MSRV 1.81.0 per rust-toolchain.toml.
+
 [workspace.package]
 edition = "2021"
 rust-version = "1.81.0"
 license = "Apache-2.0"
 repository = "https://github.com/openssl/openssl"
 
+# =============================================================================
+# Shared Dependencies
+# =============================================================================
+# All dependency versions are pinned for Rust 1.81.0 (edition 2021) compatibility.
+# Several crates require exact pins to avoid transitive pulls of edition 2024
+# crates (which require Rust 1.85+). See DECISION_LOG.md for full rationale.
+#
+# Dependency inventory per AAP §0.6.1 (runtime) and §0.6.2 (dev/build).
+# All packages sourced from crates.io — enforced by deny.toml.
+# No -sys crates permitted in non-FFI crates — enforced by deny.toml.
+
 [workspace.dependencies]
-# Runtime dependencies - pinned for Rust 1.81.0 compatibility
+
+# ---------------------------------------------------------------------------
+# Async Runtime (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# tokio: Async runtime for QUIC stack. Single runtime instance per Rule R1.
+# All other components receive a tokio::runtime::Handle.
 tokio = { version = "1.38", features = ["full"] }
+# tokio-util: Codec/framing utilities for QUIC stream I/O.
 tokio-util = { version = "0.7", features = ["codec"] }
+
+# ---------------------------------------------------------------------------
+# CLI Framework (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# clap: CLI argument parsing with derive macros for 56+ subcommands.
+# Pinned to =4.5.23 — clap 4.6.x pulls clap_lex 1.1.0 requiring edition 2024.
 clap = { version = "=4.5.23", features = ["derive"] }
+
+# ---------------------------------------------------------------------------
+# Serialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# serde: Serialization framework for config, session, X.509 interchange.
 serde = { version = "1.0", features = ["derive"] }
+# serde_json: JSON serialization for config files and diagnostics output.
 serde_json = "1.0"
+
+# ---------------------------------------------------------------------------
+# Error Handling (AAP §0.6.1, §0.7.7)
+# ---------------------------------------------------------------------------
+# thiserror: Ergonomic derive macro for custom error types replacing ERR_* stack.
+# Using 1.0.x — thiserror 2.0.x requires Rust 1.83+.
 thiserror = "1.0"
+
+# ---------------------------------------------------------------------------
+# Observability (AAP §0.6.1, §0.8.5 Observability Rule)
+# ---------------------------------------------------------------------------
+# tracing: Structured logging with correlation IDs.
 tracing = "0.1"
+# tracing-subscriber: Subscriber implementations — JSON formatting, env-filter.
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+# tracing-opentelemetry: OpenTelemetry span export for distributed tracing.
+# Using 0.24.x — later versions require opentelemetry 0.24+ with MSRV > 1.81.
 tracing-opentelemetry = "0.24"
+# metrics: Lightweight metrics facade (counters, gauges, histograms).
+# Using 0.23.x — metrics 0.24.x requires Rust 1.82+.
 metrics = "0.23"
+# metrics-exporter-prometheus: Prometheus scrape endpoint for metrics export.
+# Using 0.15.x — 0.18.x requires metrics 0.24.
 metrics-exporter-prometheus = "0.15"
+
+# ---------------------------------------------------------------------------
+# Secure Memory and Constant-Time (AAP §0.6.1, §0.7.6)
+# ---------------------------------------------------------------------------
+# zeroize: Secure memory zeroing for key material (replacing OPENSSL_cleanse).
+# All types holding key material derive Zeroize for Drop-based cleanup.
 zeroize = { version = "1.8", features = ["derive"] }
+# subtle: Constant-time operations for crypto primitives.
+# Replaces hand-rolled constant_time.h comparisons.
 subtle = "2.6"
+
+# ---------------------------------------------------------------------------
+# Random Number Generation (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# rand: Cryptographic random number generation (OsRng + DRBG seeding).
 rand = "0.8"
+# rand_core: Core RNG traits shared across algorithm implementations.
 rand_core = "0.6"
+
+# ---------------------------------------------------------------------------
+# I/O and Buffer Management (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# bytes: Efficient byte buffer management for network I/O.
 bytes = "1.6"
+
+# ---------------------------------------------------------------------------
+# Platform FFI Types (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# libc: Platform FFI types — used ONLY in the openssl-ffi crate.
 libc = "0.2"
+
+# ---------------------------------------------------------------------------
+# Utility Types (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# bitflags: Typed bitfield flags for SSL options, X.509 flags, cipher modes.
 bitflags = "2.6"
-num-bigint = "0.4"
-num-integer = "0.1"
-num-traits = "0.2"
-der = "0.7"
-x509-cert = "0.2"
-pem-rfc7468 = "0.7"
-pkcs8 = "0.10"
-spki = "0.7"
-base64ct = "=1.6.0"
-hex = "0.4"
+# parking_lot: Faster mutex/rwlock for non-async shared state.
+# Used with // LOCK-SCOPE: annotations per Rule R7.
 parking_lot = "0.12"
+# once_cell: Lazy static initialization for provider singletons.
 once_cell = "1.19"
+# uuid: Correlation IDs for observability tracing requirement.
+# Pinned to =1.10.0 — later versions pull getrandom 0.4 requiring edition 2024.
 uuid = { version = "=1.10.0", features = ["v4"] }
 
-# Dev/Build dependencies - pinned for Rust 1.81.0 compatibility
+# ---------------------------------------------------------------------------
+# Arbitrary-Precision Integers (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# num-bigint: Arbitrary-precision integers for BigNum (BN_*) operations.
+num-bigint = "0.4"
+# num-integer: Integer trait extensions for BigNum arithmetic.
+num-integer = "0.1"
+# num-traits: Generic numeric trait definitions.
+num-traits = "0.2"
+
+# ---------------------------------------------------------------------------
+# ASN.1 / X.509 / PKCS Ecosystem — RustCrypto (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# der: ASN.1 DER encoding/decoding.
+der = "0.7"
+# x509-cert: X.509 certificate parsing and generation.
+x509-cert = "0.2"
+# pem-rfc7468: PEM encoding per RFC 7468.
+pem-rfc7468 = "0.7"
+# pkcs8: PKCS#8 private key encoding.
+pkcs8 = "0.10"
+# spki: SubjectPublicKeyInfo types.
+spki = "0.7"
+
+# ---------------------------------------------------------------------------
+# Encoding Utilities (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# base64ct: Constant-time Base64 encoding/decoding.
+# Pinned to =1.6.0 — base64ct 1.8.x uses edition 2024.
+base64ct = "=1.6.0"
+# hex: Hex encoding for diagnostics and key representation.
+hex = "0.4"
+
+# ---------------------------------------------------------------------------
+# Dev/Build Dependencies (AAP §0.6.2)
+# ---------------------------------------------------------------------------
+
+# cbindgen: C header generation from Rust FFI exports (build dependency).
+cbindgen = "0.27"
+
+# criterion: Benchmarking framework for Gate 3 performance baselines.
 criterion = { version = "0.5", features = ["html_reports"] }
+
+# proptest: Property-based testing for crypto correctness.
+# Pinned to =1.5.0 — proptest 1.6.x pulls rand 0.9 → getrandom 0.3 → edition 2024.
 proptest = "=1.5.0"
+
+# tempfile: Temporary file/dir management in tests.
+# Pinned to =3.12.0 — tempfile 3.13+ pulls getrandom 0.4 → edition 2024.
 tempfile = "=3.12.0"
+
+# assert_cmd: CLI integration test assertions.
+# Pinned to =2.0.16 — assert_cmd 2.2.x uses edition 2024.
 assert_cmd = "=2.0.16"
+
+# predicates: Rich assertion predicates for CLI output testing.
 predicates = "3"
+
+# test-log: Initialize tracing in test harness.
 test-log = "0.2"
+
+# insta: Snapshot testing for ASN.1/PEM/X.509 output validation.
 insta = "1"
+
+# mockall: Mock generation for trait-based provider testing.
 mockall = "0.13"
 
-# Internal crate dependencies
+# ---------------------------------------------------------------------------
+# Internal Crate Dependencies
+# ---------------------------------------------------------------------------
+# Path dependencies for workspace-internal crate references.
+# Member crates use `dependency = { workspace = true }` to inherit these.
+
 openssl-common = { path = "crates/openssl-common" }
 openssl-crypto = { path = "crates/openssl-crypto" }
 openssl-ssl = { path = "crates/openssl-ssl" }
@@ -69,24 +223,85 @@ openssl-fips = { path = "crates/openssl-fips" }
 openssl-cli = { path = "crates/openssl-cli" }
 openssl-ffi = { path = "crates/openssl-ffi" }
 
+# =============================================================================
+# Workspace Lint Configuration
+# =============================================================================
+# Enforces Rules R2, R6, R8, R9 from AAP §0.8.1.
+# All member crates inherit via `[lints] workspace = true`.
+#
+# Priority system:
+#   -1 = group-level defaults (overridable by specific lint settings)
+#    0 = specific lint settings (default priority, override groups)
+#
+# Individual #[allow] attributes in source MUST carry a justification comment.
+# No module-level or crate-level #[allow(warnings)] or #[allow(unused)] permitted.
+
 [workspace.lints.rust]
+# Rule R8: unsafe code denied at workspace level.
+# Only the openssl-ffi crate may override with #![allow(unsafe_code)].
 unsafe_code = "deny"
 
 [workspace.lints.clippy]
-# Rule R6: No bare narrowing casts
+# --- Rule R9: Warning-free build ---
+# Elevate all default clippy lints to deny (CI uses RUSTFLAGS="-D warnings").
+all = { level = "deny", priority = -1 }
+# Enable pedantic lints as warnings for code quality.
+pedantic = { level = "warn", priority = -1 }
+
+# --- Rule R6: No bare narrowing casts ---
+# Must use try_from, saturating_cast, or clamp instead.
+# Surviving #[allow] sites must carry // TRUNCATION: justification.
 cast_possible_truncation = "deny"
 cast_sign_loss = "deny"
 cast_possible_wrap = "deny"
-# Rule R2: No holding locks across await
+
+# --- Rule R2: No holding locks across .await points ---
+# Prevents deadlocks from std::sync::Mutex held across async boundaries.
 await_holding_lock = "deny"
 await_holding_refcell_ref = "deny"
 
+# --- Additional safety lints ---
+# unwrap/expect/panic produce warnings — library code should use Result<T, E>.
+# Tests and CLI main() may #[allow] with justification.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+
+# Zero-tolerance for incomplete code markers.
+todo = "deny"
+
+# Debug macros must not ship to production.
+dbg_macro = "deny"
+
+# --- Pedantic overrides ---
+# These pedantic lints are too noisy for a large codebase; allow with rationale.
+# RATIONALE: Module naming follows OpenSSL conventions, not Rust API Guidelines.
+module_name_repetitions = "allow"
+# RATIONALE: Many crypto functions intentionally return bool for success/failure.
+must_use_candidate = "allow"
+# RATIONALE: Crypto APIs often have many similar parameters by design.
+too_many_lines = "allow"
+similar_names = "allow"
+# RATIONALE: Missing doc errors are tracked separately; warn is too noisy during migration.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+# =============================================================================
+# Build Profiles
+# =============================================================================
+
 [profile.release]
+# Thin LTO for cross-crate optimization without extreme build times.
 lto = "thin"
+# Maximum optimization level for production cryptographic code.
 opt-level = 3
+# Single codegen unit for best optimization (slower builds, faster binaries).
 codegen-units = 1
+# Strip symbols from release binaries to reduce size.
 strip = "symbols"
 
 [profile.bench]
+# Benchmarks inherit release settings for accurate measurements.
 inherits = "release"
+# Keep debug info for profiling with perf/flamegraph tools.
 debug = true
