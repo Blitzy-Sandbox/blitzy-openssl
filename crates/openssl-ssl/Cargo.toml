@@ -1,3 +1,54 @@
+# =============================================================================
+# openssl-ssl — Rust Rewrite of OpenSSL libssl
+# =============================================================================
+#
+# This is the Cargo.toml manifest for the openssl-ssl crate — the Rust
+# equivalent of OpenSSL's libssl library (ssl/ directory, 107,362 LoC):
+#
+#   - TLS 1.0–1.3 handshake and record layer
+#   - DTLS 1.0/1.2 datagram transport
+#   - QUIC v1 engine, reactor, port, channel, streams (RFC 9000)
+#   - Encrypted Client Hello (ECH, RFC 9849)
+#   - DTLS-SRTP extension (RFC 5764)
+#   - Certificate Transparency / OCSP stapling integration
+#
+# Source files translated:
+#   ssl/ top-level          — 34 .c files (SSL_CTX, SSL, session, cipher, config)
+#   ssl/quic/               — 42 .c files (QUIC v1 engine, transport, record)
+#   ssl/statem/             — 9 .c files  (dual-layer handshake state machine)
+#   ssl/record/             — 11 .c files (TLS/DTLS record layer, pipeline)
+#   ssl/ech/                — 4 .c files  (Encrypted Client Hello)
+#   ssl/rio/                — 3 .c files  (Reactive I/O for QUIC polling)
+#
+# Design constraints:
+#   - Depends on openssl-common and openssl-crypto ONLY
+#   - MUST NOT depend on openssl-provider, openssl-fips, openssl-cli, openssl-ffi
+#   - No unsafe code permitted (Rule R8: unsafe confined to openssl-ffi only)
+#   - No openssl-sys / openssl / native-tls dependencies (banned by deny.toml)
+#   - tokio/tokio-util are OPTIONAL — gated behind the "quic" feature flag
+#
+# Async runtime strategy (AAP §0.4.4, §0.7.4):
+#   Runtime owner: openssl_cli::main() (NOT this crate — Rule R1)
+#   This crate receives a tokio::runtime::Handle, never creates a Runtime.
+#   Sync/async boundaries:
+#     quic/*   — async (receives Handle, uses tokio channels/timers)
+#     statem/* — sync (bridges to QUIC via spawn_blocking when needed)
+#     record/* — sync (no tokio dependency)
+#     ech/*    — sync
+#     All other modules — sync
+#
+# Rules enforced:
+#   R1: Single runtime owner — NO Runtime::new() in this crate
+#   R2: Sync primitive context matching — deny(clippy::await_holding_lock)
+#   R6: Lossless numeric casts — deny(clippy::cast_possible_truncation)
+#   R7: Concurrency lock granularity — parking_lot for fine-grained sync locks
+#   R8: Zero unsafe outside FFI — deny(unsafe_code) via workspace lints
+#   R9: Warning-free build — workspace lint inheritance, RUSTFLAGS="-D warnings"
+#   Observability (§0.8.5): tracing for structured logging with correlation IDs
+#
+# AAP References: §0.4.1, §0.4.4, §0.5.1, §0.6.1, §0.6.2, §0.7.4, §0.8.1
+# =============================================================================
+
 [package]
 name = "openssl-ssl"
 version = "0.1.0"
@@ -5,26 +56,306 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "TLS/DTLS/QUIC protocol stack (libssl equivalent) for the OpenSSL Rust workspace"
+description = "Rust rewrite of OpenSSL libssl: TLS 1.0-1.3, DTLS 1.0-1.2, QUIC v1, and Encrypted Client Hello (ECH) protocol stack"
+publish = false
+
+# =============================================================================
+# Runtime Dependencies
+# =============================================================================
+# All versions inherited from workspace root Cargo.toml via `workspace = true`.
+# Workspace pins specific versions for Rust 1.81.0 MSRV compatibility.
+# See root Cargo.toml and DECISION_LOG.md for version-pin rationale.
+#
+# Dependency inventory per AAP §0.6.1.
+# All packages sourced from crates.io — enforced by deny.toml.
 
 [dependencies]
+
+# ---------------------------------------------------------------------------
+# Workspace Crate Dependencies
+# ---------------------------------------------------------------------------
+# These are the ONLY TWO workspace path dependencies permitted for this crate.
+# openssl-ssl MUST NOT depend on openssl-provider, openssl-fips, openssl-cli,
+# or openssl-ffi to maintain proper layering (libssl depends on libcrypto only).
+
+# Shared foundation crate: error types, config parsing, typed parameter system
+# (ParamSet), OSSL_TIME equivalent, safe_math, constant-time primitives,
+# secure memory management, and observability infrastructure.
 openssl-common = { workspace = true }
+
+# libcrypto equivalent: EVP abstraction (digest, cipher, KDF, MAC, KEM, sig),
+# BIO I/O, X.509 PKI, BigNum, symmetric/asymmetric/post-quantum crypto,
+# provider fetch/cache, ASN.1/DER encoding, PEM, PKCS operations.
+# Every cryptographic operation in TLS/DTLS/QUIC flows through this crate.
 openssl-crypto = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Error Handling (AAP §0.6.1, §0.7.7)
+# ---------------------------------------------------------------------------
+# Ergonomic derive macro for SslError enum replacing the C ERR_* thread-local
+# error stack. Error stacking is achieved via std::error::Error::source() chain
+# with automatic propagation via the ? operator and #[from] attributes.
 thiserror = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Observability — Structured Logging (AAP §0.6.1, §0.8.5)
+# ---------------------------------------------------------------------------
+# Structured logging with spans and correlation IDs for distributed tracing.
+# Ships with initial implementation per the Observability rule — not follow-up.
+# Every handshake stage, record operation, and QUIC event is instrumented with
+# tracing spans carrying connection-level correlation IDs.
 tracing = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Serialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Serialization framework for SSL_SESSION serialization/deserialization,
+# replacing d2i_SSL_SESSION/i2d_SSL_SESSION C functions. Also used for
+# cipher suite configuration persistence and SSL_CONF command processing.
+# The derive feature enables #[derive(Serialize, Deserialize)] on session
+# and config structs.
 serde = { workspace = true }
-tokio = { workspace = true }
-tokio-util = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Byte Buffer Management (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Efficient byte buffer management for network I/O across the protocol stack.
+# Used by the TLS/DTLS record layer for read/write buffers, QUIC packet
+# assembly/parsing, and ECH payload encoding. Provides Bytes (immutable)
+# and BytesMut (mutable) for zero-copy buffer handling.
 bytes = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Typed Bitfield Flags (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Type-safe bitfield flags replacing C #define bitmask constants for:
+#   - SSL_OP_* options (ssl/ssl_lib.c — SSL_CTX_set_options)
+#   - SSL_VERIFY_* modes (ssl/ssl_cert.c — SSL_CTX_set_verify)
+#   - SSL_MODE_* flags (ssl/ssl_lib.c — SSL_CTX_set_mode)
+#   - Cipher suite flags (ssl/ssl_ciph.c — cipher selection bitmasks)
+#   - TLS extension flags (ssl/t1_lib.c — extension processing)
 bitflags = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Concurrency — Synchronous Locks (Rule R7, AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Faster mutex/rwlock for non-async shared state. Used with // LOCK-SCOPE:
+# annotations per Rule R7 for concurrency lock granularity documentation.
+# Applied to:
+#   - Session cache (ssl/ssl_sess.c — SSL_CTX_sess_* operations)
+#   - SSL_METHOD singleton registry (ssl/methods.c)
+#   - Cipher suite lookup tables (ssl/ssl_ciph.c)
+#   - SSL_CTX shared state (ssl/ssl_lib.c — reference counting, config)
+# Non-poisoning semantics prevent cascading failures from panicking threads.
+# IMPORTANT: parking_lot::Mutex for synchronous code paths only.
+# QUIC async code uses tokio::sync::Mutex per Rule R2.
 parking_lot = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Lazy Initialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Thread-safe lazy static initialization for:
+#   - SSL_METHOD singletons (ssl/methods.c — TLS_method, DTLS_method, etc.)
+#   - Init-once stages (ssl/ssl_init.c — CRYPTO_ONCE / RUN_ONCE pattern)
+#   - Built-in cipher suite catalog (ssl/s3_lib.c — cipher table initialization)
+# Replaces C CRYPTO_ONCE / RUN_ONCE_STATIC with Rust's Lazy<T> and OnceCell.
+once_cell = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Secure Memory (AAP §0.6.1, §0.7.6)
+# ---------------------------------------------------------------------------
+# Secure memory zeroing for key material in the protocol stack. Replaces
+# OPENSSL_cleanse() usage throughout ssl/ for:
+#   - Master secrets and key material (ssl/tls13_enc.c, ssl/t1_enc.c)
+#   - Session ticket keys (ssl/ssl_sess.c)
+#   - Pre-master secrets during key exchange
+#   - Finished MAC computation intermediaries
+# All types holding key material derive Zeroize and ZeroizeOnDrop for
+# automatic zeroing when values go out of scope. The derive feature
+# enables #[derive(Zeroize, ZeroizeOnDrop)] procedural macros.
 zeroize = { workspace = true }
 
+# ---------------------------------------------------------------------------
+# Async Runtime — OPTIONAL (AAP §0.4.4, §0.6.1, §0.7.4)
+# ---------------------------------------------------------------------------
+# Async runtime for the QUIC v1 stack ONLY. These dependencies are OPTIONAL
+# and gated behind the "quic" feature flag. When QUIC is disabled (e.g.,
+# `default-features = false`), these dependencies are not compiled.
+#
+# CRITICAL — Rule R1 (Single Runtime Owner):
+#   This crate does NOT create a tokio::runtime::Runtime. It receives a
+#   tokio::runtime::Handle from the caller (openssl-cli or the application).
+#   The Handle is passed to QuicEngine::new() and propagated to reactor,
+#   port, and channel components. No Runtime::new() call exists in this crate.
+#
+# tokio: Provides async task spawning, network I/O, timers, channels, and
+# synchronization primitives for the QUIC event-driven reactor pattern.
+# Features enabled: rt (runtime), net (UDP sockets), io-util (AsyncRead/Write),
+# sync (channels, Notify), time (timers for QUIC loss detection/PTO),
+# macros (select!, spawn). Inherited from workspace with features = ["full"].
+tokio = { workspace = true, optional = true }
+
+# tokio-util: Codec/framing utilities for QUIC stream I/O. Provides the
+# Encoder/Decoder traits and LengthDelimitedCodec used by QUIC packet
+# framing in the TX packetiser and QRX packet parser.
+tokio-util = { workspace = true, optional = true }
+
+# =============================================================================
+# Feature Flags
+# =============================================================================
+# Replace C preprocessor OPENSSL_NO_* compile-time guards with Rust feature
+# flags. Per AAP §0.4.3 design pattern:
+#   C:    #ifndef OPENSSL_NO_TLS1_3
+#   Rust: #[cfg(feature = "tls13")]
+#
+# All major protocol features are enabled by default. Users can selectively
+# disable features to reduce binary size or exclude unused protocol support:
+#   cargo build -p openssl-ssl --no-default-features --features "tls13,tls12"
+
+[features]
+default = [
+    "tls13", "tls12", "tls11", "tls10",  # TLS protocol versions
+    "dtls",                                # DTLS 1.0/1.2
+    "quic",                                # QUIC v1 (activates tokio)
+    "ech",                                 # Encrypted Client Hello
+    "srtp",                                # DTLS-SRTP
+    "ct",                                  # Certificate Transparency
+    "ocsp",                                # OCSP stapling
+]
+
+# --- TLS Protocol Versions ---
+# TLS 1.3 support (RFC 8446). Includes TLS 1.3 handshake state machine,
+# key derivation (HKDF-Expand), 0-RTT early data, PSK, and post-handshake auth.
+# Replaces: OPENSSL_NO_TLS1_3 / #ifndef OPENSSL_NO_TLS1_3
+tls13 = []
+
+# TLS 1.2 support (RFC 5246). Includes TLS 1.2 handshake, cipher suites,
+# renegotiation, extended master secret, session tickets.
+# Replaces: OPENSSL_NO_TLS1_2_METHOD / #ifndef OPENSSL_NO_TLS1_2
+tls12 = []
+
+# TLS 1.1 support (RFC 4346). Legacy protocol version — kept for backward
+# compatibility with older deployments. May be disabled for security hardening.
+# Replaces: OPENSSL_NO_TLS1_1_METHOD / #ifndef OPENSSL_NO_TLS1_1
+tls11 = []
+
+# TLS 1.0 support (RFC 2246). Legacy protocol version — kept for backward
+# compatibility. Strongly recommended to disable in production.
+# Replaces: OPENSSL_NO_TLS1_METHOD / #ifndef OPENSSL_NO_TLS1
+tls10 = []
+
+# --- Datagram Transport ---
+# DTLS 1.0 (RFC 4347) and DTLS 1.2 (RFC 6347) support. Includes datagram
+# record layer, fragment reassembly, retransmission timers, MTU discovery,
+# and DTLSv1_listen() for stateless cookie exchange.
+# Replaces: OPENSSL_NO_DTLS / #ifndef OPENSSL_NO_DTLS
+dtls = []
+
+# --- QUIC v1 (RFC 9000) ---
+# QUIC transport protocol support. Activates the async runtime dependencies
+# (tokio, tokio-util) for the event-driven QUIC engine/reactor pattern.
+# Includes: QUIC_ENGINE, QUIC_PORT, QUIC_CHANNEL, stream multiplexing,
+# flow control, congestion control (NewReno), loss detection, and ACK manager.
+# Replaces: OPENSSL_NO_QUIC / #ifndef OPENSSL_NO_QUIC
+# Uses dep: syntax (Rust 1.60+) to avoid creating implicit feature names.
+quic = ["dep:tokio", "dep:tokio-util"]
+
+# --- Protocol Extensions ---
+# Encrypted Client Hello (RFC 9849). Server-side trial decryption and
+# client-side ClientHelloInner encoding for privacy-preserving SNI.
+# Replaces: OPENSSL_NO_ECH / #ifndef OPENSSL_NO_ECH
+ech = []
+
+# DTLS-SRTP extension (RFC 5764). SRTP protection profile negotiation
+# for WebRTC and VoIP applications using DTLS key exchange.
+# Replaces: OPENSSL_NO_SRTP / #ifndef OPENSSL_NO_SRTP
+srtp = []
+
+# Certificate Transparency (RFC 6962). SCT validation during handshake,
+# CT policy enforcement, and Signed Certificate Timestamp processing.
+# Replaces: OPENSSL_NO_CT / #ifndef OPENSSL_NO_CT
+ct = []
+
+# OCSP stapling (RFC 6960). OCSP response processing during TLS handshake,
+# status_request / status_request_v2 extension handling.
+# Replaces: OPENSSL_NO_OCSP / #ifndef OPENSSL_NO_OCSP
+ocsp = []
+
+# SRP authentication (RFC 5054). Legacy Secure Remote Password protocol
+# for password-based TLS authentication. Not enabled by default.
+# Replaces: OPENSSL_NO_SRP / #ifndef OPENSSL_NO_SRP
+srp = []
+
+# =============================================================================
+# Dev Dependencies (AAP §0.6.2)
+# =============================================================================
+# Test-only dependencies. Not included in release builds.
+# All versions inherited from workspace root Cargo.toml.
+
 [dev-dependencies]
+
+# Benchmarking framework for Gate 3 performance baselines.
+# TLS handshake benchmark measures wall-clock time and throughput
+# for full TLS 1.3 handshake completion (≥2 workloads requirement).
+# html_reports feature enables criterion's HTML report generation.
+criterion = { workspace = true, features = ["html_reports"] }
+
+# Property-based testing for state machine correctness verification.
+# Generates random handshake message sequences, cipher suite combinations,
+# and extension configurations to verify state machine invariants.
 proptest = { workspace = true }
+
+# Temporary file/dir management in integration tests. Used for
+# certificate chain files, session cache persistence, and key material.
 tempfile = { workspace = true }
+
+# Initialize tracing subscriber in test harness for structured log
+# capture during test execution. Enables log assertions in integration tests.
 test-log = { workspace = true }
+
+# Mock generation for trait-based testing via #[automock]. Used to mock
+# BIO I/O, provider dispatch, and certificate verification callbacks
+# without requiring actual network connections or crypto operations.
 mockall = { workspace = true }
+
+# Full tokio runtime for QUIC integration tests. Enables #[tokio::test]
+# with start_paused = true for deterministic async test execution.
+# Features: rt-multi-thread (multi-threaded test runtime), macros
+# (#[tokio::test] attribute), test-util (time manipulation, MockSleep).
+# This dev-dependency ensures tokio is always available in test builds
+# regardless of whether the "quic" feature is enabled.
+tokio = { workspace = true }
+
+# =============================================================================
+# Benchmark Harness
+# =============================================================================
+# Required for criterion benchmarks. The benchmark file lives at
+# benches/handshake_bench.rs and is NOT run through the default test harness.
+# Gate 3 requires benchmarking ≥2 workloads with wall-clock and peak memory.
+# Run with: `cargo bench --package openssl-ssl`
+
+[[bench]]
+name = "handshake_bench"
+harness = false
+
+# =============================================================================
+# Lint Configuration
+# =============================================================================
+# Inherits ALL workspace lint settings from root Cargo.toml [workspace.lints].
+# This enforces:
+#   - Rule R2: deny(clippy::await_holding_lock) — no std locks across .await
+#   - Rule R2: deny(clippy::await_holding_refcell_ref) — no RefCell across .await
+#   - Rule R6: deny(clippy::cast_possible_truncation) — no bare narrowing casts
+#   - Rule R6: deny(clippy::cast_sign_loss) — no unsigned←signed loss
+#   - Rule R6: deny(clippy::cast_possible_wrap) — no overflow wrap casts
+#   - Rule R8: deny(unsafe_code) — zero unsafe outside openssl-ffi
+#   - Rule R9: deny(clippy::all) — warning-free build with RUSTFLAGS="-D warnings"
+#   - deny(clippy::todo) — zero placeholder policy
+#   - deny(clippy::dbg_macro) — no debug macros in production
+#   - warn(clippy::unwrap_used) — no unwrap in library code
+#   - warn(clippy::expect_used) — no expect in library code
+# NO crate-level #[allow(warnings)] or #[allow(unused)] permitted.
+# Individual #[allow] must carry justification comment per Rule R9.
 
 [lints]
 workspace = true
