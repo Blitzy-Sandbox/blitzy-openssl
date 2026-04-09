@@ -890,3 +890,127 @@ jobs:
         cd ../..
     - name: Test ECH with NSS
       run: make test TESTS='test_external_ech_nss' V=1
+
+  # ===== Rust Workspace CI Jobs =====
+
+  rust-fmt:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331
+      with:
+        toolchain: stable
+        components: rustfmt
+    - name: cargo fmt check
+      run: cargo fmt --all -- --check
+
+  rust-clippy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331
+      with:
+        toolchain: stable
+        components: clippy
+    - name: cargo clippy
+      run: cargo clippy --workspace -- -D warnings
+
+  rust-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            os: macos-14
+          - target: aarch64-apple-darwin
+            os: macos-14
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: "-D warnings"
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331
+      with:
+        toolchain: stable
+        targets: ${{ matrix.target }}
+    - name: cargo build
+      run: cargo build --workspace --release --target ${{ matrix.target }}
+
+  rust-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331
+      with:
+        toolchain: stable
+    - name: cargo test
+      run: cargo test --workspace
+
+  rust-miri:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331
+      with:
+        toolchain: nightly
+        components: miri
+    - name: cargo miri test openssl-common
+      run: cargo +nightly miri test -p openssl-common
+    - name: cargo miri test openssl-crypto
+      run: cargo +nightly miri test -p openssl-crypto
+
+  rust-coverage:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331
+      with:
+        toolchain: stable
+    - name: install cargo-llvm-cov
+      run: cargo install cargo-llvm-cov
+    - name: cargo llvm-cov
+      run: cargo llvm-cov --workspace --fail-under-lines 80
+
+  rust-audit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331
+      with:
+        toolchain: stable
+    - name: install cargo-audit
+      run: cargo install cargo-audit
+    - name: cargo audit
+      run: cargo audit
+
+  rust-deny:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331
+      with:
+        toolchain: stable
+    - name: install cargo-deny
+      run: cargo install cargo-deny
+    - name: cargo deny check
+      run: cargo deny check
