@@ -1,3 +1,44 @@
+# =============================================================================
+# openssl-ffi — C ABI Compatibility Layer Manifest
+# =============================================================================
+#
+# This is the Cargo.toml manifest for the openssl-ffi crate — the C ABI
+# compatibility layer and the ONLY crate in the workspace permitted to contain
+# `unsafe` code (Rule R8). It exposes C-compatible symbols via cbindgen for
+# existing C consumers, maintaining backward compatibility per AAP §0.8.3.
+#
+# Key responsibilities:
+#   - Export `#[no_mangle] pub extern "C" fn` symbols matching include/openssl/*.h
+#   - Generate C headers via cbindgen build script for consumer compilation
+#   - Bridge Rust safe APIs from openssl-crypto/openssl-ssl to C ABI callers
+#   - Produce cdylib (.so/.dylib/.dll) and staticlib (.a) for C linker consumption
+#
+# Source context (116 public headers defining the C ABI contract):
+#   include/openssl/evp.h       — EVP API (~1,197 references)
+#   include/openssl/ssl.h.in    — SSL/TLS API (2,891 lines)
+#   include/openssl/bio.h.in    — BIO I/O abstraction (1,016 lines)
+#   include/openssl/crypto.h.in — CRYPTO_*/OPENSSL_* utilities (597 lines)
+#   include/openssl/x509.h.in   — X.509 certificate operations
+#   include/openssl/types.h     — Forward declarations for all OpenSSL types
+#   include/openssl/core.h      — OSSL_DISPATCH, OSSL_PARAM, OSSL_PROVIDER
+#   include/openssl/core_dispatch.h — Provider dispatch function IDs
+#
+# Design constraints:
+#   - ONLY crate with unsafe code in the entire workspace (Rule R8)
+#   - All unsafe blocks MUST carry // SAFETY: comments (AAP §0.7.8)
+#   - Expected 200–400 unsafe sites proportional to public FFI function count
+#   - No openssl-sys / openssl / native-tls dependencies (banned by deny.toml)
+#   - Existing C consumers must continue to link and function (AAP §0.8.3)
+#
+# Rules enforced:
+#   R6: Lossless numeric casts — deny(clippy::cast_possible_truncation) via workspace
+#   R8: Unsafe ONLY here — unsafe_code = "allow" overrides workspace-level "deny"
+#   R9: Warning-free build — no #[allow(warnings)] or #[allow(unused)] at crate level
+#   Observability (§0.8.5): tracing via openssl-common for FFI call instrumentation
+#
+# AAP References: §0.4.1, §0.5.1, §0.6.1, §0.6.2, §0.6.4, §0.7.8, §0.8.1, §0.8.3
+# =============================================================================
+
 [package]
 name = "openssl-ffi"
 version = "0.1.0"
@@ -5,19 +46,166 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "C ABI compatibility layer via cbindgen for the OpenSSL Rust workspace"
+description = "C ABI compatibility layer for the OpenSSL Rust workspace. Exports #[no_mangle] extern C functions via cbindgen for existing C consumers. ONLY crate with unsafe code (Rule R8)."
+publish = false
+build = "build.rs"
+
+# =============================================================================
+# Library Configuration
+# =============================================================================
+# The openssl-ffi crate produces THREE library types:
+#   - cdylib: C dynamic library (.so/.dylib/.dll) for existing C consumers to
+#             dlopen() or link dynamically. ESSENTIAL for backward compat (AAP §0.8.3).
+#   - staticlib: C static library (.a/.lib) for static linking scenarios where
+#                consumers embed the library directly into their binary.
+#   - rlib: Rust library format for workspace-internal integration tests and
+#           cross-crate type resolution during cargo test.
+
+[lib]
+name = "openssl_ffi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+# =============================================================================
+# Runtime Dependencies
+# =============================================================================
+# All versions inherited from workspace root Cargo.toml via `workspace = true`.
+# Workspace pins specific versions for Rust 1.81.0 MSRV compatibility.
+# See root Cargo.toml and DECISION_LOG.md for version-pin rationale.
+#
+# Dependency inventory per AAP §0.6.1.
+# All packages sourced from crates.io — enforced by deny.toml.
 
 [dependencies]
+
+# ---------------------------------------------------------------------------
+# Workspace Crate Dependencies (AAP §0.4.1)
+# ---------------------------------------------------------------------------
+# Shared foundation crate: error types, config, parameter system, types,
+# secure memory, and observability infrastructure. Provides the common type
+# definitions that FFI wrappers translate to/from C representations.
 openssl-common = { workspace = true }
+
+# libcrypto equivalent: EVP abstraction, BIO I/O, X.509 PKI, BigNum, ASN.1,
+# symmetric/asymmetric/post-quantum algorithms, MAC, KDF, RAND. The safe Rust
+# APIs from this crate are wrapped by #[no_mangle] extern "C" fn exports in
+# src/evp.rs, src/bio.rs, src/x509.rs, and src/crypto.rs.
 openssl-crypto = { workspace = true }
+
+# libssl equivalent: SSL_CTX, SSL connection lifecycle, TLS/DTLS handshake
+# state machines, QUIC v1 engine, ECH, session management. The safe Rust APIs
+# from this crate are wrapped by #[no_mangle] extern "C" fn exports in src/ssl.rs.
 openssl-ssl = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Platform FFI Types (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Platform-specific FFI types: *const c_void, *mut c_char, size_t, c_int,
+# c_uint, c_long, c_ulong, etc. This is the PRIMARY external dependency for
+# raw C type interop. Used in every extern "C" fn signature for parameter and
+# return type declarations.
 libc = { workspace = true }
 
+# =============================================================================
+# Build Dependencies (AAP §0.6.2)
+# =============================================================================
+# Dependencies used only during the build script (build.rs) execution.
+# Not included in the final compiled library.
+
 [build-dependencies]
-cbindgen = "0.27"
+
+# C header generation from Rust FFI exports. Invoked by build.rs to parse
+# #[no_mangle] pub extern "C" fn declarations and #[repr(C)] type definitions,
+# producing a consolidated C header file (openssl_ffi.h) at $OUT_DIR.
+# This enables existing C consumers to compile against the Rust library.
+# Version inherited from workspace — pinned for Rust 1.81.0 compatibility.
+cbindgen = { workspace = true }
+
+# =============================================================================
+# Dev Dependencies (AAP §0.6.2)
+# =============================================================================
+# Test-only dependencies. Not included in release builds.
 
 [dev-dependencies]
+
+# Temporary file and directory management in FFI integration tests.
+# Used for testing file-based BIO operations, certificate I/O, and
+# key material serialization through the C ABI boundary.
 tempfile = { workspace = true }
+
+# Initialize tracing subscribers in test harness for structured log capture
+# during FFI integration test execution. Enables verification of
+# observability instrumentation across the FFI boundary.
+test-log = { workspace = true }
+
+# =============================================================================
+# Feature Flags
+# =============================================================================
+# Control which FFI module groups are compiled. Each feature gates a set of
+# #[no_mangle] extern "C" fn exports corresponding to a major OpenSSL API
+# subsystem. All features are enabled by default to provide full C ABI
+# backward compatibility (AAP §0.8.3).
+#
+# Feature flags map to the source module structure in src/:
+#   evp    → src/evp.rs    (EVP_MD_*, EVP_CIPHER_*, EVP_PKEY_*, EVP_KDF_*, etc.)
+#   ssl    → src/ssl.rs    (SSL_*, SSL_CTX_*, SSL_SESSION_*, SSL_METHOD_*)
+#   x509   → src/x509.rs   (X509_*, X509_STORE_*, X509_NAME_*, X509_CRL_*)
+#   bio    → src/bio.rs    (BIO_*, BIO_new_*, BIO_METHOD_*)
+#   crypto → src/crypto.rs (CRYPTO_*, OPENSSL_*, ERR_*, OSSL_PROVIDER_*)
+
+[features]
+default = ["evp", "ssl", "x509", "bio", "crypto"]
+
+# EVP C ABI wrappers — high-level algorithm API.
+# Wraps EVP_MD_*, EVP_CIPHER_*, EVP_PKEY_*, EVP_KDF_*, EVP_MAC_*,
+# EVP_KEM_*, EVP_RAND_* from include/openssl/evp.h.
+evp = []
+
+# SSL C ABI wrappers — TLS/DTLS/QUIC protocol API.
+# Wraps SSL_*, SSL_CTX_*, SSL_SESSION_*, SSL_METHOD_*
+# from include/openssl/ssl.h.in.
+ssl = []
+
+# X509 C ABI wrappers — certificate and PKI API.
+# Wraps X509_*, X509_STORE_*, X509_NAME_*, X509_CRL_*
+# from include/openssl/x509.h.in.
+x509 = []
+
+# BIO C ABI wrappers — abstracted I/O API.
+# Wraps BIO_*, BIO_new_*, BIO_METHOD_*
+# from include/openssl/bio.h.in.
+bio = []
+
+# Crypto C ABI wrappers — core utility and provider API.
+# Wraps CRYPTO_*, OPENSSL_*, ERR_*, OSSL_PROVIDER_*, OSSL_LIB_CTX_*
+# from include/openssl/crypto.h.in and include/openssl/core.h.
+crypto = []
+
+# =============================================================================
+# Lint Configuration
+# =============================================================================
+# Inherits all workspace lint settings from root Cargo.toml.
+# This enforces:
+#   - Rule R6: deny(clippy::cast_possible_truncation, cast_sign_loss, cast_possible_wrap)
+#   - Rule R9: deny(clippy::all) — warning-free build with RUSTFLAGS="-D warnings"
+#   - Rule R2: deny(clippy::await_holding_lock) — no locks across .await
+#   - Rule R6 additional: deny(clippy::todo, clippy::dbg_macro)
+#
+# CRITICAL — Rule R8 (unsafe_code Override):
+# The workspace-level [workspace.lints.rust] sets unsafe_code = "deny" for ALL
+# crates. This crate is the SOLE EXCEPTION to Rule R8. The override is applied
+# via the `#![allow(unsafe_code)]` crate-level attribute in src/lib.rs, which
+# is the Cargo 1.81-compatible mechanism for per-crate lint overrides when
+# using workspace lint inheritance.
+#
+# This crate is the designated FFI boundary crate containing all
+# #[no_mangle] extern "C" fn wrappers. Every unsafe block MUST still carry
+# a // SAFETY: comment explaining why the invariants hold (AAP §0.7.8).
+#
+# Verification: `grep -rn "unsafe" crates/ --include="*.rs" | grep -v "openssl-ffi"`
+# must return zero matches in the final deliverable.
+#
+# See root Cargo.toml [workspace.lints] for complete lint policy.
+# See src/lib.rs for the #![allow(unsafe_code)] attribute.
 
 [lints]
 workspace = true
