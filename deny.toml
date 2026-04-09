@@ -1,3 +1,45 @@
+# =============================================================================
+# cargo-deny Configuration — OpenSSL Rust Workspace
+# =============================================================================
+#
+# This file configures cargo-deny (https://embarkstudios.github.io/cargo-deny/)
+# to enforce dependency policy across the OpenSSL C-to-Rust workspace.
+#
+# Enforcement areas:
+#   1. Security advisories  — deny known vulnerabilities (RustSec DB)
+#   2. License compliance    — allowlist-only license model
+#   3. Crate bans            — prevent accidental C-OpenSSL linkage (Rule R8)
+#   4. Source restrictions   — crates.io-only sourcing
+#
+# AAP References:
+#   §0.4.1  — deny.toml is a required workspace root file
+#   §0.5.1  — Workspace file transformation plan
+#   §0.6.1  — Runtime dependency inventory (all from crates.io)
+#   §0.6.4  — Banned dependencies: openssl-sys, openssl, native-tls
+#   §0.8.1  — Rule R8: Zero unsafe outside FFI; ban C-OpenSSL bindings
+#   §0.8.6  — Pure Rust preferred; each -sys crate must be justified
+#   §0.9.5  — deny.toml listed as required deliverable artifact
+#
+# CI integration:
+#   .github/workflows/ci.yml runs `cargo deny check --workspace` as part
+#   of the Rust 4-target CI matrix (Gate 10).
+#
+# Format: cargo-deny 0.16.x+ TOML configuration
+# =============================================================================
+
+# =============================================================================
+# [graph] — Dependency Graph Filtering
+# =============================================================================
+# Restricts cargo-deny analysis to the four CI target triples defined in the
+# AAP §0.4.1 CI matrix. This prevents false positives from platform-specific
+# dependencies that will never be compiled for our supported targets.
+#
+# Target matrix (matches .github/workflows/ci.yml):
+#   - x86_64-unknown-linux-gnu   (primary Linux development/CI)
+#   - aarch64-unknown-linux-gnu  (ARM Linux production)
+#   - x86_64-apple-darwin        (macOS Intel development)
+#   - aarch64-apple-darwin       (macOS Apple Silicon development)
+
 [graph]
 targets = [
     "x86_64-unknown-linux-gnu",
@@ -6,49 +48,215 @@ targets = [
     "aarch64-apple-darwin",
 ]
 
+# Analyze all features to catch dependencies hidden behind feature gates.
+# This ensures banned crates cannot sneak in via optional features.
+all-features = true
+
+# =============================================================================
+# [advisories] — Security Advisory Checks
+# =============================================================================
+# Scans the dependency tree against the RustSec Advisory Database
+# (https://rustsec.org/) for known vulnerabilities, unmaintained crates,
+# and yanked versions.
+#
+# Policy rationale:
+#   - Vulnerabilities are denied because this is a cryptographic library
+#     where any dependency vulnerability could compromise security guarantees.
+#   - Unmaintained/yanked/notice are warnings to allow CI to proceed while
+#     flagging potential supply-chain risks for manual review.
+
 [advisories]
+# Path where the advisory database is cached locally.
 db-path = "~/.cargo/advisory-db"
+
+# Fetch advisories from the official RustSec advisory database.
 db-urls = ["https://github.com/rustsec/advisory-db"]
+
+# DENY: Known vulnerabilities are unacceptable in a cryptographic library.
+# Any dependency with a published RUSTSEC advisory will fail the check.
 vulnerability = "deny"
+
+# WARN: Unmaintained crates are a supply-chain risk but not an immediate
+# security issue. Flag for review without blocking CI.
 unmaintained = "warn"
+
+# WARN: Yanked crate versions indicate the author retracted the release,
+# possibly due to bugs or accidental publication. Flag for investigation.
 yanked = "warn"
+
+# WARN: Informational notices from RustSec that do not indicate a
+# vulnerability but may be relevant (e.g., deprecation notices).
 notice = "warn"
 
+# Advisories to ignore (none currently — all advisories are enforced).
+# To temporarily ignore an advisory, add entries like:
+#   { id = "RUSTSEC-2024-XXXX", reason = "Not applicable because ..." }
+ignore = []
+
+# =============================================================================
+# [licenses] — License Compliance
+# =============================================================================
+# Enforces a strict allowlist of acceptable open-source licenses for all
+# workspace dependencies. The allowlist is derived from the dependency
+# inventory in AAP §0.6.1 and §0.6.2.
+#
+# Policy rationale:
+#   - Only well-known permissive licenses are allowed.
+#   - Copyleft licenses (GPL, LGPL, AGPL) are denied to maintain Apache-2.0
+#     compatibility of the workspace (see LICENSE.txt).
+#   - MPL-2.0 is permitted because cbindgen (build dependency) uses it,
+#     and MPL-2.0 is file-level copyleft compatible with Apache-2.0.
+#   - Unicode-DFS-2016 is permitted for unicode-ident and similar Unicode
+#     data crates that use the Unicode Data Files license.
+
 [licenses]
+# DENY: Crates without a detectable license are not acceptable.
+# All dependencies must have machine-readable license metadata.
 unlicensed = "deny"
+
+# Allowlist of accepted SPDX license identifiers.
+# Every dependency (direct and transitive) must use one of these licenses
+# or be listed in [licenses.exceptions] below.
 allow = [
+    # Permissive licenses used by the majority of Rust ecosystem crates
     "MIT",
     "Apache-2.0",
+
+    # BSD variants used by cryptographic primitives (e.g., subtle, ring-derived)
     "BSD-2-Clause",
     "BSD-3-Clause",
+
+    # ISC license used by some cryptographic and networking crates
     "ISC",
+
+    # Mozilla Public License — used by cbindgen (build dependency, AAP §0.6.2)
+    # MPL-2.0 is file-level copyleft and compatible with Apache-2.0
     "MPL-2.0",
+
+    # Unicode Data Files license — used by unicode-ident and similar crates
+    # that bundle Unicode Consortium data tables
     "Unicode-DFS-2016",
+
+    # Unlicense — permissive public domain dedication used by aho-corasick,
+    # memchr, and other foundational text-processing crates
+    "Unlicense",
+
+    # Apache-2.0 with LLVM exception — used by rustix, linux-raw-sys, wasi,
+    # and other low-level system interface crates
+    "Apache-2.0 WITH LLVM-exception",
 ]
+
+# DENY: Strong copyleft licenses (GPL, LGPL, AGPL) are incompatible with
+# the workspace's Apache-2.0 license and distribution requirements.
 copyleft = "deny"
+
+# DENY: Any license not in the allow list or exceptions is rejected.
+# This is the strictest setting — no unknown licenses permitted.
 default = "deny"
+
+# Minimum confidence threshold for license detection.
+# Licenses detected with less than 80% confidence are treated as unlicensed.
 confidence-threshold = 0.8
 
+# License exceptions for specific crates that need special handling.
+# To add an exception:
+#   [[licenses.exceptions]]
+#   name = "crate-name"
+#   allow = ["Special-License-ID"]
+
+# =============================================================================
+# [bans] — Crate Bans and Duplicate Detection
+# =============================================================================
+# Prevents banned crates from appearing anywhere in the dependency tree and
+# detects multiple versions of the same crate (diamond dependencies).
+#
+# Critical policy (Rule R8 + AAP §0.6.4):
+#   The following crates are BANNED because they link to the C OpenSSL library
+#   that this workspace is replacing. Allowing them would create a circular
+#   dependency where the Rust replacement depends on the C original.
+#
+#   - openssl-sys  — FFI bindings to libssl/libcrypto
+#   - openssl      — High-level Rust wrapper around openssl-sys
+#   - native-tls   — Platform TLS abstraction that may pull in system OpenSSL
+
 [bans]
+# WARN: Multiple versions of the same crate increase binary size and may
+# cause subtle version-mismatch bugs. Warn to flag for resolution.
 multiple-versions = "warn"
+
+# DENY: Wildcard dependencies (e.g., version = "*") are not acceptable.
+# All dependencies must have explicit version constraints.
 wildcards = "deny"
+
+# Highlight all occurrences of duplicate crates in the output for easy
+# identification of which dependency chains pull in extra versions.
 highlight = "all"
 
-# Rule R8 + AAP: Ban crates that link to the library being replaced
+# -------------------------------------------------------------------------
+# Banned Crates — Rule R8 + AAP §0.6.4
+# -------------------------------------------------------------------------
+# These crates are BANNED to prevent accidental linkage to the C OpenSSL
+# library being replaced. The entire purpose of this workspace is to provide
+# a pure-Rust replacement; depending on the C original would defeat that goal.
+
 [[bans.deny]]
+# openssl-sys: Direct FFI bindings to the C OpenSSL library (libssl/libcrypto).
+# Banning this crate ensures no transitive dependency can link against C OpenSSL.
 name = "openssl-sys"
 wrappers = []
 
 [[bans.deny]]
+# openssl: High-level Rust wrapper around openssl-sys.
+# Even if openssl-sys were somehow allowed, this crate should not be used
+# because it wraps the exact library we are replacing.
 name = "openssl"
 wrappers = []
 
 [[bans.deny]]
+# native-tls: Platform TLS abstraction that uses system TLS libraries.
+# On Linux, this typically links against system OpenSSL via openssl-sys.
+# On macOS/Windows it uses Security.framework/SChannel respectively, but
+# banning it entirely prevents any accidental C-OpenSSL linkage path.
 name = "native-tls"
 wrappers = []
 
+# -------------------------------------------------------------------------
+# Duplicate Version Skips
+# -------------------------------------------------------------------------
+# Known duplicate versions that cannot be resolved due to transitive
+# dependency constraints. Each entry must include a reason.
+#
+# Currently none — if duplicates appear during development, add entries like:
+#   [[bans.skip]]
+#   crate = "some-crate@0.1.0"
+#   reason = "transitive dep via X uses old version; tracked in issue #NNN"
+
+# =============================================================================
+# [sources] — Dependency Source Restrictions
+# =============================================================================
+# Restricts all dependencies to the official crates.io registry.
+# No git dependencies, private registries, or local path dependencies
+# (outside the workspace) are permitted.
+#
+# Policy rationale (AAP §0.6):
+#   - All packages are sourced from crates.io (enforced by deny.toml)
+#   - No -sys crates are used in non-FFI crates
+#   - Pure Rust implementations are preferred
+#   - This ensures reproducible builds and auditable supply chain
+
 [sources]
+# DENY: Dependencies from unknown/private registries are not permitted.
+# Only the official crates.io registry is allowed.
 unknown-registry = "deny"
+
+# DENY: Git dependencies bypass the crates.io review and publishing process.
+# All dependencies must be published to crates.io for auditability.
 unknown-git = "deny"
+
+# Allowlist of permitted registries — crates.io only.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+# Allowlist of permitted git repositories — none allowed.
+# If a git dependency becomes necessary, it must be added here with
+# justification in DECISION_LOG.md.
 allow-git = []
