@@ -193,6 +193,14 @@ base64ct = { workspace = true }
 zeroize = { workspace = true }
 
 # ---------------------------------------------------------------------------
+# Bitflags (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Typed bitfield flags for format validation (OPT_FMT_* replacement).
+# Used in opts.rs FormatFlags to type-safely represent acceptable format
+# combinations for -inform/-outform options.
+bitflags = { workspace = true }
+
+# ---------------------------------------------------------------------------
 # Error Handling (AAP §0.6.1, §0.7.7)
 # ---------------------------------------------------------------------------
 # Ergonomic derive macro for CLI-specific error types. Replaces manual
