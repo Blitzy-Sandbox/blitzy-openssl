@@ -1,3 +1,52 @@
+# =============================================================================
+# openssl-cli — OpenSSL Command-Line Tool Binary Crate Manifest
+# =============================================================================
+#
+# This is the Cargo.toml manifest for the openssl-cli crate — the Rust rewrite
+# of the OpenSSL command-line tool (apps/ directory, 58,722 LoC, 56 top-level
+# .c command files + lib/ with 21 shared infrastructure files). This is a
+# BINARY crate producing the `openssl` executable with 55+ subcommands via
+# clap-based argument parsing.
+#
+# This is the ONLY crate that depends on ALL 5 library workspace crates:
+#   openssl-common, openssl-crypto, openssl-ssl, openssl-provider, openssl-fips
+# This is correct because the CLI binary is the top-level entry point that
+# orchestrates all subsystems.
+#
+# CRITICAL — Rule R1 (Single Runtime Owner):
+#   This crate creates exactly ONE tokio::runtime::Runtime via #[tokio::main]
+#   in main.rs. All other crates receive a tokio::runtime::Handle.
+#   Runtime topology (AAP §0.4.4, §0.7.4):
+#     Runtime owner: openssl_cli::main() (single #[tokio::main])
+#     Handle passed to: openssl_ssl::quic::engine::QuicEngine::new()
+#     block_on call site: openssl_cli::main::main() (exactly one location)
+#     Sync/async boundaries:
+#       QUIC-related commands (s_client, s_server with QUIC): async
+#       All other commands: synchronous (no tokio dependency in execution path)
+#
+# Source references (C files this crate replaces):
+#   apps/openssl.c (main dispatcher)              → src/main.rs
+#   apps/lib/opt.c (~2,500 lines manual parser)   → replaced by clap derive macros
+#   apps/lib/apps.c (~3,500 lines shared infra)   → src/lib/ modules
+#   apps/lib/apps_ui.c (UI/password handling)      → src/lib/password.rs
+#   apps/lib/http_server.c (HTTP for OCSP/CMP)    → src/lib/http.rs
+#   apps/lib/app_libctx.c (library context mgmt)  → main.rs initialization
+#   apps/lib/app_provider.c (provider loading)     → main.rs initialization
+#   apps/*.c (56 subcommand files)                 → src/commands/*.rs
+#
+# Rules enforced:
+#   R1: Single runtime owner — tokio Runtime created ONLY here
+#   R2: Sync primitive context matching — deny(clippy::await_holding_lock)
+#   R6: Lossless numeric casts — deny(clippy::cast_possible_truncation)
+#   R8: Zero unsafe outside FFI — deny(unsafe_code) via workspace lints
+#   R9: Warning-free build — workspace lint inheritance, RUSTFLAGS="-D warnings"
+#   R10: Wiring before done — every module reachable from main.rs entry point
+#   Observability (§0.8.5): tracing + tracing-subscriber for structured logging
+#
+# AAP References: §0.4.1, §0.4.4, §0.5.1, §0.6.1, §0.6.2, §0.6.4, §0.7.4,
+#                 §0.8.1 (R1-R10), §0.8.5, §0.8.6
+# =============================================================================
+
 [package]
 name = "openssl-cli"
 version = "0.1.0"
@@ -5,32 +54,270 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "CLI binary (openssl command equivalent) for the OpenSSL Rust workspace"
+description = "Rust rewrite of the OpenSSL command-line tool: 55+ subcommands for PKI operations, TLS testing, crypto operations, provider management, and FIPS installation"
+publish = false
+
+# =============================================================================
+# Binary Target
+# =============================================================================
+# The binary name matches the original OpenSSL CLI tool name.
+# Path points to the entry point containing #[tokio::main] (Rule R1).
 
 [[bin]]
-name = "openssl-rs"
+name = "openssl"
 path = "src/main.rs"
 
+# =============================================================================
+# Runtime Dependencies
+# =============================================================================
+# All versions inherited from workspace root Cargo.toml via `workspace = true`.
+# Workspace pins specific versions for Rust 1.81.0 MSRV compatibility.
+# See root Cargo.toml and DECISION_LOG.md for version-pin rationale.
+#
+# Dependency inventory per AAP §0.6.1.
+# All packages sourced from crates.io — enforced by deny.toml.
+#
+# BANNED DEPENDENCIES (enforced by deny.toml, AAP §0.6.4):
+#   - openssl-sys: direct binding to the C library being replaced
+#   - openssl: Rust wrapper around the C library being replaced
+#   - native-tls: may pull in system OpenSSL
+
 [dependencies]
+
+# ---------------------------------------------------------------------------
+# Workspace Crate Dependencies (ALL 5 Library Crates)
+# ---------------------------------------------------------------------------
+# This is the ONLY crate that depends on ALL 5 library crates. This is
+# correct because the CLI binary is the top-level entry point that
+# orchestrates all subsystems across 55+ subcommands.
+
+# Shared foundation: error types, config parsing, typed parameter system,
+# OSSL_TIME, safe_math, constant_time, secure memory, observability.
 openssl-common = { workspace = true }
+
+# libcrypto equivalent: EVP abstraction (digest, cipher, KDF, MAC, KEM, sig),
+# BIO I/O, X.509 PKI, BigNum, symmetric/asymmetric/PQC crypto, DRBG, ASN.1,
+# PEM, PKCS operations. Used by: req, x509, ca, enc, dgst, cms, genpkey,
+# genrsa, gendsa, dhparam, ocsp, cmp, ts, speed, prime, rand commands.
 openssl-crypto = { workspace = true }
+
+# libssl equivalent: SSL_CTX, SSL, TLS/DTLS/QUIC, ECH, cipher suites,
+# sessions, handshake state machine, record layer. Used by: s_client,
+# s_server, s_time, ciphers, ech commands.
 openssl-ssl = { workspace = true }
+
+# Provider framework: trait-based dispatch, default/legacy/base/null providers,
+# algorithm enumeration and registration. Used by: list command (provider
+# enumeration), provider management operations.
 openssl-provider = { workspace = true }
+
+# FIPS module: self-test, KATs, integrity verification, indicator mechanism.
+# Used by: fipsinstall command for FIPS module installation and configuration.
 openssl-fips = { workspace = true }
-clap = { workspace = true }
-thiserror = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# CLI Framework (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# CLI argument parsing with derive macros for 55+ subcommands. Replaces the
+# entire C opt.c (~2,500 lines) manual option parsing infrastructure with
+# declarative Rust derives: #[derive(Parser, Subcommand, Args)].
+# Workspace pins to =4.5.23 for Rust 1.81.0 MSRV compatibility.
+# Additional features beyond workspace "derive":
+#   env: enables reading defaults from environment variables
+#   unicode: proper Unicode handling (replacing win32_init.c UTF-8 conversion)
+#   string: dynamic string ownership in arguments
+clap = { workspace = true, features = ["env", "unicode", "string"] }
+
+# ---------------------------------------------------------------------------
+# Async Runtime (AAP §0.4.4, §0.6.1, §0.7.4)
+# ---------------------------------------------------------------------------
+# CRITICAL — Rule R1 (Single Runtime Owner):
+#   This crate is the SINGLE runtime owner. #[tokio::main] appears exactly
+#   once in main.rs. All other crates receive a tokio::runtime::Handle.
+#   Verify: `grep -r "Runtime::new\|block_on"` should find only main.rs.
+#
+# Used for QUIC-related commands (s_client, s_server with QUIC transport)
+# and graceful signal handling (SIGINT/SIGTERM) in server commands.
+# Workspace defines features = ["full"] which includes rt-multi-thread, net,
+# io-util, sync, time, macros, and signal — all required by this crate.
 tokio = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Observability (AAP §0.6.1, §0.8.5 Observability Rule)
+# ---------------------------------------------------------------------------
+# Structured logging with correlation IDs. Ships with initial implementation
+# per the Observability rule — not as follow-up. Every CLI command execution
+# is instrumented with tracing spans carrying command-level correlation IDs.
+tracing = { workspace = true }
+
+# Log subscriber: env-filter for RUST_LOG runtime log level control,
+# JSON for machine-parseable structured output. Configured in main.rs
+# initialization before any command dispatch. Workspace defines features
+# = ["json", "env-filter"].
+tracing-subscriber = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Serialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Serialization for config/session interchange and structured output.
+# Used by: list, version, diagnostic commands for JSON output format.
+# The derive feature enables #[derive(Serialize, Deserialize)] on command
+# output structs and configuration types.
 serde = { workspace = true }
+
+# JSON output for list, version, and diagnostic commands. Enables
+# `openssl list -json` and structured error reporting.
 serde_json = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Encoding Utilities (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Hex encoding for key/digest display across multiple commands (dgst, enc,
+# genpkey, x509, req). Used for fingerprint display, key dump, and
+# diagnostic output formatting.
 hex = { workspace = true }
 
+# Constant-time Base64 encoding for PEM/certificate display. Prevents
+# timing side-channel attacks when processing or displaying key material.
+# Workspace pins to =1.6.0 for Rust 1.81.0 MSRV compatibility.
+base64ct = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Secure Memory (AAP §0.6.1, §0.7.6)
+# ---------------------------------------------------------------------------
+# Secure memory zeroing for passphrase handling. Replaces OPENSSL_cleanse()
+# patterns in apps/lib/apps_ui.c for password prompt buffers, PEM passphrase
+# callbacks, and PKCS#12 import/export passphrases. All passphrase types
+# derive Zeroize for automatic zeroing on Drop. Features = ["derive"] enables
+# #[derive(Zeroize, ZeroizeOnDrop)] macros (inherited from workspace).
+zeroize = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Error Handling (AAP §0.6.1, §0.7.7)
+# ---------------------------------------------------------------------------
+# Ergonomic derive macro for CLI-specific error types. Replaces manual
+# error string formatting in apps/ with idiomatic Rust error enums.
+# Error variants map to CLI failure modes: argument parsing errors, I/O
+# errors, cryptographic operation failures, provider loading errors.
+# Note: workspace pins thiserror 1.0.x for Rust 1.81.0 MSRV compatibility.
+thiserror = { workspace = true }
+
+# =============================================================================
+# Dev Dependencies (AAP §0.6.2)
+# =============================================================================
+# Test-only dependencies. Not included in release builds.
+# All versions inherited from workspace root Cargo.toml.
+
 [dev-dependencies]
+
+# CLI integration test assertions: process exit codes, stdout/stderr matching.
+# Used for end-to-end testing of every subcommand with real input/output.
+# Workspace pins to =2.0.16 for Rust 1.81.0 MSRV compatibility.
 assert_cmd = { workspace = true }
+
+# Rich assertion predicates for CLI output testing: contains, starts_with,
+# regex matching. Used with assert_cmd for expressive output validation.
 predicates = { workspace = true }
+
+# Temporary file/dir management in integration tests. Used for key/cert/config
+# files, CSR generation, CA directory setup, and FIPS installation tests.
+# Workspace pins to =3.12.0 for Rust 1.81.0 MSRV compatibility.
 tempfile = { workspace = true }
+
+# Initialize tracing subscribers in test harness for log capture during
+# test execution. Enables structured log assertions in CLI integration tests.
 test-log = { workspace = true }
+
+# Snapshot testing for command output validation. Captures and compares
+# CLI output against known-good snapshots (e.g., `openssl version -a`,
+# `openssl list -digest-algorithms`) for regression detection.
+insta = { workspace = true }
+
+# =============================================================================
+# Feature Flags
+# =============================================================================
+# Replace C preprocessor OPENSSL_NO_* compile-time guards with Rust feature
+# flags. Per AAP §0.4.3 design pattern:
+#   C:    #ifndef OPENSSL_NO_CMS
+#   Rust: #[cfg(feature = "cms")]
+#
+# Each feature flag propagates to the correct dependent library crate feature,
+# enabling conditional compilation of the corresponding subcommand module
+# and its underlying cryptographic operations.
+
+[features]
+default = [
+    "quic",   # QUIC transport for s_client/s_server
+    "ech",    # Encrypted Client Hello command
+    "cms",    # CMS signed/enveloped data command
+    "ocsp",   # OCSP client command
+    "cmp",    # CMP client command
+    "ts",     # Timestamping command (RFC 3161)
+    "srp",    # SRP command (deprecated, legacy support)
+    "fips",   # FIPS installation command (fipsinstall)
+]
+
+# --- QUIC Transport ---
+# QUIC-related commands: s_client and s_server with QUIC transport support.
+# Activates the async tokio runtime in the QUIC engine path.
+# Propagates to: openssl-ssl/quic feature (activates tokio, tokio-util)
+# Replaces: OPENSSL_NO_QUIC / #ifndef OPENSSL_NO_QUIC
+quic = ["openssl-ssl/quic"]
+
+# --- Encrypted Client Hello ---
+# ECH command for generating ECH key pairs and ECH config.
+# Propagates to: openssl-ssl/ech feature
+# Replaces: OPENSSL_NO_ECH / #ifndef OPENSSL_NO_ECH
+ech = ["openssl-ssl/ech"]
+
+# --- CMS / PKCS#7 ---
+# CMS command for signed/enveloped data operations.
+# Propagates to: openssl-crypto/cms feature
+# Replaces: OPENSSL_NO_CMS / #ifndef OPENSSL_NO_CMS
+cms = ["openssl-crypto/cms"]
+
+# --- OCSP ---
+# OCSP client command for certificate status checking.
+# Propagates to: openssl-crypto/ocsp feature
+# Replaces: OPENSSL_NO_OCSP / #ifndef OPENSSL_NO_OCSP
+ocsp = ["openssl-crypto/ocsp"]
+
+# --- CMP ---
+# CMP client command for Certificate Management Protocol operations.
+# Propagates to: openssl-crypto/cmp feature
+# Replaces: OPENSSL_NO_CMP / #ifndef OPENSSL_NO_CMP
+cmp = ["openssl-crypto/cmp"]
+
+# --- Timestamping ---
+# Timestamping command for RFC 3161 timestamp operations.
+# Propagates to: openssl-crypto/ts feature
+# Replaces: OPENSSL_NO_TS / #ifndef OPENSSL_NO_TS
+ts = ["openssl-crypto/ts"]
+
+# --- SRP ---
+# SRP command for Secure Remote Password protocol (legacy/deprecated).
+# Propagates to: openssl-ssl/srp feature
+# Replaces: OPENSSL_NO_SRP / #ifndef OPENSSL_NO_SRP
+srp = ["openssl-ssl/srp"]
+
+# --- FIPS ---
+# FIPS installation command (fipsinstall) for FIPS module setup and
+# configuration. This feature enables the fipsinstall subcommand without
+# propagating to other crates — the openssl-fips crate is always linked
+# as a dependency since it must be available for FIPS provider loading.
+fips = []
+
+# =============================================================================
+# Lint Configuration
+# =============================================================================
+# Inherits all workspace lint settings from root Cargo.toml.
+# This enforces:
+#   - Rule R6: deny(clippy::cast_possible_truncation, cast_sign_loss, cast_possible_wrap)
+#   - Rule R8: deny(unsafe_code) — zero unsafe outside openssl-ffi
+#   - Rule R9: deny(clippy::all) — warning-free build with RUSTFLAGS="-D warnings"
+#   - Rule R2: deny(clippy::await_holding_lock) — no locks across .await
+#   - No module-level or crate-level #[allow(warnings)] or #[allow(unused)]
+# See root Cargo.toml [workspace.lints] for complete lint policy.
 
 [lints]
 workspace = true
