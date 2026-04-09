@@ -1,3 +1,60 @@
+# =============================================================================
+# openssl-provider — Provider Framework Crate Manifest
+# =============================================================================
+#
+# This is the provider framework crate for the OpenSSL Rust workspace,
+# translating the C provider system (~78,409 LoC minus FIPS) into idiomatic
+# Rust trait-based dynamic dispatch. It covers:
+#
+#   - Provider trait definitions and dispatch architecture
+#     (OSSL_DISPATCH function pointer tables → Rust trait objects)
+#   - Default provider (providers/defltprov.c — all standard algorithms)
+#   - Legacy provider (providers/legacyprov.c — deprecated algorithms)
+#   - Base provider (providers/baseprov.c — encoders/decoders/store)
+#   - Null provider (providers/nullprov.c — no-op sentinel)
+#   - Method store and algorithm fetch (crypto/core_fetch.c)
+#   - Algorithm enumeration and registration (crypto/core_algorithm.c)
+#   - Provider common utilities (providers/common/*.c — 10 files)
+#   - All algorithm implementation backends:
+#     * Ciphers (providers/implementations/ciphers/ — 81 C files)
+#     * Digests (providers/implementations/digests/ — 17 C files)
+#     * KDFs (providers/implementations/kdfs/ — 16 C files)
+#     * MACs (providers/implementations/macs/ — 9 C files)
+#     * Signatures (providers/implementations/signature/ — 9 C files)
+#     * KEMs (providers/implementations/kem/ — 7 C files)
+#     * Key management (providers/implementations/keymgmt/ — 13 C files)
+#     * Key exchange (providers/implementations/exchange/ — 4 C files)
+#     * DRBGs/seeds (providers/implementations/rands/ — 15 C files)
+#     * Encoders/decoders (providers/implementations/encode_decode/ — 16 C files)
+#     * Store management (providers/implementations/storemgmt/ — 3 C files)
+#
+# Architecture (AAP §0.7.1):
+#   The C OSSL_DISPATCH function pointer tables are replaced with Rust trait
+#   objects. Each algorithm category becomes a trait (DigestProvider,
+#   CipherProvider, SignatureProvider, etc.). The default, legacy, base, null,
+#   and FIPS providers implement the relevant traits. Algorithm selection uses
+#   enum-dispatch over Box<dyn AlgorithmProvider>, preserving runtime selection
+#   while eliminating function pointer unsafety.
+#
+# Design constraints:
+#   - Fully synchronous — NO async runtime dependency (AAP §0.4.4)
+#   - Only depends on openssl-common and openssl-crypto (workspace crates)
+#   - No unsafe code permitted (Rule R8: unsafe confined to openssl-ffi only)
+#   - No openssl-sys/openssl/native-tls dependency (banned by deny.toml)
+#
+# Source references (C files this crate translates):
+#   providers/defltprov.c, providers/baseprov.c, providers/legacyprov.c,
+#   providers/nullprov.c, providers/prov_running.c,
+#   providers/common/*.c (provider_ctx, provider_util, capabilities,
+#     securitycheck, bio_prov, provider_seeding),
+#   providers/implementations/**/*.c (194 files total),
+#   include/openssl/core_dispatch.h (OSSL_DISPATCH function ID definitions),
+#   crypto/core_fetch.c (method store), crypto/core_algorithm.c (enumeration)
+#
+# AAP References: §0.4.1, §0.5.1, §0.6.1, §0.6.2, §0.7.1, §0.7.2,
+#                 §0.7.6, §0.7.7, §0.8.1, §0.8.5, §0.8.6
+# =============================================================================
+
 [package]
 name = "openssl-provider"
 version = "0.1.0"
@@ -5,22 +62,257 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Provider framework with trait-based dispatch for the OpenSSL Rust workspace"
+description = "Provider framework crate for the OpenSSL Rust workspace: trait-based algorithm dispatch, default/legacy/base/null providers, and all algorithm implementation backends"
+publish = false
+
+# =============================================================================
+# Runtime Dependencies
+# =============================================================================
+# All versions inherited from workspace root Cargo.toml via `workspace = true`.
+# Workspace pins specific versions for Rust 1.81.0 MSRV compatibility.
+# See root Cargo.toml and DECISION_LOG.md for version-pin rationale.
+#
+# Dependency inventory per AAP §0.6.1.
+# All packages sourced from crates.io — enforced by deny.toml.
+# NO `-sys` crates permitted — enforced by deny.toml.
+# NO tokio dependency — this crate is fully synchronous (AAP §0.4.4).
 
 [dependencies]
+
+# ---------------------------------------------------------------------------
+# Workspace Crate Dependencies
+# ---------------------------------------------------------------------------
+# Shared foundation crate: error types (ProviderError), config parsing,
+# typed parameter system (ParamSet — replaces OSSL_PARAM), time (OsslTime),
+# safe_math, constant_time primitives, secure memory, and observability
+# infrastructure. Used across all provider implementations.
 openssl-common = { workspace = true }
+
+# Core cryptographic library: EVP abstraction, BigNum, EC, RSA, symmetric,
+# hash, BIO, X.509, ASN.1, and all algorithm primitives that providers
+# wrap and dispatch to. The provider crate registers algorithm implementations
+# that delegate to openssl-crypto's core types.
+# These are the ONLY two workspace path dependencies. openssl-provider
+# MUST NOT depend on openssl-ssl, openssl-fips, openssl-cli, or openssl-ffi.
 openssl-crypto = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Error Handling (AAP §0.6.1, §0.7.7)
+# ---------------------------------------------------------------------------
+# Ergonomic derive macro for ProviderError enum. Replaces the C ERR_* stack
+# with idiomatic Rust Result<T, ProviderError> propagation via the ? operator.
+# Error stacking → std::error::Error::source() chain (automatic with #[from]).
 thiserror = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Observability — Structured Logging (AAP §0.6.1, §0.8.5)
+# ---------------------------------------------------------------------------
+# Structured logging with spans and correlation IDs for distributed tracing.
+# Ships with the initial implementation per the Observability rule.
+# Instruments provider loading, activation, algorithm fetch/dispatch, and
+# method store operations. Every provider lifecycle event is traced.
 tracing = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Serialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Serialization framework for provider configuration structs, algorithm
+# parameter exchange, and capabilities reporting. The derive feature enables
+# #[derive(Serialize, Deserialize)] on provider config types.
+# Used by provider configuration, capabilities query, and parameter
+# serialization replacing OSSL_PARAM_construct_*() patterns.
 serde = { workspace = true }
-parking_lot = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Lazy Initialization (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Thread-safe lazy static initialization for provider singletons, predefined
+# provider registry, and dispatch tables. Replaces C static dispatch tables
+# (e.g., `static const OSSL_ALGORITHM deflt_digests[]` in defltprov.c) with
+# lazily-initialized Rust statics for thread-safe first-use initialization.
 once_cell = { workspace = true }
 
+# ---------------------------------------------------------------------------
+# Concurrency — Fine-Grained Locking (AAP §0.6.1, Rule R7)
+# ---------------------------------------------------------------------------
+# Faster mutex/rwlock for non-async shared state. Used with // LOCK-SCOPE:
+# annotations per Rule R7. Applied to:
+#   - Provider registry (OSSL_PROVIDER store → ProviderRegistry)
+#   - Method store (OSSL_METHOD_STORE → MethodStore per algorithm category)
+#   - Algorithm name map (ossl_namemap → NameMap)
+#   - Property definition store (OSSL_PROPERTY_LIST → PropertyStore)
+# Source: crypto/core_fetch.c uses OSSL_METHOD_STORE with locking.
+# Non-poisoning semantics prevent cascading failures from panics.
+parking_lot = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Secure Memory (AAP §0.6.1, §0.7.6, Rule R8)
+# ---------------------------------------------------------------------------
+# Secure memory zeroing for key material within provider implementations.
+# All types holding key material (cipher contexts, KDF state, MAC keys,
+# signature private keys, KEM decapsulation keys) derive Zeroize for
+# automatic zeroing on Drop. Replaces OPENSSL_cleanse() from provider
+# implementations. The derive feature enables #[derive(Zeroize, ZeroizeOnDrop)].
+zeroize = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Typed Bitfield Flags (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Type-safe bitfield flags for:
+#   - Algorithm capabilities (OSSL_ALGORITHM flags)
+#   - Provider status flags (running, error, suspended)
+#   - Operation IDs (OSSL_OP_CIPHER, OSSL_OP_DIGEST, etc.)
+#   - Security check flags (FIPS indicator, key length validation)
+# Replaces C #define bitmask constants from include/openssl/core_dispatch.h
+# with exhaustive Rust bitflags structs.
+bitflags = { workspace = true }
+
+# =============================================================================
+# Feature Flags
+# =============================================================================
+# Replace C preprocessor OPENSSL_NO_* compile-time guards with Rust feature
+# flags. Per AAP §0.4.3 design pattern:
+#   C:    #ifndef OPENSSL_NO_DES
+#   Rust: #[cfg(feature = "ciphers")]
+#
+# Each feature maps to a provider implementation subdirectory in the original
+# C codebase. All algorithm categories are enabled by default, matching the
+# default provider's full algorithm set from providers/defltprov.c.
+
+[features]
+default = [
+    "ciphers",       # providers/implementations/ciphers/ (81 C files)
+    "digests",       # providers/implementations/digests/ (17 C files)
+    "kdfs",          # providers/implementations/kdfs/ (16 C files)
+    "macs",          # providers/implementations/macs/ (9 C files)
+    "signatures",    # providers/implementations/signature/ (9 C files)
+    "kem",           # providers/implementations/kem/ (7 C files)
+    "keymgmt",       # providers/implementations/keymgmt/ (13 C files)
+    "exchange",      # providers/implementations/exchange/ (4 C files)
+    "rands",         # providers/implementations/rands/ (15 C files)
+    "encode-decode", # providers/implementations/encode_decode/ (16 C files)
+    "store",         # providers/implementations/storemgmt/ (3 C files)
+]
+
+# --- Algorithm category features ---
+# Each feature gates the corresponding provider implementation module.
+# When disabled, the algorithm category is not registered in the provider
+# dispatch table, reducing binary size for embedded/constrained deployments.
+
+# Cipher provider implementations: AES-GCM/CCM/OCB/SIV/XTS/wrap, ChaCha20-Poly1305,
+# 3DES, Camellia, ARIA, SM4. Maps to providers/implementations/ciphers/ (81 C files).
+ciphers = []
+
+# Digest provider implementations: SHA-1, SHA-2, SHA-3, SHAKE, SM3.
+# Maps to providers/implementations/digests/ (17 C files).
+digests = []
+
+# KDF provider implementations: HKDF, PBKDF2, Argon2, scrypt, KBKDF, TLS1-PRF,
+# SSKDF, X963KDF, X942KDF, PKCS12KDF.
+# Maps to providers/implementations/kdfs/ (16 C files).
+kdfs = []
+
+# MAC provider implementations: HMAC, CMAC, GMAC, KMAC, Poly1305, SipHash.
+# Maps to providers/implementations/macs/ (9 C files).
+macs = []
+
+# Signature provider implementations: RSA, DSA, ECDSA, EdDSA, ML-DSA, SLH-DSA.
+# Maps to providers/implementations/signature/ (9 C files).
+signatures = []
+
+# KEM provider implementations: RSA-KEM, EC-KEM, ML-KEM (FIPS 203).
+# Maps to providers/implementations/kem/ (7 C files).
+kem = []
+
+# Key management implementations: per-algorithm key lifecycle (generate, import,
+# export, validate) for RSA, DSA, DH, EC, X25519/X448, ML-KEM, ML-DSA, SLH-DSA.
+# Maps to providers/implementations/keymgmt/ (13 C files).
+keymgmt = []
+
+# Key exchange implementations: DH, ECDH, X25519/X448 key agreement.
+# Maps to providers/implementations/exchange/ (4 C files).
+exchange = []
+
+# DRBG and seed source implementations: CTR-DRBG, Hash-DRBG, HMAC-DRBG,
+# seed sources, jitter entropy.
+# Maps to providers/implementations/rands/ (15 C files).
+rands = []
+
+# Encoder/decoder implementations: DER, PEM, PKCS#8, PKCS#1, SEC1, X.509 SPKI
+# key serialization/deserialization for all algorithm types.
+# Maps to providers/implementations/encode_decode/ (16 C files).
+encode-decode = []
+
+# Store implementations: file-based key/certificate/CRL store (ossl_store URI scheme).
+# Maps to providers/implementations/storemgmt/ (3 C files).
+store = []
+
+# Legacy provider feature: enables deprecated algorithms not present in the
+# default provider. Ciphers: Blowfish, CAST5, IDEA, SEED, RC2, RC4, RC5.
+# Hashes: MD2, MD4, MDC2, Whirlpool. Replaces #ifdef STATIC_LEGACY from
+# providers/legacyprov.c. When enabled, the legacy provider is available
+# for activation; when disabled, legacy algorithms are not compiled.
+legacy = []
+
+# =============================================================================
+# Dev Dependencies (AAP §0.6.2)
+# =============================================================================
+# Test-only dependencies. Not included in release builds.
+
 [dev-dependencies]
+
+# Property-based testing for provider dispatch correctness verification.
+# Generates random algorithm queries, provider configurations, and parameter
+# sets to verify dispatch invariants (e.g., registered algorithm always found,
+# unregistered algorithm returns NotFound, property matching correctness).
 proptest = { workspace = true }
+
+# Temporary file and directory management in tests. Used for provider
+# configuration file tests, key store integration tests, and encoder/decoder
+# round-trip tests with file-based store provider.
 tempfile = { workspace = true }
+
+# Initialize tracing subscribers in test harness for structured log capture
+# during test execution. Enables assertion on provider lifecycle log events.
 test-log = { workspace = true }
+
+# Mock generation for trait-based provider testing. Generates mock impls
+# of DigestProvider, CipherProvider, etc. for unit testing dispatch logic
+# without requiring full algorithm implementations.
 mockall = { workspace = true }
+
+# Benchmarking framework for Gate 3 performance baselines. Used to benchmark
+# provider dispatch latency (algorithm fetch + trait dispatch overhead),
+# method store lookup performance, and provider activation time.
+# The html_reports feature generates detailed performance reports.
+criterion = { workspace = true, features = ["html_reports"] }
+
+# =============================================================================
+# Benchmark Harness
+# =============================================================================
+# Required for criterion benchmarks. The benchmark file lives at
+# benches/provider_bench.rs and is NOT run through the default test harness.
+
+[[bench]]
+name = "provider_bench"
+harness = false
+
+# =============================================================================
+# Lint Configuration
+# =============================================================================
+# Inherits ALL workspace lint settings from root Cargo.toml.
+# This enforces:
+#   - Rule R6: deny(clippy::cast_possible_truncation, cast_sign_loss, cast_possible_wrap)
+#   - Rule R8: deny(unsafe_code) — zero unsafe outside openssl-ffi
+#   - Rule R9: deny(clippy::all) — warning-free build with RUSTFLAGS="-D warnings"
+#   - Rule R2: deny(clippy::await_holding_lock) — no locks across .await (inherited
+#              even though this crate is sync-only, for consistency)
+#   - deny(clippy::todo) — zero placeholder policy
+#   - warn(clippy::unwrap_used, clippy::expect_used) — no unwrap in library code
+# Ensures Rule R9 (Warning-Free Build) compliance.
+# NO crate-level #[allow(warnings)] or #[allow(unused)] permitted.
+# Individual #[allow] attributes in source MUST carry a justification comment.
+# See root Cargo.toml [workspace.lints] for complete lint policy.
 
 [lints]
 workspace = true
