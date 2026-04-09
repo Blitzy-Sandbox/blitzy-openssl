@@ -4,3 +4,6 @@
 //! including Default, Legacy, Base, and Null providers.
 
 #![forbid(unsafe_code)]
+
+/// Algorithm implementation backends (ciphers, digests, KDFs, MACs, KEM, etc.).
+pub mod implementations;
