@@ -6,3 +6,4 @@
 //! Replaces `apps/lib/*.c` (21 C source files) with idiomatic Rust modules.
 
 pub mod opts;
+pub mod password;

@@ -193,6 +193,16 @@ base64ct = { workspace = true }
 zeroize = { workspace = true }
 
 # ---------------------------------------------------------------------------
+# Password Input (AAP §0.5.1, §0.7.6)
+# ---------------------------------------------------------------------------
+# Cross-platform console password reading without terminal echo.
+# Replaces C's UI_add_input_string() + UI_process() pattern from
+# apps_ui.c:185-196 and the UI_OpenSSL() callback chain.
+# Used in PasswordHandler::prompt_password() for the interactive prompting
+# path and verification prompt. Licensed Apache-2.0.
+rpassword = { workspace = true }
+
+# ---------------------------------------------------------------------------
 # Bitflags (AAP §0.6.1)
 # ---------------------------------------------------------------------------
 # Typed bitfield flags for format validation (OPT_FMT_* replacement).

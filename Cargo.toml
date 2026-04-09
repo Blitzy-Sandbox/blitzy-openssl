@@ -175,6 +175,10 @@ base64ct = "=1.6.0"
 # hex: Hex encoding for diagnostics and key representation.
 hex = "0.4"
 
+# rpassword: Cross-platform console password reading without terminal echo.
+# Used by openssl-cli for interactive passphrase prompting (replaces UI_OpenSSL).
+rpassword = "7"
+
 # ---------------------------------------------------------------------------
 # Dev/Build Dependencies (AAP §0.6.2)
 # ---------------------------------------------------------------------------
