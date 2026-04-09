@@ -1,0 +1,42 @@
+[package]
+name = "openssl-crypto"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cryptographic library (libcrypto equivalent) for the OpenSSL Rust workspace"
+
+[dependencies]
+openssl-common = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+zeroize = { workspace = true }
+subtle = { workspace = true }
+rand = { workspace = true }
+rand_core = { workspace = true }
+bytes = { workspace = true }
+bitflags = { workspace = true }
+num-bigint = { workspace = true }
+num-integer = { workspace = true }
+num-traits = { workspace = true }
+der = { workspace = true }
+x509-cert = { workspace = true }
+pem-rfc7468 = { workspace = true }
+pkcs8 = { workspace = true }
+spki = { workspace = true }
+base64ct = { workspace = true }
+hex = { workspace = true }
+parking_lot = { workspace = true }
+once_cell = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = { workspace = true }
+test-log = { workspace = true }
+mockall = { workspace = true }
+insta = { workspace = true }
+
+[lints]
+workspace = true

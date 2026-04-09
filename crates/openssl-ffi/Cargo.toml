@@ -1,0 +1,23 @@
+[package]
+name = "openssl-ffi"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "C ABI compatibility layer via cbindgen for the OpenSSL Rust workspace"
+
+[dependencies]
+openssl-common = { workspace = true }
+openssl-crypto = { workspace = true }
+openssl-ssl = { workspace = true }
+libc = { workspace = true }
+
+[build-dependencies]
+cbindgen = "0.27"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,23 @@
+[package]
+name = "openssl-fips"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "FIPS module with self-test, KATs, and integrity verification for the OpenSSL Rust workspace"
+
+[dependencies]
+openssl-common = { workspace = true }
+openssl-crypto = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = { workspace = true }
+test-log = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,36 @@
+[package]
+name = "openssl-cli"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI binary (openssl command equivalent) for the OpenSSL Rust workspace"
+
+[[bin]]
+name = "openssl-rs"
+path = "src/main.rs"
+
+[dependencies]
+openssl-common = { workspace = true }
+openssl-crypto = { workspace = true }
+openssl-ssl = { workspace = true }
+openssl-provider = { workspace = true }
+openssl-fips = { workspace = true }
+clap = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
+tempfile = { workspace = true }
+test-log = { workspace = true }
+
+[lints]
+workspace = true

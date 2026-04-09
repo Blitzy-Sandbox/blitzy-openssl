@@ -1,0 +1,92 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/openssl-common",
+    "crates/openssl-crypto",
+    "crates/openssl-ssl",
+    "crates/openssl-provider",
+    "crates/openssl-fips",
+    "crates/openssl-cli",
+    "crates/openssl-ffi",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.81.0"
+license = "Apache-2.0"
+repository = "https://github.com/openssl/openssl"
+
+[workspace.dependencies]
+# Runtime dependencies - pinned for Rust 1.81.0 compatibility
+tokio = { version = "1.38", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+clap = { version = "=4.5.23", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-opentelemetry = "0.24"
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+zeroize = { version = "1.8", features = ["derive"] }
+subtle = "2.6"
+rand = "0.8"
+rand_core = "0.6"
+bytes = "1.6"
+libc = "0.2"
+bitflags = "2.6"
+num-bigint = "0.4"
+num-integer = "0.1"
+num-traits = "0.2"
+der = "0.7"
+x509-cert = "0.2"
+pem-rfc7468 = "0.7"
+pkcs8 = "0.10"
+spki = "0.7"
+base64ct = "=1.6.0"
+hex = "0.4"
+parking_lot = "0.12"
+once_cell = "1.19"
+uuid = { version = "=1.10.0", features = ["v4"] }
+
+# Dev/Build dependencies - pinned for Rust 1.81.0 compatibility
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "=1.5.0"
+tempfile = "=3.12.0"
+assert_cmd = "=2.0.16"
+predicates = "3"
+test-log = "0.2"
+insta = "1"
+mockall = "0.13"
+
+# Internal crate dependencies
+openssl-common = { path = "crates/openssl-common" }
+openssl-crypto = { path = "crates/openssl-crypto" }
+openssl-ssl = { path = "crates/openssl-ssl" }
+openssl-provider = { path = "crates/openssl-provider" }
+openssl-fips = { path = "crates/openssl-fips" }
+openssl-cli = { path = "crates/openssl-cli" }
+openssl-ffi = { path = "crates/openssl-ffi" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# Rule R6: No bare narrowing casts
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
+cast_possible_wrap = "deny"
+# Rule R2: No holding locks across await
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+
+[profile.release]
+lto = "thin"
+opt-level = 3
+codegen-units = 1
+strip = "symbols"
+
+[profile.bench]
+inherits = "release"
+debug = true

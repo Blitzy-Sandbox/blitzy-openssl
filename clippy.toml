@@ -1,0 +1,15 @@
+# Workspace-wide clippy configuration for OpenSSL Rust workspace
+# See: https://doc.rust-lang.org/clippy/configuration.html
+
+# Minimum Supported Rust Version (matches rust-toolchain.toml)
+msrv = "1.81.0"
+
+# Maximum cognitive complexity for functions
+cognitive-complexity-threshold = 30
+
+# Additional thresholds
+too-many-arguments-threshold = 10
+type-complexity-threshold = 500
+
+# Maximum number of lines in a single function
+too-many-lines-threshold = 200

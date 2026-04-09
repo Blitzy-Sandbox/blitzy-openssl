@@ -1,0 +1,26 @@
+[package]
+name = "openssl-provider"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Provider framework with trait-based dispatch for the OpenSSL Rust workspace"
+
+[dependencies]
+openssl-common = { workspace = true }
+openssl-crypto = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+parking_lot = { workspace = true }
+once_cell = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = { workspace = true }
+test-log = { workspace = true }
+mockall = { workspace = true }
+
+[lints]
+workspace = true

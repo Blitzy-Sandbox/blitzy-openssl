@@ -433,3 +433,6 @@ lcov.info
 run_tests
 depend
 
+
+# Rust build artifacts
+/target/
