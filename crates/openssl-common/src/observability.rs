@@ -660,6 +660,7 @@ pub fn record_operation_complete(span: &Span, success: bool) {
 // =============================================================================
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -689,7 +690,7 @@ mod tests {
 
     #[test]
     fn correlation_id_default_creates_new() {
-        let cid: CorrelationId = Default::default();
+        let cid: CorrelationId = CorrelationId::default();
         assert!(!cid.as_str().is_empty());
     }
 
