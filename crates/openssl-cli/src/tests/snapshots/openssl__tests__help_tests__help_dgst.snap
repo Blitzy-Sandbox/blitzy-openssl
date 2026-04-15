@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+Message digest computation and verification
+
+Usage: openssl dgst
+
+Options:
+  -h, --help  Print help

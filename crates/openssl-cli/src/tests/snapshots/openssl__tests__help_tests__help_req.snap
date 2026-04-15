@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+Certificate signing request (CSR) operations
+
+Usage: openssl req
+
+Options:
+  -h, --help  Print help

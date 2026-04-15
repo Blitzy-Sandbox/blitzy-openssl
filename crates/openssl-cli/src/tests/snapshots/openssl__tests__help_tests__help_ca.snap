@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+Certificate authority (CA) management
+
+Usage: openssl ca
+
+Options:
+  -h, --help  Print help

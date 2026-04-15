@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+Algorithm, provider, and capability listing
+
+Usage: openssl list
+
+Options:
+  -h, --help  Print help

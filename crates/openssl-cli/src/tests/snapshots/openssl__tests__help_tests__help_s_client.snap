@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+TLS/SSL client diagnostic and testing tool
+
+Usage: openssl s_client
+
+Options:
+  -h, --help  Print help

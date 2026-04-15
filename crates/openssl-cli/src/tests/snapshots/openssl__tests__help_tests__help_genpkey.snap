@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+Generate a private key (algorithm-generic)
+
+Usage: openssl genpkey
+
+Options:
+  -h, --help  Print help

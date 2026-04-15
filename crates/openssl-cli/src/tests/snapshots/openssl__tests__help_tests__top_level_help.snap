@@ -1,0 +1,71 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+OpenSSL command-line tool providing cryptographic operations, TLS diagnostics, certificate management, and key generation.
+
+Usage: openssl [COMMAND]
+
+Commands:
+  req          Certificate signing request (CSR) operations
+  x509         X.509 certificate display, signing, and conversion
+  ca           Certificate authority (CA) management
+  verify       Certificate chain verification
+  crl          Certificate revocation list (CRL) operations
+  genpkey      Generate a private key (algorithm-generic)
+  pkey         Public or private key utility
+  genrsa       Generate an RSA private key
+  gendsa       Generate a DSA private key from parameters
+  dhparam      Diffie-Hellman parameter generation and management
+  dsaparam     DSA parameter generation and management
+  rsa          RSA key management utility
+  dsa          DSA key management utility
+  pkeyparam    Public key algorithm parameter management
+  enc          Symmetric cipher encryption and decryption
+  dgst         Message digest computation and verification
+  pkcs12       PKCS#12 key store operations
+  pkcs7        PKCS#7 / CMS-predecessor operations
+  pkcs8        PKCS#8 private key format conversion
+  smime        S/MIME mail signing, encryption, and verification
+  mac          Message Authentication Code (MAC) computation
+  kdf          Key Derivation Function (KDF) computation
+  pkeyutl      Public key algorithm utility (sign, verify, encrypt, decrypt)
+  rsautl       RSA utility (deprecated — use pkeyutl instead)
+  passwd       Password hashing utility
+  prime        Prime number generation and testing
+  rand         Random byte generation
+  s_client     TLS/SSL client diagnostic and testing tool
+  s_server     TLS/SSL server diagnostic and testing tool
+  s_time       TLS connection timing benchmark
+  ciphers      Cipher suite listing and information
+  sess_id      SSL/TLS session identifier display
+  version      Version information display
+  list         Algorithm, provider, and capability listing
+  speed        Algorithm performance benchmarking
+  info         Build and installation information
+  errstr       Error code string lookup
+  asn1parse    ASN.1 structure parsing and display
+  rehash       Certificate directory hash-link management
+  skeyutl      Symmetric key utility
+  configutl    Configuration file utility
+  crl2pkcs7    CRL to PKCS#7 structure conversion
+  nseq         Netscape certificate sequence utility
+  spkac        Netscape SPKAC operations
+  storeutl     URI-based certificate and key store utility
+  cms          CMS (Cryptographic Message Syntax) operations
+  ocsp         OCSP (Online Certificate Status Protocol) client and responder
+  cmp          CMP (Certificate Management Protocol) client operations
+  ts           RFC 3161 timestamp authority client
+  fipsinstall  FIPS module installation and configuration
+  ech          Encrypted Client Hello (ECH) key and config management
+  srp          SRP (Secure Remote Password) verifier file management
+  ec           Elliptic curve key utility
+  ecparam      Elliptic curve parameter generation and management
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

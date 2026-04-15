@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+Version information display
+
+Usage: openssl version
+
+Options:
+  -h, --help  Print help

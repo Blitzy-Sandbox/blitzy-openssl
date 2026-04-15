@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+X.509 certificate display, signing, and conversion
+
+Usage: openssl x509
+
+Options:
+  -h, --help  Print help

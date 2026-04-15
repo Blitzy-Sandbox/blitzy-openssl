@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+Symmetric cipher encryption and decryption
+
+Usage: openssl enc
+
+Options:
+  -h, --help  Print help

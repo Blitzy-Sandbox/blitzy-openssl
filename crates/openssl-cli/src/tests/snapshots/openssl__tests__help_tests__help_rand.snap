@@ -1,0 +1,10 @@
+---
+source: crates/openssl-cli/src/tests/help_tests.rs
+expression: stdout
+---
+Random byte generation
+
+Usage: openssl rand
+
+Options:
+  -h, --help  Print help

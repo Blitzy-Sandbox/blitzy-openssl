@@ -102,6 +102,9 @@ mod fips_tests;
 /// let cmd = super::openssl_cmd();
 /// cmd.arg("version").assert().success();
 /// ```
+// This function is a test utility and panicking on missing binary is the
+// intended behavior — it surfaces build ordering issues immediately.
+#[allow(clippy::expect_used)]
 pub(crate) fn openssl_cmd() -> Command {
     Command::cargo_bin("openssl").expect("openssl binary not found — run `cargo build` first")
 }
