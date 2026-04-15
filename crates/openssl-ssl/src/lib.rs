@@ -6,3 +6,6 @@
 #![forbid(unsafe_code)]
 
 pub mod method;
+
+#[cfg(feature = "srtp")]
+pub mod srtp;
