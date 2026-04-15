@@ -820,6 +820,13 @@ fn hex_digit_value(b: u8) -> Option<u8> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::redundant_closure,
+    clippy::uninlined_format_args
+)]
 mod tests {
     use super::*;
 

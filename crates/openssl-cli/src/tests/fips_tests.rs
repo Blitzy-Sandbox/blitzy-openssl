@@ -50,7 +50,8 @@
 // (`#[cfg(feature = "fips")] mod fips_tests;`) but explicitly documents
 // the compile-time dependency and provides a safety net if the file is
 // ever included from a different path.
-#![cfg(feature = "fips")]
+// Note: The `#[cfg(feature = "fips")]` gate is applied at the module
+// inclusion site in `mod.rs`, so a redundant inner attribute is omitted.
 // Clippy's `expect_used` and `unwrap_used` lints are valuable for library/production code
 // but overly strict for test modules where panicking on unexpected failures is the
 // standard testing pattern. We allow both here since every `.expect()` in this file
@@ -375,7 +376,7 @@ fn test_dgst_with_fips_provider() {
         // The C format is: "SHA2-256(stdin)= <hex>" or similar.
         assert!(
             stdout.to_lowercase().contains("sha")
-                || stdout.contains("=")
+                || stdout.contains('=')
                 || stdout.len() >= 64,
             "Digest output should contain hash result, got: {stdout}"
         );

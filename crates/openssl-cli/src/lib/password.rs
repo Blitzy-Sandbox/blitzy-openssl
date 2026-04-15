@@ -533,6 +533,12 @@ pub fn parse_password_source(source: &str) -> Result<Zeroizing<String>, Password
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::uninlined_format_args
+)]
 mod tests {
     use super::*;
 
@@ -694,8 +700,8 @@ mod tests {
         let data = PasswordCallbackData::with_password("clonetest");
         let cloned = data.clone();
         assert_eq!(
-            data.password.as_deref().map(|s| s.as_str()),
-            cloned.password.as_deref().map(|s| s.as_str())
+            data.password.as_deref(),
+            cloned.password.as_deref()
         );
     }
 }
