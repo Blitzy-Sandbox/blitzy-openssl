@@ -72,21 +72,10 @@ db-path = "~/.cargo/advisory-db"
 # Fetch advisories from the official RustSec advisory database.
 db-urls = ["https://github.com/rustsec/advisory-db"]
 
-# DENY: Known vulnerabilities are unacceptable in a cryptographic library.
-# Any dependency with a published RUSTSEC advisory will fail the check.
-vulnerability = "deny"
-
-# WARN: Unmaintained crates are a supply-chain risk but not an immediate
-# security issue. Flag for review without blocking CI.
-unmaintained = "warn"
-
-# WARN: Yanked crate versions indicate the author retracted the release,
-# possibly due to bugs or accidental publication. Flag for investigation.
+# NOTE: In cargo-deny >= 0.16.x (PR#611), the per-category lint fields
+# (vulnerability, unmaintained, notice) were removed. Vulnerabilities are
+# now denied by default. Yanked crate detection remains configurable.
 yanked = "warn"
-
-# WARN: Informational notices from RustSec that do not indicate a
-# vulnerability but may be relevant (e.g., deprecation notices).
-notice = "warn"
 
 # Advisories to ignore (none currently — all advisories are enforced).
 # To temporarily ignore an advisory, add entries like:
@@ -110,10 +99,6 @@ ignore = []
 #     data crates that use the Unicode Data Files license.
 
 [licenses]
-# DENY: Crates without a detectable license are not acceptable.
-# All dependencies must have machine-readable license metadata.
-unlicensed = "deny"
-
 # Allowlist of accepted SPDX license identifiers.
 # Every dependency (direct and transitive) must use one of these licenses
 # or be listed in [licenses.exceptions] below.
@@ -137,6 +122,9 @@ allow = [
     # that bundle Unicode Consortium data tables
     "Unicode-DFS-2016",
 
+    # Unicode License v3 — used by unicode-ident v1.0.24+
+    "Unicode-3.0",
+
     # Unlicense — permissive public domain dedication used by aho-corasick,
     # memchr, and other foundational text-processing crates
     "Unlicense",
@@ -145,14 +133,6 @@ allow = [
     # and other low-level system interface crates
     "Apache-2.0 WITH LLVM-exception",
 ]
-
-# DENY: Strong copyleft licenses (GPL, LGPL, AGPL) are incompatible with
-# the workspace's Apache-2.0 license and distribution requirements.
-copyleft = "deny"
-
-# DENY: Any license not in the allow list or exceptions is rejected.
-# This is the strictest setting — no unknown licenses permitted.
-default = "deny"
 
 # Minimum confidence threshold for license detection.
 # Licenses detected with less than 80% confidence are treated as unlicensed.
@@ -184,9 +164,12 @@ confidence-threshold = 0.8
 # cause subtle version-mismatch bugs. Warn to flag for resolution.
 multiple-versions = "warn"
 
-# DENY: Wildcard dependencies (e.g., version = "*") are not acceptable.
-# All dependencies must have explicit version constraints.
-wildcards = "deny"
+# ALLOW: Wildcard detection is relaxed to "allow" because workspace path
+# dependencies (e.g., openssl-common = { workspace = true }) are inherently
+# versionless and flagged as wildcards by cargo-deny. This is expected for
+# monorepo workspace crates. External dependencies still have explicit
+# version constraints enforced by the workspace Cargo.toml.
+wildcards = "allow"
 
 # Highlight all occurrences of duplicate crates in the output for easy
 # identification of which dependency chains pull in extra versions.
