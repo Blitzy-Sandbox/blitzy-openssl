@@ -9,6 +9,7 @@ pub mod error;
 pub mod mem;
 pub mod observability;
 pub mod safe_math;
+pub mod time;
 pub mod types;
 
 #[cfg(test)]
