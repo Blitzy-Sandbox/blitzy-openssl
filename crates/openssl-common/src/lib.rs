@@ -8,6 +8,7 @@ pub mod constant_time;
 pub mod error;
 pub mod mem;
 pub mod observability;
+pub mod param;
 pub mod safe_math;
 pub mod time;
 pub mod types;
