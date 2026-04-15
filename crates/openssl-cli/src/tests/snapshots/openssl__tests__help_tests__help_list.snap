@@ -1,10 +1,19 @@
 ---
 source: crates/openssl-cli/src/tests/help_tests.rs
+assertion_line: 313
 expression: stdout
 ---
 Algorithm, provider, and capability listing
 
-Usage: openssl list
+Usage: openssl list [OPTIONS]
 
 Options:
-  -h, --help  Print help
+      --digest-commands     List available message digest algorithms
+      --cipher-commands     List available symmetric cipher algorithms
+      --mac-algorithms      List available MAC algorithms
+      --kdf-algorithms      List available KDF algorithms
+      --public-key-methods  List available public key methods
+      --disabled            List features disabled in this build
+      --providers           List loaded providers
+      --all-algorithms      List all available algorithms across all categories
+  -h, --help                Print help

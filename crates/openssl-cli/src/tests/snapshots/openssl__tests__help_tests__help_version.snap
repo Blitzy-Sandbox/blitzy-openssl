@@ -1,10 +1,21 @@
 ---
 source: crates/openssl-cli/src/tests/help_tests.rs
+assertion_line: 303
 expression: stdout
 ---
 Version information display
 
-Usage: openssl version
+Usage: openssl version [OPTIONS]
 
 Options:
-  -h, --help  Print help
+  -a, --all             Print all version information (equivalent to enabling all flags)
+  -v, --version         Print the OpenSSL version string
+  -b, --build-date      Print the build date
+  -p, --platform        Print the platform identifier
+  -d, --config-dir      Print the OPENSSLDIR (configuration directory)
+  -m, --modules-dir     Print the MODULESDIR (modules directory)
+  -f, --compiler-flags  Print the compiler flags used during build
+  -o, --options         Print the build options
+  -r, --seed            Print the random seed source info
+  -c, --cpu-settings    Print the CPU settings
+  -h, --help            Print help
