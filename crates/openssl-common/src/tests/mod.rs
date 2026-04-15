@@ -16,6 +16,8 @@ mod mem_tests;
 #[cfg(test)]
 mod observability_tests;
 #[cfg(test)]
+mod param_tests;
+#[cfg(test)]
 mod safe_math_tests;
 #[cfg(test)]
 mod time_tests;
