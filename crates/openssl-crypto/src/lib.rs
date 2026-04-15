@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 pub mod provider;
+pub mod thread;
 
 #[cfg(test)]
 mod tests;
