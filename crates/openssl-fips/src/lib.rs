@@ -7,6 +7,7 @@
 
 pub mod indicator;
 pub mod kats;
+pub mod provider;
 pub mod state;
 
 #[cfg(test)]
