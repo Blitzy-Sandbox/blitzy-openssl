@@ -483,10 +483,7 @@ pub fn find_profile_by_name(name: &str) -> Option<&'static SrtpProtectionProfile
             "SRTP profile found by name"
         );
     } else {
-        tracing::debug!(
-            searched_name = name,
-            "SRTP profile not found by name"
-        );
+        tracing::debug!(searched_name = name, "SRTP profile not found by name");
     }
     result
 }
@@ -526,10 +523,7 @@ pub fn find_profile_by_id(id: u16) -> Option<&'static SrtpProtectionProfile> {
             "SRTP profile found by ID"
         );
     } else {
-        tracing::debug!(
-            searched_id = id,
-            "SRTP profile not found by ID"
-        );
+        tracing::debug!(searched_id = id, "SRTP profile not found by ID");
     }
     result
 }
@@ -595,13 +589,8 @@ pub fn parse_profile_list(profiles_str: &str) -> Result<Vec<SrtpProtectionProfil
 
         // Look up the profile by name in the known profiles registry
         let profile = find_profile_by_name(token).ok_or_else(|| {
-            tracing::warn!(
-                profile_name = token,
-                "unknown SRTP protection profile name"
-            );
-            SslError::Protocol(format!(
-                "unknown SRTP protection profile: {token}"
-            ))
+            tracing::warn!(profile_name = token, "unknown SRTP protection profile name");
+            SslError::Protocol(format!("unknown SRTP protection profile: {token}"))
         })?;
 
         // Check for duplicates — mirrors the C sk_SRTP_PROTECTION_PROFILE_find()
@@ -676,9 +665,8 @@ pub fn set_tlsext_use_srtp(
     profiles_str: &str,
     target: &mut Vec<SrtpProtectionProfile>,
 ) -> Result<(), SslError> {
-    let parsed = parse_profile_list(profiles_str).map_err(|e| {
-        SslError::Handshake(format!("SRTP profile configuration failed: {e}"))
-    })?;
+    let parsed = parse_profile_list(profiles_str)
+        .map_err(|e| SslError::Handshake(format!("SRTP profile configuration failed: {e}")))?;
 
     // Replace any existing profiles — matches the C behavior where
     // ssl_ctx_make_profiles() frees the old stack before assigning new one
@@ -837,10 +825,22 @@ mod tests {
             SrtpProtectionProfileId::DoubleAeadAes256GcmAeadAes256Gcm.as_u16(),
             0x000A
         );
-        assert_eq!(SrtpProtectionProfileId::Aria128CtrHmacSha1_80.as_u16(), 0x000B);
-        assert_eq!(SrtpProtectionProfileId::Aria128CtrHmacSha1_32.as_u16(), 0x000C);
-        assert_eq!(SrtpProtectionProfileId::Aria256CtrHmacSha1_80.as_u16(), 0x000D);
-        assert_eq!(SrtpProtectionProfileId::Aria256CtrHmacSha1_32.as_u16(), 0x000E);
+        assert_eq!(
+            SrtpProtectionProfileId::Aria128CtrHmacSha1_80.as_u16(),
+            0x000B
+        );
+        assert_eq!(
+            SrtpProtectionProfileId::Aria128CtrHmacSha1_32.as_u16(),
+            0x000C
+        );
+        assert_eq!(
+            SrtpProtectionProfileId::Aria256CtrHmacSha1_80.as_u16(),
+            0x000D
+        );
+        assert_eq!(
+            SrtpProtectionProfileId::Aria256CtrHmacSha1_32.as_u16(),
+            0x000E
+        );
     }
 
     #[test]
@@ -886,24 +886,29 @@ mod tests {
     fn test_find_profile_by_id_all_known() {
         for profile in KNOWN_PROFILES {
             let found = find_profile_by_id(profile.id.as_u16());
-            assert!(found.is_some(), "profile not found by ID: 0x{:04X}", profile.id.as_u16());
+            assert!(
+                found.is_some(),
+                "profile not found by ID: 0x{:04X}",
+                profile.id.as_u16()
+            );
             assert_eq!(found.unwrap().name, profile.name);
         }
     }
 
     #[test]
     fn test_parse_profile_list_single() {
-        let profiles = parse_profile_list("SRTP_AES128_CM_SHA1_80")
-            .expect("single profile should parse");
+        let profiles =
+            parse_profile_list("SRTP_AES128_CM_SHA1_80").expect("single profile should parse");
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].name(), "SRTP_AES128_CM_SHA1_80");
     }
 
     #[test]
     fn test_parse_profile_list_multiple() {
-        let profiles =
-            parse_profile_list("SRTP_AES128_CM_SHA1_80:SRTP_AEAD_AES_128_GCM:SRTP_AEAD_AES_256_GCM")
-                .expect("multiple profiles should parse");
+        let profiles = parse_profile_list(
+            "SRTP_AES128_CM_SHA1_80:SRTP_AEAD_AES_128_GCM:SRTP_AEAD_AES_256_GCM",
+        )
+        .expect("multiple profiles should parse");
         assert_eq!(profiles.len(), 3);
         assert_eq!(profiles[0].id(), SrtpProtectionProfileId::Aes128CmSha1_80);
         assert_eq!(profiles[1].id(), SrtpProtectionProfileId::AeadAes128Gcm);
@@ -930,15 +935,19 @@ mod tests {
 
     #[test]
     fn test_parse_profile_list_with_unknown_in_middle() {
-        let result = parse_profile_list("SRTP_AES128_CM_SHA1_80:SRTP_UNKNOWN:SRTP_AEAD_AES_128_GCM");
+        let result =
+            parse_profile_list("SRTP_AES128_CM_SHA1_80:SRTP_UNKNOWN:SRTP_AEAD_AES_128_GCM");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_set_tlsext_use_srtp_success() {
         let mut profiles = Vec::new();
-        set_tlsext_use_srtp("SRTP_AES128_CM_SHA1_80:SRTP_AEAD_AES_128_GCM", &mut profiles)
-            .expect("should succeed");
+        set_tlsext_use_srtp(
+            "SRTP_AES128_CM_SHA1_80:SRTP_AEAD_AES_128_GCM",
+            &mut profiles,
+        )
+        .expect("should succeed");
         assert_eq!(profiles.len(), 2);
     }
 
@@ -947,8 +956,11 @@ mod tests {
         let mut profiles = Vec::new();
 
         // First call sets two profiles
-        set_tlsext_use_srtp("SRTP_AES128_CM_SHA1_80:SRTP_AEAD_AES_128_GCM", &mut profiles)
-            .expect("first set should succeed");
+        set_tlsext_use_srtp(
+            "SRTP_AES128_CM_SHA1_80:SRTP_AEAD_AES_128_GCM",
+            &mut profiles,
+        )
+        .expect("first set should succeed");
         assert_eq!(profiles.len(), 2);
 
         // Second call replaces with one profile
@@ -985,7 +997,10 @@ mod tests {
         let profile = &KNOWN_PROFILES[0];
         let result = get_selected_srtp_profile(Some(profile));
         assert!(result.is_some());
-        assert_eq!(result.unwrap().id(), SrtpProtectionProfileId::Aes128CmSha1_80);
+        assert_eq!(
+            result.unwrap().id(),
+            SrtpProtectionProfileId::Aes128CmSha1_80
+        );
     }
 
     #[test]

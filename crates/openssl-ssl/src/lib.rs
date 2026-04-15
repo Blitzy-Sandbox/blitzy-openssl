@@ -7,5 +7,8 @@
 
 pub mod method;
 
+#[cfg(feature = "quic")]
+pub mod quic;
+
 #[cfg(feature = "srtp")]
 pub mod srtp;

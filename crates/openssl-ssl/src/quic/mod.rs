@@ -1,0 +1,12 @@
+//! QUIC v1 transport protocol implementation (RFC 9000).
+//!
+//! This module contains the Rust rewrite of OpenSSL's QUIC stack
+//! (`ssl/quic/` — 42 C source files), providing:
+//!
+//! - Stream map, buffering, and flow control ([`stream`])
+//!
+//! Gated behind the `quic` feature flag.
+
+pub mod stream;
+
+pub use stream::{StreamId, StreamMap, StreamType};
