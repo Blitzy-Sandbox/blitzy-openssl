@@ -4,6 +4,7 @@
 //! including predefined provider definitions, core dispatch, and property matching.
 
 pub mod predefined;
+pub mod property;
 
 // Re-export commonly used predefined provider types for convenience.
 pub use predefined::{InfoPair, ProviderInfo, ProviderKind};
