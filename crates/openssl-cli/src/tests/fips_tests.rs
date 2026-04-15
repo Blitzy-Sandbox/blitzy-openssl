@@ -178,8 +178,8 @@ fn test_fipsinstall_generates_config() {
 
     // If the command succeeded and created the config file, verify its contents.
     if exit_code == 0 && config_path.exists() {
-        let content = fs::read_to_string(&config_path)
-            .expect("failed to read generated config file");
+        let content =
+            fs::read_to_string(&config_path).expect("failed to read generated config file");
         // The C implementation writes sections like "[fips_sect]", "activate = 1",
         // "module-mac", and "install-status".
         assert!(
@@ -375,9 +375,7 @@ fn test_dgst_with_fips_provider() {
         // Full handler: expect SHA-256 hex digest in output.
         // The C format is: "SHA2-256(stdin)= <hex>" or similar.
         assert!(
-            stdout.to_lowercase().contains("sha")
-                || stdout.contains('=')
-                || stdout.len() >= 64,
+            stdout.to_lowercase().contains("sha") || stdout.contains('=') || stdout.len() >= 64,
             "Digest output should contain hash result, got: {stdout}"
         );
     }
@@ -427,8 +425,8 @@ fn test_fips_self_test_on_load() {
     // the self_test_onload flag affected the output (install-status
     // should be absent when self_test_onload is set, per C implementation).
     if exit_code == 0 && config_path.exists() {
-        let content = fs::read_to_string(&config_path)
-            .expect("failed to read generated config file");
+        let content =
+            fs::read_to_string(&config_path).expect("failed to read generated config file");
         // With self_test_onload, the C implementation does NOT write
         // install-mac or install-status entries (fipsinstall.c:467–476).
         // We verify the config was created — the absence of install-status

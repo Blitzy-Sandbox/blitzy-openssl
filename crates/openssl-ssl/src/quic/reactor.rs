@@ -511,9 +511,7 @@ impl QuicReactor {
             }
 
             // Check if there is anything to wait for.
-            if !self.net_read_desired
-                && !self.net_write_desired
-                && self.tick_deadline.is_infinite()
+            if !self.net_read_desired && !self.net_write_desired && self.tick_deadline.is_infinite()
             {
                 // Nothing to wait for — predicate unsatisfied but no I/O or
                 // deadline to block on. Return without error.
@@ -560,9 +558,7 @@ impl QuicReactor {
             // (matching C's poll_descriptor_to_fd returning -1 for invalid FDs).
             let read_fd: Option<AsyncFd<AsyncFdWrapper>> = if net_read_desired {
                 match poll_r {
-                    Some(PollDescriptor::SocketFd(fd)) => {
-                        AsyncFd::new(AsyncFdWrapper(fd)).ok()
-                    }
+                    Some(PollDescriptor::SocketFd(fd)) => AsyncFd::new(AsyncFdWrapper(fd)).ok(),
                     _ => Option::None,
                 }
             } else {
@@ -571,9 +567,7 @@ impl QuicReactor {
 
             let write_fd: Option<AsyncFd<AsyncFdWrapper>> = if net_write_desired {
                 match poll_w {
-                    Some(PollDescriptor::SocketFd(fd)) => {
-                        AsyncFd::new(AsyncFdWrapper(fd)).ok()
-                    }
+                    Some(PollDescriptor::SocketFd(fd)) => AsyncFd::new(AsyncFdWrapper(fd)).ok(),
                     _ => Option::None,
                 }
             } else {
@@ -999,11 +993,7 @@ mod tests {
     #[test]
     fn test_reactor_construction_with_notifier() {
         let tick_cb = Box::new(|_: &mut QuicTickResult| {});
-        let reactor = QuicReactor::new(
-            tick_cb,
-            Option::None,
-            QUIC_REACTOR_FLAG_USE_NOTIFIER,
-        );
+        let reactor = QuicReactor::new(tick_cb, Option::None, QUIC_REACTOR_FLAG_USE_NOTIFIER);
         assert!(reactor.notifier.is_some());
         assert!(reactor.use_notifier);
     }
@@ -1012,11 +1002,7 @@ mod tests {
     fn test_reactor_construction_with_mutex() {
         let tick_cb = Box::new(|_: &mut QuicTickResult| {});
         let mutex = Arc::new(TokioMutex::new(()));
-        let reactor = QuicReactor::new(
-            tick_cb,
-            Some(mutex),
-            QUIC_REACTOR_FLAG_USE_NOTIFIER,
-        );
+        let reactor = QuicReactor::new(tick_cb, Some(mutex), QUIC_REACTOR_FLAG_USE_NOTIFIER);
         assert!(reactor.mutex.is_some());
         assert!(reactor.notifier.is_some());
     }
@@ -1080,11 +1066,7 @@ mod tests {
             result.notify_other_threads = true;
             result.tick_deadline = OsslTime::INFINITE;
         });
-        let mut reactor = QuicReactor::new(
-            tick_cb,
-            Option::None,
-            QUIC_REACTOR_FLAG_USE_NOTIFIER,
-        );
+        let mut reactor = QuicReactor::new(tick_cb, Option::None, QUIC_REACTOR_FLAG_USE_NOTIFIER);
         // Should not panic — notify is called internally.
         reactor.tick();
     }
@@ -1120,11 +1102,7 @@ mod tests {
     #[test]
     fn test_notify_with_notifier() {
         let tick_cb = Box::new(|_: &mut QuicTickResult| {});
-        let reactor = QuicReactor::new(
-            tick_cb,
-            Option::None,
-            QUIC_REACTOR_FLAG_USE_NOTIFIER,
-        );
+        let reactor = QuicReactor::new(tick_cb, Option::None, QUIC_REACTOR_FLAG_USE_NOTIFIER);
         // Should not panic.
         reactor.notify_other_threads();
     }
@@ -1132,11 +1110,7 @@ mod tests {
     #[test]
     fn test_get_notifier() {
         let tick_cb = Box::new(|_: &mut QuicTickResult| {});
-        let reactor = QuicReactor::new(
-            tick_cb,
-            Option::None,
-            QUIC_REACTOR_FLAG_USE_NOTIFIER,
-        );
+        let reactor = QuicReactor::new(tick_cb, Option::None, QUIC_REACTOR_FLAG_USE_NOTIFIER);
         assert!(reactor.get_notifier().is_some());
 
         let tick_cb2 = Box::new(|_: &mut QuicTickResult| {});
@@ -1221,9 +1195,7 @@ mod tests {
         let mut reactor = QuicReactor::new(tick_cb, Option::None, 0);
 
         // Predicate immediately true — returns after first tick + pred check.
-        let result = reactor
-            .block_until_pred(|| true, BlockFlags::empty())
-            .await;
+        let result = reactor.block_until_pred(|| true, BlockFlags::empty()).await;
         assert!(result.is_ok());
     }
 
@@ -1307,16 +1279,10 @@ mod tests {
         let tick_cb = Box::new(|result: &mut QuicTickResult| {
             result.tick_deadline = OsslTime::INFINITE;
         });
-        let mut reactor = QuicReactor::new(
-            tick_cb,
-            Some(mutex),
-            0,
-        );
+        let mut reactor = QuicReactor::new(tick_cb, Some(mutex), 0);
 
         // Predicate immediately true — mutex is acquired/released internally.
-        let result = reactor
-            .block_until_pred(|| true, BlockFlags::empty())
-            .await;
+        let result = reactor.block_until_pred(|| true, BlockFlags::empty()).await;
         assert!(result.is_ok());
     }
 
@@ -1325,16 +1291,10 @@ mod tests {
         let tick_cb = Box::new(|result: &mut QuicTickResult| {
             result.tick_deadline = OsslTime::INFINITE;
         });
-        let mut reactor = QuicReactor::new(
-            tick_cb,
-            Option::None,
-            QUIC_REACTOR_FLAG_USE_NOTIFIER,
-        );
+        let mut reactor = QuicReactor::new(tick_cb, Option::None, QUIC_REACTOR_FLAG_USE_NOTIFIER);
 
         // Predicate immediately true.
-        let result = reactor
-            .block_until_pred(|| true, BlockFlags::empty())
-            .await;
+        let result = reactor.block_until_pred(|| true, BlockFlags::empty()).await;
         assert!(result.is_ok());
     }
 
@@ -1343,9 +1303,7 @@ mod tests {
         REACTOR_WAIT_CTX
             .scope(RefCell::new(ReactorWaitCtx::new()), async {
                 // Enter via task-local.
-                let guard = REACTOR_WAIT_CTX.with(|ctx| {
-                    ctx.borrow_mut().enter()
-                });
+                let guard = REACTOR_WAIT_CTX.with(|ctx| ctx.borrow_mut().enter());
 
                 // Depth should be 1.
                 REACTOR_WAIT_CTX.with(|ctx| {
@@ -1386,11 +1344,7 @@ mod tests {
                 result.tick_deadline = OsslTime::INFINITE;
             }
         });
-        let mut reactor = QuicReactor::new(
-            tick_cb,
-            Option::None,
-            QUIC_REACTOR_FLAG_USE_NOTIFIER,
-        );
+        let mut reactor = QuicReactor::new(tick_cb, Option::None, QUIC_REACTOR_FLAG_USE_NOTIFIER);
 
         // Override the reactor's notifier with our shared one.
         reactor.notifier = Some(notifier);

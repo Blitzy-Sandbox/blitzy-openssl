@@ -49,8 +49,8 @@ use std::collections::HashSet;
 use crate::error::CommonError;
 use crate::observability::{
     current_correlation_id, init_metrics, init_tracing, init_tracing_with_filter,
-    record_operation_complete, record_operation_start, CorrelationId, HealthRegistry,
-    HealthStatus, MetricsHandle, ObservabilityError, ReadinessCheck,
+    record_operation_complete, record_operation_start, CorrelationId, HealthRegistry, HealthStatus,
+    MetricsHandle, ObservabilityError, ReadinessCheck,
 };
 
 // =============================================================================
@@ -99,11 +99,7 @@ fn correlation_id_uniqueness() {
         let cid = CorrelationId::new();
         set.insert(cid.as_str());
     }
-    assert_eq!(
-        set.len(),
-        100,
-        "All 100 CorrelationIds should be unique"
-    );
+    assert_eq!(set.len(), 100, "All 100 CorrelationIds should be unique");
 }
 
 /// `format!("{}", CorrelationId::new())` produces valid UUID-like string.
@@ -290,7 +286,10 @@ fn health_status_healthy() {
 fn health_status_degraded() {
     let status = HealthStatus::Degraded { reason: "slow" };
     let debug = format!("{status:?}");
-    assert!(debug.contains("Degraded"), "Debug should contain variant name");
+    assert!(
+        debug.contains("Degraded"),
+        "Debug should contain variant name"
+    );
     assert!(debug.contains("slow"), "Debug should contain reason");
 }
 
@@ -511,15 +510,9 @@ fn health_registry_check_all_returns_all() {
     assert_eq!(results[0].0, "alpha");
     assert_eq!(results[0].1, HealthStatus::Healthy);
     assert_eq!(results[1].0, "beta");
-    assert_eq!(
-        results[1].1,
-        HealthStatus::Degraded { reason: "slow" }
-    );
+    assert_eq!(results[1].1, HealthStatus::Degraded { reason: "slow" });
     assert_eq!(results[2].0, "gamma");
-    assert_eq!(
-        results[2].1,
-        HealthStatus::Unhealthy { reason: "down" }
-    );
+    assert_eq!(results[2].1, HealthStatus::Unhealthy { reason: "down" });
 }
 
 /// Verify check names match what was registered, in registration order.
@@ -598,8 +591,7 @@ fn observability_error_is_error() {
     fn assert_error<T: std::error::Error>() {}
     assert_error::<ObservabilityError>();
     // Also verify via trait object construction.
-    let err: Box<dyn std::error::Error> =
-        Box::new(ObservabilityError::AlreadyInitialized);
+    let err: Box<dyn std::error::Error> = Box::new(ObservabilityError::AlreadyInitialized);
     assert!(err.source().is_none());
 }
 
@@ -615,8 +607,7 @@ fn observability_error_debug_not_empty() {
 /// error hierarchy (AAP §0.7.7). Both implement `std::error::Error`.
 #[test]
 fn observability_error_distinct_from_common_error() {
-    let obs_err: Box<dyn std::error::Error> =
-        Box::new(ObservabilityError::AlreadyInitialized);
+    let obs_err: Box<dyn std::error::Error> = Box::new(ObservabilityError::AlreadyInitialized);
     let common_err: Box<dyn std::error::Error> =
         Box::new(CommonError::Internal("test".to_string()));
     // Both are valid error trait objects with non-empty Display.

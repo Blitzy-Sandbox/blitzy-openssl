@@ -699,9 +699,6 @@ mod tests {
     fn test_password_callback_data_clone() {
         let data = PasswordCallbackData::with_password("clonetest");
         let cloned = data.clone();
-        assert_eq!(
-            data.password.as_deref(),
-            cloned.password.as_deref()
-        );
+        assert_eq!(data.password.as_deref(), cloned.password.as_deref());
     }
 }

@@ -78,8 +78,11 @@ fn test_s_client_info_callback_invoked() {
     // Write a placeholder session file to verify filesystem isolation works.
     // In a full TLS implementation, the info callback logs state transitions
     // ("SSL_connect: SSLv3/TLS write client hello", etc.) during handshake.
-    fs::write(&session_file, "# TLS session placeholder for info callback test\n")
-        .expect("failed to write session file");
+    fs::write(
+        &session_file,
+        "# TLS session placeholder for info callback test\n",
+    )
+    .expect("failed to write session file");
 
     // Invoke the s_client subcommand — this dispatches to the handler where
     // SSL_CTX_set_info_callback(ctx, apps_ssl_info_callback) is registered.
@@ -112,8 +115,7 @@ fn test_s_client_info_callback_invoked() {
 
     // Verify the temp directory persists for test isolation and that the
     // session file was written correctly.
-    let session_content =
-        fs::read_to_string(&session_file).expect("failed to read session file");
+    let session_content = fs::read_to_string(&session_file).expect("failed to read session file");
     assert!(
         session_content.contains("session"),
         "Session file should contain placeholder content"
@@ -228,8 +230,7 @@ fn test_verify_callback_on_self_signed() {
         "#   self-signed certificate, verify return:1\n",
         "-----END CERTIFICATE-----\n"
     );
-    fs::write(&cert_path, self_signed_content)
-        .expect("failed to write self-signed certificate");
+    fs::write(&cert_path, self_signed_content).expect("failed to write self-signed certificate");
 
     // Invoke the verify subcommand — dispatches to the handler where
     // X509_STORE_CTX_set_verify_cb registers the verify_callback.
@@ -325,10 +326,7 @@ fn test_verify_callback_strict() {
         .arg("verify")
         .assert()
         .success()
-        .stderr(
-            predicate::str::contains("dispatched")
-                .or(predicate::str::contains("Command")),
-        );
+        .stderr(predicate::str::contains("dispatched").or(predicate::str::contains("Command")));
 
     // Simulate verify_callback output by writing the expected format.
     // In C (s_cb.c:48-119), the verify_callback writes to bio_err:
@@ -339,8 +337,7 @@ fn test_verify_callback_strict() {
         "depth=0 C=US, O=Test Org, CN=test.example.com\n",
         "verify return:1\n",
     );
-    fs::write(&result_path, verify_output)
-        .expect("failed to write verification result");
+    fs::write(&result_path, verify_output).expect("failed to write verification result");
 
     // Read back and verify the callback output format is correct.
     let result_content =
@@ -361,10 +358,7 @@ fn test_verify_callback_strict() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("erif")
-                .or(predicate::str::contains("ertificate")),
-        );
+        .stdout(predicate::str::contains("erif").or(predicate::str::contains("ertificate")));
 }
 
 // ===========================================================================
@@ -411,10 +405,7 @@ fn test_keylog_callback_writes_file() {
         .arg("s_client")
         .assert()
         .success()
-        .stderr(
-            predicate::str::contains("dispatched")
-                .or(predicate::str::contains("Command")),
-        );
+        .stderr(predicate::str::contains("dispatched").or(predicate::str::contains("Command")));
 
     // Verify the keylog file exists and is accessible via metadata check.
     let keylog_metadata =
@@ -507,9 +498,7 @@ fn test_msg_callback_shows_records() {
     // registered via SSL_CTX_set_msg_callback is reachable.
     let stderr = String::from_utf8_lossy(&assert_result.get_output().stderr);
     assert!(
-        stderr.contains("dispatched")
-            || stderr.contains("Command")
-            || stderr.contains("s_client"),
+        stderr.contains("dispatched") || stderr.contains("Command") || stderr.contains("s_client"),
         "Expected s_client dispatch confirmation for msg callback path, got: {stderr}"
     );
 
@@ -581,15 +570,12 @@ fn test_passphrase_prompt_callback() {
     // Verify the command handler was reached (UI callback registration path).
     let stderr = String::from_utf8_lossy(&assert_result.get_output().stderr);
     assert!(
-        stderr.contains("dispatched")
-            || stderr.contains("Command")
-            || stderr.contains("req"),
+        stderr.contains("dispatched") || stderr.contains("Command") || stderr.contains("req"),
         "Expected req dispatch confirmation for passphrase callback path, got: {stderr}"
     );
 
     // Verify the passphrase file was written correctly for callback consumption.
-    let pass_content =
-        fs::read_to_string(&pass_path).expect("failed to read passphrase file");
+    let pass_content = fs::read_to_string(&pass_path).expect("failed to read passphrase file");
     assert!(
         pass_content.contains("test_passphrase"),
         "Passphrase file should contain the test passphrase for UI callback"
@@ -607,13 +593,11 @@ fn test_passphrase_prompt_callback() {
         "# The ui_write callback encrypted this with the provided passphrase\n",
         "-----END ENCRYPTED PRIVATE KEY-----\n"
     );
-    fs::write(&key_path, encrypted_key_content)
-        .expect("failed to write encrypted key file");
+    fs::write(&key_path, encrypted_key_content).expect("failed to write encrypted key file");
 
     // Verify the encrypted key file is accessible and contains encryption markers
     // that indicate the passphrase callback was used for encryption.
-    let key_content =
-        fs::read_to_string(&key_path).expect("failed to read encrypted key file");
+    let key_content = fs::read_to_string(&key_path).expect("failed to read encrypted key file");
     assert!(
         key_content.contains("ENCRYPTED"),
         "Key file should contain ENCRYPTED marker from passphrase callback"
@@ -630,10 +614,7 @@ fn test_passphrase_prompt_callback() {
         .arg("rsa")
         .assert()
         .success()
-        .stderr(
-            predicate::str::contains("dispatched")
-                .or(predicate::str::contains("Command")),
-        );
+        .stderr(predicate::str::contains("dispatched").or(predicate::str::contains("Command")));
 
     // Verify the req help output documents CSR functionality where the
     // passphrase UI callback (wrap_password_callback) is used.

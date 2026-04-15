@@ -48,7 +48,21 @@ fn nid_as_raw() {
 /// Verifies round-trip: `from_raw(as_raw())` identity for several values.
 #[test]
 fn nid_from_raw_and_as_raw_roundtrip() {
-    for raw in [0, 4, 64, 672, 673, 674, 895, 901, 1018, 1087, 1034, 1455, i32::MAX] {
+    for raw in [
+        0,
+        4,
+        64,
+        672,
+        673,
+        674,
+        895,
+        901,
+        1018,
+        1087,
+        1034,
+        1455,
+        i32::MAX,
+    ] {
         let nid = Nid::from_raw(raw);
         assert_eq!(nid.as_raw(), raw, "Round-trip failed for raw={raw}");
     }
@@ -130,7 +144,11 @@ fn nid_known_constants() {
     assert_eq!(Nid::X25519.as_raw(), 1034, "NID_X25519");
     assert_eq!(Nid::AES_128_GCM.as_raw(), 895, "NID_aes_128_gcm");
     assert_eq!(Nid::AES_256_GCM.as_raw(), 901, "NID_aes_256_gcm");
-    assert_eq!(Nid::CHACHA20_POLY1305.as_raw(), 1018, "NID_chacha20_poly1305");
+    assert_eq!(
+        Nid::CHACHA20_POLY1305.as_raw(),
+        1018,
+        "NID_chacha20_poly1305"
+    );
 }
 
 /// Verifies named Nid constants are not UNDEF.
@@ -431,11 +449,7 @@ fn key_type_round_trip() {
     for kt in key_types {
         let nid = kt.to_nid();
         let recovered = KeyType::from_nid(nid);
-        assert_eq!(
-            recovered,
-            Some(kt),
-            "KeyType::{kt:?} NID roundtrip failed"
-        );
+        assert_eq!(recovered, Some(kt), "KeyType::{kt:?} NID roundtrip failed");
     }
 }
 
@@ -476,7 +490,10 @@ fn padding_mode_debug() {
     ];
     for mode in modes {
         let debug_str = format!("{mode:?}");
-        assert!(!debug_str.is_empty(), "Debug should produce non-empty output for {mode:?}");
+        assert!(
+            !debug_str.is_empty(),
+            "Debug should produce non-empty output for {mode:?}"
+        );
     }
 }
 

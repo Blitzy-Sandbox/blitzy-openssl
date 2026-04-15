@@ -1180,9 +1180,9 @@ fn resolve_hash_algorithm(name: &str) -> CryptoResult<Nid> {
         "SHA256" | "SHA-256" => Ok(Nid::SHA256),
         "SHA384" | "SHA-384" => Ok(Nid::SHA384),
         "SHA512" | "SHA-512" => Ok(Nid::SHA512),
-        other => Err(CryptoError::AlgorithmNotFound(
-            format!("unsupported hash algorithm for timestamp: '{other}'"),
-        )),
+        other => Err(CryptoError::AlgorithmNotFound(format!(
+            "unsupported hash algorithm for timestamp: '{other}'"
+        ))),
     }
 }
 
@@ -1550,9 +1550,9 @@ fn check_tsa_name(token: &TsTokenInfo, ctx: &TsVerifyContext) -> CryptoResult<()
         match &token.tsa_name {
             Some(actual_name) => {
                 if actual_name != expected_name {
-                    return Err(CryptoError::Verification(
-                        format!("TSA name mismatch: token has '{actual_name}', expected '{expected_name}'"),
-                    ));
+                    return Err(CryptoError::Verification(format!(
+                        "TSA name mismatch: token has '{actual_name}', expected '{expected_name}'"
+                    )));
                 }
             }
             None => {
@@ -1630,8 +1630,7 @@ mod tests {
 
     #[test]
     fn test_message_imprint_new_valid() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).expect("should succeed");
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).expect("should succeed");
         assert_eq!(imprint.hash_algorithm(), Nid::SHA256);
         assert_eq!(imprint.hashed_message().len(), 32);
     }
@@ -1687,8 +1686,7 @@ mod tests {
 
     #[test]
     fn test_request_builder_minimal() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint).build().unwrap();
         assert_eq!(req.version(), 1);
         assert_eq!(req.message_imprint().hash_algorithm(), Nid::SHA256);
@@ -1699,8 +1697,7 @@ mod tests {
 
     #[test]
     fn test_request_builder_full() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA384, vec![0u8; 48]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA384, vec![0u8; 48]).unwrap();
         let req = TsRequestBuilder::new(imprint)
             .nonce(vec![1, 2, 3, 4])
             .policy_id("1.2.3.4.1".to_string())
@@ -1717,8 +1714,7 @@ mod tests {
 
     #[test]
     fn test_request_display() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint).build().unwrap();
         let display = format!("{}", req);
         assert!(display.contains("TsRequest"));
@@ -1772,8 +1768,7 @@ mod tests {
 
     #[test]
     fn test_token_info_accessors() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let info = TsTokenInfo {
             version: 1,
             policy: "1.2.3.4.1".to_string(),
@@ -1798,8 +1793,7 @@ mod tests {
 
     #[test]
     fn test_token_info_display() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let info = TsTokenInfo {
             version: 1,
             policy: "1.2.3.4.1".to_string(),
@@ -1821,8 +1815,7 @@ mod tests {
 
     #[test]
     fn test_response_granted() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let token = TsTokenInfo {
             version: 1,
             policy: "1.2.3.4.1".to_string(),
@@ -1879,8 +1872,7 @@ mod tests {
 
     #[test]
     fn test_verify_context_from_request() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint)
             .nonce(vec![1, 2, 3])
             .policy_id("1.2.3.4.1".to_string())
@@ -1921,16 +1913,14 @@ mod tests {
 
     #[test]
     fn test_verify_success() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint.clone())
             .nonce(vec![1, 2, 3, 4])
             .policy_id("1.2.3.4.1".to_string())
             .build()
             .unwrap();
 
-        let resp =
-            make_test_response(&imprint, Some(vec![1, 2, 3, 4]), "1.2.3.4.1");
+        let resp = make_test_response(&imprint, Some(vec![1, 2, 3, 4]), "1.2.3.4.1");
         let ctx = TsVerifyContext::from_request(&req);
 
         let result = verify(&resp, &req, &ctx);
@@ -1940,8 +1930,7 @@ mod tests {
 
     #[test]
     fn test_verify_rejected_status() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint).build().unwrap();
 
         let resp = TsResponse {
@@ -1956,12 +1945,10 @@ mod tests {
 
     #[test]
     fn test_verify_version_mismatch() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint.clone()).build().unwrap();
 
-        let mut resp =
-            make_test_response(&imprint, None, "1.2.3.4.1");
+        let mut resp = make_test_response(&imprint, None, "1.2.3.4.1");
         resp.token_info.as_mut().unwrap().version = 2;
 
         let ctx = TsVerifyContext::from_request(&req);
@@ -1973,15 +1960,13 @@ mod tests {
 
     #[test]
     fn test_verify_policy_mismatch() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint.clone())
             .policy_id("1.2.3.4.1".to_string())
             .build()
             .unwrap();
 
-        let resp =
-            make_test_response(&imprint, None, "9.9.9.9");
+        let resp = make_test_response(&imprint, None, "9.9.9.9");
         let ctx = TsVerifyContext::from_request(&req);
 
         let result = verify(&resp, &req, &ctx);
@@ -1992,14 +1977,11 @@ mod tests {
 
     #[test]
     fn test_verify_imprint_mismatch() {
-        let imprint1 =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
-        let imprint2 =
-            TsMessageImprint::new(Nid::SHA256, vec![1u8; 32]).unwrap();
+        let imprint1 = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint2 = TsMessageImprint::new(Nid::SHA256, vec![1u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint1).build().unwrap();
 
-        let resp =
-            make_test_response(&imprint2, None, "1.2.3.4.1");
+        let resp = make_test_response(&imprint2, None, "1.2.3.4.1");
         let ctx = TsVerifyContext::from_request(&req);
 
         let result = verify(&resp, &req, &ctx);
@@ -2010,18 +1992,13 @@ mod tests {
 
     #[test]
     fn test_verify_nonce_mismatch() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint.clone())
             .nonce(vec![1, 2, 3, 4])
             .build()
             .unwrap();
 
-        let resp = make_test_response(
-            &imprint,
-            Some(vec![5, 6, 7, 8]),
-            "1.2.3.4.1",
-        );
+        let resp = make_test_response(&imprint, Some(vec![5, 6, 7, 8]), "1.2.3.4.1");
         let ctx = TsVerifyContext::from_request(&req);
 
         let result = verify(&resp, &req, &ctx);
@@ -2032,15 +2009,13 @@ mod tests {
 
     #[test]
     fn test_verify_nonce_missing_in_response() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint.clone())
             .nonce(vec![1, 2, 3, 4])
             .build()
             .unwrap();
 
-        let resp =
-            make_test_response(&imprint, None, "1.2.3.4.1");
+        let resp = make_test_response(&imprint, None, "1.2.3.4.1");
         let ctx = TsVerifyContext::from_request(&req);
 
         let result = verify(&resp, &req, &ctx);
@@ -2051,11 +2026,9 @@ mod tests {
 
     #[test]
     fn test_verify_tsa_name_mismatch() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint.clone()).build().unwrap();
-        let resp =
-            make_test_response(&imprint, None, "1.2.3.4.1");
+        let resp = make_test_response(&imprint, None, "1.2.3.4.1");
 
         let mut ctx = TsVerifyContext::new();
         ctx.set_flags(TS_VFY_TSA_NAME);
@@ -2069,11 +2042,9 @@ mod tests {
 
     #[test]
     fn test_verify_tsa_name_success() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint.clone()).build().unwrap();
-        let resp =
-            make_test_response(&imprint, None, "1.2.3.4.1");
+        let resp = make_test_response(&imprint, None, "1.2.3.4.1");
 
         let mut ctx = TsVerifyContext::new();
         ctx.set_flags(TS_VFY_TSA_NAME);
@@ -2131,8 +2102,7 @@ mod tests {
 
     #[test]
     fn test_serde_roundtrip_request() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
         let req = TsRequestBuilder::new(imprint)
             .nonce(vec![1, 2, 3, 4])
             .policy_id("1.2.3.4.1".to_string())
@@ -2141,22 +2111,17 @@ mod tests {
             .unwrap();
 
         let json = serde_json::to_string(&req).expect("serialization failed");
-        let deserialized: TsRequest =
-            serde_json::from_str(&json).expect("deserialization failed");
+        let deserialized: TsRequest = serde_json::from_str(&json).expect("deserialization failed");
         assert_eq!(req, deserialized);
     }
 
     #[test]
     fn test_serde_roundtrip_response() {
-        let imprint =
-            TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
-        let resp =
-            make_test_response(&imprint, Some(vec![10, 20]), "1.2.3.4.1");
+        let imprint = TsMessageImprint::new(Nid::SHA256, vec![0u8; 32]).unwrap();
+        let resp = make_test_response(&imprint, Some(vec![10, 20]), "1.2.3.4.1");
 
-        let json =
-            serde_json::to_string(&resp).expect("serialization failed");
-        let deserialized: TsResponse =
-            serde_json::from_str(&json).expect("deserialization failed");
+        let json = serde_json::to_string(&resp).expect("serialization failed");
+        let deserialized: TsResponse = serde_json::from_str(&json).expect("deserialization failed");
         assert_eq!(resp, deserialized);
     }
 }

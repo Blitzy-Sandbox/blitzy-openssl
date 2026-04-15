@@ -299,10 +299,7 @@ impl Config {
     /// files sequentially in the C implementation.
     pub fn merge(&mut self, other: &Config) {
         for (section, entries) in &other.sections {
-            let target = self
-                .sections
-                .entry(section.clone())
-                .or_default();
+            let target = self.sections.entry(section.clone()).or_default();
             for (key, value) in entries {
                 target.insert(key.clone(), value.clone());
             }
@@ -515,11 +512,7 @@ impl ConfigParser {
     }
 
     /// Parses a `[section_name]` header line.
-    fn parse_section_header(
-        &mut self,
-        trimmed: &str,
-        line_num: usize,
-    ) -> Result<(), CommonError> {
+    fn parse_section_header(&mut self, trimmed: &str, line_num: usize) -> Result<(), CommonError> {
         // Find closing bracket
         let inner = &trimmed[1..]; // skip '['
         let close_pos = inner.find(']').ok_or_else(|| CommonError::Config {
@@ -537,10 +530,7 @@ impl ConfigParser {
         let expanded = self.expand_variables(&self.current_section.clone(), &section_name)?;
 
         // Ensure the section exists in config
-        self.config
-            .sections
-            .entry(expanded.clone())
-            .or_default();
+        self.config.sections.entry(expanded.clone()).or_default();
 
         self.current_section = expanded;
         Ok(())
@@ -733,23 +723,19 @@ impl ConfigParser {
                             i += 1;
                         } else {
                             return Err(CommonError::Config {
-                                message: format!(
-                                    "variable expansion: missing closing '{close}'"
-                                ),
+                                message: format!("variable expansion: missing closing '{close}'"),
                             });
                         }
                     }
                 }
 
                 // Look up the variable value
-                let resolved = self
-                    .config
-                    .get_string(&var_section, &var_name)
-                    .ok_or_else(|| CommonError::Config {
-                        message: format!(
-                            "variable '{var_section}::{var_name}' has no value"
-                        ),
-                    })?;
+                let resolved =
+                    self.config
+                        .get_string(&var_section, &var_name)
+                        .ok_or_else(|| CommonError::Config {
+                            message: format!("variable '{var_section}::{var_name}' has no value"),
+                        })?;
 
                 result.push_str(resolved);
 
@@ -1116,9 +1102,7 @@ impl ConfigParser {
     fn strip_directive_prefix<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
         line.strip_prefix(prefix).filter(|rest| {
             // The rest must start with whitespace, '=', or be at end of string
-            rest.is_empty()
-                || rest.starts_with(char::is_whitespace)
-                || rest.starts_with('=')
+            rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with('=')
         })
     }
 }
@@ -1263,9 +1247,7 @@ impl ConfigModuleRegistry {
             Some(sect) => sect.clone(),
             None => {
                 return Err(CommonError::Config {
-                    message: format!(
-                        "openssl_conf references missing section: {master_section}"
-                    ),
+                    message: format!("openssl_conf references missing section: {master_section}"),
                 });
             }
         };
@@ -1581,16 +1563,14 @@ mod tests {
 
     #[test]
     fn test_parse_cross_section_variable() {
-        let input =
-            b"[paths]\nroot = /opt\n[default]\nfull = $paths::root/openssl\n";
+        let input = b"[paths]\nroot = /opt\n[default]\nfull = $paths::root/openssl\n";
         let cfg = ConfigParser::parse_reader(&input[..]).unwrap();
         assert_eq!(cfg.get_string("default", "full"), Some("/opt/openssl"));
     }
 
     #[test]
     fn test_parse_braced_cross_section_variable() {
-        let input =
-            b"[paths]\nroot = /opt\n[default]\nfull = ${paths::root}/openssl\n";
+        let input = b"[paths]\nroot = /opt\n[default]\nfull = ${paths::root}/openssl\n";
         let cfg = ConfigParser::parse_reader(&input[..]).unwrap();
         assert_eq!(cfg.get_string("default", "full"), Some("/opt/openssl"));
     }
@@ -1660,10 +1640,7 @@ mod tests {
     fn test_variable_expansion_too_long() {
         // Create a value that will exceed MAX_CONF_VALUE_LENGTH after expansion
         let big_val = "x".repeat(MAX_CONF_VALUE_LENGTH);
-        let input = format!(
-            "[default]\nbig = {}\nresult = ${{big}}${{big}}\n",
-            big_val
-        );
+        let input = format!("[default]\nbig = {}\nresult = ${{big}}${{big}}\n", big_val);
         let result = ConfigParser::parse_reader(input.as_bytes());
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
@@ -1801,18 +1778,9 @@ mod tests {
     fn test_decode_string_backslash_escapes() {
         assert_eq!(ConfigParser::decode_string("hello\\nworld"), "hello\nworld");
         assert_eq!(ConfigParser::decode_string("tab\\there"), "tab\there");
-        assert_eq!(
-            ConfigParser::decode_string("back\\bspace"),
-            "back\x08space"
-        );
-        assert_eq!(
-            ConfigParser::decode_string("ret\\rurn"),
-            "ret\rurn"
-        );
-        assert_eq!(
-            ConfigParser::decode_string("lit\\\\eral"),
-            "lit\\eral"
-        );
+        assert_eq!(ConfigParser::decode_string("back\\bspace"), "back\x08space");
+        assert_eq!(ConfigParser::decode_string("ret\\rurn"), "ret\rurn");
+        assert_eq!(ConfigParser::decode_string("lit\\\\eral"), "lit\\eral");
     }
 
     #[test]
@@ -1887,4 +1855,3 @@ mod tests {
         assert!(cfg.get_section("default").is_some());
     }
 }
-

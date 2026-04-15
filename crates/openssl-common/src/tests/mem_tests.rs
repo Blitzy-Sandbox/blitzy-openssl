@@ -116,7 +116,10 @@ fn secure_vec_len_and_empty() {
     assert_eq!(empty.len(), 0, "new SecureVec must have len 0");
 
     let non_empty = SecureVec::from_slice(&[10, 20, 30]);
-    assert!(!non_empty.is_empty(), "from_slice SecureVec must not be empty");
+    assert!(
+        !non_empty.is_empty(),
+        "from_slice SecureVec must not be empty"
+    );
     assert_eq!(non_empty.len(), 3, "from_slice SecureVec must have len 3");
 }
 
@@ -141,7 +144,11 @@ fn secure_vec_as_bytes_mut() {
         bytes_mut[0] = 10;
         bytes_mut[2] = 30;
     }
-    assert_eq!(sv.as_bytes(), &[10, 2, 30], "modifications via as_bytes_mut must be visible");
+    assert_eq!(
+        sv.as_bytes(),
+        &[10, 2, 30],
+        "modifications via as_bytes_mut must be visible"
+    );
 }
 
 /// Verifies `extend_from_slice` appends bytes correctly.
@@ -242,10 +249,7 @@ fn secure_vec_zeroize_trait() {
     // Explicit zeroize call — same code path as ZeroizeOnDrop.
     sv.zeroize();
 
-    assert!(
-        sv.is_empty(),
-        "after zeroize, SecureVec must be empty"
-    );
+    assert!(sv.is_empty(), "after zeroize, SecureVec must be empty");
     assert_eq!(sv.len(), 0, "after zeroize, length must be 0");
 }
 
@@ -443,10 +447,7 @@ fn ct_eq_different_length() {
 /// Verifies that two empty slices are considered equal.
 #[test]
 fn ct_eq_empty() {
-    assert!(
-        constant_time_eq(&[], &[]),
-        "two empty slices must be equal"
-    );
+    assert!(constant_time_eq(&[], &[]), "two empty slices must be equal");
 }
 
 /// Verifies that a single-bit difference is detected.
@@ -510,7 +511,10 @@ fn secure_zero_zeroes_data() {
 fn init_secure_heap_ok() {
     let config = SecureHeapConfig { min_size: 4096 };
     let result = init_secure_heap(&config);
-    assert!(result.is_ok(), "init_secure_heap must succeed with min_size=4096");
+    assert!(
+        result.is_ok(),
+        "init_secure_heap must succeed with min_size=4096"
+    );
 }
 
 /// Verifies that `init_secure_heap` rejects `min_size = 0` with a
@@ -522,7 +526,10 @@ fn init_secure_heap_ok() {
 fn init_secure_heap_rejects_zero_min_size() {
     let config = SecureHeapConfig { min_size: 0 };
     let result = init_secure_heap(&config);
-    assert!(result.is_err(), "init_secure_heap must fail with min_size=0");
+    assert!(
+        result.is_err(),
+        "init_secure_heap must fail with min_size=0"
+    );
 
     let err = result.unwrap_err();
     assert!(

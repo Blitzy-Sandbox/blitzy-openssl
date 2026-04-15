@@ -303,7 +303,14 @@ impl PropertyStringStore {
 
         // Pre-register canonical property names (property_parse.c L576-583)
         // Starting at index 1 with only 6 names, overflow is impossible.
-        let predefined_names = ["provider", "version", "fips", "output", "input", "structure"];
+        let predefined_names = [
+            "provider",
+            "version",
+            "fips",
+            "output",
+            "input",
+            "structure",
+        ];
         for name in &predefined_names {
             let idx = PropertyIndex(inner.next_name_idx);
             inner.next_name_idx = inner.next_name_idx.saturating_add(1);
@@ -326,8 +333,10 @@ impl PropertyStringStore {
         inner.value_to_idx.insert("no".to_string(), no_idx);
         inner.idx_to_value.push("no".to_string());
 
-        debug!("PropertyStringStore initialized with {} predefined names and 2 boolean values",
-               predefined_names.len());
+        debug!(
+            "PropertyStringStore initialized with {} predefined names and 2 boolean values",
+            predefined_names.len()
+        );
 
         Self {
             inner: RwLock::new(inner),
@@ -469,9 +478,7 @@ fn match_ch(s: &str, ch: char) -> Option<&str> {
 /// or `None` if it did not.
 fn match_str<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
     let trimmed = skip_space(s);
-    if trimmed.len() >= prefix.len()
-        && trimmed[..prefix.len()].eq_ignore_ascii_case(prefix)
-    {
+    if trimmed.len() >= prefix.len() && trimmed[..prefix.len()].eq_ignore_ascii_case(prefix) {
         Some(skip_space(&trimmed[prefix.len()..]))
     } else {
         None
@@ -567,11 +574,7 @@ fn parse_decimal(s: &str) -> CryptoResult<(&str, i64)> {
     }
 
     // Verify termination: must end with whitespace, NUL equivalent (end), or comma
-    if i < bytes.len()
-        && !bytes[i].is_ascii_whitespace()
-        && bytes[i] != b','
-        && bytes[i] != b'\0'
-    {
+    if i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b',' && bytes[i] != b'\0' {
         return Err(CryptoError::Provider(format!(
             "unexpected character after decimal number near: '{}'",
             &s[i..s.len().min(i + 20)]
@@ -613,11 +616,7 @@ fn parse_hex(s: &str) -> CryptoResult<(&str, i64)> {
         i += 1;
     }
 
-    if i < bytes.len()
-        && !bytes[i].is_ascii_whitespace()
-        && bytes[i] != b','
-        && bytes[i] != b'\0'
-    {
+    if i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b',' && bytes[i] != b'\0' {
         return Err(CryptoError::Provider(format!(
             "unexpected character after hex number near: '{}'",
             &s[i..s.len().min(i + 20)]
@@ -655,11 +654,7 @@ fn parse_oct(s: &str) -> CryptoResult<(&str, i64)> {
         i += 1;
     }
 
-    if i < bytes.len()
-        && !bytes[i].is_ascii_whitespace()
-        && bytes[i] != b','
-        && bytes[i] != b'\0'
-    {
+    if i < bytes.len() && !bytes[i].is_ascii_whitespace() && bytes[i] != b',' && bytes[i] != b'\0' {
         return Err(CryptoError::Provider(format!(
             "unexpected character after octal number near: '{}'",
             &s[i..s.len().min(i + 20)]
@@ -731,9 +726,9 @@ fn parse_unquoted_string<'a>(
         )));
     }
 
-    let idx = store.intern_value(&buf, create).ok_or_else(|| {
-        CryptoError::Provider(format!("unknown property value: '{buf}'"))
-    })?;
+    let idx = store
+        .intern_value(&buf, create)
+        .ok_or_else(|| CryptoError::Provider(format!("unknown property value: '{buf}'")))?;
 
     let rest = skip_space(&s[i..]);
     Ok((rest, PropertyValue::StringVal(idx)))
@@ -904,7 +899,10 @@ pub fn parse_definition(store: &PropertyStringStore, defn: &str) -> CryptoResult
     }
 
     let list = build_sorted_list(defs)?;
-    debug!(count = list.properties.len(), "parse_definition: parsed property definition");
+    debug!(
+        count = list.properties.len(),
+        "parse_definition: parsed property definition"
+    );
     Ok(list)
 }
 
@@ -1023,7 +1021,10 @@ pub fn parse_query(store: &PropertyStringStore, query: &str) -> CryptoResult<Pro
     }
 
     let list = build_sorted_list(defs)?;
-    debug!(count = list.properties.len(), "parse_query: parsed property query");
+    debug!(
+        count = list.properties.len(),
+        "parse_query: parsed property query"
+    );
     Ok(list)
 }
 
@@ -1059,7 +1060,10 @@ pub fn match_count(query: &PropertyList, defn: &PropertyList) -> Option<usize> {
     for q in &query.properties {
         // Skip override properties (not used in matching)
         if q.oper == PropertyOper::Override {
-            trace!(name_idx = q.name_idx.0, "match_count: skipping override property");
+            trace!(
+                name_idx = q.name_idx.0,
+                "match_count: skipping override property"
+            );
             continue;
         }
 
@@ -1090,7 +1094,10 @@ pub fn match_count(query: &PropertyList, defn: &PropertyList) -> Option<usize> {
             if matched {
                 matches = matches.saturating_add(1);
             } else if !q.optional {
-                trace!(name_idx = q.name_idx.0, "match_count: required property mismatch");
+                trace!(
+                    name_idx = q.name_idx.0,
+                    "match_count: required property mismatch"
+                );
                 return None;
             }
         } else {
@@ -1122,7 +1129,10 @@ pub fn match_count(query: &PropertyList, defn: &PropertyList) -> Option<usize> {
             if matched {
                 matches = matches.saturating_add(1);
             } else if !q.optional {
-                trace!(name_idx = q.name_idx.0, "match_count: missing required property");
+                trace!(
+                    name_idx = q.name_idx.0,
+                    "match_count: missing required property"
+                );
                 return None;
             }
         }
@@ -1259,7 +1269,11 @@ pub fn find_property(list: &PropertyList, name_idx: PropertyIndex) -> Option<&Pr
         .properties
         .binary_search_by_key(&name_idx, |d| d.name_idx)
         .ok()?;
-    trace!(name_idx = name_idx.0, "find_property: found at index {}", idx);
+    trace!(
+        name_idx = name_idx.0,
+        "find_property: found at index {}",
+        idx
+    );
     Some(&list.properties[idx])
 }
 
@@ -1268,10 +1282,7 @@ pub fn find_property(list: &PropertyList, name_idx: PropertyIndex) -> Option<&Pr
 /// Replaces C `ossl_property_get_string_value()` from `property_query.c` L52-59.
 /// Returns `None` if the property is not a string type or the index cannot
 /// be resolved (Rule R5).
-pub fn get_string_value(
-    defn: &PropertyDefinition,
-    store: &PropertyStringStore,
-) -> Option<String> {
+pub fn get_string_value(defn: &PropertyDefinition, store: &PropertyStringStore) -> Option<String> {
     if defn.prop_type != PropertyType::String {
         return None;
     }
@@ -1748,12 +1759,8 @@ impl MethodStore {
             }
             let to_remove = entry.query_cache.len() / 4;
             if to_remove > 0 {
-                let keys_to_remove: Vec<String> = entry
-                    .query_cache
-                    .keys()
-                    .take(to_remove)
-                    .cloned()
-                    .collect();
+                let keys_to_remove: Vec<String> =
+                    entry.query_cache.keys().take(to_remove).cloned().collect();
                 for key in keys_to_remove {
                     entry.query_cache.remove(&key);
                     evicted = evicted.saturating_add(1);
@@ -1763,7 +1770,11 @@ impl MethodStore {
 
         shard.cache_nelem = shard.cache_nelem.saturating_sub(evicted);
         shard.cache_need_flush = false;
-        debug!(evicted = evicted, remaining = shard.cache_nelem, "cache eviction complete");
+        debug!(
+            evicted = evicted,
+            remaining = shard.cache_nelem,
+            "cache eviction complete"
+        );
     }
 
     /// Flushes all query caches across all shards.
@@ -1818,7 +1829,9 @@ impl MethodStore {
             shard.cache_nelem = shard.cache_nelem.saturating_sub(cache_flushed);
 
             // Remove empty algorithm entries
-            shard.algorithms.retain(|_, entry| !entry.implementations.is_empty());
+            shard
+                .algorithms
+                .retain(|_, entry| !entry.implementations.is_empty());
 
             total_removed = total_removed.saturating_add(shard_removed);
             trace!(

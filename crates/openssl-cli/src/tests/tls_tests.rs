@@ -108,8 +108,7 @@ impl Drop for ServerGuard {
 /// the test to use. There is a small TOCTOU window, but in practice this
 /// is reliable for integration tests.
 fn find_available_port() -> u16 {
-    let listener =
-        TcpListener::bind("127.0.0.1:0").expect("failed to bind ephemeral port");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind ephemeral port");
     let port = listener
         .local_addr()
         .expect("failed to get local address from ephemeral listener")
@@ -204,21 +203,19 @@ fn generate_self_signed_cert(dir: &TempDir) -> (PathBuf, PathBuf) {
     let cert_path = dir.path().join("cert.pem");
     let key_path = dir.path().join("key.pem");
 
-    fs::write(&cert_path, SELF_SIGNED_CERT_PEM)
-        .expect("failed to write cert.pem");
-    fs::write(&key_path, SELF_SIGNED_KEY_PEM)
-        .expect("failed to write key.pem");
+    fs::write(&cert_path, SELF_SIGNED_CERT_PEM).expect("failed to write cert.pem");
+    fs::write(&key_path, SELF_SIGNED_KEY_PEM).expect("failed to write key.pem");
 
     // Verify files were written correctly.
-    let cert_content = fs::read_to_string(&cert_path)
-        .expect("failed to read cert.pem back for verification");
+    let cert_content =
+        fs::read_to_string(&cert_path).expect("failed to read cert.pem back for verification");
     assert!(
         !cert_content.is_empty(),
         "cert.pem must be non-empty after write"
     );
 
-    let key_content = fs::read_to_string(&key_path)
-        .expect("failed to read key.pem back for verification");
+    let key_content =
+        fs::read_to_string(&key_path).expect("failed to read key.pem back for verification");
     assert!(
         !key_content.is_empty(),
         "key.pem must be non-empty after write"
@@ -253,8 +250,8 @@ fn openssl_bin_path() -> PathBuf {
     // 2. Pop to remove the filename   → target/debug/deps/
     // 3. Pop again if inside deps/    → target/debug/
     // 4. Join with the binary name    → target/debug/openssl
-    let mut path = std::env::current_exe()
-        .expect("current_exe should be available in test context");
+    let mut path =
+        std::env::current_exe().expect("current_exe should be available in test context");
     path.pop(); // remove test binary filename
     if path.ends_with("deps") {
         path.pop(); // remove deps/ directory
@@ -358,10 +355,7 @@ fn test_ciphers_verbose() {
 #[test]
 fn test_ciphers_filter() {
     // Base invocation without filter: dispatches through the stub handler.
-    super::openssl_cmd()
-        .arg("ciphers")
-        .assert()
-        .success();
+    super::openssl_cmd().arg("ciphers").assert().success();
 
     // Invocation with filter arg: clap rejects unexpected positional arg.
     // This confirms the argument boundary is enforced at the parsing layer.
@@ -386,10 +380,7 @@ fn test_ciphers_filter() {
 #[test]
 fn test_ciphers_tls13_only() {
     // Base dispatch succeeds.
-    super::openssl_cmd()
-        .arg("ciphers")
-        .assert()
-        .success();
+    super::openssl_cmd().arg("ciphers").assert().success();
 }
 
 /// Verify the PSK cipher suite listing path.
@@ -401,10 +392,7 @@ fn test_ciphers_tls13_only() {
 #[test]
 fn test_ciphers_psk() {
     // Verify ciphers subcommand dispatches without error.
-    let assert_result = super::openssl_cmd()
-        .arg("ciphers")
-        .assert()
-        .success();
+    let assert_result = super::openssl_cmd().arg("ciphers").assert().success();
 
     // Verify the process produced output (stub message or cipher list).
     let output = assert_result.get_output();
@@ -542,15 +530,13 @@ fn test_s_client_shows_certificate() {
     let (cert_path, key_path) = generate_self_signed_cert(&tmp);
 
     // Verify the generated certificate file contains PEM markers.
-    let cert_content = fs::read_to_string(&cert_path)
-        .expect("failed to read cert.pem");
+    let cert_content = fs::read_to_string(&cert_path).expect("failed to read cert.pem");
     assert!(
         cert_content.contains("BEGIN CERTIFICATE"),
         "cert.pem should contain PEM header"
     );
 
-    let key_content = fs::read_to_string(&key_path)
-        .expect("failed to read key.pem");
+    let key_content = fs::read_to_string(&key_path).expect("failed to read key.pem");
     assert!(
         key_content.contains("BEGIN PRIVATE KEY"),
         "key.pem should contain PEM header"
@@ -594,10 +580,7 @@ fn test_s_client_shows_certificate() {
 #[test]
 fn test_s_client_starttls() {
     // Verify s_client subcommand is recognized and dispatches.
-    super::openssl_cmd()
-        .arg("s_client")
-        .assert()
-        .success();
+    super::openssl_cmd().arg("s_client").assert().success();
 
     // Verify help text mentions s_client context.
     super::openssl_cmd()
@@ -665,10 +648,7 @@ fn test_s_client_bad_hostname() {
 #[test]
 fn test_s_client_tls13_only() {
     // Verify s_client dispatches successfully.
-    super::openssl_cmd()
-        .arg("s_client")
-        .assert()
-        .success();
+    super::openssl_cmd().arg("s_client").assert().success();
 
     // Verify help text is non-empty.
     super::openssl_cmd()
@@ -723,10 +703,7 @@ fn test_s_client_no_tls10() {
 #[test]
 fn test_ciphers_with_protocol_filter() {
     // Verify base dispatch.
-    super::openssl_cmd()
-        .arg("ciphers")
-        .assert()
-        .success();
+    super::openssl_cmd().arg("ciphers").assert().success();
 
     // Verify help text is accessible and non-empty.
     let assert_result = super::openssl_cmd()

@@ -505,10 +505,7 @@ fn select_int_extreme_values() {
         constant_time_select_int(0xFFFF_FFFF, i32::MIN, i32::MAX),
         i32::MIN
     );
-    assert_eq!(
-        constant_time_select_int(0, i32::MIN, i32::MAX),
-        i32::MAX
-    );
+    assert_eq!(constant_time_select_int(0, i32::MIN, i32::MAX), i32::MAX);
 }
 
 // --- Chained selection: use lt result as mask ---

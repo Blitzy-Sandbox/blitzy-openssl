@@ -9,4 +9,4 @@
 pub mod util;
 
 // Re-export commonly used items from util for convenience.
-pub use util::{KemMode, kem_mode_to_name, kem_modename_to_id};
+pub use util::{kem_mode_to_name, kem_modename_to_id, KemMode};

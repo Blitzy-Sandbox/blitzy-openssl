@@ -385,11 +385,9 @@ impl OsslTime {
     /// assert_eq!(t.to_seconds(), 1_700_000_000);
     /// ```
     pub fn from_system_time(t: SystemTime) -> Result<Self, CommonError> {
-        let d = t.duration_since(UNIX_EPOCH).map_err(|_| {
-            CommonError::Internal(
-                "system clock is before Unix epoch".to_string(),
-            )
-        })?;
+        let d = t
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| CommonError::Internal("system clock is before Unix epoch".to_string()))?;
         Ok(Self::from_duration(d))
     }
 

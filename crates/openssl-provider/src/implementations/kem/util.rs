@@ -36,9 +36,7 @@ pub enum KemMode {
 /// Replaces C `KEM_MODE_NAME kem_modes[]` array (`kem_util.c` lines 22–26).
 /// The C sentinel entry `{0, NULL}` is not needed — Rust slice length is
 /// known at compile time.
-const KEM_MODES: &[(&str, KemMode)] = &[
-    ("dhkem", KemMode::DhKem),
-];
+const KEM_MODES: &[(&str, KemMode)] = &[("dhkem", KemMode::DhKem)];
 
 /// Maps a textual KEM mode name to its [`KemMode`] enum value.
 ///

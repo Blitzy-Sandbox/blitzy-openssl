@@ -247,10 +247,7 @@ fn saturating_add_zero() {
 #[test]
 fn saturating_add_infinite() {
     let t = OsslTime::from_seconds(5);
-    assert_eq!(
-        t.saturating_add(OsslTime::INFINITE),
-        OsslTime::INFINITE
-    );
+    assert_eq!(t.saturating_add(OsslTime::INFINITE), OsslTime::INFINITE);
 }
 
 // ---- Subtraction (replaces ossl_time_subtract()) ----
@@ -429,7 +426,10 @@ fn time_ord_consistent() {
 #[test]
 fn display_zero() {
     let s = format!("{}", OsslTime::ZERO);
-    assert!(s.contains('0'), "display of ZERO should contain '0', got: {s}");
+    assert!(
+        s.contains('0'),
+        "display of ZERO should contain '0', got: {s}"
+    );
     assert_eq!(s, "0s");
 }
 

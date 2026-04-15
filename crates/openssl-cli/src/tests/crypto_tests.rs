@@ -163,10 +163,8 @@ fn test_enc_aes256cbc_roundtrip() {
     );
 
     // Verify roundtrip integrity.
-    let original =
-        fs::read_to_string(&plaintext_path).expect("Failed to read original plaintext");
-    let decrypted =
-        fs::read_to_string(&decrypted_path).expect("Failed to read decrypted output");
+    let original = fs::read_to_string(&plaintext_path).expect("Failed to read original plaintext");
+    let decrypted = fs::read_to_string(&decrypted_path).expect("Failed to read decrypted output");
     assert_eq!(
         original, decrypted,
         "Encryption roundtrip failed: content mismatch"
@@ -232,10 +230,7 @@ fn test_enc_list_ciphers() {
 
     // Full implementation: verify output lists cipher names.
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        !stdout.is_empty(),
-        "Cipher list output should not be empty"
-    );
+    assert!(!stdout.is_empty(), "Cipher list output should not be empty");
 }
 
 /// Tests that decryption with an incorrect password fails.
@@ -292,8 +287,7 @@ fn test_enc_bad_password_fails() {
 
     // Either decryption fails (non-zero exit) or content differs from original.
     if decrypt_output.status.success() && decrypted_path.exists() {
-        let original =
-            fs::read_to_string(&plaintext_path).expect("Failed to read original");
+        let original = fs::read_to_string(&plaintext_path).expect("Failed to read original");
         let decrypted = fs::read_to_string(&decrypted_path).unwrap_or_default();
         assert_ne!(
             original, decrypted,
@@ -320,10 +314,7 @@ fn test_dgst_sha256() {
     let dir = TempDir::new().expect("Failed to create temp dir");
     let plaintext_path = create_test_plaintext(&dir);
 
-    let output = run_cmd_with_args(
-        "dgst",
-        &["-sha256", plaintext_path.to_str().unwrap()],
-    );
+    let output = run_cmd_with_args("dgst", &["-sha256", plaintext_path.to_str().unwrap()]);
 
     if !output.status.success() {
         // Handler not fully wired — dispatch verified above.
@@ -333,9 +324,7 @@ fn test_dgst_sha256() {
     // Full implementation: verify hex digest format.
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("SHA2-256")
-            || stdout.contains("sha256")
-            || stdout.contains("SHA256"),
+        stdout.contains("SHA2-256") || stdout.contains("sha256") || stdout.contains("SHA256"),
         "SHA-256 digest output should reference the algorithm name"
     );
 }
@@ -353,10 +342,7 @@ fn test_dgst_sha512() {
     let dir = TempDir::new().expect("Failed to create temp dir");
     let plaintext_path = create_test_plaintext(&dir);
 
-    let output = run_cmd_with_args(
-        "dgst",
-        &["-sha512", plaintext_path.to_str().unwrap()],
-    );
+    let output = run_cmd_with_args("dgst", &["-sha512", plaintext_path.to_str().unwrap()]);
 
     if !output.status.success() {
         // Handler not fully wired — dispatch verified above.
@@ -383,20 +369,14 @@ fn test_dgst_md5() {
     let dir = TempDir::new().expect("Failed to create temp dir");
     let plaintext_path = create_test_plaintext(&dir);
 
-    let output = run_cmd_with_args(
-        "dgst",
-        &["-md5", plaintext_path.to_str().unwrap()],
-    );
+    let output = run_cmd_with_args("dgst", &["-md5", plaintext_path.to_str().unwrap()]);
 
     if !output.status.success() {
         return;
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        !stdout.is_empty(),
-        "MD5 digest output should not be empty"
-    );
+    assert!(!stdout.is_empty(), "MD5 digest output should not be empty");
 }
 
 /// Tests binary digest output.
@@ -458,11 +438,7 @@ fn test_dgst_multiple_files() {
 
     let output = run_cmd_with_args(
         "dgst",
-        &[
-            "-sha256",
-            file1.to_str().unwrap(),
-            file2.to_str().unwrap(),
-        ],
+        &["-sha256", file1.to_str().unwrap(), file2.to_str().unwrap()],
     );
 
     if !output.status.success() {
@@ -583,10 +559,7 @@ fn test_rand_generates_bytes() {
     let dir = TempDir::new().expect("Failed to create temp dir");
     let out_path = dir.path().join("random.bin");
 
-    let output = run_cmd_with_args(
-        "rand",
-        &["-out", out_path.to_str().unwrap(), "32"],
-    );
+    let output = run_cmd_with_args("rand", &["-out", out_path.to_str().unwrap(), "32"]);
 
     if !output.status.success() {
         return;
@@ -656,18 +629,13 @@ fn test_rand_base64_output() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let b64_str = stdout.trim();
+    assert!(!b64_str.is_empty(), "Base64 output should not be empty");
     assert!(
-        !b64_str.is_empty(),
-        "Base64 output should not be empty"
-    );
-    assert!(
-        b64_str
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric()
-                || c == '+'
-                || c == '/'
-                || c == '='
-                || c == '\n'),
+        b64_str.chars().all(|c| c.is_ascii_alphanumeric()
+            || c == '+'
+            || c == '/'
+            || c == '='
+            || c == '\n'),
         "Base64 output should contain only valid base64 characters, got: {b64_str}",
     );
 }
@@ -819,10 +787,8 @@ fn test_cms_sign_verify() {
     );
 
     if verified_path.exists() {
-        let original =
-            fs::read_to_string(&plaintext_path).expect("Failed to read original");
-        let verified =
-            fs::read_to_string(&verified_path).expect("Failed to read verified output");
+        let original = fs::read_to_string(&plaintext_path).expect("Failed to read original");
+        let verified = fs::read_to_string(&verified_path).expect("Failed to read verified output");
         assert_eq!(
             original, verified,
             "CMS sign/verify roundtrip content mismatch"
@@ -928,8 +894,7 @@ fn test_cms_encrypt_decrypt() {
     );
 
     if decrypted_path.exists() {
-        let original =
-            fs::read_to_string(&plaintext_path).expect("Failed to read original");
+        let original = fs::read_to_string(&plaintext_path).expect("Failed to read original");
         let decrypted =
             fs::read_to_string(&decrypted_path).expect("Failed to read decrypted output");
         assert_eq!(
