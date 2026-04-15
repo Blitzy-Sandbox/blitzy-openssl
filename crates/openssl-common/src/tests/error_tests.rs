@@ -84,7 +84,10 @@ fn error_library_known_display_values() {
     assert_eq!(format!("{}", ErrorLibrary::Rsa), "rsa routines");
     assert_eq!(format!("{}", ErrorLibrary::Ssl), "SSL routines");
     assert_eq!(format!("{}", ErrorLibrary::Fips), "FIPS routines");
-    assert_eq!(format!("{}", ErrorLibrary::Crypto), "common libcrypto routines");
+    assert_eq!(
+        format!("{}", ErrorLibrary::Crypto),
+        "common libcrypto routines"
+    );
 }
 
 #[test]
@@ -254,6 +257,39 @@ fn common_error_converts_to_fips_error() {
 }
 
 #[test]
+fn common_error_from_io_source_chain() {
+    // Verify #[from] conversion from io::Error → CommonError::Io and
+    // that source() returns the original io::Error.
+    let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "test");
+    let err: CommonError = io_err.into();
+    assert!(
+        matches!(&err, CommonError::Io(_)),
+        "Expected CommonError::Io variant"
+    );
+    let source = std::error::Error::source(&err);
+    assert!(
+        source.is_some(),
+        "CommonError::Io should expose the underlying io::Error via source()"
+    );
+}
+
+#[test]
+fn common_error_from_try_from_int_via_into() {
+    // Verify #[from] conversion from TryFromIntError → CommonError::CastOverflow.
+    let try_err = u8::try_from(256i32).unwrap_err();
+    let err: CommonError = try_err.into();
+    assert!(
+        matches!(&err, CommonError::CastOverflow(_)),
+        "Expected CommonError::CastOverflow variant"
+    );
+    let source = std::error::Error::source(&err);
+    assert!(
+        source.is_some(),
+        "CastOverflow should chain to TryFromIntError via source()"
+    );
+}
+
+#[test]
 fn error_chain_common_through_crypto_to_ssl() {
     // Tests a two-level conversion chain:
     // CommonError → CryptoError → SslError
@@ -266,6 +302,44 @@ fn error_chain_common_through_crypto_to_ssl() {
     }
 }
 
+#[test]
+fn error_chain_depth() {
+    // Build a multi-layer chain: CommonError → CryptoError → SslError.
+    //
+    // With thiserror's `#[error(transparent)]`, CryptoError::Common and
+    // SslError::Crypto delegate `source()` to the innermost non-transparent
+    // error's `source()`.  Using CommonError::Io (which has `#[from]`
+    // generating a real `source()` returning the wrapped io::Error),
+    // the chain from SslError reaches the io::Error in one source() hop.
+    let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "not found");
+    let common = CommonError::Io(io_err);
+    let crypto: CryptoError = common.into();
+    let ssl: SslError = crypto.into();
+
+    // Verify source() chain has at least 1 link (SslError → io::Error
+    // via transparent delegation through CryptoError and CommonError).
+    let mut depth: usize = 0;
+    let mut current: Option<&dyn std::error::Error> = std::error::Error::source(&ssl);
+    while let Some(err) = current {
+        depth += 1;
+        current = err.source();
+    }
+    assert!(
+        depth >= 1,
+        "Error chain should be at least 1 level deep, got {depth}"
+    );
+
+    // Verify the FULL structural nesting via pattern matching — this
+    // proves the complete CommonError → CryptoError → SslError chain
+    // even though transparent source() delegation flattens it.
+    match &ssl {
+        SslError::Crypto(CryptoError::Common(CommonError::Io(_))) => {}
+        other => panic!(
+            "Expected SslError::Crypto(CryptoError::Common(CommonError::Io(_))), got {other:?}"
+        ),
+    }
+}
+
 // =============================================================================
 // CryptoError, SslError, ProviderError, FipsError — Direct Variants
 // =============================================================================
@@ -275,6 +349,16 @@ fn crypto_error_algorithm_not_found_display() {
     let err = CryptoError::AlgorithmNotFound("SM4-XTS".to_string());
     let display = format!("{err}");
     assert!(display.contains("SM4-XTS"));
+}
+
+#[test]
+fn crypto_error_display_provider() {
+    let err = CryptoError::Provider("missing algo".to_string());
+    let display = format!("{err}");
+    assert!(
+        display.contains("missing algo"),
+        "CryptoError::Provider display should contain the message"
+    );
 }
 
 #[test]
@@ -375,6 +459,65 @@ fn error_detail_serializes_to_json() {
     assert!(json.contains("handshake timeout"));
     assert!(json.contains("ssl.rs"));
     assert!(json.contains("77"));
+}
+
+#[test]
+fn error_detail_construction() {
+    // Verify each field is individually accessible after construction.
+    let detail = ErrorDetail {
+        library: ErrorLibrary::X509,
+        reason: "cert expired".to_string(),
+        file: "x509.rs",
+        line: 99,
+        function: "verify_chain",
+        data: Some("serial=1234".to_string()),
+    };
+    assert_eq!(detail.library, ErrorLibrary::X509);
+    assert_eq!(detail.reason, "cert expired");
+    assert_eq!(detail.file, "x509.rs");
+    assert_eq!(detail.line, 99);
+    assert_eq!(detail.function, "verify_chain");
+    assert_eq!(detail.data.as_deref(), Some("serial=1234"));
+}
+
+#[test]
+fn error_detail_clone() {
+    let original = ErrorDetail {
+        library: ErrorLibrary::Rand,
+        reason: "entropy exhausted".to_string(),
+        file: "rand.rs",
+        line: 55,
+        function: "generate",
+        data: None,
+    };
+    let cloned = original.clone();
+    assert_eq!(cloned.library, original.library);
+    assert_eq!(cloned.reason, original.reason);
+    assert_eq!(cloned.file, original.file);
+    assert_eq!(cloned.line, original.line);
+    assert_eq!(cloned.function, original.function);
+    assert_eq!(cloned.data, original.data);
+}
+
+#[test]
+fn error_detail_debug() {
+    let detail = ErrorDetail {
+        library: ErrorLibrary::Bio,
+        reason: "write failed".to_string(),
+        file: "bio.rs",
+        line: 10,
+        function: "flush",
+        data: None,
+    };
+    let debug = format!("{detail:?}");
+    assert!(
+        debug.contains("Bio"),
+        "Debug output should contain library variant name"
+    );
+    assert!(
+        debug.contains("write failed"),
+        "Debug output should contain reason string"
+    );
 }
 
 // =============================================================================
@@ -485,10 +628,7 @@ fn err_detail_macro_with_data() {
     );
     assert_eq!(detail.library, ErrorLibrary::Evp);
     assert_eq!(detail.reason, "unsupported algorithm");
-    assert_eq!(
-        detail.data.as_deref(),
-        Some("requested: CHACHA20-POLY1305")
-    );
+    assert_eq!(detail.data.as_deref(), Some("requested: CHACHA20-POLY1305"));
 }
 
 // =============================================================================
@@ -530,6 +670,42 @@ fn provider_result_alias_works() {
 fn fips_result_alias_works() {
     let err: error::FipsResult<()> = Err(FipsError::NotApproved("MD5".to_string()));
     assert!(err.is_err());
+}
+
+#[test]
+fn crypto_result_question_mark_operator() {
+    fn inner() -> error::CryptoResult<i32> {
+        let v: i32 = Ok::<i32, CryptoError>(10)?;
+        Ok(v + 32)
+    }
+    assert_eq!(inner().unwrap(), 42);
+}
+
+#[test]
+fn ssl_result_question_mark_operator() {
+    fn inner() -> error::SslResult<i32> {
+        let v: i32 = Ok::<i32, SslError>(10)?;
+        Ok(v + 32)
+    }
+    assert_eq!(inner().unwrap(), 42);
+}
+
+#[test]
+fn provider_result_question_mark_operator() {
+    fn inner() -> error::ProviderResult<i32> {
+        let v: i32 = Ok::<i32, ProviderError>(10)?;
+        Ok(v + 32)
+    }
+    assert_eq!(inner().unwrap(), 42);
+}
+
+#[test]
+fn fips_result_question_mark_operator() {
+    fn inner() -> error::FipsResult<i32> {
+        let v: i32 = Ok::<i32, FipsError>(10)?;
+        Ok(v + 32)
+    }
+    assert_eq!(inner().unwrap(), 42);
 }
 
 // =============================================================================
