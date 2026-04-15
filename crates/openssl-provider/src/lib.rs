@@ -14,5 +14,10 @@ pub mod traits;
 /// algorithm fetch.  Translates `crypto/core_fetch.c` and `crypto/core_algorithm.c`.
 pub mod dispatch;
 
+/// Default provider implementation — the primary provider supplying the
+/// standard non-FIPS algorithm catalog across all operation categories.
+/// Replaces C `providers/defltprov.c`.
+pub mod default;
+
 /// Algorithm implementation backends (ciphers, digests, KDFs, MACs, KEM, etc.).
 pub mod implementations;
