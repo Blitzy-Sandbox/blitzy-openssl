@@ -14,4 +14,6 @@ mod error_tests;
 #[cfg(test)]
 mod observability_tests;
 #[cfg(test)]
+mod safe_math_tests;
+#[cfg(test)]
 mod types_tests;
