@@ -8,3 +8,6 @@
 pub mod indicator;
 pub mod kats;
 pub mod state;
+
+#[cfg(test)]
+mod tests;
