@@ -1275,6 +1275,7 @@ dependencies = [
  "parking_lot",
  "proptest",
  "serde",
+ "serde_json",
  "tempfile",
  "test-log",
  "thiserror",

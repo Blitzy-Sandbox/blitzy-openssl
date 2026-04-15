@@ -287,6 +287,9 @@ mockall = { workspace = true }
 # The html_reports feature generates detailed performance reports.
 criterion = { workspace = true, features = ["html_reports"] }
 
+# JSON serialization for test assertions (e.g., ProviderInfo serde round-trip).
+serde_json = { workspace = true }
+
 # =============================================================================
 # Benchmark Harness
 # =============================================================================
