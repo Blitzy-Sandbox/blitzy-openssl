@@ -2964,7 +2964,7 @@ mod tests {
     #[test]
     fn test_catalog_ids_sequential() {
         for (i, test) in ALL_TESTS.iter().enumerate() {
-            assert_eq!(test.id, i, "Test ID mismatch at index {}", i);
+            assert_eq!(test.id, i, "Test ID mismatch at index {i}");
         }
     }
 

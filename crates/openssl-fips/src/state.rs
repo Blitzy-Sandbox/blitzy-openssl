@@ -680,6 +680,7 @@ pub static FIPS_ERROR_LIMITER: ErrorRateLimiter = ErrorRateLimiter::new(ERROR_RE
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::expect_used)] // Justification: test code — expect() on known-valid values is acceptable
 mod tests {
     use super::*;
 
@@ -944,8 +945,7 @@ mod tests {
             assert_eq!(
                 get_test_state(id),
                 Some(TestState::Deferred),
-                "test {} should be Deferred",
-                id
+                "test {id} should be Deferred",
             );
         }
 
@@ -962,8 +962,7 @@ mod tests {
             assert_eq!(
                 get_test_state(id),
                 Some(TestState::Init),
-                "test {} should be Init after reset",
-                id
+                "test {id} should be Init after reset",
             );
         }
     }
@@ -1007,11 +1006,11 @@ mod tests {
         reset_all_states();
 
         // Set all tests as passed
-        let _lock = TEST_STATES_LOCK.lock();
+        let lock = TEST_STATES_LOCK.lock();
         for state in &TEST_STATES {
             state.store(TestState::Passed as u8, Ordering::SeqCst);
         }
-        drop(_lock);
+        drop(lock);
 
         // Should work even with count > MAX_TEST_COUNT
         assert!(all_tests_passed(MAX_TEST_COUNT + 100));
@@ -1026,7 +1025,8 @@ mod tests {
     fn max_test_count_is_sufficient() {
         // The C self_test.h defines categories with at most ~30 tests
         // per the ST_ID enumeration. 64 is a conservative upper bound.
-        assert!(MAX_TEST_COUNT >= 32, "MAX_TEST_COUNT should be at least 32");
+        #[allow(clippy::assertions_on_constants)] // Intentional compile-time sanity check on const
+        { assert!(MAX_TEST_COUNT >= 32, "MAX_TEST_COUNT should be at least 32"); }
     }
 
     #[test]
