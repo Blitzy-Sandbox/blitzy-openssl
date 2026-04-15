@@ -1420,6 +1420,12 @@ pub fn get_default_config_path() -> Option<PathBuf> {
 // =============================================================================
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::stable_sort_primitive,
+    clippy::uninlined_format_args
+)]
 mod tests {
     use super::*;
 

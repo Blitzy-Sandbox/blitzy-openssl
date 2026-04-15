@@ -1,4 +1,17 @@
-//! Tests for the typed parameter system replacing OSSL_PARAM in openssl-common.
+// Test modules legitimately use `.unwrap()` / `.expect()` and test-specific
+// patterns that trigger pedantic clippy lints.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::approx_constant,
+    clippy::bool_assert_comparison,
+    clippy::match_same_arms,
+    clippy::doc_markdown,
+    clippy::uninlined_format_args,
+    clippy::stable_sort_primitive
+)]
+
+//! Tests for the typed parameter system replacing `OSSL_PARAM` in openssl-common.
 //!
 //! This module comprehensively tests the [`crate::param`] module, verifying:
 //!

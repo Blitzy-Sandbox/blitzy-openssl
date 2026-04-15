@@ -1,3 +1,15 @@
+// Test modules legitimately use `.unwrap()` / `.expect()` and test-specific
+// patterns that trigger pedantic clippy lints.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::bool_assert_comparison,
+    clippy::match_same_arms,
+    clippy::doc_markdown,
+    clippy::needless_pass_by_value,
+    clippy::no_effect_underscore_binding
+)]
+
 //! Tests for observability infrastructure (tracing, metrics, health checks) in openssl-common.
 //!
 //! Exercises the full public API of the [`crate::observability`] module:

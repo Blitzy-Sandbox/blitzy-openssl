@@ -1,3 +1,12 @@
+// Test modules legitimately use `.unwrap()` / `.expect()` and test-specific
+// patterns that trigger pedantic clippy lints.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::bool_assert_comparison,
+    clippy::doc_markdown
+)]
+
 //! Tests for constant-time comparison and selection primitives in openssl-common.
 //!
 //! Exercises every public function in the [`crate::constant_time`] module through
