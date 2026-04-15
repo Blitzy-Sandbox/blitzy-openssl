@@ -6,4 +6,5 @@
 #![forbid(unsafe_code)]
 
 pub mod indicator;
+pub mod kats;
 pub mod state;
