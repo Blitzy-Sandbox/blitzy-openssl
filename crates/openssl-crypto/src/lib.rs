@@ -9,5 +9,8 @@ pub mod cpu_detect;
 pub mod provider;
 pub mod thread;
 
+#[cfg(feature = "ts")]
+pub mod ts;
+
 #[cfg(test)]
 mod tests;
