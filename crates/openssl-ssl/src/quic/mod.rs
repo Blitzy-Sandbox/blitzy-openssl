@@ -9,7 +9,12 @@
 //! Gated behind the `quic` feature flag.
 
 pub mod cc;
+pub mod reactor;
 pub mod stream;
 
 pub use cc::{CcState, CongestionController, NewRenoCc};
+pub use reactor::{
+    BlockFlags, PollDescriptor, QuicReactor, QuicTickResult, ReactorWaitCtx, WaitGuard,
+    QUIC_REACTOR_FLAG_USE_NOTIFIER,
+};
 pub use stream::{StreamId, StreamMap, StreamType};
