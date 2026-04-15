@@ -8,6 +8,8 @@
 //! delivered.
 
 #[cfg(test)]
+mod config_tests;
+#[cfg(test)]
 mod constant_time_tests;
 #[cfg(test)]
 mod error_tests;
