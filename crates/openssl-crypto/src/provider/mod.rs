@@ -3,8 +3,15 @@
 //! This module contains the provider framework for the `openssl-crypto` crate,
 //! including predefined provider definitions, core dispatch, and property matching.
 
+pub mod core;
 pub mod predefined;
 pub mod property;
 
 // Re-export commonly used predefined provider types for convenience.
 pub use predefined::{InfoPair, ProviderInfo, ProviderKind};
+
+// Re-export core provider dispatch types.
+pub use self::core::{
+    AlgorithmDescriptor, ChildProviderCallback, OperationId, ProviderConfState, ProviderInstance,
+    ProviderStore,
+};
