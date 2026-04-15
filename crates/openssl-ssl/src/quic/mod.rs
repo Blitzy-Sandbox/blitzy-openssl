@@ -4,9 +4,12 @@
 //! (`ssl/quic/` — 42 C source files), providing:
 //!
 //! - Stream map, buffering, and flow control ([`stream`])
+//! - Congestion control with pluggable algorithms ([`cc`])
 //!
 //! Gated behind the `quic` feature flag.
 
+pub mod cc;
 pub mod stream;
 
+pub use cc::{CcState, CongestionController, NewRenoCc};
 pub use stream::{StreamId, StreamMap, StreamType};
