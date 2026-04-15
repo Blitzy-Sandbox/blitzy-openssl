@@ -46,8 +46,8 @@
 //! - **R9 (Warning-Free):** No `#[allow(unused)]` without justification.
 //! - **R10 (Wiring):** `initialize()` is the entry point; all tables reachable via `query_algorithms()`.
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use once_cell::sync::Lazy;
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -601,8 +601,16 @@ pub static FIPS_DIGESTS: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
         fips_alg!("SHA3-512", "SHA-3 512"),
         fips_alg!("SHAKE-128:SHAKE128", "SHAKE 128"),
         fips_alg!("SHAKE-256:SHAKE256", "SHAKE 256"),
-        fips_alg!("CSHAKE-128:CSHAKE128", FIPS_UNAPPROVED_PROPERTIES, "CSHAKE 128"),
-        fips_alg!("CSHAKE-256:CSHAKE256", FIPS_UNAPPROVED_PROPERTIES, "CSHAKE 256"),
+        fips_alg!(
+            "CSHAKE-128:CSHAKE128",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "CSHAKE 128"
+        ),
+        fips_alg!(
+            "CSHAKE-256:CSHAKE256",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "CSHAKE 256"
+        ),
     ]
 });
 
@@ -653,22 +661,56 @@ pub static FIPS_CIPHERS: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
         fips_alg!("AES-256-WRAP:id-aes256-wrap:AES256-WRAP", "AES-256-WRAP"),
         fips_alg!("AES-192-WRAP:id-aes192-wrap:AES192-WRAP", "AES-192-WRAP"),
         fips_alg!("AES-128-WRAP:id-aes128-wrap:AES128-WRAP", "AES-128-WRAP"),
-        fips_alg!("AES-256-WRAP-PAD:id-aes256-wrap-pad:AES256-WRAP-PAD", "AES-256-WRAP-PAD"),
-        fips_alg!("AES-192-WRAP-PAD:id-aes192-wrap-pad:AES192-WRAP-PAD", "AES-192-WRAP-PAD"),
-        fips_alg!("AES-128-WRAP-PAD:id-aes128-wrap-pad:AES128-WRAP-PAD", "AES-128-WRAP-PAD"),
+        fips_alg!(
+            "AES-256-WRAP-PAD:id-aes256-wrap-pad:AES256-WRAP-PAD",
+            "AES-256-WRAP-PAD"
+        ),
+        fips_alg!(
+            "AES-192-WRAP-PAD:id-aes192-wrap-pad:AES192-WRAP-PAD",
+            "AES-192-WRAP-PAD"
+        ),
+        fips_alg!(
+            "AES-128-WRAP-PAD:id-aes128-wrap-pad:AES128-WRAP-PAD",
+            "AES-128-WRAP-PAD"
+        ),
         fips_alg!("AES-256-WRAP-INV:AES256-WRAP-INV", "AES-256-WRAP-INV"),
         fips_alg!("AES-192-WRAP-INV:AES192-WRAP-INV", "AES-192-WRAP-INV"),
         fips_alg!("AES-128-WRAP-INV:AES128-WRAP-INV", "AES-128-WRAP-INV"),
-        fips_alg!("AES-256-WRAP-PAD-INV:AES256-WRAP-PAD-INV", "AES-256-WRAP-PAD-INV"),
-        fips_alg!("AES-192-WRAP-PAD-INV:AES192-WRAP-PAD-INV", "AES-192-WRAP-PAD-INV"),
-        fips_alg!("AES-128-WRAP-PAD-INV:AES128-WRAP-PAD-INV", "AES-128-WRAP-PAD-INV"),
-        fips_alg!("AES-128-CBC-HMAC-SHA1", FIPS_UNAPPROVED_PROPERTIES, "AES-128-CBC-HMAC-SHA1"),
-        fips_alg!("AES-256-CBC-HMAC-SHA1", FIPS_UNAPPROVED_PROPERTIES, "AES-256-CBC-HMAC-SHA1"),
+        fips_alg!(
+            "AES-256-WRAP-PAD-INV:AES256-WRAP-PAD-INV",
+            "AES-256-WRAP-PAD-INV"
+        ),
+        fips_alg!(
+            "AES-192-WRAP-PAD-INV:AES192-WRAP-PAD-INV",
+            "AES-192-WRAP-PAD-INV"
+        ),
+        fips_alg!(
+            "AES-128-WRAP-PAD-INV:AES128-WRAP-PAD-INV",
+            "AES-128-WRAP-PAD-INV"
+        ),
+        fips_alg!(
+            "AES-128-CBC-HMAC-SHA1",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "AES-128-CBC-HMAC-SHA1"
+        ),
+        fips_alg!(
+            "AES-256-CBC-HMAC-SHA1",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "AES-256-CBC-HMAC-SHA1"
+        ),
         fips_alg!("AES-128-CBC-HMAC-SHA256", "AES-128-CBC-HMAC-SHA256"),
         fips_alg!("AES-256-CBC-HMAC-SHA256", "AES-256-CBC-HMAC-SHA256"),
         // Triple DES — unapproved per FIPS 140-3 transition
-        fips_alg!("DES-EDE3-ECB:DES-EDE3", FIPS_UNAPPROVED_PROPERTIES, "DES-EDE3-ECB"),
-        fips_alg!("DES-EDE3-CBC:DES3", FIPS_UNAPPROVED_PROPERTIES, "DES-EDE3-CBC"),
+        fips_alg!(
+            "DES-EDE3-ECB:DES-EDE3",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "DES-EDE3-ECB"
+        ),
+        fips_alg!(
+            "DES-EDE3-CBC:DES3",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "DES-EDE3-CBC"
+        ),
     ]
 });
 
@@ -720,8 +762,16 @@ pub static FIPS_RANDS: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
         fips_alg!("CTR-DRBG", "CTR-DRBG"),
         fips_alg!("HASH-DRBG", "HASH-DRBG"),
         fips_alg!("HMAC-DRBG", "HMAC-DRBG"),
-        fips_alg!("JITTER", FIPS_UNAPPROVED_PROPERTIES, "JITTER Entropy Source"),
-        fips_alg!("TEST-RAND", FIPS_UNAPPROVED_PROPERTIES, "TEST-RAND (testing only)"),
+        fips_alg!(
+            "JITTER",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "JITTER Entropy Source"
+        ),
+        fips_alg!(
+            "TEST-RAND",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "TEST-RAND (testing only)"
+        ),
     ]
 });
 
@@ -736,7 +786,11 @@ pub static FIPS_KEY_EXCHANGE: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
         fips_alg!("ECDH", "ECDH Key Exchange"),
         fips_alg!("X25519", "X25519 Key Exchange"),
         fips_alg!("X448", "X448 Key Exchange"),
-        fips_alg!("TLS1-PRF", FIPS_UNAPPROVED_PROPERTIES, "TLS1-PRF Key Exchange"),
+        fips_alg!(
+            "TLS1-PRF",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "TLS1-PRF Key Exchange"
+        ),
         fips_alg!("HKDF", FIPS_UNAPPROVED_PROPERTIES, "HKDF Key Exchange"),
     ]
 });
@@ -784,11 +838,8 @@ pub static FIPS_SIGNATURES: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
 // ---------------------------------------------------------------------------
 
 /// FIPS-approved asymmetric cipher algorithms.
-pub static FIPS_ASYM_CIPHER: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
-    vec![
-        fips_alg!("RSA:rsaEncryption", "RSA Asymmetric Cipher"),
-    ]
-});
+pub static FIPS_ASYM_CIPHER: Lazy<Vec<FipsAlgorithmEntry>> =
+    Lazy::new(|| vec![fips_alg!("RSA:rsaEncryption", "RSA Asymmetric Cipher")]);
 
 // ---------------------------------------------------------------------------
 // FIPS Asymmetric KEM (fipsprov.c lines 624–650)
@@ -804,12 +855,21 @@ pub static FIPS_ASYM_KEM: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
         fips_alg!("ML-KEM-512", "ML-KEM-512 (FIPS 203)"),
         fips_alg!("ML-KEM-768", "ML-KEM-768 (FIPS 203)"),
         fips_alg!("ML-KEM-1024", "ML-KEM-1024 (FIPS 203)"),
-        fips_alg!("X25519MLKEM768:X25519-MLKEM768", FIPS_UNAPPROVED_PROPERTIES,
-                  "X25519-MLKEM768 Hybrid KEM"),
-        fips_alg!("SecP256r1MLKEM768:P256-MLKEM768", FIPS_UNAPPROVED_PROPERTIES,
-                  "P256-MLKEM768 Hybrid KEM"),
-        fips_alg!("SecP384r1MLKEM1024:P384-MLKEM1024", FIPS_UNAPPROVED_PROPERTIES,
-                  "P384-MLKEM1024 Hybrid KEM"),
+        fips_alg!(
+            "X25519MLKEM768:X25519-MLKEM768",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "X25519-MLKEM768 Hybrid KEM"
+        ),
+        fips_alg!(
+            "SecP256r1MLKEM768:P256-MLKEM768",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "P256-MLKEM768 Hybrid KEM"
+        ),
+        fips_alg!(
+            "SecP384r1MLKEM1024:P384-MLKEM1024",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "P384-MLKEM1024 Hybrid KEM"
+        ),
     ]
 });
 
@@ -831,12 +891,20 @@ pub static FIPS_KEYMGMT: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
         fips_alg!("EC:id-ecPublicKey", "EC Key Management"),
         fips_alg!("X25519", "X25519 Key Management"),
         fips_alg!("X448", "X448 Key Management"),
-        fips_alg!("ED25519", FIPS_UNAPPROVED_PROPERTIES, "ED25519 Key Management"),
+        fips_alg!(
+            "ED25519",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "ED25519 Key Management"
+        ),
         fips_alg!("ED448", FIPS_UNAPPROVED_PROPERTIES, "ED448 Key Management"),
         fips_alg!("ML-DSA-44", "ML-DSA-44 Key Management"),
         fips_alg!("ML-DSA-65", "ML-DSA-65 Key Management"),
         fips_alg!("ML-DSA-87", "ML-DSA-87 Key Management"),
-        fips_alg!("TLS1-PRF", FIPS_UNAPPROVED_PROPERTIES, "TLS1-PRF Key Management"),
+        fips_alg!(
+            "TLS1-PRF",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "TLS1-PRF Key Management"
+        ),
         fips_alg!("HKDF", FIPS_UNAPPROVED_PROPERTIES, "HKDF Key Management"),
         fips_alg!("HMAC", "HMAC Key Management"),
         fips_alg!("CMAC", FIPS_UNAPPROVED_PROPERTIES, "CMAC Key Management"),
@@ -844,12 +912,21 @@ pub static FIPS_KEYMGMT: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
         fips_alg!("ML-KEM-512", "ML-KEM-512 Key Management"),
         fips_alg!("ML-KEM-768", "ML-KEM-768 Key Management"),
         fips_alg!("ML-KEM-1024", "ML-KEM-1024 Key Management"),
-        fips_alg!("X25519MLKEM768:X25519-MLKEM768", FIPS_UNAPPROVED_PROPERTIES,
-                  "X25519-MLKEM768 Hybrid Key Management"),
-        fips_alg!("SecP256r1MLKEM768:P256-MLKEM768", FIPS_UNAPPROVED_PROPERTIES,
-                  "P256-MLKEM768 Hybrid Key Management"),
-        fips_alg!("SecP384r1MLKEM1024:P384-MLKEM1024", FIPS_UNAPPROVED_PROPERTIES,
-                  "P384-MLKEM1024 Hybrid Key Management"),
+        fips_alg!(
+            "X25519MLKEM768:X25519-MLKEM768",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "X25519-MLKEM768 Hybrid Key Management"
+        ),
+        fips_alg!(
+            "SecP256r1MLKEM768:P256-MLKEM768",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "P256-MLKEM768 Hybrid Key Management"
+        ),
+        fips_alg!(
+            "SecP384r1MLKEM1024:P384-MLKEM1024",
+            FIPS_UNAPPROVED_PROPERTIES,
+            "P384-MLKEM1024 Hybrid Key Management"
+        ),
         // SLH-DSA key management — all 12 parameter sets
         fips_alg!("SLH-DSA-SHA2-128s", "SLH-DSA-SHA2-128s Key Management"),
         fips_alg!("SLH-DSA-SHA2-128f", "SLH-DSA-SHA2-128f Key Management"),
@@ -975,7 +1052,10 @@ static GETTABLE_PARAM_NAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
 /// Corresponds to `fips_gettable_params()` (fipsprov.c lines 166–190).
 #[instrument(skip_all)]
 pub fn gettable_params() -> &'static [&'static str] {
-    debug!("Returning {} gettable parameter names", GETTABLE_PARAM_NAMES.len());
+    debug!(
+        "Returning {} gettable parameter names",
+        GETTABLE_PARAM_NAMES.len()
+    );
     &GETTABLE_PARAM_NAMES
 }
 
@@ -1005,7 +1085,10 @@ pub fn get_params(global: &FipsGlobal) -> FipsResult<ParamSet> {
         .push_i32("status", status_value)
         // All 27 indicator config values as i32 (1=enabled, 0=disabled)
         .push_i32("security-checks", bool_to_i32(ic.security_checks.enabled))
-        .push_i32("tls1-prf-ems-check", bool_to_i32(ic.tls1_prf_ems_check.enabled))
+        .push_i32(
+            "tls1-prf-ems-check",
+            bool_to_i32(ic.tls1_prf_ems_check.enabled),
+        )
         .push_i32("no-short-mac", bool_to_i32(ic.no_short_mac.enabled))
         .push_i32("hmac-key-check", bool_to_i32(ic.hmac_key_check.enabled))
         .push_i32("kem-key-check", bool_to_i32(ic.kem_key_check.enabled))
@@ -1015,22 +1098,58 @@ pub fn get_params(global: &FipsGlobal) -> FipsResult<ParamSet> {
         .push_i32("rsa-key-check", bool_to_i32(ic.rsa_key_check.enabled))
         .push_i32("dhx-key-check", bool_to_i32(ic.dhx_key_check.enabled))
         .push_i32("ec-key-check", bool_to_i32(ic.ec_key_check.enabled))
-        .push_i32("pkcs12-key-gen-check", bool_to_i32(ic.pkcs12_key_gen_check.enabled))
-        .push_i32("sign-x931-pad-check", bool_to_i32(ic.sign_x931_pad_check.enabled))
-        .push_i32("sign-digest-check", bool_to_i32(ic.sign_digest_check.enabled))
-        .push_i32("hkdf-digest-check", bool_to_i32(ic.hkdf_digest_check.enabled))
-        .push_i32("tls13-kdf-digest-check", bool_to_i32(ic.tls13_kdf_digest_check.enabled))
-        .push_i32("ecdh-cofactor-check", bool_to_i32(ic.ecdh_cofactor_check.enabled))
+        .push_i32(
+            "pkcs12-key-gen-check",
+            bool_to_i32(ic.pkcs12_key_gen_check.enabled),
+        )
+        .push_i32(
+            "sign-x931-pad-check",
+            bool_to_i32(ic.sign_x931_pad_check.enabled),
+        )
+        .push_i32(
+            "sign-digest-check",
+            bool_to_i32(ic.sign_digest_check.enabled),
+        )
+        .push_i32(
+            "hkdf-digest-check",
+            bool_to_i32(ic.hkdf_digest_check.enabled),
+        )
+        .push_i32(
+            "tls13-kdf-digest-check",
+            bool_to_i32(ic.tls13_kdf_digest_check.enabled),
+        )
+        .push_i32(
+            "ecdh-cofactor-check",
+            bool_to_i32(ic.ecdh_cofactor_check.enabled),
+        )
         .push_i32("hkdf-key-check", bool_to_i32(ic.hkdf_key_check.enabled))
         .push_i32("kbkdf-key-check", bool_to_i32(ic.kbkdf_key_check.enabled))
-        .push_i32("tls1-prf-key-check", bool_to_i32(ic.tls1_prf_key_check.enabled))
-        .push_i32("sshkdf-digest-check", bool_to_i32(ic.sshkdf_digest_check.enabled))
+        .push_i32(
+            "tls1-prf-key-check",
+            bool_to_i32(ic.tls1_prf_key_check.enabled),
+        )
+        .push_i32(
+            "sshkdf-digest-check",
+            bool_to_i32(ic.sshkdf_digest_check.enabled),
+        )
         .push_i32("sshkdf-key-check", bool_to_i32(ic.sshkdf_key_check.enabled))
-        .push_i32("sskdf-digest-check", bool_to_i32(ic.sskdf_digest_check.enabled))
+        .push_i32(
+            "sskdf-digest-check",
+            bool_to_i32(ic.sskdf_digest_check.enabled),
+        )
         .push_i32("sskdf-key-check", bool_to_i32(ic.sskdf_key_check.enabled))
-        .push_i32("x963kdf-key-check", bool_to_i32(ic.x963kdf_key_check.enabled))
-        .push_i32("x942kdf-key-check", bool_to_i32(ic.x942kdf_key_check.enabled))
-        .push_i32("rsa-sign-pss-check", bool_to_i32(ic.rsa_sign_pss_check.enabled));
+        .push_i32(
+            "x963kdf-key-check",
+            bool_to_i32(ic.x963kdf_key_check.enabled),
+        )
+        .push_i32(
+            "x942kdf-key-check",
+            bool_to_i32(ic.x942kdf_key_check.enabled),
+        )
+        .push_i32(
+            "rsa-sign-pss-check",
+            bool_to_i32(ic.rsa_sign_pss_check.enabled),
+        );
 
     let params = builder.build();
     debug!("Built parameter set with {} entries", params.len());
@@ -1192,7 +1311,11 @@ fn extract_indicator_config(
     indicator: &mut FipsIndicatorConfig,
 ) -> FipsResult<()> {
     extract_single_indicator(config, "security-checks", &mut indicator.security_checks)?;
-    extract_single_indicator(config, "tls1-prf-ems-check", &mut indicator.tls1_prf_ems_check)?;
+    extract_single_indicator(
+        config,
+        "tls1-prf-ems-check",
+        &mut indicator.tls1_prf_ems_check,
+    )?;
     extract_single_indicator(config, "no-short-mac", &mut indicator.no_short_mac)?;
     extract_single_indicator(config, "hmac-key-check", &mut indicator.hmac_key_check)?;
     extract_single_indicator(config, "kem-key-check", &mut indicator.kem_key_check)?;
@@ -1202,22 +1325,70 @@ fn extract_indicator_config(
     extract_single_indicator(config, "rsa-key-check", &mut indicator.rsa_key_check)?;
     extract_single_indicator(config, "dhx-key-check", &mut indicator.dhx_key_check)?;
     extract_single_indicator(config, "ec-key-check", &mut indicator.ec_key_check)?;
-    extract_single_indicator(config, "pkcs12-key-gen-check", &mut indicator.pkcs12_key_gen_check)?;
-    extract_single_indicator(config, "sign-x931-pad-check", &mut indicator.sign_x931_pad_check)?;
-    extract_single_indicator(config, "sign-digest-check", &mut indicator.sign_digest_check)?;
-    extract_single_indicator(config, "hkdf-digest-check", &mut indicator.hkdf_digest_check)?;
-    extract_single_indicator(config, "tls13-kdf-digest-check", &mut indicator.tls13_kdf_digest_check)?;
-    extract_single_indicator(config, "ecdh-cofactor-check", &mut indicator.ecdh_cofactor_check)?;
+    extract_single_indicator(
+        config,
+        "pkcs12-key-gen-check",
+        &mut indicator.pkcs12_key_gen_check,
+    )?;
+    extract_single_indicator(
+        config,
+        "sign-x931-pad-check",
+        &mut indicator.sign_x931_pad_check,
+    )?;
+    extract_single_indicator(
+        config,
+        "sign-digest-check",
+        &mut indicator.sign_digest_check,
+    )?;
+    extract_single_indicator(
+        config,
+        "hkdf-digest-check",
+        &mut indicator.hkdf_digest_check,
+    )?;
+    extract_single_indicator(
+        config,
+        "tls13-kdf-digest-check",
+        &mut indicator.tls13_kdf_digest_check,
+    )?;
+    extract_single_indicator(
+        config,
+        "ecdh-cofactor-check",
+        &mut indicator.ecdh_cofactor_check,
+    )?;
     extract_single_indicator(config, "hkdf-key-check", &mut indicator.hkdf_key_check)?;
     extract_single_indicator(config, "kbkdf-key-check", &mut indicator.kbkdf_key_check)?;
-    extract_single_indicator(config, "tls1-prf-key-check", &mut indicator.tls1_prf_key_check)?;
-    extract_single_indicator(config, "sshkdf-digest-check", &mut indicator.sshkdf_digest_check)?;
+    extract_single_indicator(
+        config,
+        "tls1-prf-key-check",
+        &mut indicator.tls1_prf_key_check,
+    )?;
+    extract_single_indicator(
+        config,
+        "sshkdf-digest-check",
+        &mut indicator.sshkdf_digest_check,
+    )?;
     extract_single_indicator(config, "sshkdf-key-check", &mut indicator.sshkdf_key_check)?;
-    extract_single_indicator(config, "sskdf-digest-check", &mut indicator.sskdf_digest_check)?;
+    extract_single_indicator(
+        config,
+        "sskdf-digest-check",
+        &mut indicator.sskdf_digest_check,
+    )?;
     extract_single_indicator(config, "sskdf-key-check", &mut indicator.sskdf_key_check)?;
-    extract_single_indicator(config, "x963kdf-key-check", &mut indicator.x963kdf_key_check)?;
-    extract_single_indicator(config, "x942kdf-key-check", &mut indicator.x942kdf_key_check)?;
-    extract_single_indicator(config, "rsa-sign-pss-check", &mut indicator.rsa_sign_pss_check)?;
+    extract_single_indicator(
+        config,
+        "x963kdf-key-check",
+        &mut indicator.x963kdf_key_check,
+    )?;
+    extract_single_indicator(
+        config,
+        "x942kdf-key-check",
+        &mut indicator.x942kdf_key_check,
+    )?;
+    extract_single_indicator(
+        config,
+        "rsa-sign-pss-check",
+        &mut indicator.rsa_sign_pss_check,
+    )?;
 
     debug!("All 27 FIPS indicator config parameters extracted");
     Ok(())
@@ -1228,11 +1399,7 @@ fn extract_indicator_config(
 /// Accepts `Utf8String` or `Int32` parameter values. For `Int32` values, uses
 /// [`ParamValue::as_i32()`] accessor for typed extraction. Unrecognized types
 /// produce a `FipsError::Common` error.
-fn extract_single_indicator(
-    config: &ParamSet,
-    key: &str,
-    opt: &mut FipsOption,
-) -> FipsResult<()> {
+fn extract_single_indicator(config: &ParamSet, key: &str, opt: &mut FipsOption) -> FipsResult<()> {
     if let Some(val) = config.get(key) {
         match val {
             ParamValue::Utf8String(s) => {
@@ -1429,9 +1596,7 @@ pub fn run_deferred_test(global: &FipsGlobal, test_id: usize) -> FipsResult<()> 
     let all_tests = &*kats::ALL_TESTS;
     if test_id >= all_tests.len() {
         let max_len = all_tests.len();
-        let msg = format!(
-            "Deferred test ID {test_id} out of range (max {max_len})"
-        );
+        let msg = format!("Deferred test ID {test_id} out of range (max {max_len})");
         error!("{}", msg);
         state::set_test_state(test_id, TestState::Failed);
         state::set_fips_state(FipsState::Error);
@@ -1587,7 +1752,9 @@ pub fn check_indicator(
     // Delegate to the indicator's on_unapproved handler, passing the
     // global security-checks config as the config closure.
     let security_checks_enabled = global.config_security_checks();
-    indicator.on_unapproved(settable_id, algorithm, operation, || security_checks_enabled)
+    indicator.on_unapproved(settable_id, algorithm, operation, || {
+        security_checks_enabled
+    })
 }
 
 // =============================================================================
@@ -1595,8 +1762,23 @@ pub fn check_indicator(
 // =============================================================================
 
 #[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::uninlined_format_args,
+    clippy::redundant_closure_for_method_calls
+)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Coordination lock for tests that modify the global `FipsState`.
+    ///
+    /// Multiple tests (`test_get_params`, `test_get_params_not_operational`,
+    /// `test_initialize_internal_*`) concurrently set the FIPS module state
+    /// to conflicting values.  Holding this lock prevents interleaving.
+    static FIPS_STATE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_fips_option_default() {
@@ -1700,10 +1882,16 @@ mod tests {
         let digests = &*FIPS_DIGESTS;
         assert!(digests.len() >= 15, "Expected at least 15 digest entries");
         // SHA-1 should be unapproved
-        let sha1 = digests.iter().find(|e| e.names.contains("SHA1")).expect("SHA1 entry");
+        let sha1 = digests
+            .iter()
+            .find(|e| e.names.contains("SHA1"))
+            .expect("SHA1 entry");
         assert!(sha1.properties.contains("fips=no"));
         // SHA-256 should be approved
-        let sha256 = digests.iter().find(|e| e.names.contains("SHA2-256")).expect("SHA2-256 entry");
+        let sha256 = digests
+            .iter()
+            .find(|e| e.names.contains("SHA2-256"))
+            .expect("SHA2-256 entry");
         assert!(sha256.properties.contains("fips=yes"));
     }
 
@@ -1712,10 +1900,16 @@ mod tests {
         let ciphers = &*FIPS_CIPHERS;
         assert!(ciphers.len() >= 40, "Expected at least 40 cipher entries");
         // AES-256-GCM should be approved
-        let gcm = ciphers.iter().find(|e| e.names.contains("AES-256-GCM")).expect("AES-256-GCM");
+        let gcm = ciphers
+            .iter()
+            .find(|e| e.names.contains("AES-256-GCM"))
+            .expect("AES-256-GCM");
         assert!(gcm.properties.contains("fips=yes"));
         // 3DES should be unapproved
-        let tdes = ciphers.iter().find(|e| e.names.contains("DES-EDE3-ECB")).expect("3DES entry");
+        let tdes = ciphers
+            .iter()
+            .find(|e| e.names.contains("DES-EDE3-ECB"))
+            .expect("3DES entry");
         assert!(tdes.properties.contains("fips=no"));
     }
 
@@ -1830,6 +2024,9 @@ mod tests {
 
     #[test]
     fn test_get_params() {
+        let _lock = FIPS_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         state::set_fips_state(FipsState::Running);
         let g = FipsGlobal::new();
         let params = get_params(&g).expect("get_params should succeed");
@@ -1851,6 +2048,9 @@ mod tests {
 
     #[test]
     fn test_get_params_not_operational() {
+        let _lock = FIPS_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         state::set_fips_state(FipsState::Init);
         let g = FipsGlobal::new();
         let params = get_params(&g).expect("get_params should succeed even when not running");
@@ -1859,12 +2059,18 @@ mod tests {
 
     #[test]
     fn test_initialize_internal_when_running() {
+        let _lock = FIPS_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         state::set_fips_state(FipsState::Running);
         assert!(initialize_internal().is_ok());
     }
 
     #[test]
     fn test_initialize_internal_when_not_running() {
+        let _lock = FIPS_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         state::set_fips_state(FipsState::Init);
         assert!(initialize_internal().is_err());
     }
@@ -1881,7 +2087,10 @@ mod tests {
         let mut params = SelfTestPostParams::default();
         let mut config = ParamSet::new();
         config.set("module-filename", ParamValue::Utf8String("/fips.so".into()));
-        config.set("module-checksum-data", ParamValue::Utf8String("abcdef".into()));
+        config.set(
+            "module-checksum-data",
+            ParamValue::Utf8String("abcdef".into()),
+        );
         config.set("is-deferred-test", ParamValue::Int32(1));
 
         extract_selftest_params(&config, &mut params);

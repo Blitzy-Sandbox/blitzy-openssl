@@ -25,12 +25,12 @@
 // Test submodule declarations — dependency order (foundational first)
 // ---------------------------------------------------------------------------
 
-mod state_tests;
 mod indicator_tests;
-mod kats_tests;
-mod self_test_tests;
-mod provider_tests;
 mod integration_tests;
+mod kats_tests;
+mod provider_tests;
+mod self_test_tests;
+mod state_tests;
 
 // ---------------------------------------------------------------------------
 // Shared test utility helpers

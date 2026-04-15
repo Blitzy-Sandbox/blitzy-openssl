@@ -24,8 +24,8 @@
 // ---------------------------------------------------------------------------
 
 use crate::indicator::{
-    FipsIndicator, IndicatorCheckCallback, SettableState, SETTABLE0, SETTABLE1, SETTABLE2,
-    SETTABLE3, SETTABLE4, SETTABLE5, SETTABLE6, SETTABLE7, SETTABLE_MAX, invoke_callback,
+    invoke_callback, FipsIndicator, IndicatorCheckCallback, SettableState, SETTABLE0, SETTABLE1,
+    SETTABLE2, SETTABLE3, SETTABLE4, SETTABLE5, SETTABLE6, SETTABLE7, SETTABLE_MAX,
 };
 use openssl_common::error::{FipsError, FipsResult};
 use openssl_common::param::{ParamBuilder, ParamSet, ParamValue};
@@ -76,30 +76,24 @@ fn test_indicator_init_is_copy_safe() {
         .unwrap();
     // Mark unapproved via on_unapproved (config_check returns false → tolerant)
     let _ = src.on_unapproved(SETTABLE1, "AES-128", "encrypt", || false);
-    assert!(!src.is_approved(), "Source should be unapproved after on_unapproved");
+    assert!(
+        !src.is_approved(),
+        "Source should be unapproved after on_unapproved"
+    );
 
     // Deep-copy into destination
     let mut dst = FipsIndicator::new();
     dst.copy_from(&src);
 
     // Verify the copy faithfully reproduces source state
-    assert!(
-        !dst.is_approved(),
-        "Copy should preserve approved == false"
-    );
-    assert_eq!(
-        dst.get_settable(SETTABLE0).unwrap(),
-        SettableState::Strict
-    );
+    assert!(!dst.is_approved(), "Copy should preserve approved == false");
+    assert_eq!(dst.get_settable(SETTABLE0).unwrap(), SettableState::Strict);
     assert_eq!(
         dst.get_settable(SETTABLE3).unwrap(),
         SettableState::Tolerant
     );
     // Untouched slots remain Unknown
-    assert_eq!(
-        dst.get_settable(SETTABLE2).unwrap(),
-        SettableState::Unknown
-    );
+    assert_eq!(dst.get_settable(SETTABLE2).unwrap(), SettableState::Unknown);
 
     // Mutate destination — source must remain unaffected
     dst.set_approved();
@@ -507,9 +501,8 @@ fn test_r4_invoke_callback_with_various_args() {
 #[test]
 fn test_r4_indicator_check_callback_type_usable() {
     // Construct a concrete closure matching the callback signature
-    let cb: Box<IndicatorCheckCallback> = Box::new(|algo: &str, op: &str| -> bool {
-        !algo.is_empty() && !op.is_empty()
-    });
+    let cb: Box<IndicatorCheckCallback> =
+        Box::new(|algo: &str, op: &str| -> bool { !algo.is_empty() && !op.is_empty() });
     assert!(cb("AES", "encrypt"));
     assert!(!cb("", "op"));
 }
@@ -553,10 +546,7 @@ fn test_r4_callback_invoked_via_config_tolerant_path() {
     // Settable defaults to Unknown, config_check returns false → tolerant
     let result = ind.on_unapproved(SETTABLE0, "algo", "op", || false);
     assert!(result.is_ok());
-    assert!(
-        result.unwrap(),
-        "Config-tolerant path must invoke callback"
-    );
+    assert!(result.unwrap(), "Config-tolerant path must invoke callback");
 }
 
 /// R4 — Unknown + strict config rejects without invoking callback.
@@ -601,7 +591,10 @@ fn test_r4_enforcement_precedence() {
         let mut ind = FipsIndicator::new();
         ind.set_settable(SETTABLE0, SettableState::Strict).unwrap();
         let result = ind.on_unapproved(SETTABLE0, "a", "o", || false);
-        assert!(result.is_ok(), "Strict settable + tolerant config → proceed");
+        assert!(
+            result.is_ok(),
+            "Strict settable + tolerant config → proceed"
+        );
     }
 
     // Case 4: Unknown settable + strict config → error
@@ -707,16 +700,10 @@ fn test_set_ctx_param_updates_settable_state() {
     );
 
     ind.set_ctx_param(SETTABLE2, 2).unwrap(); // Unknown (default for anything else)
-    assert_eq!(
-        ind.get_settable(SETTABLE2).unwrap(),
-        SettableState::Unknown
-    );
+    assert_eq!(ind.get_settable(SETTABLE2).unwrap(), SettableState::Unknown);
 
     ind.set_ctx_param(SETTABLE3, -1).unwrap(); // Also Unknown
-    assert_eq!(
-        ind.get_settable(SETTABLE3).unwrap(),
-        SettableState::Unknown
-    );
+    assert_eq!(ind.get_settable(SETTABLE3).unwrap(), SettableState::Unknown);
 }
 
 /// `set_ctx_param` bounds-checks the slot ID.
@@ -752,9 +739,7 @@ fn test_set_ctx_param_by_name_from_param_set() {
 fn test_set_ctx_param_by_name_missing_key() {
     let mut ind = FipsIndicator::new();
 
-    let params = ParamBuilder::new()
-        .push_i32("unrelated-key", 42)
-        .build();
+    let params = ParamBuilder::new().push_i32("unrelated-key", 42).build();
 
     let result = ind.set_ctx_param_by_name(SETTABLE0, &params, "tls1-prf-ems-check");
     assert!(result.is_ok());
@@ -896,19 +881,13 @@ fn test_copy_from_preserves_all_settable_slots() {
         dst.get_settable(SETTABLE1).unwrap(),
         SettableState::Tolerant
     );
-    assert_eq!(
-        dst.get_settable(SETTABLE2).unwrap(),
-        SettableState::Unknown
-    );
+    assert_eq!(dst.get_settable(SETTABLE2).unwrap(), SettableState::Unknown);
     assert_eq!(dst.get_settable(SETTABLE3).unwrap(), SettableState::Strict);
     assert_eq!(
         dst.get_settable(SETTABLE4).unwrap(),
         SettableState::Tolerant
     );
-    assert_eq!(
-        dst.get_settable(SETTABLE5).unwrap(),
-        SettableState::Unknown
-    );
+    assert_eq!(dst.get_settable(SETTABLE5).unwrap(), SettableState::Unknown);
     assert_eq!(dst.get_settable(SETTABLE6).unwrap(), SettableState::Strict);
     assert_eq!(
         dst.get_settable(SETTABLE7).unwrap(),

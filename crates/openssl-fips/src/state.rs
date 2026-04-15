@@ -974,49 +974,64 @@ mod tests {
 
     #[test]
     fn all_tests_passed_basic() {
-        reset_all_states();
+        // Hold the lock for the entire test to prevent concurrent state
+        // modification from sibling test modules.
+        let _lock = TEST_STATES_LOCK.lock();
 
-        // Set first 3 tests as passed
-        assert!(set_test_state(0, TestState::Passed));
-        assert!(set_test_state(1, TestState::Implicit));
-        assert!(set_test_state(2, TestState::Passed));
+        // Reset + set directly via atomic stores (lock is already held)
+        for state in &TEST_STATES {
+            state.store(TestState::Init as u8, Ordering::SeqCst);
+        }
+
+        TEST_STATES[0].store(TestState::Passed as u8, Ordering::SeqCst);
+        TEST_STATES[1].store(TestState::Implicit as u8, Ordering::SeqCst);
+        TEST_STATES[2].store(TestState::Passed as u8, Ordering::SeqCst);
 
         assert!(all_tests_passed(3));
         assert!(!all_tests_passed(4)); // test 3 is still Init
 
         // Cleanup
-        reset_all_states();
+        for state in &TEST_STATES {
+            state.store(TestState::Init as u8, Ordering::SeqCst);
+        }
     }
 
     #[test]
     fn all_tests_passed_with_failure() {
-        reset_all_states();
+        let _lock = TEST_STATES_LOCK.lock();
 
-        assert!(set_test_state(0, TestState::Passed));
-        assert!(set_test_state(1, TestState::Failed));
+        for state in &TEST_STATES {
+            state.store(TestState::Init as u8, Ordering::SeqCst);
+        }
+
+        TEST_STATES[0].store(TestState::Passed as u8, Ordering::SeqCst);
+        TEST_STATES[1].store(TestState::Failed as u8, Ordering::SeqCst);
 
         assert!(!all_tests_passed(2));
 
         // Cleanup
-        reset_all_states();
+        for state in &TEST_STATES {
+            state.store(TestState::Init as u8, Ordering::SeqCst);
+        }
     }
 
     #[test]
     fn all_tests_passed_clamps_to_max() {
-        reset_all_states();
+        // Hold the lock for the entire test
+        let _lock = TEST_STATES_LOCK.lock();
 
         // Set all tests as passed
-        let lock = TEST_STATES_LOCK.lock();
         for state in &TEST_STATES {
             state.store(TestState::Passed as u8, Ordering::SeqCst);
         }
-        drop(lock);
 
         // Should work even with count > MAX_TEST_COUNT
         assert!(all_tests_passed(MAX_TEST_COUNT + 100));
 
         // Cleanup
-        reset_all_states();
+        for state in &TEST_STATES {
+            state.store(TestState::Init as u8, Ordering::SeqCst);
+        }
     }
 
     // --- Constants verification ---
@@ -1026,7 +1041,9 @@ mod tests {
         // The C self_test.h defines categories with at most ~30 tests
         // per the ST_ID enumeration. 64 is a conservative upper bound.
         #[allow(clippy::assertions_on_constants)] // Intentional compile-time sanity check on const
-        { assert!(MAX_TEST_COUNT >= 32, "MAX_TEST_COUNT should be at least 32"); }
+        {
+            assert!(MAX_TEST_COUNT >= 32, "MAX_TEST_COUNT should be at least 32");
+        }
     }
 
     #[test]
