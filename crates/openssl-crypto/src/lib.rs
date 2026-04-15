@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod cpu_detect;
 pub mod provider;
 pub mod thread;
 
