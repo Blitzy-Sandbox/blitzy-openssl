@@ -44,9 +44,7 @@ use parking_lot::RwLock;
 use tracing::{debug, trace, warn};
 
 use crate::traits::{AlgorithmDescriptor, AlgorithmProvider, Provider};
-use openssl_common::{
-    Nid, OperationType, ParamSet, ParamValue, ProviderError, ProviderResult,
-};
+use openssl_common::{Nid, OperationType, ParamSet, ParamValue, ProviderError, ProviderResult};
 
 // =============================================================================
 // Constants
@@ -594,11 +592,7 @@ impl MethodStore {
     ///
     /// Acquires a write lock on the `capabilities` map.  Existing entries
     /// for the same `capability_name` are **replaced**.
-    pub fn set_capabilities(
-        &self,
-        capability_name: &str,
-        caps: Vec<AlgorithmCapability>,
-    ) {
+    pub fn set_capabilities(&self, capability_name: &str, caps: Vec<AlgorithmCapability>) {
         let mut store = self.capabilities.write();
         debug!(
             capability = capability_name,
@@ -788,7 +782,7 @@ fn default_tls_group_capabilities() -> Vec<AlgorithmCapability> {
         AlgorithmCapability {
             group_name: "secp256r1".to_owned(),
             secbits: 128,
-            min_tls: Some(0x0301),  // TLS 1.0
+            min_tls: Some(0x0301), // TLS 1.0
             max_tls: None,
             min_dtls: Some(0xFEFF), // DTLS 1.0
             max_dtls: None,
@@ -815,7 +809,7 @@ fn default_tls_group_capabilities() -> Vec<AlgorithmCapability> {
         AlgorithmCapability {
             group_name: "x25519".to_owned(),
             secbits: 128,
-            min_tls: Some(0x0303),  // TLS 1.2 (per RFC 8446 requirement)
+            min_tls: Some(0x0303), // TLS 1.2 (per RFC 8446 requirement)
             max_tls: None,
             min_dtls: None,
             max_dtls: None,
@@ -860,7 +854,7 @@ fn default_tls_group_capabilities() -> Vec<AlgorithmCapability> {
         AlgorithmCapability {
             group_name: "mlkem768".to_owned(),
             secbits: 192,
-            min_tls: Some(0x0304),  // TLS 1.3
+            min_tls: Some(0x0304), // TLS 1.3
             max_tls: None,
             min_dtls: None,
             max_dtls: None,
@@ -1011,19 +1005,11 @@ mod tests {
         store.register(OperationType::Digest, "legacy", vec![legacy_sha]);
 
         // Exact property match
-        let result = store.fetch(
-            OperationType::Digest,
-            "SHA2-256",
-            Some("provider=default"),
-        );
+        let result = store.fetch(OperationType::Digest, "SHA2-256", Some("provider=default"));
         assert!(result.is_ok());
 
         // Negation filter
-        let result = store.fetch(
-            OperationType::Digest,
-            "SHA2-256",
-            Some("provider!=legacy"),
-        );
+        let result = store.fetch(OperationType::Digest, "SHA2-256", Some("provider!=legacy"));
         assert!(result.is_ok());
     }
 

@@ -658,22 +658,14 @@ pub trait KemProvider: Send + Sync {
 pub trait KemContext: Send + Sync {
     /// Initialises the context for encapsulation with the given public key
     /// material.
-    fn encapsulate_init(
-        &mut self,
-        key: &[u8],
-        params: Option<&ParamSet>,
-    ) -> ProviderResult<()>;
+    fn encapsulate_init(&mut self, key: &[u8], params: Option<&ParamSet>) -> ProviderResult<()>;
 
     /// Performs key encapsulation, returning `(ciphertext, shared_secret)`.
     fn encapsulate(&mut self) -> ProviderResult<(Vec<u8>, Vec<u8>)>;
 
     /// Initialises the context for decapsulation with the given private key
     /// material.
-    fn decapsulate_init(
-        &mut self,
-        key: &[u8],
-        params: Option<&ParamSet>,
-    ) -> ProviderResult<()>;
+    fn decapsulate_init(&mut self, key: &[u8], params: Option<&ParamSet>) -> ProviderResult<()>;
 
     /// Decapsulates `ciphertext`, returning the shared secret.
     fn decapsulate(&mut self, ciphertext: &[u8]) -> ProviderResult<Vec<u8>>;
@@ -786,20 +778,12 @@ pub trait KeyMgmtProvider: Send + Sync {
     /// indicated by `selection`.
     ///
     /// Replaces `OSSL_FUNC_keymgmt_import` (ID 8).
-    fn import(
-        &self,
-        selection: KeySelection,
-        data: &ParamSet,
-    ) -> ProviderResult<Box<dyn KeyData>>;
+    fn import(&self, selection: KeySelection, data: &ParamSet) -> ProviderResult<Box<dyn KeyData>>;
 
     /// Exports the selected key components as a [`ParamSet`].
     ///
     /// Replaces `OSSL_FUNC_keymgmt_export` (ID 9).
-    fn export(
-        &self,
-        key: &dyn KeyData,
-        selection: KeySelection,
-    ) -> ProviderResult<ParamSet>;
+    fn export(&self, key: &dyn KeyData, selection: KeySelection) -> ProviderResult<ParamSet>;
 
     /// Checks whether `key` contains the components indicated by
     /// `selection`.
@@ -812,11 +796,7 @@ pub trait KeyMgmtProvider: Send + Sync {
     /// Returns `true` if the key is valid, `false` otherwise.
     ///
     /// Replaces `OSSL_FUNC_keymgmt_validate` (ID 11).
-    fn validate(
-        &self,
-        key: &dyn KeyData,
-        selection: KeySelection,
-    ) -> ProviderResult<bool>;
+    fn validate(&self, key: &dyn KeyData, selection: KeySelection) -> ProviderResult<bool>;
 }
 
 // =============================================================================

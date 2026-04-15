@@ -107,8 +107,7 @@ static RAND_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_rand_table);
 static SIGNATURE_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_signature_table);
 
 /// Cached asymmetric cipher algorithm descriptors.
-static ASYM_CIPHER_TABLE: Lazy<Vec<AlgorithmDescriptor>> =
-    Lazy::new(build_asym_cipher_table);
+static ASYM_CIPHER_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_asym_cipher_table);
 
 /// Cached KEM algorithm descriptors.
 static KEM_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_kem_table);
@@ -326,10 +325,7 @@ impl Provider for DefaultProvider {
     ///
     /// Replaces `deflt_teardown()` from `defltprov.c`.
     fn teardown(&mut self) -> ProviderResult<()> {
-        info!(
-            provider = PROVIDER_NAME,
-            "Default provider teardown"
-        );
+        info!(provider = PROVIDER_NAME, "Default provider teardown");
         self.running = false;
         Ok(())
     }
@@ -2467,9 +2463,7 @@ mod tests {
             .expect("digests should be available");
         assert!(!digests.is_empty());
         // Check SHA-256 is present
-        let sha256 = digests
-            .iter()
-            .find(|d| d.names.contains(&"SHA2-256"));
+        let sha256 = digests.iter().find(|d| d.names.contains(&"SHA2-256"));
         assert!(sha256.is_some());
         assert_eq!(sha256.expect("found above").property, "provider=default");
     }
@@ -2482,9 +2476,7 @@ mod tests {
             .expect("ciphers should be available");
         assert!(!ciphers.is_empty());
         // Check AES-256-GCM is present
-        let aes_gcm = ciphers
-            .iter()
-            .find(|d| d.names.contains(&"AES-256-GCM"));
+        let aes_gcm = ciphers.iter().find(|d| d.names.contains(&"AES-256-GCM"));
         assert!(aes_gcm.is_some());
     }
 

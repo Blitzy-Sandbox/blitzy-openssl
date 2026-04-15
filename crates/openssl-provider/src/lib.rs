@@ -19,5 +19,10 @@ pub mod dispatch;
 /// Replaces C `providers/defltprov.c`.
 pub mod default;
 
+/// Base provider implementation — a foundational provider exposing encoder,
+/// decoder, store, and seed-source RAND operations. Does NOT provide
+/// cryptographic algorithm implementations. Replaces C `providers/baseprov.c`.
+pub mod base;
+
 /// Algorithm implementation backends (ciphers, digests, KDFs, MACs, KEM, etc.).
 pub mod implementations;
