@@ -12,6 +12,8 @@ mod constant_time_tests;
 #[cfg(test)]
 mod error_tests;
 #[cfg(test)]
+mod mem_tests;
+#[cfg(test)]
 mod observability_tests;
 #[cfg(test)]
 mod safe_math_tests;
