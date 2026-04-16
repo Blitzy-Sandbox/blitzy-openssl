@@ -7,6 +7,8 @@
 
 pub mod context;
 pub mod cpu_detect;
+pub mod evp;
+pub mod init;
 pub mod provider;
 pub mod thread;
 

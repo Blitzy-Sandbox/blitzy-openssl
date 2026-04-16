@@ -86,40 +86,51 @@ const DEFAULT_PROPERTY: &str = "provider=default";
 // LOCK-SCOPE: No lock needed — `Lazy` provides one-shot interior-mutable init.
 
 /// Cached digest algorithm descriptors.
+#[cfg(feature = "digests")]
 static DIGEST_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_digest_table);
 
 /// Cached cipher algorithm descriptors.
+#[cfg(feature = "ciphers")]
 static CIPHER_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_cipher_table);
 
 /// Cached MAC algorithm descriptors.
+#[cfg(feature = "macs")]
 static MAC_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_mac_table);
 
 /// Cached KDF algorithm descriptors.
+#[cfg(feature = "kdfs")]
 static KDF_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_kdf_table);
 
 /// Cached key-exchange algorithm descriptors.
+#[cfg(feature = "exchange")]
 static KEYEXCH_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_keyexch_table);
 
 /// Cached RAND/DRBG algorithm descriptors.
+#[cfg(feature = "rands")]
 static RAND_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_rand_table);
 
 /// Cached signature algorithm descriptors.
+#[cfg(feature = "signatures")]
 static SIGNATURE_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_signature_table);
 
 /// Cached asymmetric cipher algorithm descriptors.
 static ASYM_CIPHER_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_asym_cipher_table);
 
 /// Cached KEM algorithm descriptors.
+#[cfg(feature = "kem")]
 static KEM_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_kem_table);
 
 /// Cached key-management algorithm descriptors.
+#[cfg(feature = "keymgmt")]
 static KEYMGMT_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_keymgmt_table);
 
 /// Cached encoder/decoder algorithm descriptors.
+#[cfg(feature = "encode-decode")]
 static ENCODER_DECODER_TABLE: Lazy<Vec<AlgorithmDescriptor>> =
     Lazy::new(build_encoder_decoder_table);
 
 /// Cached store algorithm descriptors.
+#[cfg(feature = "store")]
 static STORE_TABLE: Lazy<Vec<AlgorithmDescriptor>> = Lazy::new(build_store_table);
 
 // =============================================================================
@@ -340,6 +351,7 @@ impl Provider for DefaultProvider {
 /// Includes SHA-1, SHA-2, SHA-3, SHAKE, BLAKE2, SM3, MD5, RIPEMD-160,
 /// NULL, KECCAK, and ML-DSA-MU hash variants — matching the
 /// `deflt_digests[]` array from `defltprov.c` lines 101–169.
+#[cfg(feature = "digests")]
 fn build_digest_table() -> Vec<AlgorithmDescriptor> {
     vec![
         AlgorithmDescriptor {
@@ -510,6 +522,7 @@ fn build_digest_table() -> Vec<AlgorithmDescriptor> {
 /// This is the largest algorithm table, matching `deflt_ciphers[]` from
 /// `defltprov.c` lines 171–341. Includes AES (all modes and key sizes),
 /// ARIA, Camellia, DES/3DES, SM4, `ChaCha20`, and `ChaCha20-Poly1305`.
+#[cfg(feature = "ciphers")]
 fn build_cipher_table() -> Vec<AlgorithmDescriptor> {
     vec![
         // NULL cipher
@@ -1194,6 +1207,7 @@ fn build_cipher_table() -> Vec<AlgorithmDescriptor> {
 /// Builds the MAC algorithm descriptor table.
 ///
 /// Matches `deflt_macs[]` from `defltprov.c` lines 344–363.
+#[cfg(feature = "macs")]
 fn build_mac_table() -> Vec<AlgorithmDescriptor> {
     vec![
         // BLAKE2 MACs (C guard: OPENSSL_NO_BLAKE2)
@@ -1255,6 +1269,7 @@ fn build_mac_table() -> Vec<AlgorithmDescriptor> {
 /// Builds the KDF algorithm descriptor table.
 ///
 /// Matches `deflt_kdfs[]` from `defltprov.c` lines 365–412.
+#[cfg(feature = "kdfs")]
 fn build_kdf_table() -> Vec<AlgorithmDescriptor> {
     vec![
         AlgorithmDescriptor {
@@ -1388,6 +1403,7 @@ fn build_kdf_table() -> Vec<AlgorithmDescriptor> {
 /// Builds the key-exchange algorithm descriptor table.
 ///
 /// Matches `deflt_keyexch[]` from `defltprov.c` lines 414–430.
+#[cfg(feature = "exchange")]
 fn build_keyexch_table() -> Vec<AlgorithmDescriptor> {
     vec![
         // DH (C guard: OPENSSL_NO_DH)
@@ -1440,6 +1456,7 @@ fn build_keyexch_table() -> Vec<AlgorithmDescriptor> {
 /// Builds the RAND/DRBG algorithm descriptor table.
 ///
 /// Matches `deflt_rands[]` from `defltprov.c` lines 432–442.
+#[cfg(feature = "rands")]
 fn build_rand_table() -> Vec<AlgorithmDescriptor> {
     vec![
         AlgorithmDescriptor {
@@ -1485,6 +1502,7 @@ fn build_rand_table() -> Vec<AlgorithmDescriptor> {
 /// Matches `deflt_signature[]` from `defltprov.c` lines 444–542.
 /// Includes RSA, DSA, ECDSA, `EdDSA`, SM2, ML-DSA, SLH-DSA, LMS,
 /// and MAC-as-signature adapters.
+#[cfg(feature = "signatures")]
 fn build_signature_table() -> Vec<AlgorithmDescriptor> {
     vec![
         // DSA family (C guard: OPENSSL_NO_DSA)
@@ -1819,6 +1837,7 @@ fn build_asym_cipher_table() -> Vec<AlgorithmDescriptor> {
 /// Builds the KEM (Key Encapsulation Mechanism) algorithm descriptor table.
 ///
 /// Matches `deflt_asym_kem[]` from `defltprov.c` lines 552–578.
+#[cfg(feature = "kem")]
 fn build_kem_table() -> Vec<AlgorithmDescriptor> {
     vec![
         AlgorithmDescriptor {
@@ -1897,6 +1916,7 @@ fn build_kem_table() -> Vec<AlgorithmDescriptor> {
 /// Builds the key management algorithm descriptor table.
 ///
 /// Matches `deflt_keymgmt[]` from `defltprov.c` lines 580–696.
+#[cfg(feature = "keymgmt")]
 fn build_keymgmt_table() -> Vec<AlgorithmDescriptor> {
     vec![
         // DH/DHX (C guard: OPENSSL_NO_DH)
@@ -2150,6 +2170,7 @@ fn build_keymgmt_table() -> Vec<AlgorithmDescriptor> {
 /// Matches the encoder and decoder tables from `defltprov.c` which
 /// include tables via `encoders.inc`, `decoders.inc`. These provide
 /// DER, PEM, and text serialization for all key types.
+#[cfg(feature = "encode-decode")]
 fn build_encoder_decoder_table() -> Vec<AlgorithmDescriptor> {
     vec![
         // Encoders
@@ -2374,6 +2395,7 @@ fn build_encoder_decoder_table() -> Vec<AlgorithmDescriptor> {
 /// Builds the store algorithm descriptor table.
 ///
 /// Matches `deflt_store[]` from `defltprov.c` (included via `stores.inc`).
+#[cfg(feature = "store")]
 fn build_store_table() -> Vec<AlgorithmDescriptor> {
     vec![
         AlgorithmDescriptor {

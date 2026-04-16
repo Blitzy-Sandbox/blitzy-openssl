@@ -497,12 +497,22 @@ pub fn info_add_parameter(info: &mut ProviderInfo, name: &str, value: &str) {
 ///
 /// ```
 /// # use openssl_crypto::provider::predefined::{find_by_name, ProviderKind};
-/// let info = find_by_name("default");
-/// assert!(info.is_some());
-/// let info = info.unwrap();
-/// assert_eq!(info.kind, ProviderKind::Default);
-/// assert!(info.is_fallback);
-///
+/// // Which providers are predefined depends on the feature configuration.
+/// // Without fips_module: "default", "base", "null" are present.
+/// // With fips_module: only "fips" is present.
+/// #[cfg(not(feature = "fips_module"))]
+/// {
+///     let info = find_by_name("default");
+///     assert!(info.is_some());
+///     let info = info.unwrap();
+///     assert_eq!(info.kind, ProviderKind::Default);
+///     assert!(info.is_fallback);
+/// }
+/// #[cfg(feature = "fips_module")]
+/// {
+///     let info = find_by_name("fips");
+///     assert!(info.is_some());
+/// }
 /// assert!(find_by_name("nonexistent").is_none());
 /// ```
 #[must_use]
@@ -520,9 +530,17 @@ pub fn find_by_name(name: &str) -> Option<ProviderInfo> {
 ///
 /// ```
 /// # use openssl_crypto::provider::predefined::is_predefined;
-/// assert!(is_predefined("default"));
-/// assert!(is_predefined("base"));
-/// assert!(is_predefined("null"));
+/// // Which providers are predefined depends on the feature configuration.
+/// #[cfg(not(feature = "fips_module"))]
+/// {
+///     assert!(is_predefined("default"));
+///     assert!(is_predefined("base"));
+///     assert!(is_predefined("null"));
+/// }
+/// #[cfg(feature = "fips_module")]
+/// {
+///     assert!(is_predefined("fips"));
+/// }
 /// assert!(!is_predefined("custom"));
 /// assert!(!is_predefined(""));
 /// ```
