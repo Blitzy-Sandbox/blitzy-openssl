@@ -332,6 +332,11 @@ ml-kem = []
 # C guard: depends on OPENSSL_NO_ML_KEM, OPENSSL_NO_ECX, OPENSSL_NO_EC
 mlx = []
 
+# SM2 Chinese national standard signatures (GB/T 32918.2-2016).
+# Source: providers/implementations/signature/sm2_sig.c
+# C guard: OPENSSL_NO_SM2
+sm2 = []
+
 # SLH-DSA key management (FIPS 205).
 # Source: providers/implementations/keymgmt/slh_dsa_kmgmt.c
 # C guard: OPENSSL_NO_SLH_DSA
