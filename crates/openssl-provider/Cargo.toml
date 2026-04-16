@@ -233,7 +233,47 @@ default = [
 
 # Cipher provider implementations: AES-GCM/CCM/OCB/SIV/XTS/wrap, ChaCha20-Poly1305,
 # 3DES, Camellia, ARIA, SM4. Maps to providers/implementations/ciphers/ (81 C files).
-ciphers = []
+# Sub-features gate individual cipher families independently.
+ciphers = ["aes", "ocb", "chacha", "des", "camellia", "aria", "sm4"]
+
+# --- Per-algorithm cipher features ---
+# These features gate individual cipher submodules within the
+# `implementations::ciphers` module, replacing C `OPENSSL_NO_*` guards.
+
+# AES family: ECB/CBC/OFB/CFB/CTR/CTS, GCM, CCM, SIV, GCM-SIV, XTS, Wrap, CBC-HMAC.
+# Source: providers/implementations/ciphers/cipher_aes*.c (20+ files)
+# C guard: AES is always compiled in C; feature-gated in Rust for embedded builds.
+aes = []
+
+# AES-OCB AEAD mode (RFC 7253). Gated separately for patent considerations.
+# Source: providers/implementations/ciphers/cipher_aes_ocb*.c
+# C guard: OPENSSL_NO_OCB
+ocb = []
+
+# ChaCha20 stream cipher and ChaCha20-Poly1305 AEAD (RFC 8439).
+# Source: providers/implementations/ciphers/cipher_chacha20*.c (4 files)
+# C guard: OPENSSL_NO_CHACHA
+chacha = []
+
+# DES/3DES/DESX/TDES Key Wrap family.
+# Source: providers/implementations/ciphers/cipher_des*.c + cipher_tdes*.c (11 files)
+# C guard: OPENSSL_NO_DES
+des = []
+
+# Camellia block cipher (RFC 3713).
+# Source: providers/implementations/ciphers/cipher_camellia*.c (3 files)
+# C guard: OPENSSL_NO_CAMELLIA
+camellia = []
+
+# ARIA block cipher (RFC 5794) including GCM/CCM modes.
+# Source: providers/implementations/ciphers/cipher_aria*.c (6 files)
+# C guard: OPENSSL_NO_ARIA
+aria = []
+
+# SM4 Chinese national standard cipher (GB/T 32907-2016) including GCM/CCM/XTS.
+# Source: providers/implementations/ciphers/cipher_sm4*.c (8 files)
+# C guard: OPENSSL_NO_SM4
+sm4 = []
 
 # Digest provider implementations: SHA-1, SHA-2, SHA-3, SHAKE, SM3.
 # Maps to providers/implementations/digests/ (17 C files).
