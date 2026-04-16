@@ -19,6 +19,13 @@ pub mod dispatch;
 /// Replaces C `providers/defltprov.c`.
 pub mod default;
 
+/// Legacy provider implementation — provides deprecated algorithms (MD2, MD4,
+/// MDC2, Whirlpool, Blowfish, CAST5, IDEA, SEED, RC2, RC4, RC5, DES,
+/// PBKDF1, PVK KDF) tagged with `provider=legacy`. Entire module gated
+/// behind `#[cfg(feature = "legacy")]`. Replaces C `providers/legacyprov.c`.
+#[cfg(feature = "legacy")]
+pub mod legacy;
+
 /// Base provider implementation — a foundational provider exposing encoder,
 /// decoder, store, and seed-source RAND operations. Does NOT provide
 /// cryptographic algorithm implementations. Replaces C `providers/baseprov.c`.
