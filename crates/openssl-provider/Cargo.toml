@@ -156,6 +156,16 @@ parking_lot = { workspace = true }
 zeroize = { workspace = true }
 
 # ---------------------------------------------------------------------------
+# Constant-Time Operations (AAP §0.6.1, §0.7.6, Rule R8)
+# ---------------------------------------------------------------------------
+# Constant-time comparison primitives for MAC secret keys and other
+# cryptographic material comparisons. ConstantTimeEq::ct_eq() prevents
+# timing side-channel attacks in key matching operations.
+# Replaces C CRYPTO_memcmp() from crypto/o_str.c.
+# Zero unsafe code — pure-Rust constant-time abstractions.
+subtle = { workspace = true }
+
+# ---------------------------------------------------------------------------
 # Typed Bitfield Flags (AAP §0.6.1)
 # ---------------------------------------------------------------------------
 # Type-safe bitfield flags for:
