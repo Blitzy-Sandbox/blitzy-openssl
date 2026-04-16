@@ -1,11 +1,10 @@
 //! Test modules for the openssl-common foundation crate.
 //!
-//! Each submodule tests a corresponding source module through its public API,
-//! enforcing Rule R10 (wiring verification). Currently covers the four
-//! delivered source modules: `constant_time`, `error`, `observability`, and
-//! `types`. Additional test modules for `config`, `mem`, `param`,
-//! `safe_math`, and `time` will be added when those source modules are
-//! delivered.
+//! Contains comprehensive test suites for all openssl-common submodules.
+//! Each submodule exercises the corresponding source module through its
+//! public API, enforcing Rule R10 (wiring verification): `config`,
+//! `constant_time`, `error`, `mem`, `observability`, `param`, `safe_math`,
+//! `time`, and `types`.
 
 #[cfg(test)]
 mod config_tests;

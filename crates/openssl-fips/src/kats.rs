@@ -51,6 +51,7 @@ use once_cell::sync::Lazy;
 use tracing::{debug, error, info, instrument, warn};
 use zeroize::Zeroize;
 
+use openssl_common::constant_time::memcmp as constant_time_eq;
 use openssl_common::error::{FipsError, FipsResult};
 use openssl_common::param::{ParamBuilder, ParamSet};
 
@@ -2589,21 +2590,6 @@ fn setup_deterministic_drbg(
         "Setting up deterministic DRBG for KAT"
     );
     Ok(DrbgSwapGuard::new(entropy))
-}
-
-/// Constant-time byte comparison.
-///
-/// Uses XOR accumulation to avoid timing side channels.
-/// Rule R8: No `unsafe` blocks.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff: u8 = 0;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
 }
 
 // =============================================================================

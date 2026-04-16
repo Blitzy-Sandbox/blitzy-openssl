@@ -253,7 +253,8 @@ impl Provider for BaseProvider {
             | OperationType::Signature
             | OperationType::AsymCipher
             | OperationType::Kem
-            | OperationType::KeyExch => None,
+            | OperationType::KeyExch
+            | OperationType::SKeyMgmt => None,
         }
     }
 

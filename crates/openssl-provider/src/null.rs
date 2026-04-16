@@ -290,6 +290,7 @@ mod tests {
             OperationType::KeyExch,
             OperationType::EncoderDecoder,
             OperationType::Store,
+            OperationType::SKeyMgmt,
         ];
 
         for op in all_ops {

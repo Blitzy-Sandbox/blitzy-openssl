@@ -134,9 +134,9 @@ pub enum ObservabilityError {
 /// use openssl_common::observability::CorrelationId;
 ///
 /// let cid = CorrelationId::new();
-/// println!("correlation_id={}", cid);
-/// let s = cid.as_str();
+/// let s = cid.to_string();
 /// assert!(!s.is_empty());
+/// println!("correlation_id={cid}");
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CorrelationId(uuid::Uuid);
@@ -146,12 +146,6 @@ impl CorrelationId {
     #[must_use]
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())
-    }
-
-    /// Returns the string representation of the underlying UUID.
-    #[must_use]
-    pub fn as_str(&self) -> String {
-        self.0.to_string()
     }
 }
 
@@ -184,7 +178,7 @@ impl fmt::Display for CorrelationId {
 /// use openssl_common::observability::current_correlation_id;
 ///
 /// let cid = current_correlation_id();
-/// assert!(!cid.as_str().is_empty());
+/// assert!(!cid.to_string().is_empty());
 /// ```
 #[must_use]
 pub fn current_correlation_id() -> CorrelationId {
@@ -674,24 +668,24 @@ mod tests {
     }
 
     #[test]
-    fn correlation_id_as_str_is_valid_uuid() {
+    fn correlation_id_to_string_is_valid_uuid() {
         let cid = CorrelationId::new();
-        let s = cid.as_str();
+        let s = cid.to_string();
         // v4 UUIDs are 36 chars: 8-4-4-4-12
         assert_eq!(s.len(), 36);
         assert_eq!(s.chars().filter(|c| *c == '-').count(), 4);
     }
 
     #[test]
-    fn correlation_id_display_matches_as_str() {
+    fn correlation_id_display_matches_to_string() {
         let cid = CorrelationId::new();
-        assert_eq!(format!("{cid}"), cid.as_str());
+        assert_eq!(format!("{cid}"), cid.to_string());
     }
 
     #[test]
     fn correlation_id_default_creates_new() {
         let cid: CorrelationId = CorrelationId::default();
-        assert!(!cid.as_str().is_empty());
+        assert!(!cid.to_string().is_empty());
     }
 
     #[test]
@@ -706,7 +700,7 @@ mod tests {
     #[test]
     fn current_correlation_id_returns_valid_id() {
         let cid = current_correlation_id();
-        assert!(!cid.as_str().is_empty());
+        assert!(!cid.to_string().is_empty());
     }
 
     // ---- ObservabilityError tests ----
@@ -901,10 +895,23 @@ mod tests {
 
     #[test]
     fn metrics_handle_debug_format_check() {
-        // Verify the Debug impl constants.  We cannot construct a
-        // MetricsHandle without installing a global metrics recorder
-        // (singleton), so this test verifies the type's structure.
-        let expected_fragment = "MetricsHandle";
-        assert!(expected_fragment.contains("MetricsHandle"));
+        // Verify the Debug representation of observability error types.
+        // We cannot construct a MetricsHandle without installing a global
+        // metrics recorder (singleton), so we validate the MetricsSetupFailed
+        // variant — this confirms the metrics-related error path is
+        // well-formed and the Debug derive chain functions correctly.
+        let err = ObservabilityError::MetricsSetupFailed(
+            "test recorder conflict".to_string(),
+        );
+        let debug_str = format!("{err:?}");
+        assert!(!debug_str.is_empty(), "Debug output should be non-empty");
+        assert!(
+            debug_str.contains("MetricsSetupFailed"),
+            "Debug output should contain the variant name"
+        );
+        assert!(
+            debug_str.contains("test recorder conflict"),
+            "Debug output should contain the inner message"
+        );
     }
 }

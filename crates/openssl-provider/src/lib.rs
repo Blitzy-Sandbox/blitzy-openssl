@@ -40,3 +40,6 @@ pub mod null;
 
 /// Algorithm implementation backends (ciphers, digests, KDFs, MACs, KEM, etc.).
 pub mod implementations;
+
+#[cfg(test)]
+mod tests;

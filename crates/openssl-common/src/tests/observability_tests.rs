@@ -98,7 +98,7 @@ impl ReadinessCheck for MockCheck {
 fn correlation_id_new() {
     let cid = CorrelationId::new();
     assert!(
-        !cid.as_str().is_empty(),
+        !cid.to_string().is_empty(),
         "new CorrelationId should have non-empty string"
     );
 }
@@ -109,7 +109,7 @@ fn correlation_id_uniqueness() {
     let mut set = HashSet::new();
     for _ in 0..100 {
         let cid = CorrelationId::new();
-        set.insert(cid.as_str());
+        set.insert(cid.to_string());
     }
     assert_eq!(set.len(), 100, "All 100 CorrelationIds should be unique");
 }
@@ -156,16 +156,16 @@ fn correlation_id_copy() {
     let c = a; // Also copy — original still valid after move
     assert_eq!(a, b);
     assert_eq!(a, c);
-    assert!(!b.as_str().is_empty());
-    assert!(!c.as_str().is_empty());
+    assert!(!b.to_string().is_empty());
+    assert!(!c.to_string().is_empty());
 }
 
-/// `as_str()` returns non-empty String with UUID format (8-4-4-4-12 hex groups).
+/// `to_string()` returns non-empty String with UUID format (8-4-4-4-12 hex groups).
 #[test]
-fn correlation_id_as_str() {
+fn correlation_id_to_string_format() {
     let cid = CorrelationId::new();
-    let s = cid.as_str();
-    assert!(!s.is_empty(), "as_str() should return non-empty string");
+    let s = cid.to_string();
+    assert!(!s.is_empty(), "to_string() should return non-empty string");
     assert_eq!(s.len(), 36, "UUID string should be 36 characters");
     let parts: Vec<&str> = s.split('-').collect();
     assert_eq!(parts.len(), 5, "UUID should have 5 groups");
@@ -183,18 +183,18 @@ fn correlation_id_as_str() {
     }
 }
 
-/// Display matches as_str output.
+/// Display matches to_string output.
 #[test]
-fn correlation_id_display_matches_as_str() {
+fn correlation_id_display_matches_to_string() {
     let cid = CorrelationId::new();
-    assert_eq!(format!("{cid}"), cid.as_str());
+    assert_eq!(format!("{cid}"), cid.to_string());
 }
 
 /// Default trait creates a new valid CorrelationId.
 #[test]
 fn correlation_id_default_creates_new() {
     let cid: CorrelationId = CorrelationId::default();
-    assert!(!cid.as_str().is_empty());
+    assert!(!cid.to_string().is_empty());
 }
 
 /// Hash trait works consistently with HashSet insert/lookup.
@@ -707,7 +707,7 @@ fn record_multiple_operations_independently() {
 #[test]
 fn current_correlation_id_returns_valid_uuid_outside_span() {
     let cid = current_correlation_id();
-    let s = cid.as_str();
+    let s = cid.to_string();
     assert_eq!(s.len(), 36, "Should be a valid UUID string");
 }
 

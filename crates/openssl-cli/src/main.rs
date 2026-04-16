@@ -18,6 +18,7 @@
 // helpers, not the crate's library root. This crate is a binary-only target.
 // The crate-level allow is required because item-level #[allow] does not fully
 // suppress special_module_name when RUSTFLAGS="-D warnings" is set.
+#![forbid(unsafe_code)]
 #![allow(special_module_name)]
 
 pub mod lib;
@@ -331,6 +332,9 @@ enum CliCommand {
 /// Parses command-line arguments via clap and dispatches to the
 /// appropriate subcommand handler. Returns [`ExitCode::SUCCESS`] on
 /// normal completion, [`ExitCode::FAILURE`] on invalid commands.
+// TODO(R1): Convert to `#[tokio::main]` when QUIC commands are implemented.
+// Per AAP §0.4.4, this is the single runtime owner site. The tokio runtime
+// will be created here and its Handle passed to openssl_ssl::quic::engine.
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -816,83 +820,20 @@ fn handle_fallback_dispatch(args: &[String]) -> ExitCode {
 
 /// Returns `true` if `name` is a recognized message digest algorithm name.
 ///
-/// This list mirrors the digest names recognized by the C implementation's
-/// `EVP_get_digestbyname()` function, enabling the fallback dispatch path
+/// Delegates to [`KNOWN_DIGESTS`] as the single source of truth, mirroring
+/// the digest names recognized by the C implementation's
+/// `EVP_get_digestbyname()` function and enabling the fallback dispatch path
 /// where `openssl sha256` is equivalent to `openssl dgst -sha256`.
 fn is_known_digest(name: &str) -> bool {
-    matches!(
-        name,
-        "sha1"
-            | "sha224"
-            | "sha256"
-            | "sha384"
-            | "sha512"
-            | "sha512-224"
-            | "sha512-256"
-            | "sha3-224"
-            | "sha3-256"
-            | "sha3-384"
-            | "sha3-512"
-            | "shake128"
-            | "shake256"
-            | "md5"
-            | "md4"
-            | "md2"
-            | "mdc2"
-            | "ripemd160"
-            | "whirlpool"
-            | "sm3"
-            | "blake2b512"
-            | "blake2s256"
-    )
+    KNOWN_DIGESTS.contains(&name)
 }
 
 /// Returns `true` if `name` is a recognized symmetric cipher algorithm name.
 ///
-/// This list mirrors the cipher names recognized by the C implementation's
-/// `EVP_get_cipherbyname()` function, enabling the fallback dispatch path
+/// Delegates to [`KNOWN_CIPHERS`] as the single source of truth, mirroring
+/// the cipher names recognized by the C implementation's
+/// `EVP_get_cipherbyname()` function and enabling the fallback dispatch path
 /// where `openssl aes-256-cbc` is equivalent to `openssl enc -aes-256-cbc`.
 fn is_known_cipher(name: &str) -> bool {
-    matches!(
-        name,
-        "aes-128-cbc"
-            | "aes-192-cbc"
-            | "aes-256-cbc"
-            | "aes-128-ecb"
-            | "aes-192-ecb"
-            | "aes-256-ecb"
-            | "aes-128-cfb"
-            | "aes-192-cfb"
-            | "aes-256-cfb"
-            | "aes-128-ofb"
-            | "aes-192-ofb"
-            | "aes-256-ofb"
-            | "aes-128-ctr"
-            | "aes-192-ctr"
-            | "aes-256-ctr"
-            | "aes-128-gcm"
-            | "aes-192-gcm"
-            | "aes-256-gcm"
-            | "des-cbc"
-            | "des-ecb"
-            | "des-cfb"
-            | "des-ofb"
-            | "des-ede3-cbc"
-            | "des-ede3-ecb"
-            | "des-ede3-cfb"
-            | "des-ede3-ofb"
-            | "rc4"
-            | "rc2-cbc"
-            | "bf-cbc"
-            | "cast5-cbc"
-            | "camellia-128-cbc"
-            | "camellia-192-cbc"
-            | "camellia-256-cbc"
-            | "aria-128-cbc"
-            | "aria-192-cbc"
-            | "aria-256-cbc"
-            | "sm4-cbc"
-            | "chacha20-poly1305"
-            | "chacha20"
-    )
+    KNOWN_CIPHERS.contains(&name)
 }

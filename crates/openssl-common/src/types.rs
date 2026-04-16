@@ -683,6 +683,13 @@ pub enum OperationType {
     EncoderDecoder,
     /// Object store operations (`OSSL_OP_STORE`).
     Store,
+    /// Symmetric (opaque/secret) key management operations (`OSSL_OP_SKEYMGMT`).
+    ///
+    /// Distinct from [`KeyMgmt`](Self::KeyMgmt) which handles asymmetric key
+    /// management.  In C OpenSSL, `OSSL_OP_STORE` and `OSSL_OP_SKEYMGMT` are
+    /// separate operation types dispatched independently by the provider
+    /// framework.
+    SKeyMgmt,
 }
 
 impl fmt::Display for OperationType {
@@ -700,6 +707,7 @@ impl fmt::Display for OperationType {
             Self::KeyExch => "keyexch",
             Self::EncoderDecoder => "encoder_decoder",
             Self::Store => "store",
+            Self::SKeyMgmt => "skeymgmt",
         };
         f.write_str(label)
     }
@@ -971,6 +979,7 @@ mod tests {
             "encoder_decoder"
         );
         assert_eq!(format!("{}", OperationType::Store), "store");
+        assert_eq!(format!("{}", OperationType::SKeyMgmt), "skeymgmt");
     }
 
     // ── AlgorithmName trait tests ───────────────────────────────────────

@@ -990,8 +990,8 @@ pub fn query_algorithms(operation: OperationType) -> &'static [FipsAlgorithmEntr
         OperationType::AsymCipher => &FIPS_ASYM_CIPHER,
         OperationType::Kem => &FIPS_ASYM_KEM,
         OperationType::KeyExch => &FIPS_KEY_EXCHANGE,
-        OperationType::Store => &FIPS_SKEYMGMT,
-        OperationType::EncoderDecoder => {
+        OperationType::SKeyMgmt => &FIPS_SKEYMGMT,
+        OperationType::Store | OperationType::EncoderDecoder => {
             debug!("EncoderDecoder not supported by FIPS provider");
             return &[];
         }
@@ -1999,7 +1999,7 @@ mod tests {
             OperationType::AsymCipher,
             OperationType::Kem,
             OperationType::KeyExch,
-            OperationType::Store,
+            OperationType::SKeyMgmt,
         ];
         for op in &ops {
             let result = query_algorithms(*op);
@@ -2009,6 +2009,16 @@ mod tests {
                 op
             );
         }
+
+        // Store and EncoderDecoder should return empty slices for FIPS
+        assert!(
+            query_algorithms(OperationType::Store).is_empty(),
+            "FIPS provider should not supply Store operations"
+        );
+        assert!(
+            query_algorithms(OperationType::EncoderDecoder).is_empty(),
+            "FIPS provider should not supply EncoderDecoder operations"
+        );
     }
 
     #[test]

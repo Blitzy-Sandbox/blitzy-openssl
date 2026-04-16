@@ -448,8 +448,14 @@ impl ConfigParser {
                 continuation_start_line = line_num;
             }
 
-            if line.ends_with('\\') && !line.ends_with("\\\\") {
-                // Strip trailing backslash and accumulate
+            // Count consecutive trailing backslashes.  An odd count means
+            // the final `\` is an unescaped continuation marker; an even count
+            // means all backslashes are escaped (literal) and the line is NOT
+            // a continuation.  This matches C OpenSSL's `CONF_get_line()`
+            // behaviour where `\\` is a literal backslash.
+            let trailing_backslashes = line.as_bytes().iter().rev().take_while(|&&b| b == b'\\').count();
+            if trailing_backslashes % 2 == 1 {
+                // Strip the single trailing continuation backslash and accumulate.
                 continuation_buf.push_str(&line[..line.len() - 1]);
                 continue;
             }
@@ -923,10 +929,14 @@ impl ConfigParser {
         while i < len {
             let ch = bytes[i];
             if in_single_quote {
+                // C OpenSSL's `clear_comments()` in `conf_def.c` does NOT
+                // honour backslash escapes inside single-quoted strings for
+                // the purpose of comment stripping.  Only the closing `'`
+                // terminates the quoted region.  (Backslash escapes inside
+                // single quotes are handled separately in `str_copy()` /
+                // `decode_string()` during value decoding, not here.)
                 if ch == b'\'' {
                     in_single_quote = false;
-                } else if ch == b'\\' && i + 1 < len {
-                    i += 1; // skip escaped character inside single quotes
                 }
             } else if in_double_quote {
                 if ch == b'"' {

@@ -687,6 +687,7 @@ fn operation_type_all_variants() {
         OperationType::KeyExch,
         OperationType::EncoderDecoder,
         OperationType::Store,
+        OperationType::SKeyMgmt,
     ];
     // Exhaustive match guarantees compile-time checking for new variants.
     for op in &ops {
@@ -702,10 +703,11 @@ fn operation_type_all_variants() {
             | OperationType::Kem
             | OperationType::KeyExch
             | OperationType::EncoderDecoder
-            | OperationType::Store => {}
+            | OperationType::Store
+            | OperationType::SKeyMgmt => {}
         }
     }
-    assert_eq!(ops.len(), 12);
+    assert_eq!(ops.len(), 13);
 }
 
 /// Verify `OperationType` equality comparison.
@@ -733,6 +735,7 @@ fn operation_type_all_variants_display() {
         (OperationType::KeyExch, "keyexch"),
         (OperationType::EncoderDecoder, "encoder_decoder"),
         (OperationType::Store, "store"),
+        (OperationType::SKeyMgmt, "skeymgmt"),
     ];
     for (op, expected) in ops {
         assert_eq!(format!("{op}"), expected, "{op:?} display mismatch");

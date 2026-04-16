@@ -53,7 +53,7 @@ use openssl_common::{Nid, OperationType, ParamSet, ParamValue, ProviderError, Pr
 /// All operation types, used to iterate over every category when registering
 /// a provider.  Mirrors the C `OSSL_OP_*` enumeration range from
 /// `include/openssl/core_dispatch.h`.
-const ALL_OPERATIONS: [OperationType; 12] = [
+const ALL_OPERATIONS: [OperationType; 13] = [
     OperationType::Digest,
     OperationType::Cipher,
     OperationType::Mac,
@@ -66,6 +66,7 @@ const ALL_OPERATIONS: [OperationType; 12] = [
     OperationType::KeyExch,
     OperationType::EncoderDecoder,
     OperationType::Store,
+    OperationType::SKeyMgmt,
 ];
 
 // =============================================================================

@@ -12,3 +12,6 @@ pub mod quic;
 
 #[cfg(feature = "srtp")]
 pub mod srtp;
+
+#[cfg(test)]
+mod tests;
