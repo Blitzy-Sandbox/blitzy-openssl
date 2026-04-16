@@ -8,8 +8,19 @@
 //!
 //! Each store struct implements `StoreProvider` from `crate::traits`.
 
-use crate::traits::AlgorithmDescriptor;
 use super::algorithm;
+use crate::traits::AlgorithmDescriptor;
+
+/// Any-to-object decoder chain passthrough.
+///
+/// Internal "last resort" decoder that turns unrecognized binary content
+/// into generic `StoreObject` types for further processing in the decoder
+/// chain.  Supports DER, MSBLOB, PVK, and RAW input formats.
+///
+/// Source: `providers/implementations/storemgmt/file_store_any2obj.c`.
+///
+/// See [`any2obj`] module documentation for details.
+pub mod any2obj;
 
 /// Windows certificate store adapter.
 ///
@@ -32,13 +43,14 @@ pub mod winstore;
 pub fn descriptors() -> Vec<AlgorithmDescriptor> {
     // `mut` is conditionally required — used by the `#[cfg(target_os = "windows")]` block.
     #[allow(unused_mut)]
-    let mut descs = vec![
-        algorithm(
-            &["file"],
-            "provider=default",
-            "File-based key and certificate store (PEM/DER directory)",
-        ),
-    ];
+    let mut descs = vec![algorithm(
+        &["file"],
+        "provider=default",
+        "File-based key and certificate store (PEM/DER directory)",
+    )];
+
+    // Any-to-object decoder passthrough descriptors (DER, MSBLOB, PVK, RAW).
+    descs.extend(any2obj::algorithm_descriptors());
 
     // Windows certificate store — only advertised on Windows targets.
     #[cfg(target_os = "windows")]
