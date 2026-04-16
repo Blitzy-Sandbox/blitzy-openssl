@@ -7,8 +7,10 @@
 //!
 //! Each MAC struct implements `MacProvider` from `crate::traits`.
 
-use crate::traits::AlgorithmDescriptor;
+pub mod blake2_mac;
+
 use super::algorithm;
+use crate::traits::AlgorithmDescriptor;
 
 /// Returns all MAC algorithm descriptors registered by this module.
 ///
@@ -17,7 +19,7 @@ use super::algorithm;
 /// default and legacy providers.
 #[must_use]
 pub fn descriptors() -> Vec<AlgorithmDescriptor> {
-    vec![
+    let mut descs = vec![
         algorithm(
             &["HMAC"],
             "provider=default",
@@ -53,5 +55,7 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
             "provider=default",
             "SipHash Message Authentication Code",
         ),
-    ]
+    ];
+    descs.extend(blake2_mac::Blake2MacProvider::all_descriptors());
+    descs
 }
