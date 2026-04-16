@@ -12,6 +12,7 @@ pub mod init;
 pub mod kdf;
 pub mod mac;
 pub mod provider;
+pub mod rand;
 pub mod thread;
 
 #[cfg(feature = "ts")]
