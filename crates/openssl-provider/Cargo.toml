@@ -168,6 +168,16 @@ zeroize = { workspace = true }
 bitflags = { workspace = true }
 
 # ---------------------------------------------------------------------------
+# Random Number Generation (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# Cryptographic random number generation for OS entropy acquisition in DRBG
+# seed source (OsRng → getrandom on Linux, BCryptGenRandom on Windows).
+# RngCore trait for fill_bytes()/try_fill_bytes() methods.
+# Used by implementations/rands/drbg.rs for entropy and nonce acquisition.
+# Replaces C ossl_pool_acquire_entropy() and prov_drbg_get_nonce().
+rand = { workspace = true }
+
+# ---------------------------------------------------------------------------
 # ASN.1 DER Encoding/Decoding (AAP §0.6.1)
 # ---------------------------------------------------------------------------
 # RustCrypto ASN.1 DER codec used by the encode_decode module for parsing

@@ -1275,6 +1275,7 @@ dependencies = [
  "openssl-crypto",
  "parking_lot",
  "proptest",
+ "rand",
  "serde",
  "serde_json",
  "tempfile",

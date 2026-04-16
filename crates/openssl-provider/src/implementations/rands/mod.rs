@@ -8,6 +8,8 @@
 //!
 //! Each RNG struct implements `RandProvider` from `crate::traits`.
 
+pub mod drbg;
+
 use crate::traits::AlgorithmDescriptor;
 use super::algorithm;
 
