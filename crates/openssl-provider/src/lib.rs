@@ -31,5 +31,12 @@ pub mod legacy;
 /// cryptographic algorithm implementations. Replaces C `providers/baseprov.c`.
 pub mod base;
 
+/// Null provider implementation — a minimal, ABI-valid provider that returns
+/// metadata (name, version, status) but advertises zero algorithms for all
+/// operation classes.  `query_operation()` always returns `None`.  Used as a
+/// sentinel/placeholder when a valid provider handle is needed but no
+/// algorithm discovery should succeed.  Replaces C `providers/nullprov.c`.
+pub mod null;
+
 /// Algorithm implementation backends (ciphers, digests, KDFs, MACs, KEM, etc.).
 pub mod implementations;
