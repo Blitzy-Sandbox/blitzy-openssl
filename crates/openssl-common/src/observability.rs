@@ -900,9 +900,7 @@ mod tests {
         // metrics recorder (singleton), so we validate the MetricsSetupFailed
         // variant — this confirms the metrics-related error path is
         // well-formed and the Debug derive chain functions correctly.
-        let err = ObservabilityError::MetricsSetupFailed(
-            "test recorder conflict".to_string(),
-        );
+        let err = ObservabilityError::MetricsSetupFailed("test recorder conflict".to_string());
         let debug_str = format!("{err:?}");
         assert!(!debug_str.is_empty(), "Debug output should be non-empty");
         assert!(

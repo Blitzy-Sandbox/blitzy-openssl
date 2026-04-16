@@ -161,7 +161,10 @@ fn test_x86_features_bitflags() {
 
     // Verify that `empty()` yields a zero-valued bitflag.
     let empty = X86Features::empty();
-    assert!(!empty.contains(X86Features::SSE2), "empty() must not contain any flags");
+    assert!(
+        !empty.contains(X86Features::SSE2),
+        "empty() must not contain any flags"
+    );
 
     // Test bitwise OR composition — combine multiple flags.
     let combined = X86Features::AESNI | X86Features::AVX2;
@@ -170,18 +173,58 @@ fn test_x86_features_bitflags() {
     let _has_both: bool = features.contains(combined);
 
     // Verify that each individual flag constant is non-zero and distinct.
-    assert_ne!(X86Features::SSE2, X86Features::empty(), "SSE2 flag must be non-zero");
-    assert_ne!(X86Features::AESNI, X86Features::empty(), "AESNI flag must be non-zero");
-    assert_ne!(X86Features::AVX2, X86Features::empty(), "AVX2 flag must be non-zero");
-    assert_ne!(X86Features::AVX512F, X86Features::empty(), "AVX512F flag must be non-zero");
-    assert_ne!(X86Features::PCLMULQDQ, X86Features::empty(), "PCLMULQDQ flag must be non-zero");
-    assert_ne!(X86Features::SHA, X86Features::empty(), "SHA flag must be non-zero");
+    assert_ne!(
+        X86Features::SSE2,
+        X86Features::empty(),
+        "SSE2 flag must be non-zero"
+    );
+    assert_ne!(
+        X86Features::AESNI,
+        X86Features::empty(),
+        "AESNI flag must be non-zero"
+    );
+    assert_ne!(
+        X86Features::AVX2,
+        X86Features::empty(),
+        "AVX2 flag must be non-zero"
+    );
+    assert_ne!(
+        X86Features::AVX512F,
+        X86Features::empty(),
+        "AVX512F flag must be non-zero"
+    );
+    assert_ne!(
+        X86Features::PCLMULQDQ,
+        X86Features::empty(),
+        "PCLMULQDQ flag must be non-zero"
+    );
+    assert_ne!(
+        X86Features::SHA,
+        X86Features::empty(),
+        "SHA flag must be non-zero"
+    );
 
     // Verify that flag constants are pairwise distinct (each occupies a unique bit).
-    assert_ne!(X86Features::AESNI, X86Features::AVX2, "AESNI and AVX2 must be distinct");
-    assert_ne!(X86Features::AVX2, X86Features::AVX512F, "AVX2 and AVX512F must be distinct");
-    assert_ne!(X86Features::SHA, X86Features::PCLMULQDQ, "SHA and PCLMULQDQ must be distinct");
-    assert_ne!(X86Features::SSE2, X86Features::AESNI, "SSE2 and AESNI must be distinct");
+    assert_ne!(
+        X86Features::AESNI,
+        X86Features::AVX2,
+        "AESNI and AVX2 must be distinct"
+    );
+    assert_ne!(
+        X86Features::AVX2,
+        X86Features::AVX512F,
+        "AVX2 and AVX512F must be distinct"
+    );
+    assert_ne!(
+        X86Features::SHA,
+        X86Features::PCLMULQDQ,
+        "SHA and PCLMULQDQ must be distinct"
+    );
+    assert_ne!(
+        X86Features::SSE2,
+        X86Features::AESNI,
+        "SSE2 and AESNI must be distinct"
+    );
 }
 
 /// On `aarch64`, NEON (Advanced SIMD) is a mandatory extension of `ARMv8-A`.
@@ -244,11 +287,23 @@ fn test_arm_features_bitflags() {
     let _has_both: bool = features.contains(combined);
 
     // Verify individual flags are non-zero.
-    assert_ne!(ArmFeatures::NEON, ArmFeatures::empty(), "NEON flag must be non-zero");
-    assert_ne!(ArmFeatures::AES, ArmFeatures::empty(), "AES flag must be non-zero");
+    assert_ne!(
+        ArmFeatures::NEON,
+        ArmFeatures::empty(),
+        "NEON flag must be non-zero"
+    );
+    assert_ne!(
+        ArmFeatures::AES,
+        ArmFeatures::empty(),
+        "AES flag must be non-zero"
+    );
 
     // Verify flags are pairwise distinct.
-    assert_ne!(ArmFeatures::NEON, ArmFeatures::AES, "NEON and AES must be distinct");
+    assert_ne!(
+        ArmFeatures::NEON,
+        ArmFeatures::AES,
+        "NEON and AES must be distinct"
+    );
 }
 
 // =============================================================================

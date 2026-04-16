@@ -22,9 +22,9 @@ use std::sync::Arc;
 use bitflags::bitflags;
 use tracing::trace;
 
-use openssl_common::{CryptoResult, ParamSet};
-use crate::context::LibContext;
 use super::EvpError;
+use crate::context::LibContext;
+use openssl_common::{CryptoResult, ParamSet};
 
 // ---------------------------------------------------------------------------
 // MessageDigest — algorithm descriptor (EVP_MD)
@@ -402,10 +402,7 @@ impl MdContext {
 /// Computes a digest in a single call (allocates and returns the hash).
 ///
 /// This is the Rust equivalent of `EVP_Digest()`.
-pub fn digest_one_shot(
-    digest: &MessageDigest,
-    data: &[u8],
-) -> CryptoResult<Vec<u8>> {
+pub fn digest_one_shot(digest: &MessageDigest, data: &[u8]) -> CryptoResult<Vec<u8>> {
     let mut ctx = MdContext::new(digest)?;
     ctx.update(data)?;
     ctx.finalize()
@@ -417,10 +414,7 @@ pub fn digest_one_shot(
 ///
 /// * `algorithm` — Digest algorithm name (e.g., "SHA-256")
 /// * `data` — Data to hash
-pub fn digest_quick(
-    algorithm: &str,
-    data: &[u8],
-) -> CryptoResult<Vec<u8>> {
+pub fn digest_quick(algorithm: &str, data: &[u8]) -> CryptoResult<Vec<u8>> {
     let ctx = LibContext::get_default();
     let digest = MessageDigest::fetch(&ctx, algorithm, None)?;
     digest_one_shot(&digest, data)

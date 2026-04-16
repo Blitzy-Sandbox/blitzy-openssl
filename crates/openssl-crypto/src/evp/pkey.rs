@@ -8,10 +8,10 @@ use std::sync::Arc;
 use tracing::trace;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
-use openssl_common::{CryptoResult, ParamSet, ParamValue};
-use crate::context::LibContext;
 use super::keymgmt::KeyMgmt;
 use super::EvpError;
+use crate::context::LibContext;
+use openssl_common::{CryptoResult, ParamSet, ParamValue};
 
 // ---------------------------------------------------------------------------
 // KeyType — algorithm family
@@ -190,10 +190,7 @@ impl PKey {
     }
 
     /// Creates a `PKey` from raw public key bytes.
-    pub fn from_raw_public_key(
-        key_type: KeyType,
-        public_key: &[u8],
-    ) -> CryptoResult<Self> {
+    pub fn from_raw_public_key(key_type: KeyType, public_key: &[u8]) -> CryptoResult<Self> {
         trace!(key_type = %key_type, len = public_key.len(), "pkey: from raw public key");
         Ok(Self {
             key_type,
@@ -209,10 +206,7 @@ impl PKey {
     /// Creates a `PKey` from raw private key bytes.
     ///
     /// The public key is derived from the private key where possible.
-    pub fn from_raw_private_key(
-        key_type: KeyType,
-        private_key: &[u8],
-    ) -> CryptoResult<Self> {
+    pub fn from_raw_private_key(key_type: KeyType, private_key: &[u8]) -> CryptoResult<Self> {
         trace!(key_type = %key_type, "pkey: from raw private key");
         Ok(Self {
             key_type,
@@ -226,10 +220,14 @@ impl PKey {
     }
 
     /// Returns the key algorithm type.
-    pub fn key_type(&self) -> &KeyType { &self.key_type }
+    pub fn key_type(&self) -> &KeyType {
+        &self.key_type
+    }
 
     /// Returns the key type as a string name.
-    pub fn key_type_name(&self) -> &str { self.key_type.as_str() }
+    pub fn key_type_name(&self) -> &str {
+        self.key_type.as_str()
+    }
 
     /// Returns the key size in bits.
     ///
@@ -263,11 +261,17 @@ impl PKey {
         match &self.key_type {
             KeyType::Rsa | KeyType::RsaPss => {
                 let bits = self.bits();
-                if bits >= 15360 { 256 }
-                else if bits >= 7680 { 192 }
-                else if bits >= 3072 { 128 }
-                else if bits >= 2048 { 112 }
-                else { 80 }
+                if bits >= 15360 {
+                    256
+                } else if bits >= 7680 {
+                    192
+                } else if bits >= 3072 {
+                    128
+                } else if bits >= 2048 {
+                    112
+                } else {
+                    80
+                }
             }
             KeyType::Ec | KeyType::Sm2 => self.bits() / 2,
             KeyType::X25519 | KeyType::Ed25519 | KeyType::MlKem512 | KeyType::MlDsa44 => 128,
@@ -288,10 +292,14 @@ impl PKey {
     }
 
     /// Returns `true` if this key contains private key material.
-    pub fn has_private_key(&self) -> bool { self.has_private }
+    pub fn has_private_key(&self) -> bool {
+        self.has_private
+    }
 
     /// Returns `true` if this key contains public key material.
-    pub fn has_public_key(&self) -> bool { self.has_public }
+    pub fn has_public_key(&self) -> bool {
+        self.has_public
+    }
 
     /// Copies algorithm parameters from another key into this one.
     pub fn copy_params_from(&mut self, other: &PKey) -> CryptoResult<()> {
@@ -300,10 +308,14 @@ impl PKey {
     }
 
     /// Returns the associated key management, if any.
-    pub fn keymgmt(&self) -> Option<&Arc<KeyMgmt>> { self.keymgmt.as_ref() }
+    pub fn keymgmt(&self) -> Option<&Arc<KeyMgmt>> {
+        self.keymgmt.as_ref()
+    }
 
     /// Returns the key parameters, if any.
-    pub fn params(&self) -> Option<&ParamSet> { self.params.as_ref() }
+    pub fn params(&self) -> Option<&ParamSet> {
+        self.params.as_ref()
+    }
 
     /// Returns the raw private key bytes as a slice, if available.
     ///
@@ -458,10 +470,7 @@ impl PKeyCtx {
     }
 
     /// Creates a new `PKeyCtx` from an existing key.
-    pub fn new_from_pkey(
-        ctx: Arc<LibContext>,
-        key: Arc<PKey>,
-    ) -> CryptoResult<Self> {
+    pub fn new_from_pkey(ctx: Arc<LibContext>, key: Arc<PKey>) -> CryptoResult<Self> {
         trace!(key_type = %key.key_type(), "evp::pkey: new context from pkey");
         Ok(Self {
             ctx,
@@ -557,11 +566,7 @@ impl PKeyCtx {
     // Parameter management
 
     /// Sets a single parameter by name.
-    pub fn set_param(
-        &mut self,
-        _name: &str,
-        _value: &ParamValue,
-    ) -> CryptoResult<()> {
+    pub fn set_param(&mut self, _name: &str, _value: &ParamValue) -> CryptoResult<()> {
         Ok(())
     }
 
@@ -581,13 +586,19 @@ impl PKeyCtx {
     }
 
     /// Returns the current operation mode.
-    pub fn operation(&self) -> PKeyOperation { self.operation }
+    pub fn operation(&self) -> PKeyOperation {
+        self.operation
+    }
 
     /// Returns the key associated with this context, if any.
-    pub fn key(&self) -> Option<&Arc<PKey>> { self.key.as_ref() }
+    pub fn key(&self) -> Option<&Arc<PKey>> {
+        self.key.as_ref()
+    }
 
     /// Returns the library context.
-    pub fn lib_context(&self) -> &Arc<LibContext> { &self.ctx }
+    pub fn lib_context(&self) -> &Arc<LibContext> {
+        &self.ctx
+    }
 }
 
 // ---------------------------------------------------------------------------

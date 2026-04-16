@@ -140,29 +140,83 @@ const SHA256_DIGEST_SIZE: usize = 32;
 /// SHA-256 initial hash values (first 32 bits of the fractional parts of
 /// the square roots of the first 8 primes).
 const SHA256_H0: [u32; 8] = [
-    0x6a09_e667, 0xbb67_ae85, 0x3c6e_f372, 0xa54f_f53a,
-    0x510e_527f, 0x9b05_688c, 0x1f83_d9ab, 0x5be0_cd19,
+    0x6a09_e667,
+    0xbb67_ae85,
+    0x3c6e_f372,
+    0xa54f_f53a,
+    0x510e_527f,
+    0x9b05_688c,
+    0x1f83_d9ab,
+    0x5be0_cd19,
 ];
 
 /// SHA-256 round constants (first 32 bits of the fractional parts of
 /// the cube roots of the first 64 primes).
 const SHA256_K: [u32; 64] = [
-    0x428a_2f98, 0x7137_4491, 0xb5c0_fbcf, 0xe9b5_dba5,
-    0x3956_c25b, 0x59f1_11f1, 0x923f_82a4, 0xab1c_5ed5,
-    0xd807_aa98, 0x1283_5b01, 0x2431_85be, 0x550c_7dc3,
-    0x72be_5d74, 0x80de_b1fe, 0x9bdc_06a7, 0xc19b_f174,
-    0xe49b_69c1, 0xefbe_4786, 0x0fc1_9dc6, 0x240c_a1cc,
-    0x2de9_2c6f, 0x4a74_84aa, 0x5cb0_a9dc, 0x76f9_88da,
-    0x983e_5152, 0xa831_c66d, 0xb003_27c8, 0xbf59_7fc7,
-    0xc6e0_0bf3, 0xd5a7_9147, 0x06ca_6351, 0x1429_2967,
-    0x27b7_0a85, 0x2e1b_2138, 0x4d2c_6dfc, 0x5338_0d13,
-    0x650a_7354, 0x766a_0abb, 0x81c2_c92e, 0x9272_2c85,
-    0xa2bf_e8a1, 0xa81a_664b, 0xc24b_8b70, 0xc76c_51a3,
-    0xd192_e819, 0xd699_0624, 0xf40e_3585, 0x106a_a070,
-    0x19a4_c116, 0x1e37_6c08, 0x2748_774c, 0x34b0_bcb5,
-    0x391c_0cb3, 0x4ed8_aa4a, 0x5b9c_ca4f, 0x682e_6ff3,
-    0x748f_82ee, 0x78a5_636f, 0x84c8_7814, 0x8cc7_0208,
-    0x90be_fffa, 0xa450_6ceb, 0xbef9_a3f7, 0xc671_78f2,
+    0x428a_2f98,
+    0x7137_4491,
+    0xb5c0_fbcf,
+    0xe9b5_dba5,
+    0x3956_c25b,
+    0x59f1_11f1,
+    0x923f_82a4,
+    0xab1c_5ed5,
+    0xd807_aa98,
+    0x1283_5b01,
+    0x2431_85be,
+    0x550c_7dc3,
+    0x72be_5d74,
+    0x80de_b1fe,
+    0x9bdc_06a7,
+    0xc19b_f174,
+    0xe49b_69c1,
+    0xefbe_4786,
+    0x0fc1_9dc6,
+    0x240c_a1cc,
+    0x2de9_2c6f,
+    0x4a74_84aa,
+    0x5cb0_a9dc,
+    0x76f9_88da,
+    0x983e_5152,
+    0xa831_c66d,
+    0xb003_27c8,
+    0xbf59_7fc7,
+    0xc6e0_0bf3,
+    0xd5a7_9147,
+    0x06ca_6351,
+    0x1429_2967,
+    0x27b7_0a85,
+    0x2e1b_2138,
+    0x4d2c_6dfc,
+    0x5338_0d13,
+    0x650a_7354,
+    0x766a_0abb,
+    0x81c2_c92e,
+    0x9272_2c85,
+    0xa2bf_e8a1,
+    0xa81a_664b,
+    0xc24b_8b70,
+    0xc76c_51a3,
+    0xd192_e819,
+    0xd699_0624,
+    0xf40e_3585,
+    0x106a_a070,
+    0x19a4_c116,
+    0x1e37_6c08,
+    0x2748_774c,
+    0x34b0_bcb5,
+    0x391c_0cb3,
+    0x4ed8_aa4a,
+    0x5b9c_ca4f,
+    0x682e_6ff3,
+    0x748f_82ee,
+    0x78a5_636f,
+    0x84c8_7814,
+    0x8cc7_0208,
+    0x90be_fffa,
+    0xa450_6ceb,
+    0xbef9_a3f7,
+    0xc671_78f2,
 ];
 
 /// Minimal internal SHA-256 hash state (private to this module).
@@ -194,8 +248,7 @@ impl Sha256State {
         if self.buf_len > 0 {
             let remaining = SHA256_BLOCK_SIZE - self.buf_len;
             let to_copy = core::cmp::min(remaining, data.len());
-            self.buffer[self.buf_len..self.buf_len + to_copy]
-                .copy_from_slice(&data[..to_copy]);
+            self.buffer[self.buf_len..self.buf_len + to_copy].copy_from_slice(&data[..to_copy]);
             self.buf_len += to_copy;
             offset = to_copy;
 
@@ -275,8 +328,7 @@ fn sha256_compress(state: &mut [u32; 8], block: &[u8; SHA256_BLOCK_SIZE]) {
     }
 
     let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h) = (
-        state[0], state[1], state[2], state[3],
-        state[4], state[5], state[6], state[7],
+        state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7],
     );
 
     for i in 0..64 {
@@ -404,12 +456,10 @@ impl HmacState {
     /// The returned block size is guaranteed to be ≤ [`HMAC_MAX_BLOCK_SIZE`].
     fn block_size_for_digest(name: &str) -> CryptoResult<usize> {
         let bs = match name.to_uppercase().as_str() {
-            "SHA256" | "SHA-256" | "SHA2-256"
-            | "SHA224" | "SHA-224"
-            | "SHA1" | "SHA-1"
-            | "MD5" => 64,
-            "SHA384" | "SHA-384"
-            | "SHA512" | "SHA-512" => 128,
+            "SHA256" | "SHA-256" | "SHA2-256" | "SHA224" | "SHA-224" | "SHA1" | "SHA-1" | "MD5" => {
+                64
+            }
+            "SHA384" | "SHA-384" | "SHA512" | "SHA-512" => 128,
             "SHA3-256" => 136,
             "SHA3-384" => 104,
             "SHA3-512" => 72,
@@ -426,13 +476,10 @@ impl HmacState {
     /// Returns the output size for the given digest algorithm name.
     fn hash_size_for_digest(name: &str) -> CryptoResult<usize> {
         match name.to_uppercase().as_str() {
-            "SHA256" | "SHA-256" | "SHA2-256"
-            | "SHA3-256" => Ok(32),
+            "SHA256" | "SHA-256" | "SHA2-256" | "SHA3-256" => Ok(32),
             "SHA224" | "SHA-224" => Ok(28),
-            "SHA384" | "SHA-384"
-            | "SHA3-384" => Ok(48),
-            "SHA512" | "SHA-512"
-            | "SHA3-512" => Ok(64),
+            "SHA384" | "SHA-384" | "SHA3-384" => Ok(48),
+            "SHA512" | "SHA-512" | "SHA3-512" => Ok(64),
             "SHA1" | "SHA-1" => Ok(20),
             "MD5" => Ok(16),
             _ => Err(CryptoError::AlgorithmNotFound(format!(
@@ -524,8 +571,7 @@ impl SipHashState {
         if self.buf_len > 0 {
             let remaining = 8 - self.buf_len;
             let to_copy = core::cmp::min(remaining, data.len());
-            self.buffer[self.buf_len..self.buf_len + to_copy]
-                .copy_from_slice(&data[..to_copy]);
+            self.buffer[self.buf_len..self.buf_len + to_copy].copy_from_slice(&data[..to_copy]);
             self.buf_len += to_copy;
             offset = to_copy;
 
@@ -703,8 +749,13 @@ impl Poly1305State {
         r_bytes.zeroize();
 
         let r = [r0, r1, r2, r3, r4];
-        let s_r = [r0.wrapping_mul(5), r1.wrapping_mul(5), r2.wrapping_mul(5),
-                    r3.wrapping_mul(5), r4.wrapping_mul(5)];
+        let s_r = [
+            r0.wrapping_mul(5),
+            r1.wrapping_mul(5),
+            r2.wrapping_mul(5),
+            r3.wrapping_mul(5),
+            r4.wrapping_mul(5),
+        ];
 
         Ok(Self {
             h: [0u32; 5],
@@ -724,8 +775,7 @@ impl Poly1305State {
         if self.buf_len > 0 {
             let remaining = POLY1305_BLOCK_SIZE - self.buf_len;
             let to_copy = core::cmp::min(remaining, data.len());
-            self.buffer[self.buf_len..self.buf_len + to_copy]
-                .copy_from_slice(&data[..to_copy]);
+            self.buffer[self.buf_len..self.buf_len + to_copy].copy_from_slice(&data[..to_copy]);
             self.buf_len += to_copy;
             offset = to_copy;
 
@@ -776,16 +826,28 @@ impl Poly1305State {
         let h3 = u64::from((self.h[3] >> 18) | (self.h[4] << 8));
 
         let s0 = u64::from(u32::from_le_bytes([
-            self.s_key[0], self.s_key[1], self.s_key[2], self.s_key[3],
+            self.s_key[0],
+            self.s_key[1],
+            self.s_key[2],
+            self.s_key[3],
         ]));
         let s1 = u64::from(u32::from_le_bytes([
-            self.s_key[4], self.s_key[5], self.s_key[6], self.s_key[7],
+            self.s_key[4],
+            self.s_key[5],
+            self.s_key[6],
+            self.s_key[7],
         ]));
         let s2 = u64::from(u32::from_le_bytes([
-            self.s_key[8], self.s_key[9], self.s_key[10], self.s_key[11],
+            self.s_key[8],
+            self.s_key[9],
+            self.s_key[10],
+            self.s_key[11],
         ]));
         let s3 = u64::from(u32::from_le_bytes([
-            self.s_key[12], self.s_key[13], self.s_key[14], self.s_key[15],
+            self.s_key[12],
+            self.s_key[13],
+            self.s_key[14],
+            self.s_key[15],
         ]));
 
         // TRUNCATION: Poly1305 spec requires extracting low 32 bits of each
@@ -814,7 +876,8 @@ impl Poly1305State {
         let t0 = u32::from_le_bytes([block[0], block[1], block[2], block[3]]) & 0x03ff_ffff;
         let t1 = (u32::from_le_bytes([block[3], block[4], block[5], block[6]]) >> 2) & 0x03ff_ffff;
         let t2 = (u32::from_le_bytes([block[6], block[7], block[8], block[9]]) >> 4) & 0x03ff_ffff;
-        let t3 = (u32::from_le_bytes([block[9], block[10], block[11], block[12]]) >> 6) & 0x03ff_ffff;
+        let t3 =
+            (u32::from_le_bytes([block[9], block[10], block[11], block[12]]) >> 6) & 0x03ff_ffff;
         let t4 = (u32::from_le_bytes([block[12], block[13], block[14], block[15]]) >> 8) | hibit;
 
         // h += block
@@ -901,19 +964,36 @@ impl Poly1305State {
 
         // Propagate carries
         let mut c: u32;
-        c = h[1] >> 26; h[1] &= 0x03ff_ffff; h[2] = h[2].wrapping_add(c);
-        c = h[2] >> 26; h[2] &= 0x03ff_ffff; h[3] = h[3].wrapping_add(c);
-        c = h[3] >> 26; h[3] &= 0x03ff_ffff; h[4] = h[4].wrapping_add(c);
-        c = h[4] >> 26; h[4] &= 0x03ff_ffff; h[0] = h[0].wrapping_add(c.wrapping_mul(5));
-        c = h[0] >> 26; h[0] &= 0x03ff_ffff; h[1] = h[1].wrapping_add(c);
+        c = h[1] >> 26;
+        h[1] &= 0x03ff_ffff;
+        h[2] = h[2].wrapping_add(c);
+        c = h[2] >> 26;
+        h[2] &= 0x03ff_ffff;
+        h[3] = h[3].wrapping_add(c);
+        c = h[3] >> 26;
+        h[3] &= 0x03ff_ffff;
+        h[4] = h[4].wrapping_add(c);
+        c = h[4] >> 26;
+        h[4] &= 0x03ff_ffff;
+        h[0] = h[0].wrapping_add(c.wrapping_mul(5));
+        c = h[0] >> 26;
+        h[0] &= 0x03ff_ffff;
+        h[1] = h[1].wrapping_add(c);
 
         // Compute h - (2^130 - 5) to see if h >= 2^130 - 5
         let mut g = [0u32; 5];
         g[0] = h[0].wrapping_add(5);
-        c = g[0] >> 26; g[0] &= 0x03ff_ffff;
-        g[1] = h[1].wrapping_add(c); c = g[1] >> 26; g[1] &= 0x03ff_ffff;
-        g[2] = h[2].wrapping_add(c); c = g[2] >> 26; g[2] &= 0x03ff_ffff;
-        g[3] = h[3].wrapping_add(c); c = g[3] >> 26; g[3] &= 0x03ff_ffff;
+        c = g[0] >> 26;
+        g[0] &= 0x03ff_ffff;
+        g[1] = h[1].wrapping_add(c);
+        c = g[1] >> 26;
+        g[1] &= 0x03ff_ffff;
+        g[2] = h[2].wrapping_add(c);
+        c = g[2] >> 26;
+        g[2] &= 0x03ff_ffff;
+        g[3] = h[3].wrapping_add(c);
+        c = g[3] >> 26;
+        g[3] &= 0x03ff_ffff;
         g[4] = h[4].wrapping_add(c).wrapping_sub(1 << 26);
 
         // Select h or g based on whether g overflowed (constant-time)
@@ -939,22 +1019,22 @@ const AES128_ROUNDS: usize = 10;
 
 /// AES S-box (`SubBytes` forward substitution table).
 const AES_SBOX: [u8; 256] = [
-    0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
-    0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
-    0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,
-    0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,
-    0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,
-    0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,
-    0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,
-    0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,
-    0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,
-    0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,
-    0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,
-    0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,
-    0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,
-    0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,
-    0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,
-    0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16,
+    0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
+    0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
+    0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
+    0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a, 0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75,
+    0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0, 0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84,
+    0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b, 0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf,
+    0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85, 0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8,
+    0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2,
+    0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73,
+    0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb,
+    0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
+    0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08,
+    0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a,
+    0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e,
+    0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
+    0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16,
 ];
 
 /// AES round constant (Rcon) for key schedule.
@@ -972,7 +1052,8 @@ impl Aes128 {
         if key.len() != AES128_KEY_SIZE {
             return Err(CryptoError::Key(format!(
                 "AES-128 requires {}-byte key, got {}",
-                AES128_KEY_SIZE, key.len()
+                AES128_KEY_SIZE,
+                key.len()
             )));
         }
         let mut rk = [[0u8; AES_BLOCK_SIZE]; AES128_ROUNDS + 1];
@@ -1031,11 +1112,20 @@ fn sub_bytes(block: &mut [u8; 16]) {
 /// AES `ShiftRows`: cyclically shift rows of the state matrix.
 fn shift_rows(block: &mut [u8; 16]) {
     let tmp = block[1];
-    block[1] = block[5]; block[5] = block[9]; block[9] = block[13]; block[13] = tmp;
+    block[1] = block[5];
+    block[5] = block[9];
+    block[9] = block[13];
+    block[13] = tmp;
     let (t0, t1) = (block[2], block[6]);
-    block[2] = block[10]; block[6] = block[14]; block[10] = t0; block[14] = t1;
+    block[2] = block[10];
+    block[6] = block[14];
+    block[10] = t0;
+    block[14] = t1;
     let tmp = block[15];
-    block[15] = block[11]; block[11] = block[7]; block[7] = block[3]; block[3] = tmp;
+    block[15] = block[11];
+    block[11] = block[7];
+    block[7] = block[3];
+    block[3] = tmp;
 }
 
 /// GF(2^8) multiplication by 2 (`xtime`).
@@ -1087,7 +1177,9 @@ impl CmacState {
         l_block.zeroize();
 
         Ok(Self {
-            cipher, k1, k2,
+            cipher,
+            k1,
+            k2,
             cbc: [0u8; AES_BLOCK_SIZE],
             buffer: [0u8; AES_BLOCK_SIZE],
             buf_len: 0,
@@ -1096,14 +1188,15 @@ impl CmacState {
 
     /// Feeds data into the CMAC computation.
     fn update(&mut self, data: &[u8]) {
-        if data.is_empty() { return; }
+        if data.is_empty() {
+            return;
+        }
         let mut offset = 0usize;
 
         if self.buf_len > 0 {
             let remaining = AES_BLOCK_SIZE - self.buf_len;
             let to_copy = core::cmp::min(remaining, data.len());
-            self.buffer[self.buf_len..self.buf_len + to_copy]
-                .copy_from_slice(&data[..to_copy]);
+            self.buffer[self.buf_len..self.buf_len + to_copy].copy_from_slice(&data[..to_copy]);
             self.buf_len += to_copy;
             offset = to_copy;
             if self.buf_len == AES_BLOCK_SIZE && offset < data.len() {
@@ -1167,7 +1260,9 @@ fn cmac_shift_xor(input: &[u8; AES_BLOCK_SIZE]) -> [u8; AES_BLOCK_SIZE] {
         output[i] = (input[i] << 1) | (input[i + 1] >> 7);
     }
     output[AES_BLOCK_SIZE - 1] = input[AES_BLOCK_SIZE - 1] << 1;
-    if carry != 0 { output[AES_BLOCK_SIZE - 1] ^= 0x87; }
+    if carry != 0 {
+        output[AES_BLOCK_SIZE - 1] ^= 0x87;
+    }
     output
 }
 
@@ -1196,12 +1291,18 @@ impl GmacState {
         let mut h_block = [0u8; AES_BLOCK_SIZE];
         cipher.encrypt_block(&mut h_block);
         let h_hi = u64::from_be_bytes([
-            h_block[0], h_block[1], h_block[2], h_block[3],
-            h_block[4], h_block[5], h_block[6], h_block[7],
+            h_block[0], h_block[1], h_block[2], h_block[3], h_block[4], h_block[5], h_block[6],
+            h_block[7],
         ]);
         let h_lo = u64::from_be_bytes([
-            h_block[8], h_block[9], h_block[10], h_block[11],
-            h_block[12], h_block[13], h_block[14], h_block[15],
+            h_block[8],
+            h_block[9],
+            h_block[10],
+            h_block[11],
+            h_block[12],
+            h_block[13],
+            h_block[14],
+            h_block[15],
         ]);
 
         let mut j0 = [0u8; AES_BLOCK_SIZE];
@@ -1215,8 +1316,11 @@ impl GmacState {
         }
 
         Ok(Self {
-            cipher, h_hi, h_lo,
-            acc_hi: 0, acc_lo: 0,
+            cipher,
+            h_hi,
+            h_lo,
+            acc_hi: 0,
+            acc_lo: 0,
             iv: j0,
             buffer: [0u8; AES_BLOCK_SIZE],
             buf_len: 0,
@@ -1232,8 +1336,7 @@ impl GmacState {
         if self.buf_len > 0 {
             let remaining = AES_BLOCK_SIZE - self.buf_len;
             let to_copy = core::cmp::min(remaining, data.len());
-            self.buffer[self.buf_len..self.buf_len + to_copy]
-                .copy_from_slice(&data[..to_copy]);
+            self.buffer[self.buf_len..self.buf_len + to_copy].copy_from_slice(&data[..to_copy]);
             self.buf_len += to_copy;
             offset = to_copy;
             if self.buf_len == AES_BLOCK_SIZE {
@@ -1279,12 +1382,10 @@ impl GmacState {
     /// GHASH block: acc = (acc XOR block) * H in GF(2^128).
     fn ghash_block(&mut self, block: &[u8; AES_BLOCK_SIZE]) {
         let x_hi = u64::from_be_bytes([
-            block[0], block[1], block[2], block[3],
-            block[4], block[5], block[6], block[7],
+            block[0], block[1], block[2], block[3], block[4], block[5], block[6], block[7],
         ]);
         let x_lo = u64::from_be_bytes([
-            block[8], block[9], block[10], block[11],
-            block[12], block[13], block[14], block[15],
+            block[8], block[9], block[10], block[11], block[12], block[13], block[14], block[15],
         ]);
         self.acc_hi ^= x_hi;
         self.acc_lo ^= x_lo;
@@ -1299,19 +1400,29 @@ fn gf128_mul(a_hi: &mut u64, a_lo: &mut u64, b_hi: u64, b_lo: u64) {
 
     let a_hi_val = *a_hi;
     for i in 0..64u32 {
-        if (a_hi_val >> (63 - i)) & 1 == 1 { z_hi ^= v_hi; z_lo ^= v_lo; }
+        if (a_hi_val >> (63 - i)) & 1 == 1 {
+            z_hi ^= v_hi;
+            z_lo ^= v_lo;
+        }
         let carry = v_lo & 1;
         v_lo = (v_lo >> 1) | (v_hi << 63);
         v_hi >>= 1;
-        if carry != 0 { v_hi ^= 0xe100_0000_0000_0000; }
+        if carry != 0 {
+            v_hi ^= 0xe100_0000_0000_0000;
+        }
     }
     let a_lo_val = *a_lo;
     for i in 0..64u32 {
-        if (a_lo_val >> (63 - i)) & 1 == 1 { z_hi ^= v_hi; z_lo ^= v_lo; }
+        if (a_lo_val >> (63 - i)) & 1 == 1 {
+            z_hi ^= v_hi;
+            z_lo ^= v_lo;
+        }
         let carry = v_lo & 1;
         v_lo = (v_lo >> 1) | (v_hi << 63);
         v_hi >>= 1;
-        if carry != 0 { v_hi ^= 0xe100_0000_0000_0000; }
+        if carry != 0 {
+            v_hi ^= 0xe100_0000_0000_0000;
+        }
     }
     *a_hi = z_hi;
     *a_lo = z_lo;
@@ -1324,28 +1435,38 @@ fn gf128_mul(a_hi: &mut u64, a_lo: &mut u64, b_hi: u64, b_lo: u64) {
 const KECCAK_STATE_SIZE: usize = 25;
 
 const KECCAK_RC: [u64; 24] = [
-    0x0000_0000_0000_0001, 0x0000_0000_0000_8082,
-    0x8000_0000_0000_808a, 0x8000_0000_8000_8000,
-    0x0000_0000_0000_808b, 0x0000_0000_8000_0001,
-    0x8000_0000_8000_8081, 0x8000_0000_0000_8009,
-    0x0000_0000_0000_008a, 0x0000_0000_0000_0088,
-    0x0000_0000_8000_8009, 0x0000_0000_8000_000a,
-    0x0000_0000_8000_808b, 0x8000_0000_0000_008b,
-    0x8000_0000_0000_8089, 0x8000_0000_0000_8003,
-    0x8000_0000_0000_8002, 0x8000_0000_0000_0080,
-    0x0000_0000_0000_800a, 0x8000_0000_8000_000a,
-    0x8000_0000_8000_8081, 0x8000_0000_0000_8080,
-    0x0000_0000_8000_0001, 0x8000_0000_8000_8008,
+    0x0000_0000_0000_0001,
+    0x0000_0000_0000_8082,
+    0x8000_0000_0000_808a,
+    0x8000_0000_8000_8000,
+    0x0000_0000_0000_808b,
+    0x0000_0000_8000_0001,
+    0x8000_0000_8000_8081,
+    0x8000_0000_0000_8009,
+    0x0000_0000_0000_008a,
+    0x0000_0000_0000_0088,
+    0x0000_0000_8000_8009,
+    0x0000_0000_8000_000a,
+    0x0000_0000_8000_808b,
+    0x8000_0000_0000_008b,
+    0x8000_0000_0000_8089,
+    0x8000_0000_0000_8003,
+    0x8000_0000_0000_8002,
+    0x8000_0000_0000_0080,
+    0x0000_0000_0000_800a,
+    0x8000_0000_8000_000a,
+    0x8000_0000_8000_8081,
+    0x8000_0000_0000_8080,
+    0x0000_0000_8000_0001,
+    0x8000_0000_8000_8008,
 ];
 
 const KECCAK_ROT: [u32; 24] = [
-    1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14,
-    27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
+    1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
 ];
 
 const KECCAK_PI: [usize; 24] = [
-    10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4,
-    15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
+    10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
 ];
 
 /// Keccak-f[1600] permutation (24 rounds).
@@ -1373,8 +1494,11 @@ fn keccak_f1600(state: &mut [u64; KECCAK_STATE_SIZE]) {
         }
         for y_off in (0..25).step_by(5) {
             let t = [
-                state[y_off], state[y_off + 1], state[y_off + 2],
-                state[y_off + 3], state[y_off + 4],
+                state[y_off],
+                state[y_off + 1],
+                state[y_off + 2],
+                state[y_off + 3],
+                state[y_off + 4],
             ];
             for x in 0..5 {
                 state[y_off + x] = t[x] ^ ((!t[(x + 1) % 5]) & t[(x + 2) % 5]);
@@ -1510,7 +1634,9 @@ impl KmacState {
 fn left_encode(buf: &mut Vec<u8>, x: u64) {
     let bytes = x.to_be_bytes();
     let mut start = 0;
-    while start < 7 && bytes[start] == 0 { start += 1; }
+    while start < 7 && bytes[start] == 0 {
+        start += 1;
+    }
     let n = u8::try_from(8 - start).unwrap_or(8);
     buf.push(n);
     buf.extend_from_slice(&bytes[start..]);
@@ -1520,7 +1646,9 @@ fn left_encode(buf: &mut Vec<u8>, x: u64) {
 fn right_encode(buf: &mut Vec<u8>, x: u64) {
     let bytes = x.to_be_bytes();
     let mut start = 0;
-    while start < 7 && bytes[start] == 0 { start += 1; }
+    while start < 7 && bytes[start] == 0 {
+        start += 1;
+    }
     let n = u8::try_from(8 - start).unwrap_or(8);
     buf.extend_from_slice(&bytes[start..]);
     buf.push(n);
@@ -1531,23 +1659,27 @@ fn right_encode(buf: &mut Vec<u8>, x: u64) {
 // ===========================================================================
 
 const BLAKE2B_IV: [u64; 8] = [
-    0x6a09_e667_f3bc_c908, 0xbb67_ae85_84ca_a73b,
-    0x3c6e_f372_fe94_f82b, 0xa54f_f53a_5f1d_36f1,
-    0x510e_527f_ade6_82d1, 0x9b05_688c_2b3e_6c1f,
-    0x1f83_d9ab_fb41_bd6b, 0x5be0_cd19_137e_2179,
+    0x6a09_e667_f3bc_c908,
+    0xbb67_ae85_84ca_a73b,
+    0x3c6e_f372_fe94_f82b,
+    0xa54f_f53a_5f1d_36f1,
+    0x510e_527f_ade6_82d1,
+    0x9b05_688c_2b3e_6c1f,
+    0x1f83_d9ab_fb41_bd6b,
+    0x5be0_cd19_137e_2179,
 ];
 
 const BLAKE2B_SIGMA: [[usize; 16]; 10] = [
-    [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15],
-    [14, 10,  4,  8,  9, 15, 13,  6,  1, 12,  0,  2, 11,  7,  5,  3],
-    [11,  8, 12,  0,  5,  2, 15, 13, 10, 14,  3,  6,  7,  1,  9,  4],
-    [ 7,  9,  3,  1, 13, 12, 11, 14,  2,  6,  5, 10,  4,  0, 15,  8],
-    [ 9,  0,  5,  7,  2,  4, 10, 15, 14,  1, 11, 12,  6,  8,  3, 13],
-    [ 2, 12,  6, 10,  0, 11,  8,  3,  4, 13,  7,  5, 15, 14,  1,  9],
-    [12,  5,  1, 15, 14, 13,  4, 10,  0,  7,  6,  3,  9,  2,  8, 11],
-    [13, 11,  7, 14, 12,  1,  3,  9,  5,  0, 15,  4,  8,  6,  2, 10],
-    [ 6, 15, 14,  9, 11,  3,  0,  8, 12,  2, 13,  7,  1,  4, 10,  5],
-    [10,  2,  8,  4,  7,  6,  1,  5, 15, 11,  9, 14,  3, 12, 13,  0],
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    [14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3],
+    [11, 8, 12, 0, 5, 2, 15, 13, 10, 14, 3, 6, 7, 1, 9, 4],
+    [7, 9, 3, 1, 13, 12, 11, 14, 2, 6, 5, 10, 4, 0, 15, 8],
+    [9, 0, 5, 7, 2, 4, 10, 15, 14, 1, 11, 12, 6, 8, 3, 13],
+    [2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9],
+    [12, 5, 1, 15, 14, 13, 4, 10, 0, 7, 6, 3, 9, 2, 8, 11],
+    [13, 11, 7, 14, 12, 1, 3, 9, 5, 0, 15, 4, 8, 6, 2, 10],
+    [6, 15, 14, 9, 11, 3, 0, 8, 12, 2, 13, 7, 1, 4, 10, 5],
+    [10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0],
 ];
 
 /// `BLAKE2b` keyed MAC state.
@@ -1648,14 +1780,14 @@ impl Blake2MacState {
 
         for round in 0..12 {
             let s = &BLAKE2B_SIGMA[round % 10];
-            blake2b_g(&mut v, 0, 4,  8, 12, m[s[0]],  m[s[1]]);
-            blake2b_g(&mut v, 1, 5,  9, 13, m[s[2]],  m[s[3]]);
-            blake2b_g(&mut v, 2, 6, 10, 14, m[s[4]],  m[s[5]]);
-            blake2b_g(&mut v, 3, 7, 11, 15, m[s[6]],  m[s[7]]);
-            blake2b_g(&mut v, 0, 5, 10, 15, m[s[8]],  m[s[9]]);
+            blake2b_g(&mut v, 0, 4, 8, 12, m[s[0]], m[s[1]]);
+            blake2b_g(&mut v, 1, 5, 9, 13, m[s[2]], m[s[3]]);
+            blake2b_g(&mut v, 2, 6, 10, 14, m[s[4]], m[s[5]]);
+            blake2b_g(&mut v, 3, 7, 11, 15, m[s[6]], m[s[7]]);
+            blake2b_g(&mut v, 0, 5, 10, 15, m[s[8]], m[s[9]]);
             blake2b_g(&mut v, 1, 6, 11, 12, m[s[10]], m[s[11]]);
-            blake2b_g(&mut v, 2, 7,  8, 13, m[s[12]], m[s[13]]);
-            blake2b_g(&mut v, 3, 4,  9, 14, m[s[14]], m[s[15]]);
+            blake2b_g(&mut v, 2, 7, 8, 13, m[s[12]], m[s[13]]);
+            blake2b_g(&mut v, 3, 4, 9, 14, m[s[14]], m[s[15]]);
         }
         for i in 0..8 {
             self.h[i] ^= v[i] ^ v[i + 8];
@@ -1769,9 +1901,7 @@ impl MacContext {
         match self.mac_type {
             MacType::Hmac => {
                 if key.is_empty() {
-                    return Err(CryptoError::Key(
-                        "HMAC requires a non-empty key".into(),
-                    ));
+                    return Err(CryptoError::Key("HMAC requires a non-empty key".into()));
                 }
                 let digest = extract_param_str(params, "digest").ok_or_else(|| {
                     CryptoError::AlgorithmNotFound(
@@ -1783,33 +1913,28 @@ impl MacContext {
                 self.state = Some(AlgorithmState::Hmac(hmac));
             }
             MacType::Cmac => {
-                let cipher = extract_param_str(params, "cipher")
-                    .unwrap_or_else(|| "AES-128-CBC".to_owned());
+                let cipher =
+                    extract_param_str(params, "cipher").unwrap_or_else(|| "AES-128-CBC".to_owned());
                 self.cipher_name = Some(cipher);
                 let cmac = CmacState::new(key)?;
                 self.state = Some(AlgorithmState::Cmac(cmac));
             }
             MacType::Gmac => {
-                let cipher = extract_param_str(params, "cipher")
-                    .unwrap_or_else(|| "AES-128-GCM".to_owned());
+                let cipher =
+                    extract_param_str(params, "cipher").unwrap_or_else(|| "AES-128-GCM".to_owned());
                 self.cipher_name = Some(cipher);
-                let iv = extract_param_bytes(params, "iv").ok_or_else(|| {
-                    CryptoError::Key(
-                        "GMAC requires an 'iv' parameter".into(),
-                    )
-                })?;
+                let iv = extract_param_bytes(params, "iv")
+                    .ok_or_else(|| CryptoError::Key("GMAC requires an 'iv' parameter".into()))?;
                 let gmac = GmacState::new(key, &iv)?;
                 self.state = Some(AlgorithmState::Gmac(gmac));
             }
             MacType::Kmac128 => {
-                let custom = extract_param_bytes(params, "custom")
-                    .unwrap_or_default();
+                let custom = extract_param_bytes(params, "custom").unwrap_or_default();
                 let kmac = KmacState::new(key, false, &custom)?;
                 self.state = Some(AlgorithmState::Kmac(kmac));
             }
             MacType::Kmac256 => {
-                let custom = extract_param_bytes(params, "custom")
-                    .unwrap_or_default();
+                let custom = extract_param_bytes(params, "custom").unwrap_or_default();
                 let kmac = KmacState::new(key, true, &custom)?;
                 self.state = Some(AlgorithmState::Kmac(kmac));
             }
@@ -1864,9 +1989,10 @@ impl MacContext {
                 ));
             }
         }
-        let st = self.state.as_mut().ok_or_else(|| {
-            CryptoError::Verification("Internal: no algorithm state".into())
-        })?;
+        let st = self
+            .state
+            .as_mut()
+            .ok_or_else(|| CryptoError::Verification("Internal: no algorithm state".into()))?;
         match st {
             AlgorithmState::Hmac(h) => h.update(data),
             AlgorithmState::Cmac(c) => c.update(data),
@@ -1908,9 +2034,10 @@ impl MacContext {
                 ));
             }
         }
-        let st = self.state.as_mut().ok_or_else(|| {
-            CryptoError::Verification("Internal: no algorithm state".into())
-        })?;
+        let st = self
+            .state
+            .as_mut()
+            .ok_or_else(|| CryptoError::Verification("Internal: no algorithm state".into()))?;
         let tag = match st {
             AlgorithmState::Hmac(h) => h.finalize(),
             AlgorithmState::Cmac(c) => c.finalize(),

@@ -9,9 +9,9 @@ use bitflags::bitflags;
 use tracing::trace;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use openssl_common::{CryptoError, CryptoResult, ParamSet};
-use crate::context::LibContext;
 use super::EvpError;
+use crate::context::LibContext;
+use openssl_common::{CryptoError, CryptoResult, ParamSet};
 
 // ---------------------------------------------------------------------------
 // Cipher — algorithm descriptor (EVP_CIPHER)
@@ -153,23 +153,41 @@ impl Cipher {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the description.
-    pub fn description(&self) -> Option<&str> { self.description.as_deref() }
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
     /// Returns the key length in bytes.
-    pub fn key_length(&self) -> usize { self.key_length }
+    pub fn key_length(&self) -> usize {
+        self.key_length
+    }
     /// Returns the IV length in bytes, or `None` if no IV is used.
-    pub fn iv_length(&self) -> Option<usize> { self.iv_length }
+    pub fn iv_length(&self) -> Option<usize> {
+        self.iv_length
+    }
     /// Returns the block size in bytes.
-    pub fn block_size(&self) -> usize { self.block_size }
+    pub fn block_size(&self) -> usize {
+        self.block_size
+    }
     /// Returns the cipher mode.
-    pub fn mode(&self) -> CipherMode { self.mode }
+    pub fn mode(&self) -> CipherMode {
+        self.mode
+    }
     /// Returns the capability flags.
-    pub fn flags(&self) -> CipherFlags { self.flags }
+    pub fn flags(&self) -> CipherFlags {
+        self.flags
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
     /// Returns `true` if this is an AEAD cipher.
-    pub fn is_aead(&self) -> bool { self.flags.contains(CipherFlags::AEAD) }
+    pub fn is_aead(&self) -> bool {
+        self.flags.contains(CipherFlags::AEAD)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -222,20 +240,12 @@ impl CipherCtx {
     }
 
     /// Initializes the context for encryption.
-    pub fn encrypt_init(
-        &mut self,
-        key: &[u8],
-        iv: Option<&[u8]>,
-    ) -> CryptoResult<()> {
+    pub fn encrypt_init(&mut self, key: &[u8], iv: Option<&[u8]>) -> CryptoResult<()> {
         self.init_common(CipherDirection::Encrypt, key, iv)
     }
 
     /// Initializes the context for decryption.
-    pub fn decrypt_init(
-        &mut self,
-        key: &[u8],
-        iv: Option<&[u8]>,
-    ) -> CryptoResult<()> {
+    pub fn decrypt_init(&mut self, key: &[u8], iv: Option<&[u8]>) -> CryptoResult<()> {
         self.init_common(CipherDirection::Decrypt, key, iv)
     }
 
@@ -297,7 +307,11 @@ impl CipherCtx {
         let mut output = vec![0u8; data.len()];
         for (i, byte) in output.iter_mut().enumerate() {
             let src = data[i];
-            let k = if self.key.is_empty() { 0 } else { self.key[i % self.key.len()] };
+            let k = if self.key.is_empty() {
+                0
+            } else {
+                self.key[i % self.key.len()]
+            };
             *byte = match self.direction {
                 Some(CipherDirection::Encrypt) => src.wrapping_add(k),
                 Some(CipherDirection::Decrypt) => src.wrapping_sub(k),
@@ -372,15 +386,25 @@ impl CipherCtx {
     }
 
     /// Returns the cipher algorithm.
-    pub fn cipher(&self) -> &Cipher { &self.cipher }
+    pub fn cipher(&self) -> &Cipher {
+        &self.cipher
+    }
     /// Returns the current direction, if initialized.
-    pub fn direction(&self) -> Option<CipherDirection> { self.direction }
+    pub fn direction(&self) -> Option<CipherDirection> {
+        self.direction
+    }
     /// Returns `true` if the context has been finalized.
-    pub fn is_finalized(&self) -> bool { self.finalized }
+    pub fn is_finalized(&self) -> bool {
+        self.finalized
+    }
     /// Sets algorithm-specific parameters.
-    pub fn set_params(&mut self, _params: &ParamSet) -> CryptoResult<()> { Ok(()) }
+    pub fn set_params(&mut self, _params: &ParamSet) -> CryptoResult<()> {
+        Ok(())
+    }
     /// Retrieves algorithm-specific parameters.
-    pub fn get_params(&self) -> CryptoResult<ParamSet> { Ok(ParamSet::new()) }
+    pub fn get_params(&self) -> CryptoResult<ParamSet> {
+        Ok(ParamSet::new())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -424,9 +448,8 @@ pub fn base64_encode(data: &[u8]) -> String {
 /// Base64-decodes a string.
 pub fn base64_decode(encoded: &str) -> CryptoResult<Vec<u8>> {
     use base64ct::{Base64, Encoding};
-    Base64::decode_vec(encoded).map_err(|e| {
-        CryptoError::Encoding(format!("base64 decode failed: {e}"))
-    })
+    Base64::decode_vec(encoded)
+        .map_err(|e| CryptoError::Encoding(format!("base64 decode failed: {e}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -455,71 +478,190 @@ fn predefined_cipher(
 
 /// AES-128-CBC cipher.
 pub static AES_128_CBC: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-128-CBC", 16, Some(16), 16, CipherMode::Cbc, CipherFlags::empty())
+    predefined_cipher(
+        "AES-128-CBC",
+        16,
+        Some(16),
+        16,
+        CipherMode::Cbc,
+        CipherFlags::empty(),
+    )
 });
 /// AES-256-CBC cipher.
 pub static AES_256_CBC: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-256-CBC", 32, Some(16), 16, CipherMode::Cbc, CipherFlags::empty())
+    predefined_cipher(
+        "AES-256-CBC",
+        32,
+        Some(16),
+        16,
+        CipherMode::Cbc,
+        CipherFlags::empty(),
+    )
 });
 /// AES-128-GCM cipher (AEAD).
 pub static AES_128_GCM: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-128-GCM", 16, Some(12), 1, CipherMode::Gcm, CipherFlags::AEAD)
+    predefined_cipher(
+        "AES-128-GCM",
+        16,
+        Some(12),
+        1,
+        CipherMode::Gcm,
+        CipherFlags::AEAD,
+    )
 });
 /// AES-256-GCM cipher (AEAD).
 pub static AES_256_GCM: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-256-GCM", 32, Some(12), 1, CipherMode::Gcm, CipherFlags::AEAD)
+    predefined_cipher(
+        "AES-256-GCM",
+        32,
+        Some(12),
+        1,
+        CipherMode::Gcm,
+        CipherFlags::AEAD,
+    )
 });
 /// AES-128-CCM cipher (AEAD).
 pub static AES_128_CCM: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-128-CCM", 16, Some(13), 1, CipherMode::Ccm, CipherFlags::AEAD)
+    predefined_cipher(
+        "AES-128-CCM",
+        16,
+        Some(13),
+        1,
+        CipherMode::Ccm,
+        CipherFlags::AEAD,
+    )
 });
 /// AES-256-CCM cipher (AEAD).
 pub static AES_256_CCM: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-256-CCM", 32, Some(13), 1, CipherMode::Ccm, CipherFlags::AEAD)
+    predefined_cipher(
+        "AES-256-CCM",
+        32,
+        Some(13),
+        1,
+        CipherMode::Ccm,
+        CipherFlags::AEAD,
+    )
 });
 /// AES-128-CTR cipher.
 pub static AES_128_CTR: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-128-CTR", 16, Some(16), 1, CipherMode::Ctr, CipherFlags::empty())
+    predefined_cipher(
+        "AES-128-CTR",
+        16,
+        Some(16),
+        1,
+        CipherMode::Ctr,
+        CipherFlags::empty(),
+    )
 });
 /// AES-256-CTR cipher.
 pub static AES_256_CTR: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-256-CTR", 32, Some(16), 1, CipherMode::Ctr, CipherFlags::empty())
+    predefined_cipher(
+        "AES-256-CTR",
+        32,
+        Some(16),
+        1,
+        CipherMode::Ctr,
+        CipherFlags::empty(),
+    )
 });
 /// AES-128-XTS cipher.
 pub static AES_128_XTS: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-128-XTS", 32, Some(16), 1, CipherMode::Xts, CipherFlags::empty())
+    predefined_cipher(
+        "AES-128-XTS",
+        32,
+        Some(16),
+        1,
+        CipherMode::Xts,
+        CipherFlags::empty(),
+    )
 });
 /// AES-256-XTS cipher.
 pub static AES_256_XTS: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-256-XTS", 64, Some(16), 1, CipherMode::Xts, CipherFlags::empty())
+    predefined_cipher(
+        "AES-256-XTS",
+        64,
+        Some(16),
+        1,
+        CipherMode::Xts,
+        CipherFlags::empty(),
+    )
 });
 /// AES-128-OCB cipher (AEAD).
 pub static AES_128_OCB: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-128-OCB", 16, Some(12), 16, CipherMode::Ocb, CipherFlags::AEAD)
+    predefined_cipher(
+        "AES-128-OCB",
+        16,
+        Some(12),
+        16,
+        CipherMode::Ocb,
+        CipherFlags::AEAD,
+    )
 });
 /// AES-256-SIV cipher (AEAD).
 pub static AES_256_SIV: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-256-SIV", 32, Some(16), 1, CipherMode::Siv, CipherFlags::AEAD)
+    predefined_cipher(
+        "AES-256-SIV",
+        32,
+        Some(16),
+        1,
+        CipherMode::Siv,
+        CipherFlags::AEAD,
+    )
 });
 /// AES-128-WRAP key wrapping cipher.
 pub static AES_128_WRAP: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("AES-128-WRAP", 16, Some(8), 8, CipherMode::Wrap, CipherFlags::empty())
+    predefined_cipher(
+        "AES-128-WRAP",
+        16,
+        Some(8),
+        8,
+        CipherMode::Wrap,
+        CipherFlags::empty(),
+    )
 });
 /// ChaCha20-Poly1305 AEAD cipher.
 pub static CHACHA20_POLY1305: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("ChaCha20-Poly1305", 32, Some(12), 1, CipherMode::Stream, CipherFlags::AEAD)
+    predefined_cipher(
+        "ChaCha20-Poly1305",
+        32,
+        Some(12),
+        1,
+        CipherMode::Stream,
+        CipherFlags::AEAD,
+    )
 });
 /// DES-EDE3-CBC (Triple DES). Legacy — use AES for new designs.
 pub static DES_EDE3_CBC: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("DES-EDE3-CBC", 24, Some(8), 8, CipherMode::Cbc, CipherFlags::empty())
+    predefined_cipher(
+        "DES-EDE3-CBC",
+        24,
+        Some(8),
+        8,
+        CipherMode::Cbc,
+        CipherFlags::empty(),
+    )
 });
 /// DES-CBC. Legacy, insecure — for compatibility only.
 pub static DES_CBC: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("DES-CBC", 8, Some(8), 8, CipherMode::Cbc, CipherFlags::empty())
+    predefined_cipher(
+        "DES-CBC",
+        8,
+        Some(8),
+        8,
+        CipherMode::Cbc,
+        CipherFlags::empty(),
+    )
 });
 /// Null cipher — passes data through unchanged. Testing only.
 pub static NULL_CIPHER: once_cell::sync::Lazy<Cipher> = once_cell::sync::Lazy::new(|| {
-    predefined_cipher("NULL", 0, None, 1, CipherMode::None, CipherFlags::NO_PADDING)
+    predefined_cipher(
+        "NULL",
+        0,
+        None,
+        1,
+        CipherMode::None,
+        CipherFlags::NO_PADDING,
+    )
 });
 
 // ---------------------------------------------------------------------------

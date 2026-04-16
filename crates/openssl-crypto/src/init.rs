@@ -368,8 +368,7 @@ pub fn cleanup() {
 /// assert!(is_initialized());
 /// ```
 pub fn is_initialized() -> bool {
-    !STOPPED.load(Ordering::Acquire)
-        && COMPLETED_STAGES.load(Ordering::Acquire) != 0
+    !STOPPED.load(Ordering::Acquire) && COMPLETED_STAGES.load(Ordering::Acquire) != 0
 }
 
 /// Returns `true` if [`cleanup()`] has been called.
@@ -440,10 +439,7 @@ mod tests {
         for (i, a) in all_flags.iter().enumerate() {
             for (j, b) in all_flags.iter().enumerate() {
                 if i != j {
-                    assert!(
-                        !a.intersects(*b),
-                        "flags {a:?} and {b:?} overlap"
-                    );
+                    assert!(!a.intersects(*b), "flags {a:?} and {b:?} overlap");
                 }
             }
         }

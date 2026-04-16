@@ -765,12 +765,7 @@ impl RttEstimator {
     ///
     /// # C Equivalent
     /// `ossl_statm_update_rtt()` in `ssl/quic/quic_statm.c`.
-    pub fn update(
-        &mut self,
-        latest_rtt: Duration,
-        ack_delay: Duration,
-        handshake_confirmed: bool,
-    ) {
+    pub fn update(&mut self, latest_rtt: Duration, ack_delay: Duration, handshake_confirmed: bool) {
         self.latest_rtt = latest_rtt;
 
         // min_rtt is never adjusted by ack_delay
@@ -1064,7 +1059,11 @@ impl AckManager {
     /// `ossl_ackm_new()` in `ssl/quic/quic_ackm.c`.
     pub fn new(cc: Box<dyn CongestionController>, is_server: bool) -> Self {
         Self {
-            spaces: [PnSpaceState::new(), PnSpaceState::new(), PnSpaceState::new()],
+            spaces: [
+                PnSpaceState::new(),
+                PnSpaceState::new(),
+                PnSpaceState::new(),
+            ],
             cc,
             statm: RttEstimator::new(),
             tx_max_ack_delay: OsslTime::from_ms(DEFAULT_TX_MAX_ACK_DELAY_MS),
@@ -1228,8 +1227,7 @@ impl AckManager {
         }
 
         // Detect and remove newly acknowledged packets
-        let (newly_acked, largest_newly_acked) =
-            self.detect_newly_acked(space, ack);
+        let (newly_acked, largest_newly_acked) = self.detect_newly_acked(space, ack);
 
         if newly_acked.is_empty() {
             return Ok(());
@@ -1257,7 +1255,10 @@ impl AckManager {
 
             // Cap ack_delay at peer_max_ack_delay after handshake
             let capped_ack_delay = if self.handshake_confirmed {
-                let max_delay = self.peer_max_ack_delay.to_duration().unwrap_or(Duration::MAX);
+                let max_delay = self
+                    .peer_max_ack_delay
+                    .to_duration()
+                    .unwrap_or(Duration::MAX);
                 min(ack_delay_dur, max_delay)
             } else {
                 ack_delay_dur
@@ -1317,8 +1318,7 @@ impl AckManager {
                         self.bytes_in_flight =
                             self.bytes_in_flight.saturating_sub(pkt.bytes_sent as u64);
                         if pkt.is_ack_eliciting {
-                            s.ack_eliciting_in_flight =
-                                s.ack_eliciting_in_flight.saturating_sub(1);
+                            s.ack_eliciting_in_flight = s.ack_eliciting_in_flight.saturating_sub(1);
                         }
                     }
                     if pkt.pkt_num > largest_newly_acked || newly_acked.is_empty() {
@@ -1336,12 +1336,7 @@ impl AckManager {
     ///
     /// # C Equivalent
     /// `ackm_on_pkts_acked()` in `ssl/quic/quic_ackm.c`.
-    fn on_pkts_acked(
-        &mut self,
-        space: PnSpace,
-        pkts: Vec<TxPacketRecord>,
-        now: OsslTime,
-    ) {
+    fn on_pkts_acked(&mut self, space: PnSpace, pkts: Vec<TxPacketRecord>, now: OsslTime) {
         let mut total_bytes: usize = 0;
         let mut largest_time_sent = OsslTime::ZERO;
 
@@ -1373,8 +1368,7 @@ impl AckManager {
 
         // Notify congestion controller
         if total_bytes > 0 {
-            self.cc
-                .on_data_acked(now, total_bytes, largest_time_sent);
+            self.cc.on_data_acked(now, total_bytes, largest_time_sent);
         }
     }
 
@@ -1423,10 +1417,8 @@ impl AckManager {
         };
 
         // Compute loss delay: 9/8 * max(latest_rtt, smoothed_rtt)
-        let latest_rtt_ticks =
-            OsslTime::from_duration(self.statm.latest_rtt).ticks();
-        let smoothed_rtt_ticks =
-            OsslTime::from_duration(self.statm.smoothed_rtt).ticks();
+        let latest_rtt_ticks = OsslTime::from_duration(self.statm.latest_rtt).ticks();
+        let smoothed_rtt_ticks = OsslTime::from_duration(self.statm.smoothed_rtt).ticks();
         let max_rtt = max(latest_rtt_ticks, smoothed_rtt_ticks);
 
         // loss_delay = max_rtt * 9 / 8, floored at K_GRANULARITY
@@ -1486,12 +1478,7 @@ impl AckManager {
     ///
     /// # C Equivalent
     /// `ackm_on_pkts_lost()` in `ssl/quic/quic_ackm.c`.
-    fn on_pkts_lost(
-        &mut self,
-        space: PnSpace,
-        pkts: Vec<TxPacketRecord>,
-        now: OsslTime,
-    ) {
+    fn on_pkts_lost(&mut self, space: PnSpace, pkts: Vec<TxPacketRecord>, now: OsslTime) {
         let mut total_bytes_lost: usize = 0;
         let mut largest_lost_pn: u64 = 0;
         let mut largest_lost_send_time = OsslTime::ZERO;
@@ -1577,7 +1564,8 @@ impl AckManager {
     /// `ackm_get_pto_time_and_space()` in `ssl/quic/quic_ackm.c`.
     fn get_pto_time_and_space(&self) -> (OsslTime, PnSpace) {
         let pto_base = self.statm.get_pto_duration(Duration::ZERO);
-        let backoff_factor = 1u64.checked_shl(min(self.pto_count, MAX_PTO_COUNT))
+        let backoff_factor = 1u64
+            .checked_shl(min(self.pto_count, MAX_PTO_COUNT))
             .unwrap_or(u64::MAX);
 
         let mut earliest_pto = OsslTime::INFINITE;
@@ -1631,9 +1619,7 @@ impl AckManager {
         if let Some(loss_time) = earliest_loss_time {
             // Time threshold loss timer takes priority
             self.loss_detection_deadline = loss_time;
-        } else if self.total_ack_eliciting_in_flight() == 0
-            && self.peer_completed_addr_validation
-        {
+        } else if self.total_ack_eliciting_in_flight() == 0 && self.peer_completed_addr_validation {
             // Nothing in flight and peer validated — no timer needed
             self.loss_detection_deadline = OsslTime::INFINITE;
         } else {
@@ -1847,7 +1833,7 @@ impl AckManager {
         let immediate = !ack_generated                     // First packet ever in this space
             || was_missing                                  // Previously reported as missing
             || pkts >= PKTS_BEFORE_ACK                      // Threshold exceeded
-            || newly_missing;                               // New gap detected
+            || newly_missing; // New gap detected
 
         if immediate {
             // Request immediate ACK
@@ -1897,8 +1883,7 @@ impl AckManager {
     /// `ossl_ackm_is_ack_desired()` in `ssl/quic/quic_ackm.c`.
     pub fn is_ack_desired(&self, space: PnSpace, now: OsslTime) -> bool {
         let s = &self.spaces[space.idx()];
-        s.ack_desired
-            || (!s.ack_flush_deadline.is_infinite() && now >= s.ack_flush_deadline)
+        s.ack_desired || (!s.ack_flush_deadline.is_infinite() && now >= s.ack_flush_deadline)
     }
 
     /// Returns the deadline by which an ACK frame should be sent for the given space.
@@ -2071,8 +2056,7 @@ impl AckManager {
             if pkt.is_in_flight {
                 self.bytes_in_flight = self.bytes_in_flight.saturating_sub(pkt.bytes_sent as u64);
                 if pkt.is_ack_eliciting {
-                    s.ack_eliciting_in_flight =
-                        s.ack_eliciting_in_flight.saturating_sub(1);
+                    s.ack_eliciting_in_flight = s.ack_eliciting_in_flight.saturating_sub(1);
                 }
             }
 
@@ -2165,4 +2149,3 @@ impl AckManager {
         self.handshake_confirmed
     }
 }
-

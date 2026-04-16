@@ -9,10 +9,10 @@ use std::sync::Arc;
 use tracing::trace;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
-use openssl_common::{CryptoError, CryptoResult, ParamSet};
+use super::EvpError;
 use crate::context::LibContext;
 use crate::evp::pkey::PKey;
-use super::EvpError;
+use openssl_common::{CryptoError, CryptoResult, ParamSet};
 
 // ---------------------------------------------------------------------------
 // Kem — algorithm descriptor (EVP_KEM)
@@ -47,11 +47,17 @@ impl Kem {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the description.
-    pub fn description(&self) -> Option<&str> { self.description.as_deref() }
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +224,10 @@ impl KemContext {
             ss_len = shared_secret.len(),
             "evp::kem: encapsulated"
         );
-        Ok(KemEncapsulateResult { ciphertext, shared_secret })
+        Ok(KemEncapsulateResult {
+            ciphertext,
+            shared_secret,
+        })
     }
 
     /// Performs decapsulation, recovering the shared secret from the ciphertext.
@@ -268,9 +277,13 @@ impl KemContext {
     }
 
     /// Returns the current operation.
-    pub fn operation(&self) -> Option<KemOperation> { self.operation }
+    pub fn operation(&self) -> Option<KemOperation> {
+        self.operation
+    }
     /// Returns the algorithm descriptor.
-    pub fn kem(&self) -> &Kem { &self.kem }
+    pub fn kem(&self) -> &Kem {
+        &self.kem
+    }
 }
 
 // ---------------------------------------------------------------------------

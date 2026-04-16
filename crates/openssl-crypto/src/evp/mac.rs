@@ -8,9 +8,9 @@ use std::sync::Arc;
 use tracing::trace;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use openssl_common::{CryptoResult, ParamSet};
-use crate::context::LibContext;
 use super::EvpError;
+use crate::context::LibContext;
+use openssl_common::{CryptoResult, ParamSet};
 
 // ---------------------------------------------------------------------------
 // Mac — algorithm descriptor (EVP_MAC)
@@ -46,11 +46,17 @@ impl Mac {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the description.
-    pub fn description(&self) -> Option<&str> { self.description.as_deref() }
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -97,11 +103,7 @@ impl MacCtx {
     /// Initializes the MAC context with key and optional parameters.
     ///
     /// Must be called before [`update`](MacCtx::update) or [`finalize`](MacCtx::finalize).
-    pub fn init(
-        &mut self,
-        key: &[u8],
-        params: Option<&ParamSet>,
-    ) -> CryptoResult<()> {
+    pub fn init(&mut self, key: &[u8], params: Option<&ParamSet>) -> CryptoResult<()> {
         trace!(
             algorithm = %self.mac.name,
             key_len = key.len(),
@@ -151,7 +153,11 @@ impl MacCtx {
         let key_sum: u64 = self.key.iter().map(|b| u64::from(*b)).sum();
         for (i, byte) in output.iter_mut().enumerate() {
             let idx = u64::try_from(i).unwrap_or(0);
-            *byte = ((data_len.wrapping_mul(31).wrapping_add(key_sum).wrapping_add(idx)) & 0xFF) as u8;
+            *byte = ((data_len
+                .wrapping_mul(31)
+                .wrapping_add(key_sum)
+                .wrapping_add(idx))
+                & 0xFF) as u8;
         }
         trace!(
             algorithm = %self.mac.name,
@@ -162,7 +168,9 @@ impl MacCtx {
     }
 
     /// Returns the expected MAC output size in bytes.
-    pub fn mac_size(&self) -> usize { self.mac_size }
+    pub fn mac_size(&self) -> usize {
+        self.mac_size
+    }
 
     /// Resets the context for reuse with the same key.
     pub fn reset(&mut self) -> CryptoResult<()> {
@@ -184,13 +192,21 @@ impl MacCtx {
     }
 
     /// Sets algorithm-specific parameters.
-    pub fn set_params(&mut self, _params: &ParamSet) -> CryptoResult<()> { Ok(()) }
+    pub fn set_params(&mut self, _params: &ParamSet) -> CryptoResult<()> {
+        Ok(())
+    }
     /// Retrieves algorithm-specific parameters.
-    pub fn get_params(&self) -> CryptoResult<ParamSet> { Ok(ParamSet::new()) }
+    pub fn get_params(&self) -> CryptoResult<ParamSet> {
+        Ok(ParamSet::new())
+    }
     /// Returns the MAC algorithm.
-    pub fn mac(&self) -> &Mac { &self.mac }
+    pub fn mac(&self) -> &Mac {
+        &self.mac
+    }
     /// Returns `true` if the context has been initialized.
-    pub fn is_initialized(&self) -> bool { self.initialized }
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -226,39 +242,57 @@ pub fn mac_quick(
 
 /// HMAC (Hash-based Message Authentication Code)
 pub static HMAC: once_cell::sync::Lazy<Mac> = once_cell::sync::Lazy::new(|| Mac {
-    name: "HMAC".to_string(), description: None, provider_name: "default".to_string(),
+    name: "HMAC".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// CMAC (Cipher-based MAC)
 pub static CMAC: once_cell::sync::Lazy<Mac> = once_cell::sync::Lazy::new(|| Mac {
-    name: "CMAC".to_string(), description: None, provider_name: "default".to_string(),
+    name: "CMAC".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// GMAC (Galois MAC)
 pub static GMAC: once_cell::sync::Lazy<Mac> = once_cell::sync::Lazy::new(|| Mac {
-    name: "GMAC".to_string(), description: None, provider_name: "default".to_string(),
+    name: "GMAC".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// KMAC128 (Keccak MAC, 128-bit security)
 pub static KMAC128: once_cell::sync::Lazy<Mac> = once_cell::sync::Lazy::new(|| Mac {
-    name: "KMAC128".to_string(), description: None, provider_name: "default".to_string(),
+    name: "KMAC128".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// KMAC256 (Keccak MAC, 256-bit security)
 pub static KMAC256: once_cell::sync::Lazy<Mac> = once_cell::sync::Lazy::new(|| Mac {
-    name: "KMAC256".to_string(), description: None, provider_name: "default".to_string(),
+    name: "KMAC256".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// Poly1305 (one-time authenticator)
 pub static POLY1305: once_cell::sync::Lazy<Mac> = once_cell::sync::Lazy::new(|| Mac {
-    name: "POLY1305".to_string(), description: None, provider_name: "default".to_string(),
+    name: "POLY1305".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// `SipHash` (fast short-input MAC)
 pub static SIPHASH: once_cell::sync::Lazy<Mac> = once_cell::sync::Lazy::new(|| Mac {
-    name: "SIPHASH".to_string(), description: None, provider_name: "default".to_string(),
+    name: "SIPHASH".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// `BLAKE2b` MAC
 pub static BLAKE2BMAC: once_cell::sync::Lazy<Mac> = once_cell::sync::Lazy::new(|| Mac {
-    name: "BLAKE2BMAC".to_string(), description: None, provider_name: "default".to_string(),
+    name: "BLAKE2BMAC".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// BLAKE2s MAC
 pub static BLAKE2SMAC: once_cell::sync::Lazy<Mac> = once_cell::sync::Lazy::new(|| Mac {
-    name: "BLAKE2SMAC".to_string(), description: None, provider_name: "default".to_string(),
+    name: "BLAKE2SMAC".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 
 // ---------------------------------------------------------------------------

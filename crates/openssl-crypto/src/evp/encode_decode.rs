@@ -8,9 +8,9 @@ use std::io::{BufRead, Write};
 use tracing::trace;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
-use openssl_common::{CryptoError, CryptoResult};
-use crate::evp::pkey::PKey;
 use super::EvpError;
+use crate::evp::pkey::PKey;
+use openssl_common::{CryptoError, CryptoResult};
 
 // ---------------------------------------------------------------------------
 // KeyFormat — serialization format enum
@@ -106,10 +106,14 @@ impl EncoderContext {
     }
 
     /// Returns the configured format.
-    pub fn format(&self) -> KeyFormat { self.format }
+    pub fn format(&self) -> KeyFormat {
+        self.format
+    }
 
     /// Returns the configured selection.
-    pub fn selection(&self) -> KeySelection { self.selection }
+    pub fn selection(&self) -> KeySelection {
+        self.selection
+    }
 
     // ---- Encoding operations -------------------------------------------
 
@@ -133,11 +137,7 @@ impl EncoderContext {
     }
 
     /// Encodes the key and writes directly to a [`Write`] sink.
-    pub fn encode_to_writer(
-        &self,
-        key: &PKey,
-        writer: &mut dyn Write,
-    ) -> CryptoResult<()> {
+    pub fn encode_to_writer(&self, key: &PKey, writer: &mut dyn Write) -> CryptoResult<()> {
         let data = self.encode_to_vec(key)?;
         writer
             .write_all(&data)
@@ -205,14 +205,12 @@ impl EncoderContext {
         // Simulated key serialization.
         // Real implementation delegates to provider encoder chain.
         let raw = match self.selection {
-            KeySelection::PrivateKey | KeySelection::KeyPair => {
-                key.private_key_data()
-                    .map_or_else(|| vec![0x30, 0x00], <[u8]>::to_vec)
-            }
-            KeySelection::PublicKey => {
-                key.public_key_data()
-                    .map_or_else(|| vec![0x30, 0x00], <[u8]>::to_vec)
-            }
+            KeySelection::PrivateKey | KeySelection::KeyPair => key
+                .private_key_data()
+                .map_or_else(|| vec![0x30, 0x00], <[u8]>::to_vec),
+            KeySelection::PublicKey => key
+                .public_key_data()
+                .map_or_else(|| vec![0x30, 0x00], <[u8]>::to_vec),
             KeySelection::Parameters => vec![0x30, 0x00],
         };
 
@@ -307,10 +305,9 @@ impl DecoderContext {
             KeyFormat::Pem => self.strip_pem(data)?,
             KeyFormat::Der | KeyFormat::Pkcs8 | KeyFormat::Spki => data.to_vec(),
             KeyFormat::Text => {
-                return Err(EvpError::UnsupportedFormat(
-                    "text format cannot be decoded".into(),
-                )
-                .into());
+                return Err(
+                    EvpError::UnsupportedFormat("text format cannot be decoded".into()).into(),
+                );
             }
         };
 

@@ -112,7 +112,8 @@ fn granted_response(token: TsTokenInfo) -> TsResponse {
 #[test]
 fn test_ts_request_construction() {
     let hash = sha256_test_hash();
-    let req = new_request("SHA256", &hash).expect("new_request must succeed with valid SHA-256 hash");
+    let req =
+        new_request("SHA256", &hash).expect("new_request must succeed with valid SHA-256 hash");
 
     // Version MUST be 1 per RFC 3161 §2.4.1.
     assert_eq!(req.version(), 1, "request version must be 1");
@@ -139,10 +140,7 @@ fn test_ts_request_construction() {
         req.policy_id().is_none(),
         "policy_id must be None when not explicitly set"
     );
-    assert!(
-        !req.cert_req(),
-        "cert_req must default to false"
-    );
+    assert!(!req.cert_req(), "cert_req must default to false");
 }
 
 /// Validates setting an optional nonce via the [`TsRequestBuilder`].
@@ -169,7 +167,8 @@ fn test_ts_request_with_nonce() {
         .nonce()
         .expect("nonce must be Some when explicitly set via builder");
     assert_eq!(
-        returned_nonce, &nonce_bytes[..],
+        returned_nonce,
+        &nonce_bytes[..],
         "nonce bytes must match input"
     );
 
@@ -200,10 +199,7 @@ fn test_ts_request_with_policy() {
     let returned_policy = req
         .policy_id()
         .expect("policy_id must be Some when explicitly set via builder");
-    assert_eq!(
-        returned_policy, "1.2.3.4.5",
-        "policy OID must match input"
-    );
+    assert_eq!(returned_policy, "1.2.3.4.5", "policy OID must match input");
 
     // Nonce and cert_req remain at defaults.
     assert!(req.nonce().is_none(), "nonce must remain None");
@@ -283,12 +279,17 @@ fn test_ts_response_status_enum() {
         (2, TsStatus::Rejection, "rejection", false),
         (3, TsStatus::Waiting, "waiting", false),
         (4, TsStatus::RevocationWarning, "revocationWarning", false),
-        (5, TsStatus::RevocationNotification, "revocationNotification", false),
+        (
+            5,
+            TsStatus::RevocationNotification,
+            "revocationNotification",
+            false,
+        ),
     ];
 
     for &(raw, expected_variant, expected_display, expected_granted) in cases {
-        let status = TsStatus::from_raw(raw)
-            .unwrap_or_else(|| panic!("from_raw({raw}) must return Some"));
+        let status =
+            TsStatus::from_raw(raw).unwrap_or_else(|| panic!("from_raw({raw}) must return Some"));
 
         assert_eq!(
             status, expected_variant,
@@ -504,8 +505,8 @@ fn test_ts_verify_nonce_mismatch_fails() {
     let ctx = TsVerifyContext::from_request(&request);
 
     // Verification must fail with a nonce mismatch error.
-    let err = verify(&response, &request, &ctx)
-        .expect_err("verification must fail when nonces differ");
+    let err =
+        verify(&response, &request, &ctx).expect_err("verification must fail when nonces differ");
 
     // Assert the error is a Verification variant with "nonce" in the message.
     match &err {
@@ -516,9 +517,7 @@ fn test_ts_verify_nonce_mismatch_fails() {
             );
         }
         other => {
-            panic!(
-                "expected CryptoError::Verification, got: {other:?}"
-            );
+            panic!("expected CryptoError::Verification, got: {other:?}");
         }
     }
 }

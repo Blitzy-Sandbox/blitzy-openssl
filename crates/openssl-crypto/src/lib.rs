@@ -9,6 +9,7 @@ pub mod context;
 pub mod cpu_detect;
 pub mod evp;
 pub mod init;
+pub mod kdf;
 pub mod mac;
 pub mod provider;
 pub mod thread;

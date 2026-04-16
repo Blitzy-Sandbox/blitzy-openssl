@@ -543,11 +543,7 @@ impl ProviderInstance {
     /// Called by the provider subsystem during initialization to declare which
     /// algorithms this provider supports. This is the Rust equivalent of the
     /// C provider's `query_operation` callback returning `OSSL_ALGORITHM[]`.
-    pub fn register_algorithms(
-        &self,
-        op: OperationId,
-        descriptors: Vec<AlgorithmDescriptor>,
-    ) {
+    pub fn register_algorithms(&self, op: OperationId, descriptors: Vec<AlgorithmDescriptor>) {
         let mut algs = self.algorithms.write();
         debug!(
             name = %self.name,
@@ -773,12 +769,12 @@ impl ProviderStore {
     /// # Errors
     ///
     /// Returns `Err` if the provider cannot be found or activation fails.
-    pub fn load(
-        &self,
-        name: &str,
-        retain_fallbacks: bool,
-    ) -> CryptoResult<Arc<ProviderInstance>> {
-        info!(name = name, retain_fallbacks = retain_fallbacks, "loading provider");
+    pub fn load(&self, name: &str, retain_fallbacks: bool) -> CryptoResult<Arc<ProviderInstance>> {
+        info!(
+            name = name,
+            retain_fallbacks = retain_fallbacks,
+            "loading provider"
+        );
 
         // Check if the provider already exists
         if let Some(existing) = self.find(name) {
@@ -1179,7 +1175,9 @@ impl ProviderConfState {
             .split('=')
             .nth(1)
             .map(str::trim)
-            .map_or(false, |v| v == "1" || v.eq_ignore_ascii_case("yes") || v.eq_ignore_ascii_case("true"));
+            .map_or(false, |v| {
+                v == "1" || v.eq_ignore_ascii_case("yes") || v.eq_ignore_ascii_case("true")
+            });
 
         if !should_activate {
             debug!(
@@ -1359,8 +1357,7 @@ pub fn construct_methods(
             provider_name: provider.name().to_string(),
             properties: prop_list,
             method: super::property::MethodHandle::new(
-                u64::from(operation_id as u32) * 1_000_000
-                    + u64::from(added_count),
+                u64::from(operation_id as u32) * 1_000_000 + u64::from(added_count),
             ),
         };
 
@@ -1539,10 +1536,7 @@ pub fn gettable_params(provider: &ProviderInstance) -> Vec<String> {
 /// # Errors
 ///
 /// Returns `Err` if the provider is not initialized.
-pub fn get_params(
-    provider: &ProviderInstance,
-    params: &mut ParamSet,
-) -> CryptoResult<()> {
+pub fn get_params(provider: &ProviderInstance, params: &mut ParamSet) -> CryptoResult<()> {
     if !provider.is_initialized() {
         return Err(CryptoError::Provider(format!(
             "provider '{}' is not initialized, cannot get params",
@@ -1554,11 +1548,20 @@ pub fn get_params(
 
     // Standard provider parameters
     params.set("name", ParamValue::Utf8String(provider.name().to_string()));
-    params.set("version", ParamValue::Utf8String(PROVIDER_VERSION.to_string()));
-    params.set("buildinfo", ParamValue::Utf8String(PROVIDER_BUILDINFO.to_string()));
+    params.set(
+        "version",
+        ParamValue::Utf8String(PROVIDER_VERSION.to_string()),
+    );
+    params.set(
+        "buildinfo",
+        ParamValue::Utf8String(PROVIDER_BUILDINFO.to_string()),
+    );
 
     // Status: 1 if activated, 0 otherwise
-    params.set("status", ParamValue::UInt64(u64::from(u32::from(provider.is_activated()))));
+    params.set(
+        "status",
+        ParamValue::UInt64(u64::from(u32::from(provider.is_activated()))),
+    );
 
     // Kind-specific parameters
     match provider.kind() {
@@ -1610,10 +1613,7 @@ pub fn self_test(provider: &ProviderInstance) -> CryptoResult<()> {
             info!(provider = %provider.name(), "FIPS self-test requested (delegated to fips crate)");
             Ok(())
         }
-        ProviderKind::Default
-        | ProviderKind::Base
-        | ProviderKind::Legacy
-        | ProviderKind::Null => {
+        ProviderKind::Default | ProviderKind::Base | ProviderKind::Legacy | ProviderKind::Null => {
             // Non-FIPS providers pass self-test trivially
             debug!(provider = %provider.name(), "non-FIPS provider self-test passed");
             Ok(())
@@ -1658,9 +1658,7 @@ pub fn get_capabilities(
     );
 
     let capabilities = match (provider.kind(), capability) {
-        (ProviderKind::Default | ProviderKind::Fips, "TLS-GROUP") => {
-            build_tls_group_capabilities()
-        }
+        (ProviderKind::Default | ProviderKind::Fips, "TLS-GROUP") => build_tls_group_capabilities(),
         (ProviderKind::Default | ProviderKind::Fips, "TLS-SIGALG") => {
             build_tls_sigalg_capabilities()
         }
@@ -1704,8 +1702,14 @@ fn build_tls_group_capabilities() -> Vec<ParamSet> {
         .iter()
         .map(|(name, id, bits, sec_bits)| {
             let mut ps = ParamSet::new();
-            ps.set("tls-group-name", ParamValue::Utf8String((*name).to_string()));
-            ps.set("tls-group-name-internal", ParamValue::Utf8String((*name).to_string()));
+            ps.set(
+                "tls-group-name",
+                ParamValue::Utf8String((*name).to_string()),
+            );
+            ps.set(
+                "tls-group-name-internal",
+                ParamValue::Utf8String((*name).to_string()),
+            );
             ps.set("tls-group-id", ParamValue::UInt64(*id));
             ps.set("tls-group-alg", ParamValue::Utf8String((*name).to_string()));
             ps.set("tls-group-is-kem", ParamValue::UInt64(0));
@@ -1742,11 +1746,23 @@ fn build_tls_sigalg_capabilities() -> Vec<ParamSet> {
         .iter()
         .map(|(name, code_point, hash, sig)| {
             let mut ps = ParamSet::new();
-            ps.set("tls-sigalg-name", ParamValue::Utf8String((*name).to_string()));
-            ps.set("tls-sigalg-iana-name", ParamValue::Utf8String((*name).to_string()));
+            ps.set(
+                "tls-sigalg-name",
+                ParamValue::Utf8String((*name).to_string()),
+            );
+            ps.set(
+                "tls-sigalg-iana-name",
+                ParamValue::Utf8String((*name).to_string()),
+            );
             ps.set("tls-sigalg-code-point", ParamValue::UInt64(*code_point));
-            ps.set("tls-sigalg-hash-name", ParamValue::Utf8String((*hash).to_string()));
-            ps.set("tls-sigalg-sig-name", ParamValue::Utf8String((*sig).to_string()));
+            ps.set(
+                "tls-sigalg-hash-name",
+                ParamValue::Utf8String((*hash).to_string()),
+            );
+            ps.set(
+                "tls-sigalg-sig-name",
+                ParamValue::Utf8String((*sig).to_string()),
+            );
             ps.set("tls-sigalg-sec-bits", ParamValue::UInt64(128));
             ps.set("tls-min-tls", ParamValue::UInt64(0x0303));
             ps.set("tls-max-tls", ParamValue::UInt64(0));

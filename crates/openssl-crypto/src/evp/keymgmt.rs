@@ -9,8 +9,8 @@ use bitflags::bitflags;
 use tracing::trace;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use openssl_common::{CryptoResult, ParamSet};
 use crate::context::LibContext;
+use openssl_common::{CryptoResult, ParamSet};
 
 // ---------------------------------------------------------------------------
 // KeyMgmt — key management descriptor
@@ -46,11 +46,17 @@ impl KeyMgmt {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the human-readable description.
-    pub fn description(&self) -> Option<&str> { self.description.as_deref() }
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
 }
 
 bitflags! {
@@ -101,7 +107,9 @@ impl KeyData {
     }
 
     /// Returns the key management algorithm.
-    pub fn keymgmt(&self) -> &KeyMgmt { &self.keymgmt }
+    pub fn keymgmt(&self) -> &KeyMgmt {
+        &self.keymgmt
+    }
 
     /// Imports key material from a parameter set.
     pub fn import(
@@ -120,10 +128,7 @@ impl KeyData {
     }
 
     /// Exports key material as a parameter set.
-    pub fn export(
-        &self,
-        _selection: KeySelection,
-    ) -> CryptoResult<ParamSet> {
+    pub fn export(&self, _selection: KeySelection) -> CryptoResult<ParamSet> {
         trace!(
             algorithm = %self.keymgmt.name,
             "evp::keymgmt: exporting key data"
@@ -137,11 +142,7 @@ impl KeyData {
     }
 
     /// Validates the key material.
-    pub fn validate(
-        &self,
-        _selection: KeySelection,
-        _check_type: u32,
-    ) -> CryptoResult<bool> {
+    pub fn validate(&self, _selection: KeySelection, _check_type: u32) -> CryptoResult<bool> {
         trace!(
             algorithm = %self.keymgmt.name,
             "evp::keymgmt: validating key data"
@@ -150,11 +151,7 @@ impl KeyData {
     }
 
     /// Tests whether two key data objects match on the given selection.
-    pub fn match_keys(
-        &self,
-        other: &KeyData,
-        _selection: KeySelection,
-    ) -> bool {
+    pub fn match_keys(&self, other: &KeyData, _selection: KeySelection) -> bool {
         self.keymgmt.name == other.keymgmt.name
     }
 
@@ -203,9 +200,13 @@ impl SymKeyMgmt {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
 }
 
 /// An opaque symmetric key.
@@ -222,11 +223,12 @@ pub struct SymKey {
 
 impl SymKey {
     /// Imports a symmetric key from raw bytes.
-    pub fn import(
-        algorithm: &str,
-        key: &[u8],
-    ) -> CryptoResult<Self> {
-        trace!(algorithm = algorithm, key_len = key.len(), "evp::keymgmt: importing sym key");
+    pub fn import(algorithm: &str, key: &[u8]) -> CryptoResult<Self> {
+        trace!(
+            algorithm = algorithm,
+            key_len = key.len(),
+            "evp::keymgmt: importing sym key"
+        );
         Ok(Self {
             algorithm: algorithm.to_string(),
             key_data: key.to_vec(),
@@ -241,11 +243,12 @@ impl SymKey {
     }
 
     /// Generates a symmetric key of the given length.
-    pub fn generate(
-        algorithm: &str,
-        key_length: usize,
-    ) -> CryptoResult<Self> {
-        trace!(algorithm = algorithm, key_length = key_length, "evp::keymgmt: generating sym key");
+    pub fn generate(algorithm: &str, key_length: usize) -> CryptoResult<Self> {
+        trace!(
+            algorithm = algorithm,
+            key_length = key_length,
+            "evp::keymgmt: generating sym key"
+        );
         // In a full implementation, this uses the DRBG.
         let key_data = vec![0xAB; key_length];
         Ok(Self {
@@ -260,11 +263,17 @@ impl SymKey {
     }
 
     /// Returns the algorithm name.
-    pub fn algorithm(&self) -> &str { &self.algorithm }
+    pub fn algorithm(&self) -> &str {
+        &self.algorithm
+    }
     /// Returns the key length in bytes.
-    pub fn len(&self) -> usize { self.key_data.len() }
+    pub fn len(&self) -> usize {
+        self.key_data.len()
+    }
     /// Returns `true` if the key is zero-length.
-    pub fn is_empty(&self) -> bool { self.key_data.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.key_data.is_empty()
+    }
 }
 
 // ---------------------------------------------------------------------------

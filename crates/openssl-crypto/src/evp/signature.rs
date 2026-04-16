@@ -12,11 +12,11 @@ use std::sync::Arc;
 use tracing::trace;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
-use openssl_common::{CryptoError, CryptoResult, ParamSet};
-use crate::context::LibContext;
-use crate::evp::pkey::PKey;
-use crate::evp::md::{MessageDigest, MdContext};
 use super::EvpError;
+use crate::context::LibContext;
+use crate::evp::md::{MdContext, MessageDigest};
+use crate::evp::pkey::PKey;
+use openssl_common::{CryptoError, CryptoResult, ParamSet};
 
 // ===========================================================================
 // Signature — algorithm descriptor (EVP_SIGNATURE)
@@ -51,11 +51,17 @@ impl Signature {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the description.
-    pub fn description(&self) -> Option<&str> { self.description.as_deref() }
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
 }
 
 // ===========================================================================
@@ -112,10 +118,7 @@ impl SignContext {
     /// Must be called after [`sign_init`](Self::sign_init).
     pub fn sign(&self, data: &[u8]) -> CryptoResult<Vec<u8>> {
         if !self.initialized_for_sign {
-            return Err(EvpError::OperationNotInitialized(
-                "sign not initialized".into(),
-            )
-            .into());
+            return Err(EvpError::OperationNotInitialized("sign not initialized".into()).into());
         }
         // Simulated signing — real implementation delegates to provider
         let sig_len = match self.signature.name.as_str() {
@@ -157,10 +160,7 @@ impl SignContext {
     /// Returns `true` if the signature is valid.
     pub fn verify(&self, data: &[u8], sig: &[u8]) -> CryptoResult<bool> {
         if !self.initialized_for_verify {
-            return Err(EvpError::OperationNotInitialized(
-                "verify not initialized".into(),
-            )
-            .into());
+            return Err(EvpError::OperationNotInitialized("verify not initialized".into()).into());
         }
         // Simulated verification — accept all non-empty signatures over
         // non-empty data in this stub implementation.
@@ -180,7 +180,9 @@ impl SignContext {
     }
 
     /// Returns the current parameters.
-    pub fn get_params(&self) -> Option<&ParamSet> { self.params.as_ref() }
+    pub fn get_params(&self) -> Option<&ParamSet> {
+        self.params.as_ref()
+    }
 }
 
 // ===========================================================================
@@ -212,7 +214,10 @@ impl DigestSignContext {
             digest = %digest.name(),
             "evp::signature: digest_sign init"
         );
-        Ok(Self { sign_ctx, digest_ctx })
+        Ok(Self {
+            sign_ctx,
+            digest_ctx,
+        })
     }
 
     /// Feeds data into the hash.
@@ -264,7 +269,10 @@ impl DigestVerifyContext {
             digest = %digest.name(),
             "evp::signature: digest_verify init"
         );
-        Ok(Self { verify_ctx, digest_ctx })
+        Ok(Self {
+            verify_ctx,
+            digest_ctx,
+        })
     }
 
     /// Feeds data into the hash.
@@ -311,9 +319,13 @@ impl AsymCipher {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
 }
 
 /// Context for asymmetric encryption/decryption.
@@ -433,9 +445,13 @@ impl KeyExchange {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
 }
 
 /// Context for a key exchange / derivation operation.
@@ -499,7 +515,9 @@ impl KeyExchangeContext {
     }
 
     /// Returns the exchange algorithm.
-    pub fn exchange(&self) -> &KeyExchange { &self.exchange }
+    pub fn exchange(&self) -> &KeyExchange {
+        &self.exchange
+    }
 }
 
 // ===========================================================================

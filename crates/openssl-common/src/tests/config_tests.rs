@@ -35,7 +35,7 @@
 //! - **R10 (Wiring):** All tests exercise the config module's public API.
 
 use crate::config::{
-    ConfValue, Config, ConfigModule, ConfigModuleRegistry, ConfigParser, load_config,
+    load_config, ConfValue, Config, ConfigModule, ConfigModuleRegistry, ConfigParser,
     MAX_CONF_VALUE_LENGTH,
 };
 use crate::error::CommonError;
@@ -322,10 +322,7 @@ fn max_value_length_accepted() {
 #[test]
 fn max_value_length_exceeded() {
     let big_val = "x".repeat(MAX_CONF_VALUE_LENGTH);
-    let input = format!(
-        "[default]\nbig = {}\nresult = ${{big}}${{big}}\n",
-        big_val
-    );
+    let input = format!("[default]\nbig = {}\nresult = ${{big}}${{big}}\n", big_val);
     let result = ConfigParser::parse_reader(input.as_bytes());
     assert!(result.is_err());
     match result.unwrap_err() {
@@ -498,7 +495,11 @@ fn config_module_registry_register_and_load() {
     cfg.set_string("mock_section", "option", "value".to_string());
 
     let result = registry.load_modules(&cfg);
-    assert!(result.is_ok(), "load_modules failed: {:?}", result.unwrap_err());
+    assert!(
+        result.is_ok(),
+        "load_modules failed: {:?}",
+        result.unwrap_err()
+    );
     assert!(
         init_called.load(Ordering::SeqCst),
         "MockModule::init() should have been called"

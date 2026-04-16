@@ -37,9 +37,7 @@
     clippy::uninlined_format_args
 )]
 
-use crate::thread::{
-    atomic_add_u64, atomic_load_u64, atomic_store_u64, CryptoLock, CryptoOnce,
-};
+use crate::thread::{atomic_add_u64, atomic_load_u64, atomic_store_u64, CryptoLock, CryptoOnce};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -164,7 +162,10 @@ fn test_crypto_lock_write_exclusion() {
         write_finished.load(Ordering::SeqCst),
         "Writer should have finished before reader acquired lock"
     );
-    assert_eq!(*guard, 999, "Reader should see the value written under exclusive lock");
+    assert_eq!(
+        *guard, 999,
+        "Reader should see the value written under exclusive lock"
+    );
     drop(guard);
 
     writer.join().expect("writer thread should not panic");
@@ -200,7 +201,10 @@ fn test_crypto_lock_try_read() {
 
     // try_read should succeed when no writer holds the lock.
     let guard1 = lock.try_read();
-    assert!(guard1.is_some(), "try_read should succeed when lock is free");
+    assert!(
+        guard1.is_some(),
+        "try_read should succeed when lock is free"
+    );
     let guard1 = guard1.unwrap();
     assert_eq!(*guard1, vec![1, 2, 3]);
 
@@ -263,7 +267,11 @@ fn test_crypto_once_executes_once() {
     once.call_once(move || {
         c3.fetch_add(100, Ordering::SeqCst);
     });
-    assert_eq!(counter.load(Ordering::SeqCst), 1, "call_once must execute exactly once");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "call_once must execute exactly once"
+    );
 }
 
 /// Verifies that concurrent calls to `CryptoOnce::call_once` from many threads

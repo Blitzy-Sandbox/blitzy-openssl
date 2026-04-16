@@ -453,7 +453,12 @@ impl ConfigParser {
             // means all backslashes are escaped (literal) and the line is NOT
             // a continuation.  This matches C OpenSSL's `CONF_get_line()`
             // behaviour where `\\` is a literal backslash.
-            let trailing_backslashes = line.as_bytes().iter().rev().take_while(|&&b| b == b'\\').count();
+            let trailing_backslashes = line
+                .as_bytes()
+                .iter()
+                .rev()
+                .take_while(|&&b| b == b'\\')
+                .count();
             if trailing_backslashes % 2 == 1 {
                 // Strip the single trailing continuation backslash and accumulate.
                 continuation_buf.push_str(&line[..line.len() - 1]);

@@ -4,5 +4,5 @@
 //! protocol validation, exercising the `method`, `srtp`, and `quic`
 //! modules through their public APIs per Rule R10 (wiring verification).
 
-mod tls_integration;
 mod quic_integration;
+mod tls_integration;

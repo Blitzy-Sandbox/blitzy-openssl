@@ -8,9 +8,9 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use tracing::trace;
 
-use openssl_common::CryptoResult;
-use crate::context::LibContext;
 use super::EvpError;
+use crate::context::LibContext;
+use openssl_common::CryptoResult;
 
 // ---------------------------------------------------------------------------
 // Rand — algorithm descriptor (EVP_RAND)
@@ -45,11 +45,17 @@ impl Rand {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the description.
-    pub fn description(&self) -> Option<&str> { self.description.as_deref() }
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,10 +118,7 @@ impl RandCtx {
     ///
     /// * `rand` — The random algorithm descriptor
     /// * `parent` — Optional parent DRBG for automatic reseeding
-    pub fn new(
-        rand: &Rand,
-        parent: Option<Arc<RandCtx>>,
-    ) -> Arc<Self> {
+    pub fn new(rand: &Rand, parent: Option<Arc<RandCtx>>) -> Arc<Self> {
         trace!(algorithm = %rand.name, "evp::rand: creating context");
         let strength = match rand.name.as_str() {
             "CTR-DRBG" | "HASH-DRBG" | "HMAC-DRBG" | "SEED-SRC" => 256,
@@ -239,10 +242,14 @@ impl RandCtx {
     }
 
     /// Returns the random algorithm.
-    pub fn rand(&self) -> &Rand { &self.rand }
+    pub fn rand(&self) -> &Rand {
+        &self.rand
+    }
 
     /// Returns the parent DRBG, if any.
-    pub fn parent(&self) -> Option<&Arc<RandCtx>> { self.parent.as_ref() }
+    pub fn parent(&self) -> Option<&Arc<RandCtx>> {
+        self.parent.as_ref()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -251,27 +258,39 @@ impl RandCtx {
 
 /// CTR-DRBG (NIST SP 800-90A, AES-based)
 pub static CTR_DRBG: once_cell::sync::Lazy<Rand> = once_cell::sync::Lazy::new(|| Rand {
-    name: "CTR-DRBG".to_string(), description: None, provider_name: "default".to_string(),
+    name: "CTR-DRBG".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// HASH-DRBG (NIST SP 800-90A, hash-based)
 pub static HASH_DRBG: once_cell::sync::Lazy<Rand> = once_cell::sync::Lazy::new(|| Rand {
-    name: "HASH-DRBG".to_string(), description: None, provider_name: "default".to_string(),
+    name: "HASH-DRBG".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// HMAC-DRBG (NIST SP 800-90A, HMAC-based)
 pub static HMAC_DRBG: once_cell::sync::Lazy<Rand> = once_cell::sync::Lazy::new(|| Rand {
-    name: "HMAC-DRBG".to_string(), description: None, provider_name: "default".to_string(),
+    name: "HMAC-DRBG".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// Seed source (OS entropy)
 pub static SEED_SRC: once_cell::sync::Lazy<Rand> = once_cell::sync::Lazy::new(|| Rand {
-    name: "SEED-SRC".to_string(), description: None, provider_name: "default".to_string(),
+    name: "SEED-SRC".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// Test RAND (deterministic, for testing only)
 pub static TEST_RAND: once_cell::sync::Lazy<Rand> = once_cell::sync::Lazy::new(|| Rand {
-    name: "TEST-RAND".to_string(), description: None, provider_name: "default".to_string(),
+    name: "TEST-RAND".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// Jitter entropy source
 pub static JITTER: once_cell::sync::Lazy<Rand> = once_cell::sync::Lazy::new(|| Rand {
-    name: "JITTER".to_string(), description: None, provider_name: "default".to_string(),
+    name: "JITTER".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 
 // ---------------------------------------------------------------------------

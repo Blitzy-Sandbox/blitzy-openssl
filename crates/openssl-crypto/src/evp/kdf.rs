@@ -8,9 +8,9 @@ use std::sync::Arc;
 use tracing::trace;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use openssl_common::{CryptoError, CryptoResult, ParamSet};
-use crate::context::LibContext;
 use super::cipher::CipherCtx;
+use crate::context::LibContext;
+use openssl_common::{CryptoError, CryptoResult, ParamSet};
 
 // ---------------------------------------------------------------------------
 // Kdf — algorithm descriptor (EVP_KDF)
@@ -46,11 +46,17 @@ impl Kdf {
     }
 
     /// Returns the algorithm name.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     /// Returns the description.
-    pub fn description(&self) -> Option<&str> { self.description.as_deref() }
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
     /// Returns the provider name.
-    pub fn provider_name(&self) -> &str { &self.provider_name }
+    pub fn provider_name(&self) -> &str {
+        &self.provider_name
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +121,9 @@ impl KdfCtx {
     }
 
     /// Returns the KDF algorithm.
-    pub fn kdf(&self) -> &Kdf { &self.kdf }
+    pub fn kdf(&self) -> &Kdf {
+        &self.kdf
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +193,9 @@ pub fn scrypt_derive(
     key_length: usize,
 ) -> CryptoResult<Zeroizing<Vec<u8>>> {
     trace!(
-        n = n, r = r, p = p,
+        n = n,
+        r = r,
+        p = p,
         key_length = key_length,
         "evp::kdf: scrypt derive"
     );
@@ -253,7 +263,9 @@ pub fn pbe_cipher_init(
     trace!("evp::kdf: PBE cipher init");
     // In full implementation: derive key/IV, then init cipher context
     Err(CryptoError::Common(
-        openssl_common::CommonError::Unsupported("PBE cipher init not yet connected to provider".into())
+        openssl_common::CommonError::Unsupported(
+            "PBE cipher init not yet connected to provider".into(),
+        ),
     ))
 }
 
@@ -263,51 +275,75 @@ pub fn pbe_cipher_init(
 
 /// HKDF (RFC 5869)
 pub static HKDF: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "HKDF".to_string(), description: None, provider_name: "default".to_string(),
+    name: "HKDF".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// PBKDF2 (PKCS#5 v2.1)
 pub static PBKDF2: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "PBKDF2".to_string(), description: None, provider_name: "default".to_string(),
+    name: "PBKDF2".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// scrypt (RFC 7914)
 pub static SCRYPT: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "SCRYPT".to_string(), description: None, provider_name: "default".to_string(),
+    name: "SCRYPT".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// Argon2i
 pub static ARGON2I: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "ARGON2I".to_string(), description: None, provider_name: "default".to_string(),
+    name: "ARGON2I".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// Argon2d
 pub static ARGON2D: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "ARGON2D".to_string(), description: None, provider_name: "default".to_string(),
+    name: "ARGON2D".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// Argon2id
 pub static ARGON2ID: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "ARGON2ID".to_string(), description: None, provider_name: "default".to_string(),
+    name: "ARGON2ID".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// KBKDF (SP 800-108)
 pub static KBKDF: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "KBKDF".to_string(), description: None, provider_name: "default".to_string(),
+    name: "KBKDF".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// SSKDF (SP 800-56C)
 pub static SSKDF: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "SSKDF".to_string(), description: None, provider_name: "default".to_string(),
+    name: "SSKDF".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// X963KDF (ANSI X9.63)
 pub static X963KDF: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "X963KDF".to_string(), description: None, provider_name: "default".to_string(),
+    name: "X963KDF".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// TLS 1.0/1.1/1.2 PRF
 pub static TLS1_PRF: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "TLS1-PRF".to_string(), description: None, provider_name: "default".to_string(),
+    name: "TLS1-PRF".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// SSH KDF
 pub static SSHKDF: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "SSHKDF".to_string(), description: None, provider_name: "default".to_string(),
+    name: "SSHKDF".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 /// TLS 1.3 KDF
 pub static TLS13_KDF: once_cell::sync::Lazy<Kdf> = once_cell::sync::Lazy::new(|| Kdf {
-    name: "TLS13-KDF".to_string(), description: None, provider_name: "default".to_string(),
+    name: "TLS13-KDF".to_string(),
+    description: None,
+    provider_name: "default".to_string(),
 });
 
 // ---------------------------------------------------------------------------

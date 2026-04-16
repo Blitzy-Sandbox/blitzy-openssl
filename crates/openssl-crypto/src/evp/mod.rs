@@ -28,27 +28,27 @@
 
 #![forbid(unsafe_code)]
 
-pub mod md;
 pub mod cipher;
+pub mod encode_decode;
 pub mod kdf;
+pub mod kem;
+pub mod keymgmt;
 pub mod mac;
+pub mod md;
 pub mod pkey;
 pub mod rand;
-pub mod kem;
 pub mod signature;
-pub mod keymgmt;
-pub mod encode_decode;
 
 // Re-export primary types for ergonomic use
-pub use md::{MessageDigest, MdContext};
 pub use cipher::{Cipher, CipherCtx};
 pub use kdf::Kdf;
-pub use mac::Mac;
-pub use pkey::{PKey, PKeyCtx, KeyType};
-pub use rand::Rand;
 pub use kem::Kem;
-pub use signature::{Signature, KeyExchange, AsymCipher};
 pub use keymgmt::{KeyMgmt, KeySelection};
+pub use mac::Mac;
+pub use md::{MdContext, MessageDigest};
+pub use pkey::{KeyType, PKey, PKeyCtx};
+pub use rand::Rand;
+pub use signature::{AsymCipher, KeyExchange, Signature};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -288,9 +288,9 @@ impl From<EvpError> for openssl_common::CryptoError {
                 openssl_common::CryptoError::AlgorithmNotFound(name)
             }
             EvpError::ProviderError(msg) => openssl_common::CryptoError::Provider(msg),
-            other => openssl_common::CryptoError::Common(
-                openssl_common::CommonError::Internal(other.to_string()),
-            ),
+            other => openssl_common::CryptoError::Common(openssl_common::CommonError::Internal(
+                other.to_string(),
+            )),
         }
     }
 }
@@ -324,9 +324,7 @@ pub fn set_default_properties(
 }
 
 /// Returns the current default properties string, if set.
-pub fn get_default_properties(
-    _ctx: &Arc<crate::context::LibContext>,
-) -> Option<String> {
+pub fn get_default_properties(_ctx: &Arc<crate::context::LibContext>) -> Option<String> {
     // Returns None when no global properties have been set.
     None
 }
@@ -346,9 +344,7 @@ pub fn apply_config_properties(
 /// Looks up an algorithm by its numeric identifier (NID).
 ///
 /// Returns `None` if the NID is not registered.
-pub fn lookup_algorithm_name(
-    _nid: openssl_common::Nid,
-) -> Option<&'static str> {
+pub fn lookup_algorithm_name(_nid: openssl_common::Nid) -> Option<&'static str> {
     // NID-to-name lookup is populated during provider activation.
     // Returning None for unregistered NIDs.
     None
@@ -357,10 +353,7 @@ pub fn lookup_algorithm_name(
 /// Registers a name for an algorithm NID.
 ///
 /// Called by providers during activation to populate the name map.
-pub fn register_algorithm_name(
-    nid: openssl_common::Nid,
-    name: &str,
-) -> CryptoResult<()> {
+pub fn register_algorithm_name(nid: openssl_common::Nid, name: &str) -> CryptoResult<()> {
     trace!(nid = ?nid, name = name, "evp: registering algorithm name");
     Ok(())
 }
