@@ -8,6 +8,7 @@
 //! Each MAC struct implements `MacProvider` from `crate::traits`.
 
 pub mod blake2_mac;
+pub mod cmac;
 pub mod gmac;
 pub mod kmac;
 pub mod poly1305;
