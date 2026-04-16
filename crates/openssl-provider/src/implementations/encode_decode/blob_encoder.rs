@@ -56,13 +56,11 @@ impl BlobEncoder {
     ///
     /// # Errors
     ///
-    /// Returns `EndecoderError::EncodingFailed` if the key data is invalid
+    /// Returns `EndecoderError::InvalidKey` if the key data is invalid
     /// or the key type is not supported for blob encoding.
     pub fn encode(&self, key_data: &[u8]) -> Result<Vec<u8>, super::common::EndecoderError> {
         if key_data.is_empty() {
-            return Err(super::common::EndecoderError::InvalidKeyData(
-                "empty key data for blob encoding".to_string(),
-            ));
+            return Err(super::common::EndecoderError::InvalidKey);
         }
         // Blob encoding passes through the raw EC point bytes directly.
         // The key material is already in the correct format (uncompressed point

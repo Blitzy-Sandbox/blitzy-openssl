@@ -21,9 +21,7 @@ impl EpkiDecoder {
     ///
     /// Returns an error if decryption fails.
     pub fn decode(&self, _input: &[u8]) -> Result<Vec<u8>, super::common::EndecoderError> {
-        Err(super::common::EndecoderError::DecryptionFailed(
-            "EPKI decoder not yet wired".to_string(),
-        ))
+        Err(super::common::EndecoderError::UnableToGetPassphrase)
     }
 
     /// Returns the list of supported input formats.

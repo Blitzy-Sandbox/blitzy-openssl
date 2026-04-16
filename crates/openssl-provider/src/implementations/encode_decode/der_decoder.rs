@@ -29,9 +29,10 @@ impl DerDecoder {
     /// Returns an error if the DER data is invalid or the algorithm
     /// is not supported by this decoder instance.
     pub fn decode(&self, _input: &[u8]) -> Result<Vec<u8>, super::common::EndecoderError> {
-        Err(super::common::EndecoderError::UnsupportedAlgorithm(
-            format!("DER decoder for {} not yet wired", self.algorithm),
-        ))
+        Err(super::common::EndecoderError::UnsupportedFormat(format!(
+            "DER decoder for {} not yet wired",
+            self.algorithm
+        )))
     }
 
     /// Returns the list of supported input formats.

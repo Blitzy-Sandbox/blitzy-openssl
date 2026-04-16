@@ -1268,6 +1268,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "criterion",
+ "der",
  "mockall",
  "once_cell",
  "openssl-common",

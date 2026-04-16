@@ -305,6 +305,47 @@ pub use common::STRUCTURE_ENCRYPTED_PRIVATE_KEY_INFO;
 /// used for public key serialization.
 pub use common::STRUCTURE_SUBJECT_PUBLIC_KEY_INFO;
 
+/// Free a key object created by [`import_key`].
+///
+/// Explicit key disposal for API symmetry with the C `ossl_prov_free_key()`.
+/// In Rust, this simply drops the key (RAII handles cleanup).
+pub use common::free_key;
+
+/// Check if a selection mask includes a specific flag.
+///
+/// Convenience wrapper around `KeySelection::contains()` for checking
+/// whether a selection includes `PRIVATE_KEY`, `PUBLIC_KEY`, etc.
+pub use common::selection_includes;
+
+/// Format byte data as colon-separated hexadecimal with line wrapping.
+///
+/// Used by text encoders to produce human-readable hex dumps of key
+/// material and parameters.
+pub use common::format_hex_dump;
+
+/// Format labeled hexadecimal output for key components.
+///
+/// Produces output like `"Modulus:\n    ab:cd:ef:..."` for key parameter
+/// text dumps.
+pub use common::format_labeled_hex;
+
+/// Microsoft MSBLOB key format constant identifier.
+///
+/// Used by Microsoft MSBLOB encoder/decoder for `PUBLICKEYBLOB` and
+/// `PRIVATEKEYBLOB` formats.
+pub use common::FORMAT_MSBLOB;
+
+/// Microsoft PVK key format constant identifier.
+///
+/// Used by Microsoft PVK encoder/decoder for the PVK (Private Key) format.
+pub use common::FORMAT_PVK;
+
+/// Maximum length for property query strings.
+///
+/// Mirrors the C `OSSL_MAX_PROPQUERY_SIZE` constant used during algorithm
+/// fetch and property matching.
+pub use common::MAX_PROPQUERY_SIZE;
+
 // ============================================================================
 // Algorithm Descriptor Registration Functions
 // ============================================================================

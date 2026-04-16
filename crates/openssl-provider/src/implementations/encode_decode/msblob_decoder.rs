@@ -25,9 +25,10 @@ impl MsBlobDecoder {
     ///
     /// Returns an error if the MSBLOB data is invalid.
     pub fn decode(&self, _input: &[u8]) -> Result<Vec<u8>, super::common::EndecoderError> {
-        Err(super::common::EndecoderError::InvalidFormat(
-            format!("MSBLOB decoder for {} not yet wired", self.algorithm),
-        ))
+        Err(super::common::EndecoderError::UnsupportedFormat(format!(
+            "MSBLOB decoder for {} not yet wired",
+            self.algorithm
+        )))
     }
 
     /// Returns the list of supported input formats.

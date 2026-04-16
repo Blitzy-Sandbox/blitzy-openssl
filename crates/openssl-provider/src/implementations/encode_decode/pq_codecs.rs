@@ -68,24 +68,51 @@ pub struct LmsCodec {
 
 /// Standard ML-KEM codec entries for all three parameter sets.
 pub static ML_KEM_CODECS: &[MlKemCodec] = &[
-    MlKemCodec { name: "ML-KEM-512", encapsulation_key_size: 800, decapsulation_key_size: 1632 },
-    MlKemCodec { name: "ML-KEM-768", encapsulation_key_size: 1184, decapsulation_key_size: 2400 },
-    MlKemCodec { name: "ML-KEM-1024", encapsulation_key_size: 1568, decapsulation_key_size: 3168 },
+    MlKemCodec {
+        name: "ML-KEM-512",
+        encapsulation_key_size: 800,
+        decapsulation_key_size: 1632,
+    },
+    MlKemCodec {
+        name: "ML-KEM-768",
+        encapsulation_key_size: 1184,
+        decapsulation_key_size: 2400,
+    },
+    MlKemCodec {
+        name: "ML-KEM-1024",
+        encapsulation_key_size: 1568,
+        decapsulation_key_size: 3168,
+    },
 ];
 
 /// Standard ML-DSA codec entries for all three parameter sets.
 pub static ML_DSA_CODECS: &[MlDsaCodec] = &[
-    MlDsaCodec { name: "ML-DSA-44", public_key_size: 1312, private_key_size: 2560 },
-    MlDsaCodec { name: "ML-DSA-65", public_key_size: 1952, private_key_size: 4032 },
-    MlDsaCodec { name: "ML-DSA-87", public_key_size: 2592, private_key_size: 4896 },
+    MlDsaCodec {
+        name: "ML-DSA-44",
+        public_key_size: 1312,
+        private_key_size: 2560,
+    },
+    MlDsaCodec {
+        name: "ML-DSA-65",
+        public_key_size: 1952,
+        private_key_size: 4032,
+    },
+    MlDsaCodec {
+        name: "ML-DSA-87",
+        public_key_size: 2592,
+        private_key_size: 4896,
+    },
 ];
 
 /// Standard SLH-DSA codec entry (representative).
-pub static SLH_DSA_CODECS: &[SlhDsaCodec] = &[
-    SlhDsaCodec { name: "SLH-DSA-SHA2-128f", public_key_size: 32, private_key_size: 64 },
-];
+pub static SLH_DSA_CODECS: &[SlhDsaCodec] = &[SlhDsaCodec {
+    name: "SLH-DSA-SHA2-128f",
+    public_key_size: 32,
+    private_key_size: 64,
+}];
 
 /// Standard LMS codec entry.
-pub static LMS_CODECS: &[LmsCodec] = &[
-    LmsCodec { name: "LMS", max_public_key_size: 60 },
-];
+pub static LMS_CODECS: &[LmsCodec] = &[LmsCodec {
+    name: "LMS",
+    max_public_key_size: 60,
+}];

@@ -56,18 +56,19 @@ impl LmsXdrDecoder {
     /// - The LMS typecode is unrecognized
     /// - The OTS typecode is unrecognized
     /// - The root hash length doesn't match the expected size
-    pub fn decode(&self, data: &[u8]) -> Result<super::common::DecodedObject, super::common::EndecoderError> {
+    pub fn decode(
+        &self,
+        data: &[u8],
+    ) -> Result<super::common::DecodedObject, super::common::EndecoderError> {
         // Minimum XDR LMS public key: 4 (typecode) + 4 (otstype) + 16 (I) + 32 (T1) = 56 bytes
         const MIN_LMS_XDR_LEN: usize = 56;
 
         if data.len() < MIN_LMS_XDR_LEN {
-            return Err(super::common::EndecoderError::InvalidFormat(
-                format!(
-                    "LMS XDR public key too short: {} bytes (minimum {})",
-                    data.len(),
-                    MIN_LMS_XDR_LEN
-                ),
-            ));
+            return Err(super::common::EndecoderError::UnsupportedFormat(format!(
+                "LMS XDR public key too short: {} bytes (minimum {})",
+                data.len(),
+                MIN_LMS_XDR_LEN
+            )));
         }
 
         // Parse XDR fields (big-endian u32 values)
@@ -75,10 +76,11 @@ impl LmsXdrDecoder {
         let _otstype = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
 
         Ok(super::common::DecodedObject {
-            object_type: super::common::ObjectType::PublicKey,
-            algorithm: "LMS".to_string(),
+            object_type: super::common::ObjectType::Pkey,
+            data_type: "LMS".to_string(),
+            input_type: super::common::FORMAT_DER,
+            data_structure: Some("xdr".to_string()),
             data: data.to_vec(),
-            structure: "xdr".to_string(),
         })
     }
 
@@ -142,7 +144,7 @@ mod tests {
         let result = decoder.decode(&data);
         assert!(result.is_ok());
         let obj = result.unwrap();
-        assert_eq!(obj.object_type, super::super::common::ObjectType::PublicKey);
+        assert_eq!(obj.object_type, super::super::common::ObjectType::Pkey);
     }
 
     #[test]

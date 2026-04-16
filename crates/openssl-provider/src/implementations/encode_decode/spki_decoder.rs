@@ -21,7 +21,7 @@ impl SpkiTaggingDecoder {
     ///
     /// Returns an error if the SPKI data is invalid.
     pub fn decode(&self, _input: &[u8]) -> Result<Vec<u8>, super::common::EndecoderError> {
-        Err(super::common::EndecoderError::InvalidFormat(
+        Err(super::common::EndecoderError::UnsupportedFormat(
             "SPKI decoder not yet wired".to_string(),
         ))
     }

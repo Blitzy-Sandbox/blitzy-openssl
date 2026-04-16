@@ -28,9 +28,10 @@ impl KeyEncoder {
     ///
     /// Returns an error if encoding fails.
     pub fn encode(&self, _key_data: &[u8]) -> Result<Vec<u8>, super::common::EndecoderError> {
-        Err(super::common::EndecoderError::UnsupportedAlgorithm(
-            format!("Key encoder for {} not yet wired", self.algorithm),
-        ))
+        Err(super::common::EndecoderError::UnsupportedFormat(format!(
+            "Key encoder for {} not yet wired",
+            self.algorithm
+        )))
     }
 
     /// Returns the list of supported output formats.

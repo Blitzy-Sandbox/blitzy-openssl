@@ -167,6 +167,15 @@ zeroize = { workspace = true }
 # with exhaustive Rust bitflags structs.
 bitflags = { workspace = true }
 
+# ---------------------------------------------------------------------------
+# ASN.1 DER Encoding/Decoding (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# RustCrypto ASN.1 DER codec used by the encode_decode module for parsing
+# DER-encoded key material, certificates, and CRLs. The Decode trait provides
+# safe, zero-copy DER TLV structure parsing. Replaces C asn1_d2i_read_bio()
+# from providers/implementations/encode_decode/endecoder_common.c.
+der = { workspace = true }
+
 # =============================================================================
 # Feature Flags
 # =============================================================================
