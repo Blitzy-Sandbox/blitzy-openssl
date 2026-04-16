@@ -243,6 +243,14 @@ rands = []
 # Maps to providers/implementations/encode_decode/ (16 C files).
 encode-decode = []
 
+# Elliptic curve support: enables EC public key blob encoder and EC-specific
+# codec paths in the encode_decode module.
+ec = []
+
+# LMS/HSS hash-based signature support: enables the LMS XDR decoder for
+# post-quantum hash-based signature verification keys (SP 800-208).
+lms = []
+
 # Store implementations: file-based key/certificate/CRL store (ossl_store URI scheme).
 # Maps to providers/implementations/storemgmt/ (3 C files).
 store = []
