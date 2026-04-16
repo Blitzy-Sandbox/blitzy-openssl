@@ -239,7 +239,20 @@ digests = []
 # KDF provider implementations: HKDF, PBKDF2, Argon2, scrypt, KBKDF, TLS1-PRF,
 # SSKDF, X963KDF, X942KDF, PKCS12KDF.
 # Maps to providers/implementations/kdfs/ (16 C files).
-kdfs = []
+# Sub-features: "argon2" and "scrypt" gate memory-hard KDFs independently.
+kdfs = ["argon2", "scrypt"]
+
+# Argon2 password hashing (RFC 9106): Argon2d, Argon2i, Argon2id.
+# Gated separately due to significant memory requirements.
+# C guard: OPENSSL_NO_ARGON2
+# Source: providers/implementations/kdfs/argon2.c
+argon2 = []
+
+# scrypt password-based key derivation (RFC 7914).
+# Gated separately due to significant memory requirements.
+# C guard: OPENSSL_NO_SCRYPT
+# Source: providers/implementations/kdfs/scrypt.c
+scrypt = []
 
 # MAC provider implementations: HMAC, CMAC, GMAC, KMAC, Poly1305, SipHash.
 # Maps to providers/implementations/macs/ (9 C files).
