@@ -8,6 +8,7 @@
 //! Each MAC struct implements `MacProvider` from `crate::traits`.
 
 pub mod blake2_mac;
+pub mod siphash;
 
 use super::algorithm;
 use crate::traits::AlgorithmDescriptor;
