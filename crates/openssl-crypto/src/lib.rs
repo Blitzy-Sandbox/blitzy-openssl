@@ -16,6 +16,9 @@ pub mod rand;
 pub mod pem;
 pub mod thread;
 
+#[cfg(feature = "hpke")]
+pub mod hpke;
+
 #[cfg(feature = "ts")]
 pub mod ts;
 
