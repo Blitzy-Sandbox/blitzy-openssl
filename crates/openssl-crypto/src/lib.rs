@@ -19,6 +19,9 @@ pub mod thread;
 #[cfg(feature = "hpke")]
 pub mod hpke;
 
+#[cfg(feature = "ocsp")]
+pub mod ocsp;
+
 #[cfg(feature = "ts")]
 pub mod ts;
 
