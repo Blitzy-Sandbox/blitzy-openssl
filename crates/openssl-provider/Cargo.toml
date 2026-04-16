@@ -221,6 +221,9 @@ default = [
     "rands",         # providers/implementations/rands/ (15 C files)
     "encode-decode", # providers/implementations/encode_decode/ (16 C files)
     "store",         # providers/implementations/storemgmt/ (3 C files)
+    "sha3",          # SHA-3/SHAKE/Keccak/KECCAK-KMAC/cSHAKE digest family
+    "blake2",        # BLAKE2b-512 and BLAKE2s-256 digest family
+    "sm3",           # SM3 Chinese national standard hash
 ]
 
 # --- Algorithm category features ---
@@ -303,6 +306,25 @@ store = []
 # providers/legacyprov.c. When enabled, the legacy provider is available
 # for activation; when disabled, legacy algorithms are not compiled.
 legacy = []
+
+# --- Per-algorithm digest features ---
+# These features gate individual digest submodules within the
+# `implementations::digests` module, replacing C `OPENSSL_NO_*` guards.
+
+# SHA-3 family: SHA3-224/256/384/512, SHAKE128/256, Keccak, KECCAK-KMAC, cSHAKE.
+# Source: providers/implementations/digests/sha3_prov.c, cshake_prov.c
+# C guard: OPENSSL_NO_SHA3 (never defined in default builds)
+sha3 = []
+
+# BLAKE2 family: BLAKE2b-512, BLAKE2s-256.
+# Source: providers/implementations/digests/blake2_prov.c
+# C guard: OPENSSL_NO_BLAKE2
+blake2 = []
+
+# SM3 Chinese national standard hash (GB/T 32905-2016).
+# Source: providers/implementations/digests/sm3_prov.c
+# C guard: OPENSSL_NO_SM3
+sm3 = []
 
 # --- Per-algorithm keymgmt features ---
 # These features gate individual key management submodules within the
