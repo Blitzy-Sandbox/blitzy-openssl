@@ -281,6 +281,52 @@ store = []
 # for activation; when disabled, legacy algorithms are not compiled.
 legacy = []
 
+# --- Per-algorithm keymgmt features ---
+# These features gate individual key management submodules within the
+# `implementations::keymgmt` module, replacing C `OPENSSL_NO_*` guards.
+# Each feature is independent and can be enabled/disabled individually
+# for constrained builds.
+
+# DH/DHX key management (RFC 3526/7919, X9.42).
+# Source: providers/implementations/keymgmt/dh_kmgmt.c
+# C guard: OPENSSL_NO_DH
+dh = []
+
+# DSA key management (FIPS 186-2/186-4).
+# Source: providers/implementations/keymgmt/dsa_kmgmt.c
+# C guard: OPENSSL_NO_DSA
+dsa = []
+
+# ECX key management (X25519, X448, Ed25519, Ed448).
+# Source: providers/implementations/keymgmt/ecx_kmgmt.c
+# C guard: OPENSSL_NO_ECX
+ecx = []
+
+# RSA/RSA-PSS key management.
+# Source: providers/implementations/keymgmt/rsa_kmgmt.c
+# C guard: RSA is always compiled in C; feature-gated in Rust.
+rsa = []
+
+# ML-DSA key management (FIPS 204).
+# Source: providers/implementations/keymgmt/ml_dsa_kmgmt.c
+# C guard: OPENSSL_NO_ML_DSA
+ml-dsa = []
+
+# ML-KEM key management (FIPS 203).
+# Source: providers/implementations/keymgmt/ml_kem_kmgmt.c
+# C guard: OPENSSL_NO_ML_KEM
+ml-kem = []
+
+# Hybrid ML-KEM + ECDH/XDH key management.
+# Source: providers/implementations/keymgmt/mlx_kmgmt.c
+# C guard: depends on OPENSSL_NO_ML_KEM, OPENSSL_NO_ECX, OPENSSL_NO_EC
+mlx = []
+
+# SLH-DSA key management (FIPS 205).
+# Source: providers/implementations/keymgmt/slh_dsa_kmgmt.c
+# C guard: OPENSSL_NO_SLH_DSA
+slh-dsa = []
+
 # =============================================================================
 # Dev Dependencies (AAP §0.6.2)
 # =============================================================================
