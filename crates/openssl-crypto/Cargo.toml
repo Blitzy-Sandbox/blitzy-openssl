@@ -166,7 +166,7 @@ x509-cert = { workspace = true }
 # PEM encoding (crypto/pem/*.c — 11 files, AAP §0.6.1)
 # ---------------------------------------------------------------------------
 # RFC 7468-compliant PEM encoding/decoding. Replaces C PEM_read_bio/PEM_write_bio.
-pem-rfc7468 = { workspace = true }
+pem-rfc7468 = { workspace = true, features = ["alloc"] }
 
 # ---------------------------------------------------------------------------
 # PKCS#8 private key encoding (crypto/pkcs7/*.c, crypto/pkcs12/*.c, AAP §0.6.1)
@@ -185,7 +185,7 @@ spki = { workspace = true }
 # ---------------------------------------------------------------------------
 # Constant-time Base64 encoding/decoding for PEM and SCT processing.
 # Prevents timing side-channel attacks when processing key material.
-base64ct = { workspace = true }
+base64ct = { workspace = true, features = ["alloc"] }
 
 # ---------------------------------------------------------------------------
 # Hex encoding (AAP §0.6.1)
