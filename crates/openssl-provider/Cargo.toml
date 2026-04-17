@@ -323,6 +323,11 @@ exchange = []
 # Maps to providers/implementations/rands/ (15 C files).
 rands = []
 
+# CPU jitter entropy source: enables the JitterSource RNG implementation that
+# harvests entropy from CPU execution time variations.
+# Conditional on platform support for high-resolution timing.
+jitter = []
+
 # Encoder/decoder implementations: DER, PEM, PKCS#8, PKCS#1, SEC1, X.509 SPKI
 # key serialization/deserialization for all algorithm types.
 # Maps to providers/implementations/encode_decode/ (16 C files).
