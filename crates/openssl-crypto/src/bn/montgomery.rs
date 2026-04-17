@@ -171,11 +171,7 @@ pub fn mod_exp_with_context(
 /// Constant-time behavior depends on the `num-bigint` backend. For
 /// truly constant-time behavior in production, a specialized
 /// implementation with fixed-window exponentiation would be needed.
-pub fn mod_exp_consttime(
-    base: &BigNum,
-    exp: &BigNum,
-    modulus: &BigNum,
-) -> CryptoResult<BigNum> {
+pub fn mod_exp_consttime(base: &BigNum, exp: &BigNum, modulus: &BigNum) -> CryptoResult<BigNum> {
     // Same as mod_exp — full constant-time implementation is a future optimization
     mod_exp(base, exp, modulus)
 }
@@ -213,9 +209,7 @@ pub fn exp(base: &BigNum, exponent: &BigNum) -> CryptoResult<BigNum> {
         return Ok(BigNum::one());
     }
 
-    let exp_u64 = exponent
-        .to_u64()
-        .ok_or(BigNumError::BigNumTooLong)?;
+    let exp_u64 = exponent.to_u64().ok_or(BigNumError::BigNumTooLong)?;
 
     let mut result = BigInt::one();
     let base_int = base.inner().clone();

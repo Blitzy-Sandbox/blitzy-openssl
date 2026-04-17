@@ -326,34 +326,98 @@ impl std::fmt::Debug for EcxKeyPair {
 mod sha512_internal {
     /// SHA-512 round constants (FIPS 180-4 section 4.2.3).
     const K: [u64; 80] = [
-        0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,
-        0x3956c25bf348b538, 0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118,
-        0xd807aa98a3030242, 0x12835b0145706fbe, 0x243185be4ee4b28c, 0x550c7dc3d5ffb4e2,
-        0x72be5d74f27b896f, 0x80deb1fe3b1696b1, 0x9bdc06a725c71235, 0xc19bf174cf692694,
-        0xe49b69c19ef14ad2, 0xefbe4786384f25e3, 0x0fc19dc68b8cd5b5, 0x240ca1cc77ac9c65,
-        0x2de92c6f592b0275, 0x4a7484aa6ea6e483, 0x5cb0a9dcbd41fbd4, 0x76f988da831153b5,
-        0x983e5152ee66dfab, 0xa831c66d2db43210, 0xb00327c898fb213f, 0xbf597fc7beef0ee4,
-        0xc6e00bf33da88fc2, 0xd5a79147930aa725, 0x06ca6351e003826f, 0x142929670a0e6e70,
-        0x27b70a8546d22ffc, 0x2e1b21385c26c926, 0x4d2c6dfc5ac42aed, 0x53380d139d95b3df,
-        0x650a73548baf63de, 0x766a0abb3c77b2a8, 0x81c2c92e47edaee6, 0x92722c851482353b,
-        0xa2bfe8a14cf10364, 0xa81a664bbc423001, 0xc24b8b70d0f89791, 0xc76c51a30654be30,
-        0xd192e819d6ef5218, 0xd69906245565a910, 0xf40e35855771202a, 0x106aa07032bbd1b8,
-        0x19a4c116b8d2d0c8, 0x1e376c085141ab53, 0x2748774cdf8eeb99, 0x34b0bcb5e19b48a8,
-        0x391c0cb3c5c95a63, 0x4ed8aa4ae3418acb, 0x5b9cca4f7763e373, 0x682e6ff3d6b2b8a3,
-        0x748f82ee5defb2fc, 0x78a5636f43172f60, 0x84c87814a1f0ab72, 0x8cc702081a6439ec,
-        0x90befffa23631e28, 0xa4506cebde82bde9, 0xbef9a3f7b2c67915, 0xc67178f2e372532b,
-        0xca273eceea26619c, 0xd186b8c721c0c207, 0xeada7dd6cde0eb1e, 0xf57d4f7fee6ed178,
-        0x06f067aa72176fba, 0x0a637dc5a2c898a6, 0x113f9804bef90dae, 0x1b710b35131c471b,
-        0x28db77f523047d84, 0x32caab7b40c72493, 0x3c9ebe0a15c9bebc, 0x431d67c49c100d4c,
-        0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817,
+        0x428a2f98d728ae22,
+        0x7137449123ef65cd,
+        0xb5c0fbcfec4d3b2f,
+        0xe9b5dba58189dbbc,
+        0x3956c25bf348b538,
+        0x59f111f1b605d019,
+        0x923f82a4af194f9b,
+        0xab1c5ed5da6d8118,
+        0xd807aa98a3030242,
+        0x12835b0145706fbe,
+        0x243185be4ee4b28c,
+        0x550c7dc3d5ffb4e2,
+        0x72be5d74f27b896f,
+        0x80deb1fe3b1696b1,
+        0x9bdc06a725c71235,
+        0xc19bf174cf692694,
+        0xe49b69c19ef14ad2,
+        0xefbe4786384f25e3,
+        0x0fc19dc68b8cd5b5,
+        0x240ca1cc77ac9c65,
+        0x2de92c6f592b0275,
+        0x4a7484aa6ea6e483,
+        0x5cb0a9dcbd41fbd4,
+        0x76f988da831153b5,
+        0x983e5152ee66dfab,
+        0xa831c66d2db43210,
+        0xb00327c898fb213f,
+        0xbf597fc7beef0ee4,
+        0xc6e00bf33da88fc2,
+        0xd5a79147930aa725,
+        0x06ca6351e003826f,
+        0x142929670a0e6e70,
+        0x27b70a8546d22ffc,
+        0x2e1b21385c26c926,
+        0x4d2c6dfc5ac42aed,
+        0x53380d139d95b3df,
+        0x650a73548baf63de,
+        0x766a0abb3c77b2a8,
+        0x81c2c92e47edaee6,
+        0x92722c851482353b,
+        0xa2bfe8a14cf10364,
+        0xa81a664bbc423001,
+        0xc24b8b70d0f89791,
+        0xc76c51a30654be30,
+        0xd192e819d6ef5218,
+        0xd69906245565a910,
+        0xf40e35855771202a,
+        0x106aa07032bbd1b8,
+        0x19a4c116b8d2d0c8,
+        0x1e376c085141ab53,
+        0x2748774cdf8eeb99,
+        0x34b0bcb5e19b48a8,
+        0x391c0cb3c5c95a63,
+        0x4ed8aa4ae3418acb,
+        0x5b9cca4f7763e373,
+        0x682e6ff3d6b2b8a3,
+        0x748f82ee5defb2fc,
+        0x78a5636f43172f60,
+        0x84c87814a1f0ab72,
+        0x8cc702081a6439ec,
+        0x90befffa23631e28,
+        0xa4506cebde82bde9,
+        0xbef9a3f7b2c67915,
+        0xc67178f2e372532b,
+        0xca273eceea26619c,
+        0xd186b8c721c0c207,
+        0xeada7dd6cde0eb1e,
+        0xf57d4f7fee6ed178,
+        0x06f067aa72176fba,
+        0x0a637dc5a2c898a6,
+        0x113f9804bef90dae,
+        0x1b710b35131c471b,
+        0x28db77f523047d84,
+        0x32caab7b40c72493,
+        0x3c9ebe0a15c9bebc,
+        0x431d67c49c100d4c,
+        0x4cc5d4becb3e42b6,
+        0x597f299cfc657e2a,
+        0x5fcb6fab3ad6faec,
+        0x6c44198c4a475817,
     ];
 
     /// SHA-512 initial hash values (FIPS 180-4 section 5.3.5).
     const H0: [u64; 8] = [
-        0x6a09e667f3bcc908, 0xbb67ae8584caa73b,
-        0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
-        0x510e527fade682d1, 0x9b05688c2b3e6c1f,
-        0x1f83d9abfb41bd6b, 0x5be0cd19137e2179,
+        0x6a09e667f3bcc908,
+        0xbb67ae8584caa73b,
+        0x3c6ef372fe94f82b,
+        0xa54ff53a5f1d36f1,
+        0x510e527fade682d1,
+        0x9b05688c2b3e6c1f,
+        0x1f83d9abfb41bd6b,
+        0x5be0cd19137e2179,
     ];
 
     /// Incremental SHA-512 hasher.
@@ -367,7 +431,12 @@ mod sha512_internal {
     impl Sha512 {
         /// Creates a new SHA-512 hasher.
         pub(super) fn new() -> Self {
-            Self { state: H0, buf: [0u8; 128], buf_len: 0, total_len: 0 }
+            Self {
+                state: H0,
+                buf: [0u8; 128],
+                buf_len: 0,
+                total_len: 0,
+            }
         }
 
         /// Absorbs input data.
@@ -405,12 +474,16 @@ mod sha512_internal {
             self.buf[self.buf_len] = 0x80;
             self.buf_len += 1;
             if self.buf_len > 112 {
-                for i in self.buf_len..128 { self.buf[i] = 0; }
+                for i in self.buf_len..128 {
+                    self.buf[i] = 0;
+                }
                 let block = self.buf;
                 compress(&mut self.state, &block);
                 self.buf_len = 0;
             }
-            for i in self.buf_len..112 { self.buf[i] = 0; }
+            for i in self.buf_len..112 {
+                self.buf[i] = 0;
+            }
             self.buf[112..128].copy_from_slice(&bit_len.to_be_bytes());
             let block = self.buf;
             compress(&mut self.state, &block);
@@ -428,25 +501,44 @@ mod sha512_internal {
         for i in 0..16 {
             let off = i * 8;
             w[i] = u64::from_be_bytes([
-                block[off], block[off+1], block[off+2], block[off+3],
-                block[off+4], block[off+5], block[off+6], block[off+7],
+                block[off],
+                block[off + 1],
+                block[off + 2],
+                block[off + 3],
+                block[off + 4],
+                block[off + 5],
+                block[off + 6],
+                block[off + 7],
             ]);
         }
         for i in 16..80 {
-            let s0 = w[i-15].rotate_right(1) ^ w[i-15].rotate_right(8) ^ (w[i-15] >> 7);
-            let s1 = w[i-2].rotate_right(19) ^ w[i-2].rotate_right(61) ^ (w[i-2] >> 6);
-            w[i] = w[i-16].wrapping_add(s0).wrapping_add(w[i-7]).wrapping_add(s1);
+            let s0 = w[i - 15].rotate_right(1) ^ w[i - 15].rotate_right(8) ^ (w[i - 15] >> 7);
+            let s1 = w[i - 2].rotate_right(19) ^ w[i - 2].rotate_right(61) ^ (w[i - 2] >> 6);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
         }
         let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *state;
         for i in 0..80 {
             let s1 = e.rotate_right(14) ^ e.rotate_right(18) ^ e.rotate_right(41);
             let ch = (e & f) ^ ((!e) & g);
-            let t1 = h.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
+            let t1 = h
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(K[i])
+                .wrapping_add(w[i]);
             let s0 = a.rotate_right(28) ^ a.rotate_right(34) ^ a.rotate_right(39);
             let maj = (a & b) ^ (a & c) ^ (b & c);
             let t2 = s0.wrapping_add(maj);
-            h = g; g = f; f = e; e = d.wrapping_add(t1);
-            d = c; c = b; b = a; a = t1.wrapping_add(t2);
+            h = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(t1);
+            d = c;
+            c = b;
+            b = a;
+            a = t1.wrapping_add(t2);
         }
         state[0] = state[0].wrapping_add(a);
         state[1] = state[1].wrapping_add(b);
@@ -473,26 +565,40 @@ mod sha512_internal {
 mod keccak_internal {
     /// Keccak-f[1600] round constants.
     const RC: [u64; 24] = [
-        0x0000000000000001, 0x0000000000008082, 0x800000000000808a,
-        0x8000000080008000, 0x000000000000808b, 0x0000000080000001,
-        0x8000000080008081, 0x8000000000008009, 0x000000000000008a,
-        0x0000000000000088, 0x0000000080008009, 0x000000008000000a,
-        0x000000008000808b, 0x800000000000008b, 0x8000000000008089,
-        0x8000000000008003, 0x8000000000008002, 0x8000000000000080,
-        0x000000000000800a, 0x800000008000000a, 0x8000000080008081,
-        0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+        0x0000000000000001,
+        0x0000000000008082,
+        0x800000000000808a,
+        0x8000000080008000,
+        0x000000000000808b,
+        0x0000000080000001,
+        0x8000000080008081,
+        0x8000000000008009,
+        0x000000000000008a,
+        0x0000000000000088,
+        0x0000000080008009,
+        0x000000008000000a,
+        0x000000008000808b,
+        0x800000000000008b,
+        0x8000000000008089,
+        0x8000000000008003,
+        0x8000000000008002,
+        0x8000000000000080,
+        0x000000000000800a,
+        0x800000008000000a,
+        0x8000000080008081,
+        0x8000000000008080,
+        0x0000000080000001,
+        0x8000000080008008,
     ];
 
     /// Rotation offsets for Keccak rho step.
     const RHO: [u32; 24] = [
-         1,  3,  6, 10, 15, 21, 28, 36, 45, 55,  2, 14,
-        27, 41, 56,  8, 25, 43, 62, 18, 39, 61, 20, 44,
+        1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
     ];
 
     /// Lane permutation indices for Keccak pi step.
     const PI: [usize; 24] = [
-        10,  7, 11, 17, 18,  3,  5, 16,  8, 21, 24,  4,
-        15, 23, 19, 13, 12,  2, 20, 14, 22,  9,  6,  1,
+        10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
     ];
 
     /// Keccak-f[1600] permutation on 25 lanes.
@@ -523,7 +629,13 @@ mod keccak_internal {
             // Chi step
             for y in 0..5 {
                 let base = 5 * y;
-                let t = [state[base], state[base+1], state[base+2], state[base+3], state[base+4]];
+                let t = [
+                    state[base],
+                    state[base + 1],
+                    state[base + 2],
+                    state[base + 3],
+                    state[base + 4],
+                ];
                 for x in 0..5 {
                     state[base + x] = t[x] ^ ((!t[(x + 1) % 5]) & t[(x + 2) % 5]);
                 }
@@ -545,7 +657,12 @@ mod keccak_internal {
     impl Shake256 {
         /// Creates a new SHAKE-256 instance.
         pub(super) fn new() -> Self {
-            Self { state: [0u64; 25], buf: [0u8; 136], buf_len: 0, squeezed: false }
+            Self {
+                state: [0u64; 25],
+                buf: [0u8; 136],
+                buf_len: 0,
+                squeezed: false,
+            }
         }
 
         /// Absorbs input data.
@@ -569,8 +686,14 @@ mod keccak_internal {
             for i in 0..17 {
                 let off = i * 8;
                 let lane = u64::from_le_bytes([
-                    self.buf[off], self.buf[off+1], self.buf[off+2], self.buf[off+3],
-                    self.buf[off+4], self.buf[off+5], self.buf[off+6], self.buf[off+7],
+                    self.buf[off],
+                    self.buf[off + 1],
+                    self.buf[off + 2],
+                    self.buf[off + 3],
+                    self.buf[off + 4],
+                    self.buf[off + 5],
+                    self.buf[off + 6],
+                    self.buf[off + 7],
                 ]);
                 self.state[i] ^= lane;
             }
@@ -681,11 +804,19 @@ mod field25519 {
             q = (h.0[4] + q) >> 51;
             // Subtract q*p = q*(2^255-19): add q*19 and let bit 255 vanish
             h.0[0] += 19 * q;
-            let c = h.0[0] >> 51; h.0[0] &= BOT51;
-            h.0[1] += c; let c = h.0[1] >> 51; h.0[1] &= BOT51;
-            h.0[2] += c; let c = h.0[2] >> 51; h.0[2] &= BOT51;
-            h.0[3] += c; let c = h.0[3] >> 51; h.0[3] &= BOT51;
-            h.0[4] += c; h.0[4] &= BOT51;
+            let c = h.0[0] >> 51;
+            h.0[0] &= BOT51;
+            h.0[1] += c;
+            let c = h.0[1] >> 51;
+            h.0[1] &= BOT51;
+            h.0[2] += c;
+            let c = h.0[2] >> 51;
+            h.0[2] &= BOT51;
+            h.0[3] += c;
+            let c = h.0[3] >> 51;
+            h.0[3] &= BOT51;
+            h.0[4] += c;
+            h.0[4] &= BOT51;
             // After subtraction, h is in [0, p). Pack 255 bits into 32 bytes.
             let mut out = [0u8; 32];
             let mut acc: u128 = 0;
@@ -728,7 +859,8 @@ mod field25519 {
                 self.0[2] + 0xFFFFFFFFFFFFE - other.0[2],
                 self.0[3] + 0xFFFFFFFFFFFFE - other.0[3],
                 self.0[4] + 0xFFFFFFFFFFFFE - other.0[4],
-            ]).carry()
+            ])
+            .carry()
         }
 
         /// Multiplication in GF(2^255-19).
@@ -790,8 +922,6 @@ mod field25519 {
             }
         }
 
-
-
         /// Computes self^(2^n).
         pub(super) fn square_times(&self, n: usize) -> Fe {
             let mut r = *self;
@@ -804,28 +934,28 @@ mod field25519 {
         /// Inversion: self^(p-2) where p = 2^255-19.
         /// Uses the addition chain from ref10 (curve25519.c fe_invert).
         pub(super) fn invert(&self) -> Fe {
-            let z2 = self.square();                    // z^2
-            let t = z2.square_times(2);                // z^8
-            let z9 = t.mul(self);                      // z^9
-            let z11 = z9.mul(&z2);                     // z^11
-            let t = z11.square();                      // z^22
-            let z_2_5_0 = t.mul(&z9);                  // z^(2^5 - 2^0) = z^31
-            let t = z_2_5_0.square_times(5);           // z^(2^10 - 2^5)
-            let z_2_10_0 = t.mul(&z_2_5_0);           // z^(2^10 - 1)
-            let t = z_2_10_0.square_times(10);         // z^(2^20 - 2^10)
-            let z_2_20_0 = t.mul(&z_2_10_0);          // z^(2^20 - 1)
-            let t = z_2_20_0.square_times(20);         // z^(2^40 - 2^20)
-            let t = t.mul(&z_2_20_0);                  // z^(2^40 - 1)
-            let t = t.square_times(10);                // z^(2^50 - 2^10)
-            let z_2_50_0 = t.mul(&z_2_10_0);          // z^(2^50 - 1)
-            let t = z_2_50_0.square_times(50);         // z^(2^100 - 2^50)
-            let z_2_100_0 = t.mul(&z_2_50_0);         // z^(2^100 - 1)
-            let t = z_2_100_0.square_times(100);       // z^(2^200 - 2^100)
-            let t = t.mul(&z_2_100_0);                 // z^(2^200 - 1)
-            let t = t.square_times(50);                // z^(2^250 - 2^50)
-            let t = t.mul(&z_2_50_0);                  // z^(2^250 - 1)
-            let t = t.square_times(5);                 // z^(2^255 - 2^5)
-            t.mul(&z11)                                 // z^(2^255 - 21) = z^(p-2)
+            let z2 = self.square(); // z^2
+            let t = z2.square_times(2); // z^8
+            let z9 = t.mul(self); // z^9
+            let z11 = z9.mul(&z2); // z^11
+            let t = z11.square(); // z^22
+            let z_2_5_0 = t.mul(&z9); // z^(2^5 - 2^0) = z^31
+            let t = z_2_5_0.square_times(5); // z^(2^10 - 2^5)
+            let z_2_10_0 = t.mul(&z_2_5_0); // z^(2^10 - 1)
+            let t = z_2_10_0.square_times(10); // z^(2^20 - 2^10)
+            let z_2_20_0 = t.mul(&z_2_10_0); // z^(2^20 - 1)
+            let t = z_2_20_0.square_times(20); // z^(2^40 - 2^20)
+            let t = t.mul(&z_2_20_0); // z^(2^40 - 1)
+            let t = t.square_times(10); // z^(2^50 - 2^10)
+            let z_2_50_0 = t.mul(&z_2_10_0); // z^(2^50 - 1)
+            let t = z_2_50_0.square_times(50); // z^(2^100 - 2^50)
+            let z_2_100_0 = t.mul(&z_2_50_0); // z^(2^100 - 1)
+            let t = z_2_100_0.square_times(100); // z^(2^200 - 2^100)
+            let t = t.mul(&z_2_100_0); // z^(2^200 - 1)
+            let t = t.square_times(50); // z^(2^250 - 2^50)
+            let t = t.mul(&z_2_50_0); // z^(2^250 - 1)
+            let t = t.square_times(5); // z^(2^255 - 2^5)
+            t.mul(&z11) // z^(2^255 - 21) = z^(p-2)
         }
 
         /// Computes self^((p-5)/8) = self^(2^252 - 3).
@@ -897,10 +1027,9 @@ mod edwards25519 {
     /// Ed25519 curve constant d = -121665/121666 mod p.
     fn curve_d() -> Fe {
         Fe::from_bytes(&[
-            0xa3, 0x78, 0x59, 0x13, 0xca, 0x4d, 0xeb, 0x75,
-            0xab, 0xd8, 0x41, 0x41, 0x4d, 0x0a, 0x70, 0x00,
-            0x98, 0xe8, 0x79, 0x77, 0x79, 0x40, 0xc7, 0x8c,
-            0x73, 0xfe, 0x6f, 0x2b, 0xee, 0x6c, 0x03, 0x52,
+            0xa3, 0x78, 0x59, 0x13, 0xca, 0x4d, 0xeb, 0x75, 0xab, 0xd8, 0x41, 0x41, 0x4d, 0x0a,
+            0x70, 0x00, 0x98, 0xe8, 0x79, 0x77, 0x79, 0x40, 0xc7, 0x8c, 0x73, 0xfe, 0x6f, 0x2b,
+            0xee, 0x6c, 0x03, 0x52,
         ])
     }
 
@@ -913,26 +1042,23 @@ mod edwards25519 {
     /// sqrt(-1) mod p.
     fn sqrt_m1() -> Fe {
         Fe::from_bytes(&[
-            0xb0, 0xa0, 0x0e, 0x4a, 0x27, 0x1b, 0xee, 0xc4,
-            0x78, 0xe4, 0x2f, 0xad, 0x06, 0x18, 0x43, 0x2f,
-            0xa7, 0xd7, 0xfb, 0x3d, 0x99, 0x00, 0x4d, 0x2b,
-            0x0b, 0xdf, 0xc1, 0x4f, 0x80, 0x24, 0x83, 0x2b,
+            0xb0, 0xa0, 0x0e, 0x4a, 0x27, 0x1b, 0xee, 0xc4, 0x78, 0xe4, 0x2f, 0xad, 0x06, 0x18,
+            0x43, 0x2f, 0xa7, 0xd7, 0xfb, 0x3d, 0x99, 0x00, 0x4d, 0x2b, 0x0b, 0xdf, 0xc1, 0x4f,
+            0x80, 0x24, 0x83, 0x2b,
         ])
     }
 
     /// Ed25519 basepoint B in extended coordinates.
     pub(super) fn basepoint() -> GeP3 {
         let by = Fe::from_bytes(&[
-            0x58, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
-            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
-            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
-            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
+            0x58, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
+            0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
+            0x66, 0x66, 0x66, 0x66,
         ]);
         let bx = Fe::from_bytes(&[
-            0x1a, 0xd5, 0x25, 0x8f, 0x60, 0x2d, 0x56, 0xc9,
-            0xb2, 0xa7, 0x25, 0x95, 0x60, 0xc7, 0x2c, 0x69,
-            0x5c, 0xdc, 0xd6, 0xfd, 0x31, 0xe2, 0xa4, 0xc0,
-            0xfe, 0x53, 0x6e, 0xcd, 0xd3, 0x36, 0x69, 0x21,
+            0x1a, 0xd5, 0x25, 0x8f, 0x60, 0x2d, 0x56, 0xc9, 0xb2, 0xa7, 0x25, 0x95, 0x60, 0xc7,
+            0x2c, 0x69, 0x5c, 0xdc, 0xd6, 0xfd, 0x31, 0xe2, 0xa4, 0xc0, 0xfe, 0x53, 0x6e, 0xcd,
+            0xd3, 0x36, 0x69, 0x21,
         ]);
         GeP3 {
             x: bx,
@@ -1007,7 +1133,11 @@ mod edwards25519 {
         /// Constructs the identity point (used by extended group operations).
         #[allow(dead_code)] // Retained: standard identity constructor for complete group arithmetic API
         pub(super) fn zero() -> Self {
-            GeP2 { x: Fe::ZERO, y: Fe::ONE, z: Fe::ONE }
+            GeP2 {
+                x: Fe::ZERO,
+                y: Fe::ONE,
+                z: Fe::ONE,
+            }
         }
 
         fn dbl(&self) -> GeP1P1 {
@@ -1015,11 +1145,16 @@ mod edwards25519 {
             let yy = self.y.square();
             let b2 = self.z.square().add(&self.z.square()); // 2*Z^2
             let aa = self.x.add(&self.y).square();
-            let e = aa.sub(&xx).sub(&yy);                  // E = 2*X*Y
-            let g = yy.add(&xx);                            // G = Y^2 + X^2
-            let h = yy.sub(&xx);                            // H = Y^2 - X^2
-            let f = b2.sub(&h);                             // F = 2*Z^2 - H
-            GeP1P1 { x: e, y: g, z: h, t: f }
+            let e = aa.sub(&xx).sub(&yy); // E = 2*X*Y
+            let g = yy.add(&xx); // G = Y^2 + X^2
+            let h = yy.sub(&xx); // H = Y^2 - X^2
+            let f = b2.sub(&h); // F = 2*Z^2 - H
+            GeP1P1 {
+                x: e,
+                y: g,
+                z: h,
+                t: f,
+            }
         }
 
         /// Encode point to 32 bytes (y with x sign in top bit).
@@ -1035,7 +1170,11 @@ mod edwards25519 {
 
     impl GeP3 {
         pub(super) fn to_p2(&self) -> GeP2 {
-            GeP2 { x: self.x, y: self.y, z: self.z }
+            GeP2 {
+                x: self.x,
+                y: self.y,
+                z: self.z,
+            }
         }
 
         fn to_cached(&self) -> GeCached {
@@ -1066,11 +1205,11 @@ mod edwards25519 {
 
             // Compute x^2 = (y^2 - 1) / (d*y^2 + 1)
             let y2 = y.square();
-            let u = y2.sub(&Fe::ONE);        // u = y^2 - 1
+            let u = y2.sub(&Fe::ONE); // u = y^2 - 1
             let v = curve_d().mul(&y2).add(&Fe::ONE); // v = d*y^2 + 1
 
-            let v3 = v.square().mul(&v);       // v^3
-            let v7 = v3.square().mul(&v);      // v^7
+            let v3 = v.square().mul(&v); // v^3
+            let v7 = v3.square().mul(&v); // v^7
             let uv3 = u.mul(&v3);
             let uv7 = u.mul(&v7);
 
@@ -1097,7 +1236,12 @@ mod edwards25519 {
             }
 
             let t = x.mul(&y);
-            Some(GeP3 { x, y, z: Fe::ONE, t })
+            Some(GeP3 {
+                x,
+                y,
+                z: Fe::ONE,
+                t,
+            })
         }
 
         /// Add two extended points.
@@ -1134,7 +1278,11 @@ mod edwards25519 {
 
     impl GePrecomp {
         fn zero() -> Self {
-            GePrecomp { y_plus_x: Fe::ONE, y_minus_x: Fe::ONE, xy2d: Fe::ZERO }
+            GePrecomp {
+                y_plus_x: Fe::ONE,
+                y_minus_x: Fe::ONE,
+                xy2d: Fe::ZERO,
+            }
         }
 
         /// Constant-time select: if flag==0 return self, else return other.
@@ -1272,7 +1420,12 @@ mod edwards25519 {
             sel.cmov(&np, if d63 < 0 { 1 } else { 0 });
             // Convert precomp to p3: x = (y_plus_x - y_minus_x)/2, y = (y_plus_x + y_minus_x)/2
             // But easier to build via identity + madd
-            let id = GeP3 { x: Fe::ZERO, y: Fe::ONE, z: Fe::ONE, t: Fe::ZERO };
+            let id = GeP3 {
+                x: Fe::ZERO,
+                y: Fe::ONE,
+                z: Fe::ONE,
+                t: Fe::ZERO,
+            };
             ge_madd(&id, &sel).to_p3()
         };
 
@@ -1341,8 +1494,18 @@ mod edwards25519 {
     }
 
     fn build_vartime_table(p: &GeP3) -> [GeP3; 16] {
-        let mut table = [GeP3 { x: Fe::ZERO, y: Fe::ONE, z: Fe::ONE, t: Fe::ZERO }; 16];
-        table[0] = GeP3 { x: Fe::ZERO, y: Fe::ONE, z: Fe::ONE, t: Fe::ZERO }; // identity
+        let mut table = [GeP3 {
+            x: Fe::ZERO,
+            y: Fe::ONE,
+            z: Fe::ONE,
+            t: Fe::ZERO,
+        }; 16];
+        table[0] = GeP3 {
+            x: Fe::ZERO,
+            y: Fe::ONE,
+            z: Fe::ONE,
+            t: Fe::ZERO,
+        }; // identity
         table[1] = *p;
         for i in 2..16 {
             if i % 2 == 0 {
@@ -1361,7 +1524,12 @@ mod edwards25519 {
             let pos = (-digit) as usize;
             let p = table[pos];
             // Negate: -P = (-X : Y : Z : -T)
-            GeP3 { x: p.x.neg(), y: p.y, z: p.z, t: p.t.neg() }
+            GeP3 {
+                x: p.x.neg(),
+                y: p.y,
+                z: p.z,
+                t: p.t.neg(),
+            }
         }
     }
 }
@@ -1375,10 +1543,9 @@ mod scalar25519 {
     /// l = 2^252 + 27742317777372353535851937790883648493
     #[allow(dead_code)]
     const L: [u8; 32] = [
-        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
-        0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde,
+        0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x10,
     ];
 
     /// Load 3 bytes in little-endian as i64.
@@ -1403,9 +1570,9 @@ mod scalar25519 {
         s[k - 12] += v * 666643;
         s[k - 11] += v * 470296;
         s[k - 10] += v * 654183;
-        s[k - 9]  -= v * 997805;
-        s[k - 8]  += v * 136657;
-        s[k - 7]  -= v * 683901;
+        s[k - 9] -= v * 997805;
+        s[k - 8] += v * 136657;
+        s[k - 7] -= v * 683901;
         s[k] = 0;
     }
 
@@ -1426,16 +1593,16 @@ mod scalar25519 {
     /// Load 12 limbs (21-bit windows) from a 32-byte scalar. Last limb is NOT masked.
     fn load12(bytes: &[u8]) -> [i64; 12] {
         let mut a = [0i64; 12];
-        a[0]  = load3(bytes, 0) & 0x1fffff;
-        a[1]  = (load4(bytes, 2) >> 5) & 0x1fffff;
-        a[2]  = (load3(bytes, 5) >> 2) & 0x1fffff;
-        a[3]  = (load4(bytes, 7) >> 7) & 0x1fffff;
-        a[4]  = (load4(bytes, 10) >> 4) & 0x1fffff;
-        a[5]  = (load3(bytes, 13) >> 1) & 0x1fffff;
-        a[6]  = (load4(bytes, 15) >> 6) & 0x1fffff;
-        a[7]  = (load3(bytes, 18) >> 3) & 0x1fffff;
-        a[8]  = load3(bytes, 21) & 0x1fffff;
-        a[9]  = (load4(bytes, 23) >> 5) & 0x1fffff;
+        a[0] = load3(bytes, 0) & 0x1fffff;
+        a[1] = (load4(bytes, 2) >> 5) & 0x1fffff;
+        a[2] = (load3(bytes, 5) >> 2) & 0x1fffff;
+        a[3] = (load4(bytes, 7) >> 7) & 0x1fffff;
+        a[4] = (load4(bytes, 10) >> 4) & 0x1fffff;
+        a[5] = (load3(bytes, 13) >> 1) & 0x1fffff;
+        a[6] = (load4(bytes, 15) >> 6) & 0x1fffff;
+        a[7] = (load3(bytes, 18) >> 3) & 0x1fffff;
+        a[8] = load3(bytes, 21) & 0x1fffff;
+        a[9] = (load4(bytes, 23) >> 5) & 0x1fffff;
         a[10] = (load3(bytes, 26) >> 2) & 0x1fffff;
         a[11] = load4(bytes, 28) >> 7; // NOT masked — captures remaining bits
         a
@@ -1445,16 +1612,16 @@ mod scalar25519 {
     /// Faithful port of the ref10 packing code from curve25519.c.
     fn pack(s: &[i64]) -> [u8; 32] {
         let mut out = [0u8; 32];
-        out[0]  = s[0] as u8;
-        out[1]  = (s[0] >> 8) as u8;
-        out[2]  = ((s[0] >> 16) | (s[1] << 5)) as u8;
-        out[3]  = (s[1] >> 3) as u8;
-        out[4]  = (s[1] >> 11) as u8;
-        out[5]  = ((s[1] >> 19) | (s[2] << 2)) as u8;
-        out[6]  = (s[2] >> 6) as u8;
-        out[7]  = ((s[2] >> 14) | (s[3] << 7)) as u8;
-        out[8]  = (s[3] >> 1) as u8;
-        out[9]  = (s[3] >> 9) as u8;
+        out[0] = s[0] as u8;
+        out[1] = (s[0] >> 8) as u8;
+        out[2] = ((s[0] >> 16) | (s[1] << 5)) as u8;
+        out[3] = (s[1] >> 3) as u8;
+        out[4] = (s[1] >> 11) as u8;
+        out[5] = ((s[1] >> 19) | (s[2] << 2)) as u8;
+        out[6] = (s[2] >> 6) as u8;
+        out[7] = ((s[2] >> 14) | (s[3] << 7)) as u8;
+        out[8] = (s[3] >> 1) as u8;
+        out[9] = (s[3] >> 9) as u8;
         out[10] = ((s[3] >> 17) | (s[4] << 4)) as u8;
         out[11] = (s[4] >> 4) as u8;
         out[12] = (s[4] >> 12) as u8;
@@ -1485,16 +1652,16 @@ mod scalar25519 {
     pub(super) fn sc_reduce(input: &[u8; 64]) -> [u8; 32] {
         // Load 64 bytes into 24 limbs (21-bit windows, last limb captures remaining bits)
         let mut s = [0i64; 24];
-        s[0]  = load3(input, 0) & 0x1fffff;
-        s[1]  = (load4(input, 2) >> 5) & 0x1fffff;
-        s[2]  = (load3(input, 5) >> 2) & 0x1fffff;
-        s[3]  = (load4(input, 7) >> 7) & 0x1fffff;
-        s[4]  = (load4(input, 10) >> 4) & 0x1fffff;
-        s[5]  = (load3(input, 13) >> 1) & 0x1fffff;
-        s[6]  = (load4(input, 15) >> 6) & 0x1fffff;
-        s[7]  = (load3(input, 18) >> 3) & 0x1fffff;
-        s[8]  = load3(input, 21) & 0x1fffff;
-        s[9]  = (load4(input, 23) >> 5) & 0x1fffff;
+        s[0] = load3(input, 0) & 0x1fffff;
+        s[1] = (load4(input, 2) >> 5) & 0x1fffff;
+        s[2] = (load3(input, 5) >> 2) & 0x1fffff;
+        s[3] = (load4(input, 7) >> 7) & 0x1fffff;
+        s[4] = (load4(input, 10) >> 4) & 0x1fffff;
+        s[5] = (load3(input, 13) >> 1) & 0x1fffff;
+        s[6] = (load4(input, 15) >> 6) & 0x1fffff;
+        s[7] = (load3(input, 18) >> 3) & 0x1fffff;
+        s[8] = load3(input, 21) & 0x1fffff;
+        s[9] = (load4(input, 23) >> 5) & 0x1fffff;
         s[10] = (load3(input, 26) >> 2) & 0x1fffff;
         s[11] = (load4(input, 28) >> 7) & 0x1fffff;
         s[12] = (load4(input, 31) >> 4) & 0x1fffff;
@@ -1519,8 +1686,12 @@ mod scalar25519 {
         fold(&mut s, 18);
 
         // Carry propagation: even indices 6..16, then odd indices 7..15
-        for i in [6usize, 8, 10, 12, 14, 16] { carry_signed(&mut s, i); }
-        for i in [7usize, 9, 11, 13, 15]      { carry_signed(&mut s, i); }
+        for i in [6usize, 8, 10, 12, 14, 16] {
+            carry_signed(&mut s, i);
+        }
+        for i in [7usize, 9, 11, 13, 15] {
+            carry_signed(&mut s, i);
+        }
 
         // --- Second reduction round: fold s[17]..s[12] into s[0]..s[10] ---
         fold(&mut s, 17);
@@ -1531,20 +1702,28 @@ mod scalar25519 {
         fold(&mut s, 12);
 
         // Carry propagation: even indices 0..10, then odd indices 1..11
-        for i in [0usize, 2, 4, 6, 8, 10] { carry_signed(&mut s, i); }
-        for i in [1usize, 3, 5, 7, 9, 11] { carry_signed(&mut s, i); }
+        for i in [0usize, 2, 4, 6, 8, 10] {
+            carry_signed(&mut s, i);
+        }
+        for i in [1usize, 3, 5, 7, 9, 11] {
+            carry_signed(&mut s, i);
+        }
 
         // Carry from s[11] may have pushed into s[12] — fold it down
         fold(&mut s, 12);
 
         // Full unsigned carry chain: s[0]..s[11] → may push into s[12]
-        for i in 0..12usize { carry_unsigned(&mut s, i); }
+        for i in 0..12usize {
+            carry_unsigned(&mut s, i);
+        }
 
         // s[12] may be non-zero again — fold it down
         fold(&mut s, 12);
 
         // Final carry chain (does NOT push into s[12])
-        for i in 0..11usize { carry_unsigned(&mut s, i); }
+        for i in 0..11usize {
+            carry_unsigned(&mut s, i);
+        }
 
         pack(&s)
     }
@@ -1552,42 +1731,159 @@ mod scalar25519 {
     /// Compute (a * b + c) mod l. All inputs/output are 32-byte little-endian scalars.
     /// Faithful port of sc_muladd from curve25519.c (ref10 algorithm).
     /// Used in Ed25519 signing: S = (r + H(R‖A‖M) · a) mod l.
-    pub(super) fn sc_muladd(a_bytes: &[u8; 32], b_bytes: &[u8; 32], c_bytes: &[u8; 32]) -> [u8; 32] {
+    pub(super) fn sc_muladd(
+        a_bytes: &[u8; 32],
+        b_bytes: &[u8; 32],
+        c_bytes: &[u8; 32],
+    ) -> [u8; 32] {
         let al = load12(a_bytes);
         let bl = load12(b_bytes);
         let cl = load12(c_bytes);
 
         // Schoolbook multiply a*b, accumulate into 24 limbs, then add c
         let mut s = [0i64; 24];
-        s[0]  = cl[0]  + al[0]*bl[0];
-        s[1]  = cl[1]  + al[0]*bl[1]  + al[1]*bl[0];
-        s[2]  = cl[2]  + al[0]*bl[2]  + al[1]*bl[1]  + al[2]*bl[0];
-        s[3]  = cl[3]  + al[0]*bl[3]  + al[1]*bl[2]  + al[2]*bl[1]  + al[3]*bl[0];
-        s[4]  = cl[4]  + al[0]*bl[4]  + al[1]*bl[3]  + al[2]*bl[2]  + al[3]*bl[1]  + al[4]*bl[0];
-        s[5]  = cl[5]  + al[0]*bl[5]  + al[1]*bl[4]  + al[2]*bl[3]  + al[3]*bl[2]  + al[4]*bl[1]  + al[5]*bl[0];
-        s[6]  = cl[6]  + al[0]*bl[6]  + al[1]*bl[5]  + al[2]*bl[4]  + al[3]*bl[3]  + al[4]*bl[2]  + al[5]*bl[1]  + al[6]*bl[0];
-        s[7]  = cl[7]  + al[0]*bl[7]  + al[1]*bl[6]  + al[2]*bl[5]  + al[3]*bl[4]  + al[4]*bl[3]  + al[5]*bl[2]  + al[6]*bl[1]  + al[7]*bl[0];
-        s[8]  = cl[8]  + al[0]*bl[8]  + al[1]*bl[7]  + al[2]*bl[6]  + al[3]*bl[5]  + al[4]*bl[4]  + al[5]*bl[3]  + al[6]*bl[2]  + al[7]*bl[1]  + al[8]*bl[0];
-        s[9]  = cl[9]  + al[0]*bl[9]  + al[1]*bl[8]  + al[2]*bl[7]  + al[3]*bl[6]  + al[4]*bl[5]  + al[5]*bl[4]  + al[6]*bl[3]  + al[7]*bl[2]  + al[8]*bl[1]  + al[9]*bl[0];
-        s[10] = cl[10] + al[0]*bl[10] + al[1]*bl[9]  + al[2]*bl[8]  + al[3]*bl[7]  + al[4]*bl[6]  + al[5]*bl[5]  + al[6]*bl[4]  + al[7]*bl[3]  + al[8]*bl[2]  + al[9]*bl[1]  + al[10]*bl[0];
-        s[11] = cl[11] + al[0]*bl[11] + al[1]*bl[10] + al[2]*bl[9]  + al[3]*bl[8]  + al[4]*bl[7]  + al[5]*bl[6]  + al[6]*bl[5]  + al[7]*bl[4]  + al[8]*bl[3]  + al[9]*bl[2]  + al[10]*bl[1]  + al[11]*bl[0];
-        s[12] =          al[1]*bl[11] + al[2]*bl[10] + al[3]*bl[9]  + al[4]*bl[8]  + al[5]*bl[7]  + al[6]*bl[6]  + al[7]*bl[5]  + al[8]*bl[4]  + al[9]*bl[3]  + al[10]*bl[2]  + al[11]*bl[1];
-        s[13] =          al[2]*bl[11] + al[3]*bl[10] + al[4]*bl[9]  + al[5]*bl[8]  + al[6]*bl[7]  + al[7]*bl[6]  + al[8]*bl[5]  + al[9]*bl[4]  + al[10]*bl[3]  + al[11]*bl[2];
-        s[14] =          al[3]*bl[11] + al[4]*bl[10] + al[5]*bl[9]  + al[6]*bl[8]  + al[7]*bl[7]  + al[8]*bl[6]  + al[9]*bl[5]  + al[10]*bl[4]  + al[11]*bl[3];
-        s[15] =          al[4]*bl[11] + al[5]*bl[10] + al[6]*bl[9]  + al[7]*bl[8]  + al[8]*bl[7]  + al[9]*bl[6]  + al[10]*bl[5]  + al[11]*bl[4];
-        s[16] =          al[5]*bl[11] + al[6]*bl[10] + al[7]*bl[9]  + al[8]*bl[8]  + al[9]*bl[7]  + al[10]*bl[6]  + al[11]*bl[5];
-        s[17] =          al[6]*bl[11] + al[7]*bl[10] + al[8]*bl[9]  + al[9]*bl[8]  + al[10]*bl[7]  + al[11]*bl[6];
-        s[18] =          al[7]*bl[11] + al[8]*bl[10] + al[9]*bl[9]  + al[10]*bl[8]  + al[11]*bl[7];
-        s[19] =          al[8]*bl[11] + al[9]*bl[10] + al[10]*bl[9]  + al[11]*bl[8];
-        s[20] =          al[9]*bl[11] + al[10]*bl[10] + al[11]*bl[9];
-        s[21] =          al[10]*bl[11] + al[11]*bl[10];
-        s[22] =          al[11]*bl[11];
+        s[0] = cl[0] + al[0] * bl[0];
+        s[1] = cl[1] + al[0] * bl[1] + al[1] * bl[0];
+        s[2] = cl[2] + al[0] * bl[2] + al[1] * bl[1] + al[2] * bl[0];
+        s[3] = cl[3] + al[0] * bl[3] + al[1] * bl[2] + al[2] * bl[1] + al[3] * bl[0];
+        s[4] =
+            cl[4] + al[0] * bl[4] + al[1] * bl[3] + al[2] * bl[2] + al[3] * bl[1] + al[4] * bl[0];
+        s[5] = cl[5]
+            + al[0] * bl[5]
+            + al[1] * bl[4]
+            + al[2] * bl[3]
+            + al[3] * bl[2]
+            + al[4] * bl[1]
+            + al[5] * bl[0];
+        s[6] = cl[6]
+            + al[0] * bl[6]
+            + al[1] * bl[5]
+            + al[2] * bl[4]
+            + al[3] * bl[3]
+            + al[4] * bl[2]
+            + al[5] * bl[1]
+            + al[6] * bl[0];
+        s[7] = cl[7]
+            + al[0] * bl[7]
+            + al[1] * bl[6]
+            + al[2] * bl[5]
+            + al[3] * bl[4]
+            + al[4] * bl[3]
+            + al[5] * bl[2]
+            + al[6] * bl[1]
+            + al[7] * bl[0];
+        s[8] = cl[8]
+            + al[0] * bl[8]
+            + al[1] * bl[7]
+            + al[2] * bl[6]
+            + al[3] * bl[5]
+            + al[4] * bl[4]
+            + al[5] * bl[3]
+            + al[6] * bl[2]
+            + al[7] * bl[1]
+            + al[8] * bl[0];
+        s[9] = cl[9]
+            + al[0] * bl[9]
+            + al[1] * bl[8]
+            + al[2] * bl[7]
+            + al[3] * bl[6]
+            + al[4] * bl[5]
+            + al[5] * bl[4]
+            + al[6] * bl[3]
+            + al[7] * bl[2]
+            + al[8] * bl[1]
+            + al[9] * bl[0];
+        s[10] = cl[10]
+            + al[0] * bl[10]
+            + al[1] * bl[9]
+            + al[2] * bl[8]
+            + al[3] * bl[7]
+            + al[4] * bl[6]
+            + al[5] * bl[5]
+            + al[6] * bl[4]
+            + al[7] * bl[3]
+            + al[8] * bl[2]
+            + al[9] * bl[1]
+            + al[10] * bl[0];
+        s[11] = cl[11]
+            + al[0] * bl[11]
+            + al[1] * bl[10]
+            + al[2] * bl[9]
+            + al[3] * bl[8]
+            + al[4] * bl[7]
+            + al[5] * bl[6]
+            + al[6] * bl[5]
+            + al[7] * bl[4]
+            + al[8] * bl[3]
+            + al[9] * bl[2]
+            + al[10] * bl[1]
+            + al[11] * bl[0];
+        s[12] = al[1] * bl[11]
+            + al[2] * bl[10]
+            + al[3] * bl[9]
+            + al[4] * bl[8]
+            + al[5] * bl[7]
+            + al[6] * bl[6]
+            + al[7] * bl[5]
+            + al[8] * bl[4]
+            + al[9] * bl[3]
+            + al[10] * bl[2]
+            + al[11] * bl[1];
+        s[13] = al[2] * bl[11]
+            + al[3] * bl[10]
+            + al[4] * bl[9]
+            + al[5] * bl[8]
+            + al[6] * bl[7]
+            + al[7] * bl[6]
+            + al[8] * bl[5]
+            + al[9] * bl[4]
+            + al[10] * bl[3]
+            + al[11] * bl[2];
+        s[14] = al[3] * bl[11]
+            + al[4] * bl[10]
+            + al[5] * bl[9]
+            + al[6] * bl[8]
+            + al[7] * bl[7]
+            + al[8] * bl[6]
+            + al[9] * bl[5]
+            + al[10] * bl[4]
+            + al[11] * bl[3];
+        s[15] = al[4] * bl[11]
+            + al[5] * bl[10]
+            + al[6] * bl[9]
+            + al[7] * bl[8]
+            + al[8] * bl[7]
+            + al[9] * bl[6]
+            + al[10] * bl[5]
+            + al[11] * bl[4];
+        s[16] = al[5] * bl[11]
+            + al[6] * bl[10]
+            + al[7] * bl[9]
+            + al[8] * bl[8]
+            + al[9] * bl[7]
+            + al[10] * bl[6]
+            + al[11] * bl[5];
+        s[17] = al[6] * bl[11]
+            + al[7] * bl[10]
+            + al[8] * bl[9]
+            + al[9] * bl[8]
+            + al[10] * bl[7]
+            + al[11] * bl[6];
+        s[18] = al[7] * bl[11] + al[8] * bl[10] + al[9] * bl[9] + al[10] * bl[8] + al[11] * bl[7];
+        s[19] = al[8] * bl[11] + al[9] * bl[10] + al[10] * bl[9] + al[11] * bl[8];
+        s[20] = al[9] * bl[11] + al[10] * bl[10] + al[11] * bl[9];
+        s[21] = al[10] * bl[11] + al[11] * bl[10];
+        s[22] = al[11] * bl[11];
         s[23] = 0;
 
         // Initial carry propagation for the multiply result.
         // Even indices first, then odd, covering the full 0..22 range.
-        for i in (0..=22usize).step_by(2) { carry_signed(&mut s, i); }
-        for i in (1..=21usize).step_by(2) { carry_signed(&mut s, i); }
+        for i in (0..=22usize).step_by(2) {
+            carry_signed(&mut s, i);
+        }
+        for i in (1..=21usize).step_by(2) {
+            carry_signed(&mut s, i);
+        }
 
         // --- First reduction round: fold s[23]..s[18] ---
         fold(&mut s, 23);
@@ -1598,8 +1894,12 @@ mod scalar25519 {
         fold(&mut s, 18);
 
         // Carry propagation: even 6..16, then odd 7..15
-        for i in [6usize, 8, 10, 12, 14, 16] { carry_signed(&mut s, i); }
-        for i in [7usize, 9, 11, 13, 15]      { carry_signed(&mut s, i); }
+        for i in [6usize, 8, 10, 12, 14, 16] {
+            carry_signed(&mut s, i);
+        }
+        for i in [7usize, 9, 11, 13, 15] {
+            carry_signed(&mut s, i);
+        }
 
         // --- Second reduction round: fold s[17]..s[12] ---
         fold(&mut s, 17);
@@ -1610,20 +1910,28 @@ mod scalar25519 {
         fold(&mut s, 12);
 
         // Carry propagation: even 0..10, then odd 1..11
-        for i in [0usize, 2, 4, 6, 8, 10] { carry_signed(&mut s, i); }
-        for i in [1usize, 3, 5, 7, 9, 11] { carry_signed(&mut s, i); }
+        for i in [0usize, 2, 4, 6, 8, 10] {
+            carry_signed(&mut s, i);
+        }
+        for i in [1usize, 3, 5, 7, 9, 11] {
+            carry_signed(&mut s, i);
+        }
 
         // Carry from s[11] may have pushed into s[12]
         fold(&mut s, 12);
 
         // Full unsigned carry chain: s[0]..s[11] → may push into s[12]
-        for i in 0..12usize { carry_unsigned(&mut s, i); }
+        for i in 0..12usize {
+            carry_unsigned(&mut s, i);
+        }
 
         // s[12] may be non-zero again
         fold(&mut s, 12);
 
         // Final carry chain
-        for i in 0..11usize { carry_unsigned(&mut s, i); }
+        for i in 0..11usize {
+            carry_unsigned(&mut s, i);
+        }
 
         pack(&s)
     }
@@ -1871,7 +2179,9 @@ mod field448 {
                 r[0] = (v0 & RADIX_MASK as u64) as u32;
                 let mut c = v0 >> RADIX_BITS;
                 for i in 1..8 {
-                    if c == 0 { break; }
+                    if c == 0 {
+                        break;
+                    }
                     let v = r[i] as u64 + c;
                     r[i] = (v & RADIX_MASK as u64) as u32;
                     c = v >> RADIX_BITS;
@@ -1880,7 +2190,9 @@ mod field448 {
                 r[8] = (v8 & RADIX_MASK as u64) as u32;
                 c = v8 >> RADIX_BITS;
                 for i in 9..NLIMBS {
-                    if c == 0 { break; }
+                    if c == 0 {
+                        break;
+                    }
                     let v = r[i] as u64 + c;
                     r[i] = (v & RADIX_MASK as u64) as u32;
                     c = v >> RADIX_BITS;
@@ -1890,7 +2202,9 @@ mod field448 {
                     let v0b = r[0] as u64 + c;
                     r[0] = (v0b & RADIX_MASK as u64) as u32;
                     let c2 = v0b >> RADIX_BITS;
-                    if c2 > 0 { r[1] = (r[1] as u64 + c2) as u32; }
+                    if c2 > 0 {
+                        r[1] = (r[1] as u64 + c2) as u32;
+                    }
                     let v8b = r[8] as u64 + c;
                     r[8] = (v8b & RADIX_MASK as u64) as u32;
                 }
@@ -2026,14 +2340,11 @@ mod field448 {
             let t16 = t8.square_times(8).mul(&t8);
             let t32 = t16.square_times(16).mul(&t16);
             let t64 = t32.square_times(32).mul(&t32);
-            let t112 = t64.square_times(48).mul(
-                &t32.square_times(16).mul(&t16)
-            );
+            let t112 = t64.square_times(48).mul(&t32.square_times(16).mul(&t16));
             let t224m1 = t112.square_times(112).mul(&t112);
             t224m1
         }
     }
-
 }
 
 // ===========================================================================
@@ -2061,30 +2372,29 @@ mod edwards448 {
         //     331506189835876003536878655418784733982303233503462500531545062832660
         #[allow(clippy::unreadable_literal)]
         let by: [u8; 56] = [
-            0x14,0xfa,0x30,0xf2,0x5b,0x79,0x08,0x98,
-            0xad,0xc8,0xd7,0x4e,0x2c,0x13,0xbd,0xfd,
-            0xc4,0x39,0x7c,0xe6,0x1c,0xff,0xd3,0x3a,
-            0xd7,0xc2,0xa0,0x05,0x1e,0x9c,0x78,0x87,
-            0x40,0x98,0xa3,0x6c,0x73,0x73,0xea,0x4b,
-            0x62,0xc7,0xc9,0x56,0x37,0x20,0x76,0x88,
-            0x24,0xbc,0xb6,0x6e,0x71,0x46,0x3f,0x69,
+            0x14, 0xfa, 0x30, 0xf2, 0x5b, 0x79, 0x08, 0x98, 0xad, 0xc8, 0xd7, 0x4e, 0x2c, 0x13,
+            0xbd, 0xfd, 0xc4, 0x39, 0x7c, 0xe6, 0x1c, 0xff, 0xd3, 0x3a, 0xd7, 0xc2, 0xa0, 0x05,
+            0x1e, 0x9c, 0x78, 0x87, 0x40, 0x98, 0xa3, 0x6c, 0x73, 0x73, 0xea, 0x4b, 0x62, 0xc7,
+            0xc9, 0x56, 0x37, 0x20, 0x76, 0x88, 0x24, 0xbc, 0xb6, 0x6e, 0x71, 0x46, 0x3f, 0x69,
         ];
         // RFC 8032 §5.2.5 / RFC 7748 Ed448 basepoint x-coordinate (little-endian)
         // x = 224580040295924300187604334099896036246789641632564134246125461686
         //     950415467406032909029192869357953282578032075146446173674602635247710
         #[allow(clippy::unreadable_literal)]
         let bx: [u8; 56] = [
-            0x5e,0xc0,0x0c,0xc7,0x2b,0xa8,0x26,0x26,
-            0x8e,0x93,0x00,0x8b,0xe1,0x80,0x3b,0x43,
-            0x11,0x65,0xb6,0x2a,0xf7,0x1a,0xae,0x12,
-            0x64,0xa4,0xd3,0xa3,0x24,0xe3,0x6d,0xea,
-            0x67,0x17,0x0f,0x47,0x70,0x65,0x14,0x9e,
-            0xda,0x36,0xbf,0x22,0xa6,0x15,0x1d,0x22,
-            0xed,0x0d,0xed,0x6b,0xc6,0x70,0x19,0x4f,
+            0x5e, 0xc0, 0x0c, 0xc7, 0x2b, 0xa8, 0x26, 0x26, 0x8e, 0x93, 0x00, 0x8b, 0xe1, 0x80,
+            0x3b, 0x43, 0x11, 0x65, 0xb6, 0x2a, 0xf7, 0x1a, 0xae, 0x12, 0x64, 0xa4, 0xd3, 0xa3,
+            0x24, 0xe3, 0x6d, 0xea, 0x67, 0x17, 0x0f, 0x47, 0x70, 0x65, 0x14, 0x9e, 0xda, 0x36,
+            0xbf, 0x22, 0xa6, 0x15, 0x1d, 0x22, 0xed, 0x0d, 0xed, 0x6b, 0xc6, 0x70, 0x19, 0x4f,
         ];
         let x = Fe448::from_bytes(&bx);
         let y = Fe448::from_bytes(&by);
-        GeP3_448 { x, y, z: Fe448::ONE, t: x.mul(&y) }
+        GeP3_448 {
+            x,
+            y,
+            z: Fe448::ONE,
+            t: x.mul(&y),
+        }
     }
 
     /// Extended point (X:Y:Z:T) with X*Y = Z*T on Ed448.
@@ -2099,7 +2409,12 @@ mod edwards448 {
     impl GeP3_448 {
         /// The neutral element (identity point).
         pub(super) fn identity() -> Self {
-            GeP3_448 { x: Fe448::ZERO, y: Fe448::ONE, z: Fe448::ONE, t: Fe448::ZERO }
+            GeP3_448 {
+                x: Fe448::ZERO,
+                y: Fe448::ONE,
+                z: Fe448::ONE,
+                t: Fe448::ZERO,
+            }
         }
 
         /// Point doubling (a = 1 for Ed448).
@@ -2113,7 +2428,12 @@ mod edwards448 {
             let g = dd.add(&bb);
             let f = g.sub(&cc);
             let h = dd.sub(&bb);
-            GeP3_448 { x: e.mul(&f), y: g.mul(&h), z: f.mul(&g), t: e.mul(&h) }
+            GeP3_448 {
+                x: e.mul(&f),
+                y: g.mul(&h),
+                z: f.mul(&g),
+                t: e.mul(&h),
+            }
         }
 
         /// Point addition (unified, a = 1).
@@ -2127,12 +2447,22 @@ mod edwards448 {
             let f = dd.sub(&c);
             let g = dd.add(&c);
             let h = b.sub(&a); // B - a_coeff*A = B - A since a=1 (untwisted Edwards)
-            GeP3_448 { x: e.mul(&f), y: g.mul(&h), z: f.mul(&g), t: e.mul(&h) }
+            GeP3_448 {
+                x: e.mul(&f),
+                y: g.mul(&h),
+                z: f.mul(&g),
+                t: e.mul(&h),
+            }
         }
 
         /// Point negation.
         pub(super) fn negate(&self) -> Self {
-            GeP3_448 { x: self.x.neg(), y: self.y, z: self.z, t: self.t.neg() }
+            GeP3_448 {
+                x: self.x.neg(),
+                y: self.y,
+                z: self.z,
+                t: self.t.neg(),
+            }
         }
 
         /// Encode point to 57 bytes (RFC 8032 §5.2.2).
@@ -2150,21 +2480,36 @@ mod edwards448 {
         /// Decode 57 bytes to a point. Returns None if invalid.
         pub(super) fn from_bytes(s: &[u8; 57]) -> Option<Self> {
             let x_sign = (s[56] >> 7) & 1;
-            if s[56] & 0x7F != 0 { return None; }
+            if s[56] & 0x7F != 0 {
+                return None;
+            }
             let y = Fe448::from_bytes(&s[..56]);
             let y2 = y.square();
             let u = Fe448::ONE.sub(&y2); // 1 - y^2 for untwisted Edwards (a=1)
             let d = curve_d();
             let v = Fe448::ONE.sub(&d.mul(&y2));
-            if v.is_zero() { return None; }
+            if v.is_zero() {
+                return None;
+            }
             let vi = v.invert();
             let x2 = u.mul(&vi);
             let mut x = x2.pow_p_plus_1_div_4();
             // Verify square root
-            if !x.square().sub(&x2).is_zero() { return None; }
-            if x.is_negative() != x_sign { x = x.neg(); }
-            if x.is_zero() && x_sign != 0 { return None; }
-            Some(GeP3_448 { x, y, z: Fe448::ONE, t: x.mul(&y) })
+            if !x.square().sub(&x2).is_zero() {
+                return None;
+            }
+            if x.is_negative() != x_sign {
+                x = x.neg();
+            }
+            if x.is_zero() && x_sign != 0 {
+                return None;
+            }
+            Some(GeP3_448 {
+                x,
+                y,
+                z: Fe448::ONE,
+                t: x.mul(&y),
+            })
         }
     }
 
@@ -2188,7 +2533,8 @@ mod edwards448 {
 
     /// Double scalar multiplication: [a]*A + [b]*B (Strauss, variable-time for verification).
     pub(super) fn double_scalarmult_vartime(
-        a_scalar: &[u8], a_point: &GeP3_448,
+        a_scalar: &[u8],
+        a_point: &GeP3_448,
         b_scalar: &[u8],
     ) -> GeP3_448 {
         let bp = basepoint();
@@ -2217,14 +2563,10 @@ mod scalar448 {
     /// Ed448 group order l in little-endian bytes (57 bytes).
     /// l = 2^446 - 13818066809895115352007386748515426880336692474882178609894547503885
     pub(super) const L448: [u8; 57] = [
-        0xf3,0x44,0x58,0xab,0x92,0xc2,0x78,0x23,
-        0x55,0x8f,0xc5,0x8d,0x72,0xc2,0x6c,0x21,
-        0x90,0x36,0xd6,0xae,0x49,0xdb,0x4e,0xc4,
-        0xe9,0x23,0xca,0x7c,0xff,0xff,0xff,0xff,
-        0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
-        0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
-        0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x3f,
-        0x00,
+        0xf3, 0x44, 0x58, 0xab, 0x92, 0xc2, 0x78, 0x23, 0x55, 0x8f, 0xc5, 0x8d, 0x72, 0xc2, 0x6c,
+        0x21, 0x90, 0x36, 0xd6, 0xae, 0x49, 0xdb, 0x4e, 0xc4, 0xe9, 0x23, 0xca, 0x7c, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3f, 0x00,
     ];
 
     // Maximum sizes: sc_reduce448 takes up to 114 bytes = 912 bits,
@@ -2256,9 +2598,7 @@ mod scalar448 {
         for i in 0..8 {
             let mut carry: u64 = 0;
             for j in 0..8 {
-                let uv = (aw[i] as u128) * (bw[j] as u128)
-                       + (pw[i + j] as u128)
-                       + (carry as u128);
+                let uv = (aw[i] as u128) * (bw[j] as u128) + (pw[i + j] as u128) + (carry as u128);
                 pw[i + j] = uv as u64;
                 carry = (uv >> 64) as u64;
             }
@@ -2272,7 +2612,9 @@ mod scalar448 {
             c64 = (s >> 64) as u64;
         }
         for i in 8..16 {
-            if c64 == 0 { break; }
+            if c64 == 0 {
+                break;
+            }
             let s = pw[i] as u128 + c64 as u128;
             pw[i] = s as u64;
             c64 = (s >> 64) as u64;
@@ -2286,8 +2628,12 @@ mod scalar448 {
     /// Check if scalar s < l (canonical check for verification).
     pub(super) fn sc_is_canonical448(s: &[u8; 57]) -> bool {
         for i in (0..57).rev() {
-            if s[i] < L448[i] { return true; }
-            if s[i] > L448[i] { return false; }
+            if s[i] < L448[i] {
+                return true;
+            }
+            if s[i] > L448[i] {
+                return false;
+            }
         }
         false // Equal to l is not canonical
     }
@@ -2305,8 +2651,14 @@ mod scalar448 {
         for i in 0..7 {
             let off = i * 8;
             w[i] = u64::from_le_bytes([
-                b[off], b[off+1], b[off+2], b[off+3],
-                b[off+4], b[off+5], b[off+6], b[off+7],
+                b[off],
+                b[off + 1],
+                b[off + 2],
+                b[off + 3],
+                b[off + 4],
+                b[off + 5],
+                b[off + 6],
+                b[off + 7],
             ]);
         }
         // Last word: byte 56 only (57th byte)
@@ -2319,7 +2671,7 @@ mod scalar448 {
         let mut out = [0u8; 57];
         for i in 0..7 {
             let bytes = w[i].to_le_bytes();
-            out[i*8..i*8+8].copy_from_slice(&bytes);
+            out[i * 8..i * 8 + 8].copy_from_slice(&bytes);
         }
         out[56] = w[7] as u8;
         out
@@ -2364,8 +2716,12 @@ mod scalar448 {
     /// Check if a >= b (8-word unsigned comparison).
     fn ge8(a: &[u64; 8], b: &[u64; 8]) -> bool {
         for i in (0..8).rev() {
-            if a[i] > b[i] { return true; }
-            if a[i] < b[i] { return false; }
+            if a[i] > b[i] {
+                return true;
+            }
+            if a[i] < b[i] {
+                return false;
+            }
         }
         true // equal
     }
@@ -2553,7 +2909,9 @@ pub fn x25519(own_private: &EcxPrivateKey, peer_public: &EcxPublicKey) -> Crypto
     // Reject all-zero shared secret (small-order peer key)
     if shared.iter().all(|&b| b == 0) {
         error!("x25519: all-zero shared secret (small-order peer key)");
-        return Err(CryptoError::Key("X25519 produced all-zero shared secret".into()));
+        return Err(CryptoError::Key(
+            "X25519 produced all-zero shared secret".into(),
+        ));
     }
 
     Ok(shared.to_vec())
@@ -2618,7 +2976,9 @@ pub fn x448(own_private: &EcxPrivateKey, peer_public: &EcxPublicKey) -> CryptoRe
 
     if shared.iter().all(|&b| b == 0) {
         error!("x448: all-zero shared secret (small-order peer key)");
-        return Err(CryptoError::Key("X448 produced all-zero shared secret".into()));
+        return Err(CryptoError::Key(
+            "X448 produced all-zero shared secret".into(),
+        ));
     }
 
     Ok(shared.to_vec())
@@ -2662,7 +3022,9 @@ pub fn ed25519_sign(private_key: &EcxPrivateKey, message: &[u8]) -> CryptoResult
         return Err(CryptoError::Key("private key is not Ed25519".into()));
     }
     if private_key.bytes.len() != ED25519_KEY_LEN {
-        return Err(CryptoError::Key("invalid Ed25519 private key length".into()));
+        return Err(CryptoError::Key(
+            "invalid Ed25519 private key length".into(),
+        ));
     }
 
     ed25519_sign_internal(&private_key.bytes, message, false, &[])
@@ -2683,7 +3045,9 @@ pub fn ed25519_sign_prehash(private_key: &EcxPrivateKey, prehash: &[u8]) -> Cryp
         return Err(CryptoError::Key("private key is not Ed25519".into()));
     }
     if private_key.bytes.len() != ED25519_KEY_LEN {
-        return Err(CryptoError::Key("invalid Ed25519 private key length".into()));
+        return Err(CryptoError::Key(
+            "invalid Ed25519 private key length".into(),
+        ));
     }
 
     ed25519_sign_internal(&private_key.bytes, prehash, true, &[])
@@ -2765,7 +3129,9 @@ pub fn ed25519_verify(
         return Err(CryptoError::Key("public key is not Ed25519".into()));
     }
     if signature.len() != ED25519_SIGNATURE_LEN {
-        return Err(CryptoError::Verification("Ed25519 signature must be 64 bytes".into()));
+        return Err(CryptoError::Verification(
+            "Ed25519 signature must be 64 bytes".into(),
+        ));
     }
     if public_key.bytes.len() != ED25519_KEY_LEN {
         return Err(CryptoError::Key("invalid Ed25519 public key length".into()));
@@ -2792,7 +3158,9 @@ pub fn ed25519_verify_prehash(
         return Err(CryptoError::Key("public key is not Ed25519".into()));
     }
     if signature.len() != ED25519_SIGNATURE_LEN {
-        return Err(CryptoError::Verification("Ed25519 signature must be 64 bytes".into()));
+        return Err(CryptoError::Verification(
+            "Ed25519 signature must be 64 bytes".into(),
+        ));
     }
     if public_key.bytes.len() != ED25519_KEY_LEN {
         return Err(CryptoError::Key("invalid Ed25519 public key length".into()));
@@ -2880,7 +3248,9 @@ pub fn ed448_sign(
     }
     let ctx = context.unwrap_or(&[]);
     if ctx.len() > 255 {
-        return Err(CryptoError::Key("Ed448 context too long (max 255 bytes)".into()));
+        return Err(CryptoError::Key(
+            "Ed448 context too long (max 255 bytes)".into(),
+        ));
     }
 
     ed448_sign_internal(&private_key.bytes, message, false, ctx)
@@ -2908,7 +3278,9 @@ pub fn ed448_sign_prehash(
     }
     let ctx = context.unwrap_or(&[]);
     if ctx.len() > 255 {
-        return Err(CryptoError::Key("Ed448 context too long (max 255 bytes)".into()));
+        return Err(CryptoError::Key(
+            "Ed448 context too long (max 255 bytes)".into(),
+        ));
     }
 
     ed448_sign_internal(&private_key.bytes, prehash, true, ctx)
@@ -2993,14 +3365,18 @@ pub fn ed448_verify(
         return Err(CryptoError::Key("public key is not Ed448".into()));
     }
     if signature.len() != ED448_SIGNATURE_LEN {
-        return Err(CryptoError::Verification("Ed448 signature must be 114 bytes".into()));
+        return Err(CryptoError::Verification(
+            "Ed448 signature must be 114 bytes".into(),
+        ));
     }
     if public_key.bytes.len() != ED448_KEY_LEN {
         return Err(CryptoError::Key("invalid Ed448 public key length".into()));
     }
     let ctx = context.unwrap_or(&[]);
     if ctx.len() > 255 {
-        return Err(CryptoError::Key("Ed448 context too long (max 255 bytes)".into()));
+        return Err(CryptoError::Key(
+            "Ed448 context too long (max 255 bytes)".into(),
+        ));
     }
 
     ed448_verify_internal(&public_key.bytes, message, signature, false, ctx)
@@ -3025,14 +3401,18 @@ pub fn ed448_verify_prehash(
         return Err(CryptoError::Key("public key is not Ed448".into()));
     }
     if signature.len() != ED448_SIGNATURE_LEN {
-        return Err(CryptoError::Verification("Ed448 signature must be 114 bytes".into()));
+        return Err(CryptoError::Verification(
+            "Ed448 signature must be 114 bytes".into(),
+        ));
     }
     if public_key.bytes.len() != ED448_KEY_LEN {
         return Err(CryptoError::Key("invalid Ed448 public key length".into()));
     }
     let ctx = context.unwrap_or(&[]);
     if ctx.len() > 255 {
-        return Err(CryptoError::Key("Ed448 context too long (max 255 bytes)".into()));
+        return Err(CryptoError::Key(
+            "Ed448 context too long (max 255 bytes)".into(),
+        ));
     }
 
     ed448_verify_internal(&public_key.bytes, prehash, signature, true, ctx)

@@ -15,9 +15,9 @@ pub mod hash;
 pub mod init;
 pub mod kdf;
 pub mod mac;
+pub mod pem;
 pub mod provider;
 pub mod rand;
-pub mod pem;
 pub mod symmetric;
 pub mod thread;
 

@@ -60,22 +60,21 @@ use openssl_common::{CryptoError, CryptoResult};
 // Submodule declarations
 // ---------------------------------------------------------------------------
 
-pub mod mem;
 pub mod file;
-pub mod socket;
 pub mod filter;
+pub mod mem;
+pub mod socket;
 
 // ---------------------------------------------------------------------------
 // Re-exports from submodules for convenience access
 // ---------------------------------------------------------------------------
 
-pub use self::mem::{BioPairEnd, MemBio, SecureMemBio, new_bio_pair};
 pub use self::file::{FdBio, FileBio, LogBio, NullBio, OpenMode};
-pub use self::socket::{AcceptBio, BioAddr, ConnectBio, DatagramBio, SocketBio};
 pub use self::filter::{
-    BufferFilter, FilterChainBuilder, LineBufferFilter, NullFilter, PrefixFilter,
-    ReadBufferFilter,
+    BufferFilter, FilterChainBuilder, LineBufferFilter, NullFilter, PrefixFilter, ReadBufferFilter,
 };
+pub use self::mem::{new_bio_pair, BioPairEnd, MemBio, SecureMemBio};
+pub use self::socket::{AcceptBio, BioAddr, ConnectBio, DatagramBio, SocketBio};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -120,7 +119,6 @@ pub enum BioType {
     None,
 
     // === Source/Sink Types (BIO_TYPE_SOURCE_SINK | ...) ===
-
     /// In-memory buffer (`BIO_TYPE_MEM` = 0x0401).
     Memory,
     /// File pointer (`BIO_TYPE_FILE` = 0x0402).
@@ -145,7 +143,6 @@ pub enum BioType {
     CoreToProvider,
 
     // === Filter Types (BIO_TYPE_FILTER | ...) ===
-
     /// General buffering filter (`BIO_TYPE_BUFFER` = 0x0201).
     Buffer,
     /// Line-buffering filter (flushes on newline).
@@ -998,8 +995,14 @@ mod tests {
     #[test]
     fn test_bio_retry_reason_display() {
         assert_eq!(format!("{}", BioRetryReason::None), "none");
-        assert_eq!(format!("{}", BioRetryReason::SslX509Lookup), "SSL X509 lookup");
-        assert_eq!(format!("{}", BioRetryReason::Connect), "connect in progress");
+        assert_eq!(
+            format!("{}", BioRetryReason::SslX509Lookup),
+            "SSL X509 lookup"
+        );
+        assert_eq!(
+            format!("{}", BioRetryReason::Connect),
+            "connect in progress"
+        );
         assert_eq!(format!("{}", BioRetryReason::Accept), "accept in progress");
     }
 
@@ -1120,12 +1123,18 @@ mod tests {
 
     #[test]
     fn test_bio_error_display() {
-        assert_eq!(format!("{}", BioError::Uninitialized), "BIO not initialized");
+        assert_eq!(
+            format!("{}", BioError::Uninitialized),
+            "BIO not initialized"
+        );
         assert_eq!(
             format!("{}", BioError::UnsupportedMethod("test".into())),
             "unsupported BIO method: test"
         );
-        assert_eq!(format!("{}", BioError::WriteToReadOnly), "write to read-only BIO");
+        assert_eq!(
+            format!("{}", BioError::WriteToReadOnly),
+            "write to read-only BIO"
+        );
         assert_eq!(
             format!("{}", BioError::ConnectionError("refused".into())),
             "connection error: refused"

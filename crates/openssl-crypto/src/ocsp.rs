@@ -1421,7 +1421,7 @@ fn encode_octet_string(content: &[u8]) -> Vec<u8> {
 /// Encodes a DER INTEGER from raw big-endian bytes.
 fn encode_integer(value: &[u8]) -> Vec<u8> {
     let mut result = vec![0x02]; // INTEGER tag
-    // Check if we need a leading zero byte (positive integer with high bit set)
+                                 // Check if we need a leading zero byte (positive integer with high bit set)
     if !value.is_empty() && (value[0] & 0x80) != 0 {
         result.extend_from_slice(&encode_length(value.len() + 1));
         result.push(0x00); // leading zero to indicate positive
@@ -1556,8 +1556,7 @@ fn parse_der_length(data: &[u8]) -> Result<(usize, &[u8]), CryptoError> {
         if data.len() < 4 {
             return Err(der_error("truncated length (0x83)"));
         }
-        let len =
-            (usize::from(data[1]) << 16) | (usize::from(data[2]) << 8) | usize::from(data[3]);
+        let len = (usize::from(data[1]) << 16) | (usize::from(data[2]) << 8) | usize::from(data[3]);
         Ok((len, &data[4..]))
     } else {
         Err(der_error("unsupported length encoding"))
@@ -1704,8 +1703,8 @@ fn parse_generalized_time_value(data: &[u8]) -> Result<i64, CryptoError> {
         return Err(der_error("GeneralizedTime too short"));
     }
 
-    let s = std::str::from_utf8(data)
-        .map_err(|_| der_error("GeneralizedTime is not valid UTF-8"))?;
+    let s =
+        std::str::from_utf8(data).map_err(|_| der_error("GeneralizedTime is not valid UTF-8"))?;
 
     // Parse YYYYMMDDHHMMSS
     let year: i64 = s[0..4]
@@ -1897,7 +1896,9 @@ fn parse_cert_status(data: &[u8]) -> Result<(OcspCertStatus, &[u8]), CryptoError
     let (len, after_len) = parse_der_length(&data[1..])?;
 
     if after_len.len() < len {
-        return Err(der_error("CertStatus content extends beyond available data"));
+        return Err(der_error(
+            "CertStatus content extends beyond available data",
+        ));
     }
 
     let content = &after_len[..len];
@@ -1990,10 +1991,11 @@ fn current_unix_timestamp() -> CryptoResult<i64> {
 /// Hex-encodes a byte slice for display purposes.
 fn hex_encode(data: &[u8]) -> String {
     use std::fmt::Write;
-    data.iter().fold(String::with_capacity(data.len() * 2), |mut s, b| {
-        let _ = write!(s, "{b:02x}");
-        s
-    })
+    data.iter()
+        .fold(String::with_capacity(data.len() * 2), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        })
 }
 
 // =============================================================================
@@ -2122,10 +2124,7 @@ mod tests {
     #[test]
     fn test_request_builder_via_request_method() {
         let cert_id = OcspCertId::new(Nid::SHA256, &[1; 32], &[2; 32], &[3]).unwrap();
-        let request = OcspRequest::builder()
-            .add_cert_id(cert_id)
-            .build()
-            .unwrap();
+        let request = OcspRequest::builder().add_cert_id(cert_id).build().unwrap();
         assert_eq!(request.cert_ids().len(), 1);
     }
 
@@ -2133,8 +2132,7 @@ mod tests {
 
     #[test]
     fn test_request_to_der_basic() {
-        let cert_id =
-            OcspCertId::new(Nid::SHA256, &[0xAA; 32], &[0xBB; 32], &[0x01]).unwrap();
+        let cert_id = OcspCertId::new(Nid::SHA256, &[0xAA; 32], &[0xBB; 32], &[0x01]).unwrap();
         let request = OcspRequestBuilder::new()
             .add_cert_id(cert_id)
             .build()
@@ -2148,8 +2146,7 @@ mod tests {
 
     #[test]
     fn test_request_to_der_with_nonce() {
-        let cert_id =
-            OcspCertId::new(Nid::SHA256, &[0xAA; 32], &[0xBB; 32], &[0x01]).unwrap();
+        let cert_id = OcspCertId::new(Nid::SHA256, &[0xAA; 32], &[0xBB; 32], &[0x01]).unwrap();
         let request = OcspRequestBuilder::new()
             .add_cert_id(cert_id)
             .set_nonce(vec![0xDE, 0xAD, 0xBE, 0xEF])
@@ -2462,7 +2459,7 @@ mod tests {
         let response = OcspSingleResponse {
             cert_id: OcspCertId::new(Nid::SHA256, &[1; 32], &[2; 32], &[3]).unwrap(),
             cert_status: OcspCertStatus::Good,
-            this_update: now - 60, // 1 minute ago
+            this_update: now - 60,         // 1 minute ago
             next_update: Some(now + 3600), // 1 hour from now
         };
         let result = check_validity(&response, 300).unwrap();
@@ -2489,7 +2486,7 @@ mod tests {
         let response = OcspSingleResponse {
             cert_id: OcspCertId::new(Nid::SHA256, &[1; 32], &[2; 32], &[3]).unwrap(),
             cert_status: OcspCertStatus::Good,
-            this_update: now - 7200, // 2 hours ago
+            this_update: now - 7200,      // 2 hours ago
             next_update: Some(now - 600), // 10 minutes ago (expired)
         };
         // With 300 seconds drift, next_update (now-600) < now-300
@@ -2589,10 +2586,7 @@ mod tests {
     #[test]
     fn test_nid_to_hash_oid_sha256() {
         let oid = nid_to_hash_oid(Nid::SHA256).unwrap();
-        assert_eq!(
-            oid,
-            &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01]
-        );
+        assert_eq!(oid, &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01]);
     }
 
     #[test]
@@ -2721,13 +2715,8 @@ mod tests {
 
     #[test]
     fn test_cert_id_der_encode_parse_roundtrip() {
-        let original = OcspCertId::new(
-            Nid::SHA256,
-            &[0xAA; 32],
-            &[0xBB; 32],
-            &[0x01, 0x02, 0x03],
-        )
-        .unwrap();
+        let original =
+            OcspCertId::new(Nid::SHA256, &[0xAA; 32], &[0xBB; 32], &[0x01, 0x02, 0x03]).unwrap();
 
         let der = encode_cert_id(&original).unwrap();
 
@@ -2743,8 +2732,7 @@ mod tests {
 
     #[test]
     fn test_cert_id_der_encode_parse_roundtrip_sha1() {
-        let original =
-            OcspCertId::new(Nid::SHA1, &[0xCC; 20], &[0xDD; 20], &[0xFF]).unwrap();
+        let original = OcspCertId::new(Nid::SHA1, &[0xCC; 20], &[0xDD; 20], &[0xFF]).unwrap();
 
         let der = encode_cert_id(&original).unwrap();
         let (content, _) = parse_sequence(&der).unwrap();

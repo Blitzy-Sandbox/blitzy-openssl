@@ -2,9 +2,8 @@
 //!
 //! Stub module — full implementation provided by dedicated agent.
 
+use super::{Bio, BioStats, BioType};
 use std::io::{self, Read, Write};
-use super::{Bio, BioType, BioStats};
-
 
 /// Buffering filter BIO wrapping an inner `Read + Write`, replacing C `BIO_f_buffer()`.
 ///

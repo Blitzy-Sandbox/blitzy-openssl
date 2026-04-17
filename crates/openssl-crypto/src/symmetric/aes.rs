@@ -4,9 +4,7 @@
 
 use openssl_common::CryptoResult;
 
-use super::{
-    AeadCipher, BlockSize, CipherAlgorithm, CipherDirection, SymmetricCipher,
-};
+use super::{AeadCipher, BlockSize, CipherAlgorithm, CipherDirection, SymmetricCipher};
 
 // =============================================================================
 // AesKeySize — Supported AES Key Sizes
@@ -193,7 +191,12 @@ impl AeadCipher for AesGcm {
         Ok(out)
     }
 
-    fn open(&self, _nonce: &[u8], _aad: &[u8], ciphertext_with_tag: &[u8]) -> CryptoResult<Vec<u8>> {
+    fn open(
+        &self,
+        _nonce: &[u8],
+        _aad: &[u8],
+        ciphertext_with_tag: &[u8],
+    ) -> CryptoResult<Vec<u8>> {
         if ciphertext_with_tag.len() < 16 {
             return Err(openssl_common::CryptoError::Verification(
                 "AES-GCM: ciphertext too short for tag".into(),
@@ -203,8 +206,12 @@ impl AeadCipher for AesGcm {
         Ok(ciphertext_with_tag[..ct_len].to_vec())
     }
 
-    fn nonce_length(&self) -> usize { 12 }
-    fn tag_length(&self) -> usize { 16 }
+    fn nonce_length(&self) -> usize {
+        12
+    }
+    fn tag_length(&self) -> usize {
+        16
+    }
 
     fn algorithm(&self) -> CipherAlgorithm {
         match self.key.size() {
@@ -238,7 +245,12 @@ impl AeadCipher for AesCcm {
         Ok(out)
     }
 
-    fn open(&self, _nonce: &[u8], _aad: &[u8], ciphertext_with_tag: &[u8]) -> CryptoResult<Vec<u8>> {
+    fn open(
+        &self,
+        _nonce: &[u8],
+        _aad: &[u8],
+        ciphertext_with_tag: &[u8],
+    ) -> CryptoResult<Vec<u8>> {
         if ciphertext_with_tag.len() < 16 {
             return Err(openssl_common::CryptoError::Verification(
                 "AES-CCM: ciphertext too short for tag".into(),
@@ -248,8 +260,12 @@ impl AeadCipher for AesCcm {
         Ok(ciphertext_with_tag[..ct_len].to_vec())
     }
 
-    fn nonce_length(&self) -> usize { 12 }
-    fn tag_length(&self) -> usize { 16 }
+    fn nonce_length(&self) -> usize {
+        12
+    }
+    fn tag_length(&self) -> usize {
+        16
+    }
 
     fn algorithm(&self) -> CipherAlgorithm {
         match self.key.size() {
@@ -324,7 +340,12 @@ impl AeadCipher for AesOcb {
         Ok(out)
     }
 
-    fn open(&self, _nonce: &[u8], _aad: &[u8], ciphertext_with_tag: &[u8]) -> CryptoResult<Vec<u8>> {
+    fn open(
+        &self,
+        _nonce: &[u8],
+        _aad: &[u8],
+        ciphertext_with_tag: &[u8],
+    ) -> CryptoResult<Vec<u8>> {
         if ciphertext_with_tag.len() < 16 {
             return Err(openssl_common::CryptoError::Verification(
                 "AES-OCB: ciphertext too short for tag".into(),
@@ -334,8 +355,12 @@ impl AeadCipher for AesOcb {
         Ok(ciphertext_with_tag[..ct_len].to_vec())
     }
 
-    fn nonce_length(&self) -> usize { 12 }
-    fn tag_length(&self) -> usize { 16 }
+    fn nonce_length(&self) -> usize {
+        12
+    }
+    fn tag_length(&self) -> usize {
+        16
+    }
 
     fn algorithm(&self) -> CipherAlgorithm {
         match self.key.size() {
@@ -376,7 +401,12 @@ impl AeadCipher for AesSiv {
         Ok(out)
     }
 
-    fn open(&self, _nonce: &[u8], _aad: &[u8], ciphertext_with_tag: &[u8]) -> CryptoResult<Vec<u8>> {
+    fn open(
+        &self,
+        _nonce: &[u8],
+        _aad: &[u8],
+        ciphertext_with_tag: &[u8],
+    ) -> CryptoResult<Vec<u8>> {
         if ciphertext_with_tag.len() < 16 {
             return Err(openssl_common::CryptoError::Verification(
                 "AES-SIV: ciphertext too short for tag".into(),
@@ -386,8 +416,12 @@ impl AeadCipher for AesSiv {
         Ok(ciphertext_with_tag[..ct_len].to_vec())
     }
 
-    fn nonce_length(&self) -> usize { 16 }
-    fn tag_length(&self) -> usize { 16 }
+    fn nonce_length(&self) -> usize {
+        16
+    }
+    fn tag_length(&self) -> usize {
+        16
+    }
 
     fn algorithm(&self) -> CipherAlgorithm {
         match self.key.size() {
@@ -442,7 +476,8 @@ pub fn aes_key_wrap(kek: &[u8], plaintext: &[u8]) -> CryptoResult<Vec<u8>> {
     if plaintext.len() % 8 != 0 || plaintext.len() < 16 {
         return Err(openssl_common::CryptoError::Common(
             openssl_common::CommonError::InvalidArgument(
-                "AES Key Wrap: plaintext must be a multiple of 8 bytes and at least 16 bytes".into(),
+                "AES Key Wrap: plaintext must be a multiple of 8 bytes and at least 16 bytes"
+                    .into(),
             ),
         ));
     }
@@ -481,12 +516,11 @@ pub fn aes_key_wrap_pad(kek: &[u8], plaintext: &[u8]) -> CryptoResult<Vec<u8>> {
     let _cipher = Aes::new(kek)?;
     let mut output = Vec::with_capacity(plaintext.len() + 16);
     output.extend_from_slice(&[0xA6, 0x59, 0x59, 0xA6]); // AIV prefix
-    let len_bytes = u32::try_from(plaintext.len())
-        .map_err(|_| openssl_common::CryptoError::Common(
-            openssl_common::CommonError::InvalidArgument(
-                "plaintext length exceeds u32".into(),
-            ),
-        ))?;
+    let len_bytes = u32::try_from(plaintext.len()).map_err(|_| {
+        openssl_common::CryptoError::Common(openssl_common::CommonError::InvalidArgument(
+            "plaintext length exceeds u32".into(),
+        ))
+    })?;
     output.extend_from_slice(&len_bytes.to_be_bytes());
     output.extend_from_slice(plaintext);
     // Pad to 8-byte boundary

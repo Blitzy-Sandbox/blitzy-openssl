@@ -375,12 +375,7 @@ pub trait AeadCipher: Send + Sync {
     ///
     /// Returns [`CryptoError`] on nonce length mismatch, key issues, or
     /// internal cipher failure.
-    fn seal(
-        &self,
-        nonce: &[u8],
-        aad: &[u8],
-        plaintext: &[u8],
-    ) -> CryptoResult<Vec<u8>>;
+    fn seal(&self, nonce: &[u8], aad: &[u8], plaintext: &[u8]) -> CryptoResult<Vec<u8>>;
 
     /// Verify authentication tag, then decrypt ciphertext.
     ///
@@ -397,12 +392,7 @@ pub trait AeadCipher: Send + Sync {
     ///
     /// Returns `CryptoError::Verification` if the tag does not match, or
     /// other [`CryptoError`] variants on parameter/internal errors.
-    fn open(
-        &self,
-        nonce: &[u8],
-        aad: &[u8],
-        ciphertext_with_tag: &[u8],
-    ) -> CryptoResult<Vec<u8>>;
+    fn open(&self, nonce: &[u8], aad: &[u8], ciphertext_with_tag: &[u8]) -> CryptoResult<Vec<u8>>;
 
     /// Expected nonce length in bytes (e.g., 12 for GCM, 12 for
     /// ChaCha20-Poly1305, 7–13 for CCM).
@@ -1047,7 +1037,10 @@ pub fn ecb_encrypt<C: SymmetricCipher>(
 ///
 /// Panics if `block_size` is zero or greater than 255 (PKCS#7 limit).
 pub fn pkcs7_pad(data: &[u8], block_size: usize) -> Vec<u8> {
-    debug_assert!(block_size > 0 && block_size <= 255, "PKCS#7 block_size must be 1..=255");
+    debug_assert!(
+        block_size > 0 && block_size <= 255,
+        "PKCS#7 block_size must be 1..=255"
+    );
 
     let remainder = data.len() % block_size;
     let pad_len = block_size - remainder;
@@ -1295,7 +1288,10 @@ mod tests {
     #[test]
     fn test_cipher_algorithm_display() {
         assert_eq!(CipherAlgorithm::Aes256.to_string(), "AES-256");
-        assert_eq!(CipherAlgorithm::ChaCha20Poly1305.to_string(), "ChaCha20-Poly1305");
+        assert_eq!(
+            CipherAlgorithm::ChaCha20Poly1305.to_string(),
+            "ChaCha20-Poly1305"
+        );
         assert_eq!(CipherAlgorithm::Sm4.to_string(), "SM4");
     }
 
@@ -1389,12 +1385,11 @@ mod tests {
         let iv = [0u8; 16];
         let plaintext = b"hello world test"; // exactly 16 bytes
 
-        let ct = cbc_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt)
-            .expect("CBC encrypt");
+        let ct =
+            cbc_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt).expect("CBC encrypt");
         assert_ne!(&ct[..], plaintext); // ciphertext differs from plaintext
 
-        let pt = cbc_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt)
-            .expect("CBC decrypt");
+        let pt = cbc_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt).expect("CBC decrypt");
         assert_eq!(&pt, plaintext);
     }
 
@@ -1404,12 +1399,11 @@ mod tests {
         let iv = [0x42u8; 16];
         let plaintext = b"short"; // 5 bytes — needs padding
 
-        let ct = cbc_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt)
-            .expect("CBC encrypt");
+        let ct =
+            cbc_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt).expect("CBC encrypt");
         assert_eq!(ct.len(), 16); // padded to one block
 
-        let pt = cbc_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt)
-            .expect("CBC decrypt");
+        let pt = cbc_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt).expect("CBC decrypt");
         assert_eq!(&pt, plaintext);
     }
 
@@ -1419,10 +1413,9 @@ mod tests {
         let iv = [0x11u8; 16];
         let plaintext = b"this is a longer plaintext that spans multiple blocks!!";
 
-        let ct = cbc_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt)
-            .expect("CBC encrypt");
-        let pt = cbc_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt)
-            .expect("CBC decrypt");
+        let ct =
+            cbc_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt).expect("CBC encrypt");
+        let pt = cbc_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt).expect("CBC decrypt");
         assert_eq!(&pt, plaintext);
     }
 
@@ -1447,10 +1440,9 @@ mod tests {
         let iv = [0xFFu8; 8];
         let plaintext = b"testing 64-bit block cipher CBC mode roundtrip";
 
-        let ct = cbc_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt)
-            .expect("CBC-64 encrypt");
-        let pt = cbc_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt)
-            .expect("CBC-64 decrypt");
+        let ct =
+            cbc_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt).expect("CBC-64 encrypt");
+        let pt = cbc_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt).expect("CBC-64 decrypt");
         assert_eq!(&pt, plaintext);
     }
 
@@ -1511,12 +1503,11 @@ mod tests {
         let iv = [0x33u8; 16];
         let plaintext = b"CFB mode roundtrip testing data";
 
-        let ct = cfb_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt)
-            .expect("CFB encrypt");
+        let ct =
+            cfb_encrypt(&cipher, plaintext, &iv, CipherDirection::Encrypt).expect("CFB encrypt");
         assert_eq!(ct.len(), plaintext.len());
 
-        let pt = cfb_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt)
-            .expect("CFB decrypt");
+        let pt = cfb_encrypt(&cipher, &ct, &iv, CipherDirection::Decrypt).expect("CFB decrypt");
         assert_eq!(&pt, plaintext);
     }
 
@@ -1524,8 +1515,7 @@ mod tests {
     fn test_cfb_empty_data() {
         let cipher = MockCipher128;
         let iv = [0u8; 16];
-        let result = cfb_encrypt(&cipher, &[], &iv, CipherDirection::Encrypt)
-            .expect("CFB empty");
+        let result = cfb_encrypt(&cipher, &[], &iv, CipherDirection::Encrypt).expect("CFB empty");
         assert!(result.is_empty());
     }
 
@@ -1570,12 +1560,10 @@ mod tests {
         let cipher = MockCipher128;
         let plaintext = b"ECB roundtrip test data for 128";
 
-        let ct = ecb_encrypt(&cipher, plaintext, CipherDirection::Encrypt)
-            .expect("ECB encrypt");
+        let ct = ecb_encrypt(&cipher, plaintext, CipherDirection::Encrypt).expect("ECB encrypt");
         assert!(ct.len() % 16 == 0); // padded to block multiple
 
-        let pt = ecb_encrypt(&cipher, &ct, CipherDirection::Decrypt)
-            .expect("ECB decrypt");
+        let pt = ecb_encrypt(&cipher, &ct, CipherDirection::Decrypt).expect("ECB decrypt");
         assert_eq!(&pt, plaintext);
     }
 
@@ -1584,12 +1572,10 @@ mod tests {
         let cipher = MockCipher64;
         let plaintext = b"ECB 64-bit test";
 
-        let ct = ecb_encrypt(&cipher, plaintext, CipherDirection::Encrypt)
-            .expect("ECB-64 encrypt");
+        let ct = ecb_encrypt(&cipher, plaintext, CipherDirection::Encrypt).expect("ECB-64 encrypt");
         assert!(ct.len() % 8 == 0);
 
-        let pt = ecb_encrypt(&cipher, &ct, CipherDirection::Decrypt)
-            .expect("ECB-64 decrypt");
+        let pt = ecb_encrypt(&cipher, &ct, CipherDirection::Decrypt).expect("ECB-64 decrypt");
         assert_eq!(&pt, plaintext);
     }
 

@@ -118,15 +118,11 @@ impl From<BigNumError> for CryptoError {
     fn from(e: BigNumError) -> Self {
         use openssl_common::CommonError;
         match e {
-            BigNumError::Overflow => {
-                CryptoError::Common(CommonError::ArithmeticOverflow {
-                    operation: "bignum",
-                })
-            }
+            BigNumError::Overflow => CryptoError::Common(CommonError::ArithmeticOverflow {
+                operation: "bignum",
+            }),
             BigNumError::InvalidEncoding(msg) => CryptoError::Encoding(msg),
-            other => {
-                CryptoError::Common(CommonError::InvalidArgument(other.to_string()))
-            }
+            other => CryptoError::Common(CommonError::InvalidArgument(other.to_string())),
         }
     }
 }
@@ -588,9 +584,15 @@ impl BigNum {
             return Err(BigNumError::InvalidEncoding("empty hex string".into()).into());
         }
         // Strip optional "0x" or "0X" prefix, handling negative prefix too
-        let clean = if let Some(rest) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+        let clean = if let Some(rest) = trimmed
+            .strip_prefix("0x")
+            .or_else(|| trimmed.strip_prefix("0X"))
+        {
             rest
-        } else if let Some(rest) = trimmed.strip_prefix("-0x").or_else(|| trimmed.strip_prefix("-0X")) {
+        } else if let Some(rest) = trimmed
+            .strip_prefix("-0x")
+            .or_else(|| trimmed.strip_prefix("-0X"))
+        {
             let inner_hex = format!("-{rest}");
             return BigInt::parse_bytes(inner_hex.as_bytes(), 16)
                 .map(|bi| Self { inner: bi })
@@ -775,9 +777,7 @@ pub mod constants {
 
     /// NIST P-256 prime: `2^256 - 2^224 + 2^192 + 2^96 - 1`.
     pub fn nist_p256() -> BigNum {
-        static_hex(
-            "FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF",
-        )
+        static_hex("FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF")
     }
 
     /// NIST P-384 prime: `2^384 - 2^128 - 2^96 + 2^32 - 1`.
@@ -916,7 +916,7 @@ pub mod constants {
              59F94D25E4E53274B65E08F9FAFCF0C28D4AAE0F1E2DDCD7\
              9DCB8B9536C6F6F3C0C20F217BA5678C2FFEE0C43F454643\
              4AECE5F63A19D51BB9D84F3A3C5F2B6E4FD74EDDCA15A3FF\
-             FFFFFFFFFFFFFFFF"
+             FFFFFFFFFFFFFFFF",
         )
     }
 
@@ -965,7 +965,7 @@ pub mod constants {
              C68A8E78F28F08C5FA61CAA5E9CD3C8BA6B62DCE01A5B0E0\
              F456C4489F5B6B15C7FE09E91C1B14E54D78C6B6E8FD97D6\
              2B4DC7F3B1F49C93BFBB524B4CF19F2F44093B841FF68F83\
-             FFFFFFFFFFFFFFFF"
+             FFFFFFFFFFFFFFFF",
         )
     }
 

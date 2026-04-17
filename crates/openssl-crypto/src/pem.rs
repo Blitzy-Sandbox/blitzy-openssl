@@ -321,7 +321,9 @@ pub fn encode(obj: &PemObject) -> String {
 /// ```
 pub fn encode_to_writer<W: io::Write>(obj: &PemObject, writer: &mut W) -> CryptoResult<()> {
     let pem_string = encode(obj);
-    writer.write_all(pem_string.as_bytes()).map_err(CryptoError::Io)?;
+    writer
+        .write_all(pem_string.as_bytes())
+        .map_err(CryptoError::Io)?;
     Ok(())
 }
 
@@ -434,18 +436,17 @@ pub fn decode_all(pem_data: &str) -> CryptoResult<Vec<PemObject>> {
             .min(remaining.len());
 
         // Find the end of the END line (include trailing newline if present)
-        let block_end_with_newline = if block_end < remaining.len()
-            && remaining.as_bytes().get(block_end) == Some(&b'\n')
-        {
-            block_end.saturating_add(1)
-        } else if block_end.saturating_add(1) < remaining.len()
-            && remaining.as_bytes().get(block_end) == Some(&b'\r')
-            && remaining.as_bytes().get(block_end.saturating_add(1)) == Some(&b'\n')
-        {
-            block_end.saturating_add(2)
-        } else {
-            block_end
-        };
+        let block_end_with_newline =
+            if block_end < remaining.len() && remaining.as_bytes().get(block_end) == Some(&b'\n') {
+                block_end.saturating_add(1)
+            } else if block_end.saturating_add(1) < remaining.len()
+                && remaining.as_bytes().get(block_end) == Some(&b'\r')
+                && remaining.as_bytes().get(block_end.saturating_add(1)) == Some(&b'\n')
+            {
+                block_end.saturating_add(2)
+            } else {
+                block_end
+            };
 
         let block = &remaining[begin_pos..block_end_with_newline];
 
@@ -490,7 +491,9 @@ pub fn decode_all(pem_data: &str) -> CryptoResult<Vec<PemObject>> {
 /// ```
 pub fn decode_from_reader<R: io::BufRead>(mut reader: R) -> CryptoResult<Vec<PemObject>> {
     let mut content = String::new();
-    reader.read_to_string(&mut content).map_err(CryptoError::Io)?;
+    reader
+        .read_to_string(&mut content)
+        .map_err(CryptoError::Io)?;
     decode_all(&content)
 }
 
@@ -634,11 +637,7 @@ pub fn decode_encrypted(pem_data: &str, passphrase: &[u8]) -> CryptoResult<PemOb
 /// // Returns error if cipher encryption is not available at this layer
 /// let result = encode_encrypted(&obj, "DES-EDE3-CBC", passphrase);
 /// ```
-pub fn encode_encrypted(
-    obj: &PemObject,
-    cipher: &str,
-    passphrase: &[u8],
-) -> CryptoResult<String> {
+pub fn encode_encrypted(obj: &PemObject, cipher: &str, passphrase: &[u8]) -> CryptoResult<String> {
     // Validate inputs
     if passphrase.is_empty() {
         return Err(CryptoError::Encoding(
@@ -690,7 +689,9 @@ fn decode_custom(pem_data: &str) -> CryptoResult<PemObject> {
         .iter()
         .position(|line| line.starts_with(PEM_BEGIN_PREFIX) && line.ends_with(PEM_BOUNDARY_SUFFIX))
         .ok_or_else(|| {
-            CryptoError::Encoding("no PEM start line found (missing -----BEGIN ...-----)".to_string())
+            CryptoError::Encoding(
+                "no PEM start line found (missing -----BEGIN ...-----)".to_string(),
+            )
         })?;
 
     let begin_line = lines[begin_idx];
@@ -746,9 +747,8 @@ fn decode_custom(pem_data: &str) -> CryptoResult<PemObject> {
     let data = if b64_data.is_empty() {
         Vec::new()
     } else {
-        Base64::decode_vec(&b64_data).map_err(|e| {
-            CryptoError::Encoding(format!("invalid base64 in PEM body: {e}"))
-        })?
+        Base64::decode_vec(&b64_data)
+            .map_err(|e| CryptoError::Encoding(format!("invalid base64 in PEM body: {e}")))?
     };
 
     Ok(PemObject {
@@ -773,9 +773,7 @@ fn extract_label(line: &str, prefix: &str) -> CryptoResult<String> {
     let label = label.trim();
 
     if label.is_empty() {
-        return Err(CryptoError::Encoding(
-            "PEM label is empty".to_string(),
-        ));
+        return Err(CryptoError::Encoding("PEM label is empty".to_string()));
     }
 
     Ok(label.to_string())
@@ -786,9 +784,7 @@ fn extract_label(line: &str, prefix: &str) -> CryptoResult<String> {
 /// Headers are key-value pairs (e.g., `Proc-Type: 4,ENCRYPTED`) that appear
 /// before the first blank line. If no blank line is found and the content
 /// does not look like headers, the entire content is treated as base64 body.
-fn parse_headers_and_body<'a>(
-    lines: &'a [&'a str],
-) -> (Vec<(String, String)>, &'a [&'a str]) {
+fn parse_headers_and_body<'a>(lines: &'a [&'a str]) -> (Vec<(String, String)>, &'a [&'a str]) {
     let mut headers = Vec::new();
     let mut body_start: usize = 0;
     let mut found_blank_separator = false;
@@ -875,9 +871,7 @@ fn parse_dek_info(dek_info: &str) -> CryptoResult<(&str, &str)> {
     }
 
     if iv_hex.is_empty() {
-        return Err(CryptoError::Encoding(
-            "DEK-Info IV is empty".to_string(),
-        ));
+        return Err(CryptoError::Encoding("DEK-Info IV is empty".to_string()));
     }
 
     Ok((cipher_name, iv_hex))
@@ -995,8 +989,8 @@ mod tests {
         let original = PemObject::with_data(
             "CERTIFICATE",
             vec![
-                0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7,
-                0x0d, 0x01, 0x01, 0x0b, 0x05, 0x00,
+                0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+                0x01, 0x01, 0x0b, 0x05, 0x00,
             ],
         );
 
@@ -1142,8 +1136,7 @@ mod tests {
 
     #[test]
     fn test_decode_mismatched_labels() {
-        let pem =
-            "-----BEGIN CERTIFICATE-----\nMIIB\n-----END PRIVATE KEY-----\n";
+        let pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END PRIVATE KEY-----\n";
         let result = decode(pem);
         assert!(result.is_err());
     }
@@ -1252,8 +1245,7 @@ mod tests {
 
     #[test]
     fn test_parse_dek_info_valid() {
-        let (cipher, iv) =
-            parse_dek_info("DES-EDE3-CBC,1A2B3C4D5E6F7A8B").expect("valid DEK-Info");
+        let (cipher, iv) = parse_dek_info("DES-EDE3-CBC,1A2B3C4D5E6F7A8B").expect("valid DEK-Info");
         assert_eq!(cipher, "DES-EDE3-CBC");
         assert_eq!(iv, "1A2B3C4D5E6F7A8B");
     }
@@ -1271,10 +1263,8 @@ mod tests {
         let mut obj = PemObject::with_data("RSA PRIVATE KEY", vec![0x30, 0x01]);
         obj.headers
             .push(("Proc-Type".to_string(), "4,ENCRYPTED".to_string()));
-        obj.headers.push((
-            "DEK-Info".to_string(),
-            "DES-EDE3-CBC,AABB".to_string(),
-        ));
+        obj.headers
+            .push(("DEK-Info".to_string(), "DES-EDE3-CBC,AABB".to_string()));
 
         let encoded = encode(&obj);
         assert!(encoded.contains("Proc-Type: 4,ENCRYPTED"));
@@ -1288,8 +1278,8 @@ mod tests {
 
     #[test]
     fn test_extract_label_valid() {
-        let label = extract_label("-----BEGIN CERTIFICATE-----", PEM_BEGIN_PREFIX)
-            .expect("valid label");
+        let label =
+            extract_label("-----BEGIN CERTIFICATE-----", PEM_BEGIN_PREFIX).expect("valid label");
         assert_eq!(label, "CERTIFICATE");
     }
 

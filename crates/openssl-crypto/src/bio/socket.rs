@@ -2,11 +2,10 @@
 //!
 //! Stub module — full implementation provided by dedicated agent.
 
+use super::{Bio, BioStats, BioType};
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, TcpStream, TcpListener, UdpSocket, Shutdown, ToSocketAddrs};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
-use super::{Bio, BioType, BioStats};
-
 
 /// Network address for BIO operations, replacing C `BIO_ADDR`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,10 +41,9 @@ impl BioAddr {
             BioAddr::Socket(addr) => Ok(*addr),
             BioAddr::Unresolved { host, port } => {
                 let addr_str = format!("{host}:{port}");
-                addr_str
-                    .to_socket_addrs()?
-                    .next()
-                    .ok_or_else(|| io::Error::new(io::ErrorKind::AddrNotAvailable, "no addresses found"))
+                addr_str.to_socket_addrs()?.next().ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::AddrNotAvailable, "no addresses found")
+                })
             }
         }
     }
@@ -249,9 +247,10 @@ impl ConnectBio {
 
 impl Read for ConnectBio {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let stream = self.stream.as_mut().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotConnected, "not connected")
-        })?;
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "not connected"))?;
         let n = stream.read(buf)?;
         self.stats.record_read(n);
         Ok(n)
@@ -260,9 +259,10 @@ impl Read for ConnectBio {
 
 impl Write for ConnectBio {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let stream = self.stream.as_mut().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotConnected, "not connected")
-        })?;
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "not connected"))?;
         let n = stream.write(buf)?;
         self.stats.record_write(n);
         Ok(n)
@@ -322,9 +322,10 @@ impl AcceptBio {
 
     /// Accepts an incoming connection, returning a `SocketBio`.
     pub fn accept(&self) -> io::Result<SocketBio> {
-        let listener = self.listener.as_ref().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotConnected, "not bound")
-        })?;
+        let listener = self
+            .listener
+            .as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "not bound"))?;
         let (stream, _addr) = listener.accept()?;
         Ok(SocketBio::new(stream))
     }

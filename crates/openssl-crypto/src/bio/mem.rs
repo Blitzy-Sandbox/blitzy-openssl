@@ -2,9 +2,9 @@
 //!
 //! Stub module — full implementation provided by dedicated agent.
 
-use std::io::{self, Read, Write};
-use super::{Bio, BioType, BioStats};
+use super::{Bio, BioStats, BioType};
 use openssl_common::CryptoResult;
+use std::io::{self, Read, Write};
 
 /// In-memory buffer BIO replacing C `BIO_s_mem()`.
 ///
@@ -355,7 +355,10 @@ impl Read for BioPairEnd {
             if self.write_closed {
                 return Ok(0); // EOF
             }
-            return Err(io::Error::new(io::ErrorKind::WouldBlock, "no data available"));
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "no data available",
+            ));
         }
         buf[..n].copy_from_slice(&available[..n]);
         self.read_pos = self.read_pos.saturating_add(n);
@@ -367,7 +370,10 @@ impl Read for BioPairEnd {
 impl Write for BioPairEnd {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.write_closed {
-            return Err(io::Error::new(io::ErrorKind::BrokenPipe, "write side closed"));
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "write side closed",
+            ));
         }
         let space = self.wpending();
         if space == 0 {
@@ -421,8 +427,16 @@ impl Bio for BioPairEnd {
 ///
 /// Replaces C `BIO_new_bio_pair()`.
 pub fn new_bio_pair(buf_size1: usize, buf_size2: usize) -> (BioPairEnd, BioPairEnd) {
-    let size1 = if buf_size1 == 0 { super::DEFAULT_BUFFER_SIZE } else { buf_size1 };
-    let size2 = if buf_size2 == 0 { super::DEFAULT_BUFFER_SIZE } else { buf_size2 };
+    let size1 = if buf_size1 == 0 {
+        super::DEFAULT_BUFFER_SIZE
+    } else {
+        buf_size1
+    };
+    let size2 = if buf_size2 == 0 {
+        super::DEFAULT_BUFFER_SIZE
+    } else {
+        buf_size2
+    };
 
     let end1 = BioPairEnd {
         read_buf: Vec::new(),

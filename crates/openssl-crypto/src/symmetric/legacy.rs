@@ -49,18 +49,28 @@ impl Blowfish {
 }
 
 impl SymmetricCipher for Blowfish {
-    fn block_size(&self) -> BlockSize { BlockSize::Block64 }
+    fn block_size(&self) -> BlockSize {
+        BlockSize::Block64
+    }
     fn encrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
         check_block(block, 8, "Blowfish")?;
-        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) { *b ^= k; }
+        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) {
+            *b ^= k;
+        }
         Ok(())
     }
-    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> { self.encrypt_block(block) }
-    fn algorithm(&self) -> CipherAlgorithm { CipherAlgorithm::Blowfish }
+    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
+        self.encrypt_block(block)
+    }
+    fn algorithm(&self) -> CipherAlgorithm {
+        CipherAlgorithm::Blowfish
+    }
 }
 
 impl Drop for Blowfish {
-    fn drop(&mut self) { self.key.zeroize(); }
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 // =============================================================================
@@ -87,18 +97,28 @@ impl Cast5 {
 }
 
 impl SymmetricCipher for Cast5 {
-    fn block_size(&self) -> BlockSize { BlockSize::Block64 }
+    fn block_size(&self) -> BlockSize {
+        BlockSize::Block64
+    }
     fn encrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
         check_block(block, 8, "CAST5")?;
-        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) { *b ^= k; }
+        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) {
+            *b ^= k;
+        }
         Ok(())
     }
-    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> { self.encrypt_block(block) }
-    fn algorithm(&self) -> CipherAlgorithm { CipherAlgorithm::Cast5 }
+    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
+        self.encrypt_block(block)
+    }
+    fn algorithm(&self) -> CipherAlgorithm {
+        CipherAlgorithm::Cast5
+    }
 }
 
 impl Drop for Cast5 {
-    fn drop(&mut self) { self.key.zeroize(); }
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 // =============================================================================
@@ -127,18 +147,28 @@ impl Idea {
 }
 
 impl SymmetricCipher for Idea {
-    fn block_size(&self) -> BlockSize { BlockSize::Block64 }
+    fn block_size(&self) -> BlockSize {
+        BlockSize::Block64
+    }
     fn encrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
         check_block(block, 8, "IDEA")?;
-        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) { *b ^= k; }
+        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) {
+            *b ^= k;
+        }
         Ok(())
     }
-    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> { self.encrypt_block(block) }
-    fn algorithm(&self) -> CipherAlgorithm { CipherAlgorithm::Idea }
+    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
+        self.encrypt_block(block)
+    }
+    fn algorithm(&self) -> CipherAlgorithm {
+        CipherAlgorithm::Idea
+    }
 }
 
 impl Drop for Idea {
-    fn drop(&mut self) { self.key.zeroize(); }
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 // =============================================================================
@@ -167,18 +197,28 @@ impl Seed {
 }
 
 impl SymmetricCipher for Seed {
-    fn block_size(&self) -> BlockSize { BlockSize::Block128 }
+    fn block_size(&self) -> BlockSize {
+        BlockSize::Block128
+    }
     fn encrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
         check_block(block, 16, "SEED")?;
-        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) { *b ^= k; }
+        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) {
+            *b ^= k;
+        }
         Ok(())
     }
-    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> { self.encrypt_block(block) }
-    fn algorithm(&self) -> CipherAlgorithm { CipherAlgorithm::Seed }
+    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
+        self.encrypt_block(block)
+    }
+    fn algorithm(&self) -> CipherAlgorithm {
+        CipherAlgorithm::Seed
+    }
 }
 
 impl Drop for Seed {
-    fn drop(&mut self) { self.key.zeroize(); }
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 // =============================================================================
@@ -205,18 +245,28 @@ impl Rc2 {
 }
 
 impl SymmetricCipher for Rc2 {
-    fn block_size(&self) -> BlockSize { BlockSize::Block64 }
+    fn block_size(&self) -> BlockSize {
+        BlockSize::Block64
+    }
     fn encrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
         check_block(block, 8, "RC2")?;
-        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) { *b ^= k; }
+        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) {
+            *b ^= k;
+        }
         Ok(())
     }
-    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> { self.encrypt_block(block) }
-    fn algorithm(&self) -> CipherAlgorithm { CipherAlgorithm::Rc2 }
+    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
+        self.encrypt_block(block)
+    }
+    fn algorithm(&self) -> CipherAlgorithm {
+        CipherAlgorithm::Rc2
+    }
 }
 
 impl Drop for Rc2 {
-    fn drop(&mut self) { self.key.zeroize(); }
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 // =============================================================================
@@ -268,8 +318,7 @@ impl StreamCipher for Rc4 {
             self.j = self.j.wrapping_add(self.state[usize::from(self.i)]);
             self.state.swap(usize::from(self.i), usize::from(self.j));
             let k = self.state[usize::from(
-                self.state[usize::from(self.i)]
-                    .wrapping_add(self.state[usize::from(self.j)]),
+                self.state[usize::from(self.i)].wrapping_add(self.state[usize::from(self.j)]),
             )];
             output.push(byte ^ k);
         }
@@ -282,7 +331,9 @@ impl StreamCipher for Rc4 {
 }
 
 impl Drop for Rc4 {
-    fn drop(&mut self) { self.state.zeroize(); }
+    fn drop(&mut self) {
+        self.state.zeroize();
+    }
 }
 
 // =============================================================================
@@ -309,18 +360,28 @@ impl Rc5 {
 }
 
 impl SymmetricCipher for Rc5 {
-    fn block_size(&self) -> BlockSize { BlockSize::Block64 }
+    fn block_size(&self) -> BlockSize {
+        BlockSize::Block64
+    }
     fn encrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
         check_block(block, 8, "RC5")?;
-        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) { *b ^= k; }
+        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) {
+            *b ^= k;
+        }
         Ok(())
     }
-    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> { self.encrypt_block(block) }
-    fn algorithm(&self) -> CipherAlgorithm { CipherAlgorithm::Rc5 }
+    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
+        self.encrypt_block(block)
+    }
+    fn algorithm(&self) -> CipherAlgorithm {
+        CipherAlgorithm::Rc5
+    }
 }
 
 impl Drop for Rc5 {
-    fn drop(&mut self) { self.key.zeroize(); }
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 // =============================================================================
@@ -347,13 +408,19 @@ impl Camellia {
 }
 
 impl SymmetricCipher for Camellia {
-    fn block_size(&self) -> BlockSize { BlockSize::Block128 }
+    fn block_size(&self) -> BlockSize {
+        BlockSize::Block128
+    }
     fn encrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
         check_block(block, 16, "Camellia")?;
-        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) { *b ^= k; }
+        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) {
+            *b ^= k;
+        }
         Ok(())
     }
-    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> { self.encrypt_block(block) }
+    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
+        self.encrypt_block(block)
+    }
     fn algorithm(&self) -> CipherAlgorithm {
         match self.key.len() {
             16 => CipherAlgorithm::Camellia128,
@@ -364,7 +431,9 @@ impl SymmetricCipher for Camellia {
 }
 
 impl Drop for Camellia {
-    fn drop(&mut self) { self.key.zeroize(); }
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 // =============================================================================
@@ -391,13 +460,19 @@ impl Aria {
 }
 
 impl SymmetricCipher for Aria {
-    fn block_size(&self) -> BlockSize { BlockSize::Block128 }
+    fn block_size(&self) -> BlockSize {
+        BlockSize::Block128
+    }
     fn encrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
         check_block(block, 16, "ARIA")?;
-        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) { *b ^= k; }
+        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) {
+            *b ^= k;
+        }
         Ok(())
     }
-    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> { self.encrypt_block(block) }
+    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
+        self.encrypt_block(block)
+    }
     fn algorithm(&self) -> CipherAlgorithm {
         match self.key.len() {
             16 => CipherAlgorithm::Aria128,
@@ -408,7 +483,9 @@ impl SymmetricCipher for Aria {
 }
 
 impl Drop for Aria {
-    fn drop(&mut self) { self.key.zeroize(); }
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }
 
 // =============================================================================
@@ -437,16 +514,26 @@ impl Sm4 {
 }
 
 impl SymmetricCipher for Sm4 {
-    fn block_size(&self) -> BlockSize { BlockSize::Block128 }
+    fn block_size(&self) -> BlockSize {
+        BlockSize::Block128
+    }
     fn encrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
         check_block(block, 16, "SM4")?;
-        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) { *b ^= k; }
+        for (b, k) in block.iter_mut().zip(self.key.iter().cycle()) {
+            *b ^= k;
+        }
         Ok(())
     }
-    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> { self.encrypt_block(block) }
-    fn algorithm(&self) -> CipherAlgorithm { CipherAlgorithm::Sm4 }
+    fn decrypt_block(&self, block: &mut [u8]) -> CryptoResult<()> {
+        self.encrypt_block(block)
+    }
+    fn algorithm(&self) -> CipherAlgorithm {
+        CipherAlgorithm::Sm4
+    }
 }
 
 impl Drop for Sm4 {
-    fn drop(&mut self) { self.key.zeroize(); }
+    fn drop(&mut self) {
+        self.key.zeroize();
+    }
 }

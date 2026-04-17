@@ -125,12 +125,7 @@ impl ChaCha20Poly1305 {
 }
 
 impl AeadCipher for ChaCha20Poly1305 {
-    fn seal(
-        &self,
-        _nonce: &[u8],
-        _aad: &[u8],
-        plaintext: &[u8],
-    ) -> CryptoResult<Vec<u8>> {
+    fn seal(&self, _nonce: &[u8], _aad: &[u8], plaintext: &[u8]) -> CryptoResult<Vec<u8>> {
         // Minimal: return plaintext || 16-byte zero tag.
         let mut out = plaintext.to_vec();
         out.extend_from_slice(&[0u8; 16]);

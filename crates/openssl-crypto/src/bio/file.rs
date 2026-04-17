@@ -2,11 +2,11 @@
 //!
 //! Stub module — full implementation provided by dedicated agent.
 
-use std::io::{self, Read, Write, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
-use std::fs;
-use super::{Bio, BioType, BioStats};
+use super::{Bio, BioStats, BioType};
 use openssl_common::CryptoResult;
+use std::fs;
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 
 /// File open mode flags, replacing C `BIO_read_filename()` / `BIO_CLOSE` semantics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,7 +176,10 @@ struct StdoutFd;
 
 impl Read for StdoutFd {
     fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "cannot read from stdout"))
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "cannot read from stdout",
+        ))
     }
 }
 
@@ -191,7 +194,9 @@ impl Write for StdoutFd {
 }
 
 impl FdInner for StdoutFd {
-    fn fd_type(&self) -> &'static str { "stdout" }
+    fn fd_type(&self) -> &'static str {
+        "stdout"
+    }
 }
 
 #[derive(Debug)]
@@ -199,7 +204,10 @@ struct StderrFd;
 
 impl Read for StderrFd {
     fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "cannot read from stderr"))
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "cannot read from stderr",
+        ))
     }
 }
 
@@ -214,7 +222,9 @@ impl Write for StderrFd {
 }
 
 impl FdInner for StderrFd {
-    fn fd_type(&self) -> &'static str { "stderr" }
+    fn fd_type(&self) -> &'static str {
+        "stderr"
+    }
 }
 
 #[derive(Debug)]
@@ -239,7 +249,9 @@ impl Write for RawFd {
 }
 
 impl FdInner for RawFd {
-    fn fd_type(&self) -> &'static str { "fd" }
+    fn fd_type(&self) -> &'static str {
+        "fd"
+    }
 }
 
 impl FdBio {

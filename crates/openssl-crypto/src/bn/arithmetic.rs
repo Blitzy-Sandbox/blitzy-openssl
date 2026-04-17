@@ -388,11 +388,7 @@ pub fn kronecker(a: &BigNum, b: &BigNum) -> CryptoResult<i32> {
 
     loop {
         if a_work.is_zero() {
-            return if b_work.is_one() {
-                Ok(result)
-            } else {
-                Ok(0)
-            };
+            return if b_work.is_one() { Ok(result) } else { Ok(0) };
         }
 
         // Remove factors of 2 from a_work
