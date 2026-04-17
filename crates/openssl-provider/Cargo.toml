@@ -205,6 +205,16 @@ der = { workspace = true }
 # from providers/implementations/encode_decode/decode_spki2typespki.c.
 spki = { workspace = true }
 
+# ---------------------------------------------------------------------------
+# PKCS#8 Encrypted Private Key Parsing and Decryption (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# RustCrypto PKCS#8 types used by the epki_decoder module for parsing and
+# decrypting DER-encoded EncryptedPrivateKeyInfo structures. The `encryption`
+# feature enables PBES2 password-based decryption via the pkcs5 crate.
+# Replaces C PKCS12_pbe_crypt_ex() + d2i_PKCS8_PRIV_KEY_INFO() from
+# providers/implementations/encode_decode/decode_epki2pki.c.
+pkcs8 = { workspace = true, features = ["encryption"] }
+
 # =============================================================================
 # Feature Flags
 # =============================================================================
