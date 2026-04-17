@@ -146,6 +146,16 @@ once_cell = { workspace = true }
 parking_lot = { workspace = true }
 
 # ---------------------------------------------------------------------------
+# AES Block Cipher (AAP §0.6.1, §0.7.5, CTR-DRBG)
+# ---------------------------------------------------------------------------
+# Pure-Rust AES block cipher implementation for CTR-DRBG (SP 800-90A §10.2)
+# and cipher provider implementations. Provides Aes128/Aes192/Aes256 types
+# with BlockEncrypt + KeyInit traits for single-block AES-ECB encryption.
+# Hardware-accelerated via AES-NI on x86/x86_64 with runtime detection.
+# Optional: enabled by `aes` feature (ciphers) or `rands` feature (CTR-DRBG).
+aes = { workspace = true, optional = true }
+
+# ---------------------------------------------------------------------------
 # Secure Memory (AAP §0.6.1, §0.7.6, Rule R8)
 # ---------------------------------------------------------------------------
 # Secure memory zeroing for key material within provider implementations.
@@ -262,7 +272,7 @@ ciphers = ["aes", "ocb", "chacha", "des", "camellia", "aria", "sm4"]
 # AES family: ECB/CBC/OFB/CFB/CTR/CTS, GCM, CCM, SIV, GCM-SIV, XTS, Wrap, CBC-HMAC.
 # Source: providers/implementations/ciphers/cipher_aes*.c (20+ files)
 # C guard: AES is always compiled in C; feature-gated in Rust for embedded builds.
-aes = []
+aes = ["dep:aes"]
 
 # AES-OCB AEAD mode (RFC 7253). Gated separately for patent considerations.
 # Source: providers/implementations/ciphers/cipher_aes_ocb*.c
@@ -340,7 +350,7 @@ exchange = []
 # DRBG and seed source implementations: CTR-DRBG, Hash-DRBG, HMAC-DRBG,
 # seed sources, jitter entropy.
 # Maps to providers/implementations/rands/ (15 C files).
-rands = []
+rands = ["dep:aes"]
 
 # CPU jitter entropy source: enables the JitterSource RNG implementation that
 # harvests entropy from CPU execution time variations.

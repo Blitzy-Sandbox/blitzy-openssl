@@ -99,6 +99,17 @@ metrics = "0.23"
 metrics-exporter-prometheus = "0.15"
 
 # ---------------------------------------------------------------------------
+# AES Block Cipher (AAP §0.6.1, §0.7.5)
+# ---------------------------------------------------------------------------
+# Pure-Rust AES block cipher implementation (AES-128/192/256) providing
+# Aes128, Aes192, Aes256 types with BlockEncrypt and KeyInit traits.
+# Used by CTR-DRBG (SP 800-90A §10.2) for AES-ECB single-block encryption
+# in BCC, derivation function, and counter-mode output generation.
+# Hardware-accelerated via AES-NI on x86/x86_64 with runtime detection.
+# Chosen over openssl-crypto::evp to avoid circular provider dependency.
+aes = "0.8"
+
+# ---------------------------------------------------------------------------
 # Secure Memory and Constant-Time (AAP §0.6.1, §0.7.6)
 # ---------------------------------------------------------------------------
 # zeroize: Secure memory zeroing for key material (replacing OPENSSL_cleanse).
