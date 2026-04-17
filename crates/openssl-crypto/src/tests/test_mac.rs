@@ -20,7 +20,7 @@
 // Per workspace lint config: "Tests and CLI main() may #[allow] with justification."
 #![allow(clippy::expect_used)] // Tests use .expect() to unwrap known-good Results.
 #![allow(clippy::unwrap_used)] // Tests use .unwrap() on values guaranteed to be Some/Ok.
-#![allow(clippy::panic)]       // Tests use panic!() in exhaustive match arms for error variants.
+#![allow(clippy::panic)] // Tests use panic!() in exhaustive match arms for error variants.
 
 use crate::mac::*;
 use openssl_common::{CryptoError, CryptoResult, ParamSet, ParamValue};
@@ -71,14 +71,14 @@ fn hmac_params(digest: &str) -> ParamSet {
 fn test_hmac_sha256_known_vector() {
     let key = b"123456";
     let data = b"My test data";
-    let expected =
-        hex_to_bytes("bab53058ae861a7f191abe2d0145cbb123776a6369ee3f9d79ce455667e411dd");
+    let expected = hex_to_bytes("bab53058ae861a7f191abe2d0145cbb123776a6369ee3f9d79ce455667e411dd");
 
     // Explicit CryptoResult type annotation verifies Rule R5 API contract.
     let tag: CryptoResult<Vec<u8>> = hmac("SHA-256", key, data);
     let result = tag.expect("HMAC-SHA-256 must succeed");
     assert_eq!(
-        result, expected,
+        result,
+        expected,
         "HMAC-SHA-256 mismatch:\n  got:    {}\n  expect: {}",
         bytes_to_hex(&result),
         bytes_to_hex(&expected),
@@ -189,8 +189,7 @@ fn test_hmac_convenience_function() {
     let convenience = hmac("SHA-256", key, data).expect("hmac() must succeed");
 
     let ps = hmac_params("SHA-256");
-    let via_compute =
-        compute(MacType::Hmac, key, data, Some(&ps)).expect("compute() must succeed");
+    let via_compute = compute(MacType::Hmac, key, data, Some(&ps)).expect("compute() must succeed");
 
     assert_eq!(
         convenience, via_compute,
@@ -216,7 +215,8 @@ fn test_cmac_aes128_known_vector() {
 
     let result = compute(MacType::Cmac, &key, data, None).expect("CMAC-AES-128 must succeed");
     assert_eq!(
-        result, expected,
+        result,
+        expected,
         "CMAC-AES-128 mismatch:\n  got:    {}\n  expect: {}",
         bytes_to_hex(&result),
         bytes_to_hex(&expected),
@@ -260,14 +260,14 @@ fn test_cmac_aes256_known_vector() {
 ///   tag  = a8061dc1305136c6c22b8baf0c0127a9
 #[test]
 fn test_poly1305_known_vector() {
-    let key =
-        hex_to_bytes("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b");
+    let key = hex_to_bytes("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b");
     let data = b"Cryptographic Forum Research Group";
     let expected = hex_to_bytes("a8061dc1305136c6c22b8baf0c0127a9");
 
     let result = compute(MacType::Poly1305, &key, data, None).expect("Poly1305 must succeed");
     assert_eq!(
-        result, expected,
+        result,
+        expected,
         "Poly1305 RFC 7539 mismatch:\n  got:    {}\n  expect: {}",
         bytes_to_hex(&result),
         bytes_to_hex(&expected),
@@ -282,7 +282,8 @@ fn test_poly1305_known_vector() {
 fn test_poly1305_zero_key() {
     let key = vec![0u8; 32];
     let data = b"any payload here";
-    let result = compute(MacType::Poly1305, &key, data, None).expect("Poly1305 zero-key must succeed");
+    let result =
+        compute(MacType::Poly1305, &key, data, None).expect("Poly1305 zero-key must succeed");
     assert_eq!(result.len(), 16, "Poly1305 tag must be 16 bytes");
     assert!(
         result.iter().all(|&b| b == 0),
@@ -313,7 +314,8 @@ fn test_siphash_2_4_known_vector() {
     // Reference value 0x726fdb47dd0e0e31 stored as little-endian bytes.
     let expected = hex_to_bytes("310e0edd47db6f72");
     assert_eq!(
-        result, expected,
+        result,
+        expected,
         "SipHash-2-4 empty-input mismatch:\n  got:    {}\n  expect: {}",
         bytes_to_hex(&result),
         bytes_to_hex(&expected),
@@ -332,21 +334,16 @@ fn test_mac_context_new_init_update_finalize() {
 
     ctx.init(b"lifecycle_key", Some(&ps))
         .expect("init must succeed");
-    ctx.update(b"hello ")
-        .expect("update 1 must succeed");
-    ctx.update(b"world")
-        .expect("update 2 must succeed");
+    ctx.update(b"hello ").expect("update 1 must succeed");
+    ctx.update(b"world").expect("update 2 must succeed");
     let tag = ctx.finalize().expect("finalize must succeed");
 
     assert_eq!(tag.len(), 32, "HMAC-SHA-256 tag must be 32 bytes");
-    assert!(
-        !tag.iter().all(|&b| b == 0),
-        "tag must not be all-zero"
-    );
+    assert!(!tag.iter().all(|&b| b == 0), "tag must not be all-zero");
 
     // Verify against one-shot for the same input.
-    let one_shot = hmac("SHA-256", b"lifecycle_key", b"hello world")
-        .expect("one-shot must succeed");
+    let one_shot =
+        hmac("SHA-256", b"lifecycle_key", b"hello world").expect("one-shot must succeed");
     assert_eq!(tag, one_shot, "lifecycle result must match one-shot");
 }
 
@@ -375,8 +372,8 @@ fn test_mac_context_reuse_after_finalize() {
     assert_ne!(tag1, tag2, "different key/data must produce different tags");
 
     // Verify second result matches a fresh one-shot computation.
-    let fresh = hmac("SHA-256", b"second_key", b"second_data")
-        .expect("fresh one-shot must succeed");
+    let fresh =
+        hmac("SHA-256", b"second_key", b"second_data").expect("fresh one-shot must succeed");
     assert_eq!(tag2, fresh, "re-used context must match fresh computation");
 }
 
@@ -414,14 +411,20 @@ fn test_mac_type_enum_variants() {
     #[allow(clippy::clone_on_copy)]
     let cloned = variants[0].clone();
     assert_eq!(cloned, MacType::Hmac, "Clone + PartialEq must work");
-    assert_ne!(MacType::Hmac, MacType::Cmac, "distinct variants must differ");
+    assert_ne!(
+        MacType::Hmac,
+        MacType::Cmac,
+        "distinct variants must differ"
+    );
 }
 
 /// Calling `update()` before `init()` must fail with a lifecycle error.
 #[test]
 fn test_mac_context_update_before_init_fails() {
     let mut ctx = MacContext::new(MacType::Hmac);
-    let err = ctx.update(b"data").expect_err("update before init must fail");
+    let err = ctx
+        .update(b"data")
+        .expect_err("update before init must fail");
     match err {
         CryptoError::Verification(msg) => {
             assert!(
