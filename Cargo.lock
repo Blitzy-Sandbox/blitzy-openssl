@@ -1387,6 +1387,7 @@ dependencies = [
  "criterion",
  "der",
  "digest",
+ "hmac",
  "mockall",
  "once_cell",
  "openssl-common",

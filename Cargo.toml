@@ -115,6 +115,8 @@ aes = "0.8"
 # digest: Traits for cryptographic hash functions (Digest, DynDigest).
 # Used by Hash-DRBG for runtime-polymorphic hash dispatch.
 digest = "0.10"
+# hmac: RustCrypto HMAC implementation for HMAC-DRBG (SP 800-90A §10.1.2).
+hmac = "0.12"
 # sha1: SHA-1 hash implementation (legacy, SP 800-90A Table 2).
 sha1 = "0.10"
 # sha2: SHA-2 family (SHA-224/256/384/512/512-224/512-256).
