@@ -16,6 +16,7 @@ pub mod mac;
 pub mod provider;
 pub mod rand;
 pub mod pem;
+pub mod symmetric;
 pub mod thread;
 
 #[cfg(feature = "hpke")]
