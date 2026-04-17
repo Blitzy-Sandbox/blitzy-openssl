@@ -1,0 +1,8 @@
+---
+source: crates/openssl-crypto/src/tests/test_pem.rs
+assertion_line: 185
+expression: pem
+---
+-----BEGIN RSA PRIVATE KEY-----
+aGVsbG8gd29ybGQ=
+-----END RSA PRIVATE KEY-----
