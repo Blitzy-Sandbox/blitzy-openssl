@@ -1,3 +1,10 @@
+// Allow deprecated items: the SRP command (and potentially future deprecated
+// commands) is intentionally included in the dispatch enum. The `#[deprecated]`
+// attribute on `SrpArgs` is required by design to warn external callers, but the
+// command dispatch hub must reference it without triggering build failures under
+// `RUSTFLAGS="-D warnings"`.
+#![allow(deprecated)]
+
 //! CLI subcommand definitions for the OpenSSL command-line tool.
 //!
 //! This module is the **foundational dispatch hub** for the `openssl` CLI binary,
@@ -462,7 +469,7 @@ pub enum CliCommand {
     /// SRP verifier database management (deprecated).
     #[cfg(feature = "srp")]
     #[command(name = "srp")]
-    Srp(srp::SrpArgs),
+    Srp(Box<srp::SrpArgs>),
 
     /// `OSSL_STORE` URI loading utility.
     #[command(name = "storeutl")]
