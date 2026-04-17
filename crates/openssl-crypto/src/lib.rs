@@ -8,6 +8,7 @@
 pub mod bn;
 pub mod context;
 pub mod cpu_detect;
+pub mod ec;
 pub mod evp;
 pub mod init;
 pub mod kdf;
