@@ -12,3 +12,4 @@
 //!   algorithm lookup, isolation, and precedence.
 
 mod cross_provider;
+mod test_algorithm_correctness;
