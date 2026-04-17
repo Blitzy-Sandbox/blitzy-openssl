@@ -22,6 +22,17 @@ use crate::traits::AlgorithmDescriptor;
 /// See [`any2obj`] module documentation for details.
 pub mod any2obj;
 
+/// File system store implementation.
+///
+/// Loads keys, certificates, CRLs from filesystem paths and `file:` URIs.
+/// Supports both single-file and directory-based loading with automatic
+/// PEM/DER format detection.
+///
+/// Source: `providers/implementations/storemgmt/file_store.c` (828 lines).
+///
+/// See [`file_store`] module documentation for details.
+pub mod file_store;
+
 /// Windows certificate store adapter.
 ///
 /// Provides access to the Windows system "ROOT" certificate store via
