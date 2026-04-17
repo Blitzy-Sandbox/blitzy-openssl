@@ -195,35 +195,35 @@ impl ErrstrArgs {
                 .unwrap_or(code_str);
 
             if let Ok(packed_code) = u64::from_str_radix(hex_str, 16) {
-                    // Decode the packed error code into structured components.
-                    let detail: ErrorDetail = decode_error_code(packed_code);
+                // Decode the packed error code into structured components.
+                let detail: ErrorDetail = decode_error_code(packed_code);
 
-                    tracing::debug!(
-                        error_code = packed_code,
-                        hex = %code_str,
-                        library = %detail.library,
-                        reason = %detail.reason,
-                        "decoded error code"
-                    );
+                tracing::debug!(
+                    error_code = packed_code,
+                    hex = %code_str,
+                    library = %detail.library,
+                    reason = %detail.reason,
+                    "decoded error code"
+                );
 
-                    // Output format matches C `ERR_error_string_n()`:
-                    //   error:XXXXXXXX:library_name::reason_string
-                    // The empty field between the two colons corresponds to the
-                    // deprecated function name field (always empty since
-                    // OpenSSL 3.0, see ERR_GET_FUNC → 0 in err.h.in).
-                    writeln!(
-                        out,
-                        "error:{packed_code:08X}:{}::{}",
-                        detail.library, detail.reason
-                    )?;
+                // Output format matches C `ERR_error_string_n()`:
+                //   error:XXXXXXXX:library_name::reason_string
+                // The empty field between the two colons corresponds to the
+                // deprecated function name field (always empty since
+                // OpenSSL 3.0, see ERR_GET_FUNC → 0 in err.h.in).
+                writeln!(
+                    out,
+                    "error:{packed_code:08X}:{}::{}",
+                    detail.library, detail.reason
+                )?;
             } else {
-                    tracing::warn!(
-                        input = %code_str,
-                        "invalid hexadecimal error code"
-                    );
-                    // Match C behavior: print the invalid input followed by
-                    // an error message, then continue processing.
-                    writeln!(out, "{code_str}: bad error code")?;
+                tracing::warn!(
+                    input = %code_str,
+                    "invalid hexadecimal error code"
+                );
+                // Match C behavior: print the invalid input followed by
+                // an error message, then continue processing.
+                writeln!(out, "{code_str}: bad error code")?;
             }
         }
 
