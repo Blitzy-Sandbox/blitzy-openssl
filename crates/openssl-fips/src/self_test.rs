@@ -822,6 +822,15 @@ fn hex_nibble(c: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    // Test code is expected to use expect/unwrap/panic for assertion clarity.
+    // Workspace Cargo.toml §clippy: "Tests and CLI main() may #[allow] with justification."
+    #![allow(
+        clippy::expect_used,
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::doc_markdown
+    )]
+
     use super::*;
 
     /// Verifies the self-contained SHA-256 implementation against known

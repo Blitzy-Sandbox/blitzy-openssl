@@ -341,7 +341,7 @@ pub struct FipsGlobal {
 
 impl FipsGlobal {
     /// Creates a new `FipsGlobal` with default values.
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             name: String::from("OpenSSL FIPS Provider"),
             version: String::from("4.0.0"),
@@ -1199,6 +1199,14 @@ pub fn initialize(config: &ParamSet) -> FipsResult<FipsGlobal> {
         return Err(FipsError::NotOperational(
             "FIPS module is in an error state and cannot be reinitialized".into(),
         ));
+    }
+
+    // If already Running, return success without re-running POST.
+    // This matches C self_test.c lines 301–303: once the module is
+    // operational, repeated init calls are no-ops.
+    if current_state == FipsState::Running {
+        info!("FIPS provider already running — skipping re-initialization");
+        return Ok(FipsGlobal::new());
     }
 
     let mut global = FipsGlobal::new();
