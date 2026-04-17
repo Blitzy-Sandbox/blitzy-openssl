@@ -156,6 +156,20 @@ parking_lot = { workspace = true }
 aes = { workspace = true, optional = true }
 
 # ---------------------------------------------------------------------------
+# Hash / Digest Crates (AAP §0.6.1, Hash-DRBG SP 800-90A §10.1.1)
+# ---------------------------------------------------------------------------
+# RustCrypto digest trait crate providing Digest and DynDigest for
+# runtime-polymorphic hash dispatch in Hash-DRBG (hash_df, hash_gen).
+# Chosen over openssl-crypto::evp::md to avoid circular crate dependency.
+digest = { workspace = true, optional = true }
+# SHA-1 hash (legacy, SP 800-90A Table 2). Optional: Hash-DRBG only.
+sha1 = { workspace = true, optional = true }
+# SHA-2 family: SHA-224/256/384/512/512-224/512-256.
+sha2 = { workspace = true, optional = true }
+# SHA-3 family: SHA3-224/256/384/512.
+sha3 = { workspace = true, optional = true }
+
+# ---------------------------------------------------------------------------
 # Secure Memory (AAP §0.6.1, §0.7.6, Rule R8)
 # ---------------------------------------------------------------------------
 # Secure memory zeroing for key material within provider implementations.
@@ -350,7 +364,7 @@ exchange = []
 # DRBG and seed source implementations: CTR-DRBG, Hash-DRBG, HMAC-DRBG,
 # seed sources, jitter entropy.
 # Maps to providers/implementations/rands/ (15 C files).
-rands = ["dep:aes"]
+rands = ["dep:aes", "dep:digest", "dep:sha1", "dep:sha2", "dep:sha3"]
 
 # CPU jitter entropy source: enables the JitterSource RNG implementation that
 # harvests entropy from CPU execution time variations.
