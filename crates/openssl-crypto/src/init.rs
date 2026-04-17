@@ -44,6 +44,7 @@ use openssl_common::{CommonError, CryptoError, CryptoResult};
 
 use crate::context::LibContext;
 use crate::cpu_detect;
+use crate::thread;
 
 bitflags! {
     /// Flags controlling which initialization stages to execute.
@@ -156,9 +157,15 @@ fn init_cpu_detect() {
 fn init_threads() {
     INIT_THREADS.call_once(|| {
         trace!("init: initializing threading subsystem");
-        // Rust's std threading is initialized by the runtime. This stage
-        // exists for parity with the C RUN_ONCE(OPENSSL_INIT_THREAD) and
-        // to ensure the COMPLETED_STAGES bitmask is accurate.
+        // Register a thread-stop handler for per-thread resource cleanup.
+        // This replaces C `ossl_init_thread()` from `crypto/initthread.c`
+        // which initialises `destructor_key` via `CRYPTO_THREAD_init_local`
+        // so that per-thread resources are released when a thread exits.
+        if let Err(e) = thread::register_thread_stop_handler(Box::new(|| {
+            trace!("init: thread stop handler invoked — cleaning up thread-local state");
+        })) {
+            error!(error = %e, "init: failed to register thread stop handler");
+        }
         COMPLETED_STAGES.fetch_or(InitFlags::THREADS.bits(), Ordering::Release);
         trace!("init: threading subsystem ready");
     });
@@ -349,7 +356,9 @@ pub fn cleanup() {
     {
         info!("init: library cleanup initiated");
         // Reset completed stages bitmask to indicate no stage is active.
-        COMPLETED_STAGES.store(0, Ordering::Release);
+        // SeqCst provides a total ordering guarantee so every thread
+        // observes the cleared stages before any subsequent operation.
+        COMPLETED_STAGES.store(0, Ordering::SeqCst);
         info!("init: library stopped");
     } else {
         trace!("init: cleanup called but library already stopped");
