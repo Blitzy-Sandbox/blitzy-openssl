@@ -13,4 +13,5 @@
 
 mod cross_provider;
 mod test_algorithm_correctness;
+mod test_base_provider;
 mod test_default_provider;
