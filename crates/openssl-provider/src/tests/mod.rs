@@ -18,4 +18,5 @@ mod test_default_provider;
 mod test_dispatch;
 #[cfg(feature = "legacy")]
 mod test_legacy_provider;
+mod test_null_provider;
 mod test_provider_lifecycle;
