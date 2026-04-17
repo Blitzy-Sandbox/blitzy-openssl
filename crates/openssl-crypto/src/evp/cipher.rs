@@ -798,8 +798,7 @@ impl CipherCtx {
         direction: CipherDirection,
     ) -> CryptoResult<()> {
         // Validate key length (allow variable-length keys if flag set).
-        if !cipher.flags.contains(CipherFlags::VARIABLE_KEY_LEN) && key.len() != cipher.key_length
-        {
+        if !cipher.flags.contains(CipherFlags::VARIABLE_KEY_LEN) && key.len() != cipher.key_length {
             return Err(CryptoError::Key(format!(
                 "cipher '{}' requires key of {} bytes, got {}",
                 cipher.name,
@@ -965,8 +964,7 @@ impl CipherCtx {
             let dir = self.direction_or_err()?;
             match dir {
                 CipherDirection::Encrypt => {
-                    self.aead_ciphertext
-                        .extend_from_slice(&output[start_len..]);
+                    self.aead_ciphertext.extend_from_slice(&output[start_len..]);
                 }
                 CipherDirection::Decrypt => {
                     self.aead_ciphertext.extend_from_slice(input);
@@ -1065,9 +1063,7 @@ impl CipherCtx {
                         .unwrap_or(block_size);
                     // R6: lossless cast via try_from — block_size ≤ 256 for all known ciphers.
                     let pad_byte = u8::try_from(pad_len).map_err(|_| {
-                        CryptoError::Encoding(
-                            "block size too large for PKCS#7 padding".into(),
-                        )
+                        CryptoError::Encoding("block size too large for PKCS#7 padding".into())
                     })?;
                     let padded_len = self
                         .buf_len
@@ -1208,10 +1204,7 @@ impl CipherCtx {
             ParamValue::UInt32(u32::from(self.padding_enabled)),
         );
         if let Some(ref cipher) = self.cipher {
-            params.set(
-                "algorithm",
-                ParamValue::Utf8String(cipher.name.clone()),
-            );
+            params.set("algorithm", ParamValue::Utf8String(cipher.name.clone()));
             // R6: key_length is always small enough for u32; use saturating conversion.
             params.set(
                 "key_length",

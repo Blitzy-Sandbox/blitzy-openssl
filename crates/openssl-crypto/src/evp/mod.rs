@@ -97,7 +97,7 @@ pub use kdf::Kdf;
 pub use kem::Kem;
 pub use keymgmt::{KeyMgmt, KeySelection};
 pub use mac::Mac;
-pub use md::MessageDigest;
+pub use md::{digest_one_shot, digest_quick, MdContext, MdCtxFlags, MdFlags, MessageDigest};
 pub use pkey::{KeyType, PKey, PKeyCtx};
 pub use rand::Rand;
 pub use signature::{AsymCipher, KeyExchange, Signature};

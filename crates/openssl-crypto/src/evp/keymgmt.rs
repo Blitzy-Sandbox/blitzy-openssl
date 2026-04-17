@@ -795,10 +795,7 @@ pub fn match_keys(
 /// let migrated = export_to_provider(&keydata, &target_km).unwrap();
 /// assert_eq!(migrated.keymgmt().name(), "RSA");
 /// ```
-pub fn export_to_provider(
-    keydata: &KeyData,
-    target_keymgmt: &KeyMgmt,
-) -> CryptoResult<KeyData> {
+pub fn export_to_provider(keydata: &KeyData, target_keymgmt: &KeyMgmt) -> CryptoResult<KeyData> {
     debug!(
         source_algorithm = keydata.keymgmt().name(),
         source_provider = keydata.keymgmt().provider_name(),
@@ -1464,7 +1461,10 @@ mod tests {
         let skm = Arc::new(SymKeyMgmt::fetch(&ctx, "HMAC", None).unwrap());
 
         let mut import_params = ParamSet::new();
-        import_params.set("raw_bytes", ParamValue::OctetString(b"super-secret-key".to_vec()));
+        import_params.set(
+            "raw_bytes",
+            ParamValue::OctetString(b"super-secret-key".to_vec()),
+        );
         import_params.set("key_id", ParamValue::Utf8String("test-key-1".to_string()));
 
         let key = SymKey::import(&skm, &import_params).unwrap();
@@ -1472,7 +1472,10 @@ mod tests {
 
         let exported = key.export().unwrap();
         assert_eq!(
-            exported.get("raw_bytes").and_then(|v| v.as_bytes()).unwrap(),
+            exported
+                .get("raw_bytes")
+                .and_then(|v| v.as_bytes())
+                .unwrap(),
             b"super-secret-key"
         );
     }

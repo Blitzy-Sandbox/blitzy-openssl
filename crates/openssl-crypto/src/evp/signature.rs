@@ -208,7 +208,8 @@ impl DigestSignContext {
     ) -> CryptoResult<Self> {
         let mut sign_ctx = SignContext::new(signature, key);
         sign_ctx.sign_init(Some(digest))?;
-        let digest_ctx = MdContext::new(digest)?;
+        let mut digest_ctx = MdContext::new();
+        digest_ctx.init(digest, None)?;
         trace!(
             algorithm = %signature.name,
             digest = %digest.name(),
@@ -263,7 +264,8 @@ impl DigestVerifyContext {
     ) -> CryptoResult<Self> {
         let mut verify_ctx = SignContext::new(signature, key);
         verify_ctx.verify_init(Some(digest))?;
-        let digest_ctx = MdContext::new(digest)?;
+        let mut digest_ctx = MdContext::new();
+        digest_ctx.init(digest, None)?;
         trace!(
             algorithm = %signature.name,
             digest = %digest.name(),

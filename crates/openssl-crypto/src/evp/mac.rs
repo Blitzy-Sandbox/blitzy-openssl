@@ -309,9 +309,7 @@ impl MacCtx {
         // at least a non-empty key.  Translates the key-length check in
         // `EVP_MAC_init()` (mac_lib.c ~line 70).
         if key.is_empty() {
-            return Err(CryptoError::Key(
-                "MAC key must not be empty".to_string(),
-            ));
+            return Err(CryptoError::Key("MAC key must not be empty".to_string()));
         }
 
         // Store key material (will be zeroed on drop).
@@ -524,9 +522,7 @@ impl MacCtx {
         let mut params = ParamSet::new();
         params.set(
             "size",
-            openssl_common::ParamValue::UInt64(
-                u64::try_from(self.output_size).unwrap_or(u64::MAX),
-            ),
+            openssl_common::ParamValue::UInt64(u64::try_from(self.output_size).unwrap_or(u64::MAX)),
         );
         params.set(
             "algorithm",
@@ -899,10 +895,7 @@ mod tests {
         mac_ctx.init(b"key", None).unwrap();
 
         let mut params = ParamSet::new();
-        params.set(
-            "size",
-            openssl_common::ParamValue::UInt64(16),
-        );
+        params.set("size", openssl_common::ParamValue::UInt64(16));
         mac_ctx.set_params(&params).unwrap();
         assert_eq!(mac_ctx.mac_size().unwrap(), 16);
     }
@@ -915,10 +908,7 @@ mod tests {
         mac_ctx.init(b"key", None).unwrap();
 
         let mut params = ParamSet::new();
-        params.set(
-            "size",
-            openssl_common::ParamValue::UInt64(0),
-        );
+        params.set("size", openssl_common::ParamValue::UInt64(0));
         assert!(mac_ctx.set_params(&params).is_err());
     }
 
