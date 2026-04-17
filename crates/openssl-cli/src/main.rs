@@ -21,6 +21,7 @@
 #![forbid(unsafe_code)]
 #![allow(special_module_name)]
 
+pub mod commands;
 pub mod lib;
 
 #[cfg(test)]
