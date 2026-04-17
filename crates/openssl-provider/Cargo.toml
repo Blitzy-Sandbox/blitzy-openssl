@@ -196,6 +196,15 @@ rand = { workspace = true }
 # from providers/implementations/encode_decode/endecoder_common.c.
 der = { workspace = true }
 
+# ---------------------------------------------------------------------------
+# SubjectPublicKeyInfo Parsing (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# RustCrypto SPKI types used by the spki_decoder module for parsing
+# DER-encoded SubjectPublicKeyInfo structures. Provides SubjectPublicKeyInfoRef
+# with AlgorithmIdentifier extraction. Replaces C ossl_d2i_X509_PUBKEY_INTERNAL()
+# from providers/implementations/encode_decode/decode_spki2typespki.c.
+spki = { workspace = true }
+
 # =============================================================================
 # Feature Flags
 # =============================================================================
