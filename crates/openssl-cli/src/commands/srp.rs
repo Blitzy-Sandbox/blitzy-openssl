@@ -302,12 +302,8 @@ fn sha1(data: &[u8]) -> [u8; 20] {
         let mut w = [0u32; 80];
         for (idx, w_slot) in w.iter_mut().enumerate().take(16) {
             let off = idx * 4;
-            *w_slot = u32::from_be_bytes([
-                chunk[off],
-                chunk[off + 1],
-                chunk[off + 2],
-                chunk[off + 3],
-            ]);
+            *w_slot =
+                u32::from_be_bytes([chunk[off], chunk[off + 1], chunk[off + 2], chunk[off + 3]]);
         }
         for idx in 16..80 {
             w[idx] = (w[idx - 3] ^ w[idx - 8] ^ w[idx - 14] ^ w[idx - 16]).rotate_left(1);
@@ -460,8 +456,16 @@ impl BigUint {
     fn cmp_big(&self, other: &Self) -> std::cmp::Ordering {
         let max_len = self.limbs.len().max(other.limbs.len());
         for i in (0..max_len).rev() {
-            let a = if i < self.limbs.len() { self.limbs[i] } else { 0 };
-            let b = if i < other.limbs.len() { other.limbs[i] } else { 0 };
+            let a = if i < self.limbs.len() {
+                self.limbs[i]
+            } else {
+                0
+            };
+            let b = if i < other.limbs.len() {
+                other.limbs[i]
+            } else {
+                0
+            };
             match a.cmp(&b) {
                 std::cmp::Ordering::Equal => continue,
                 ord => return ord,
@@ -476,7 +480,11 @@ impl BigUint {
         let mut borrow: u64 = 0;
         for i in 0..self.limbs.len() {
             let a = self.limbs[i];
-            let b = if i < other.limbs.len() { other.limbs[i] } else { 0 };
+            let b = if i < other.limbs.len() {
+                other.limbs[i]
+            } else {
+                0
+            };
             let (diff, b1) = a.overflowing_sub(b);
             let (diff2, b2) = diff.overflowing_sub(borrow);
             result.push(diff2);
@@ -633,12 +641,7 @@ fn compute_srp_x(salt: &[u8], username: &str, password: &str) -> Vec<u8> {
 /// Creates a new SRP verifier: `v = g^x mod N`.
 ///
 /// Replaces `SRP_create_verifier_ex()` from `crypto/srp/srp_vfy.c`.
-fn create_srp_verifier(
-    username: &str,
-    password: &str,
-    salt: &[u8],
-    gn: &SrpGnParams,
-) -> Vec<u8> {
+fn create_srp_verifier(username: &str, password: &str, salt: &[u8], gn: &SrpGnParams) -> Vec<u8> {
     let x_bytes = compute_srp_x(salt, username, password);
     let g = BigUint::from_be_bytes(&gn.g);
     let x = BigUint::from_be_bytes(&x_bytes);
@@ -767,7 +770,10 @@ impl SrpDatabase {
                 db.index.insert(entry.id.clone(), idx);
                 db.entries.push(entry);
             } else {
-                debug!(line = line_no + 1, "skipping malformed line in SRP database");
+                debug!(
+                    line = line_no + 1,
+                    "skipping malformed line in SRP database"
+                );
             }
         }
         debug!(count = db.entries.len(), path = %path.display(), "loaded SRP database");
@@ -1067,9 +1073,7 @@ impl SrpArgs {
         let mut modified = false;
         for username in &self.users {
             let changed = match mode {
-                SrpMode::Add => {
-                    self.process_add(username, &mut db, &gn_cache, &passout)?
-                }
+                SrpMode::Add => self.process_add(username, &mut db, &gn_cache, &passout)?,
                 SrpMode::Modify => {
                     self.process_modify(username, &mut db, &gn_cache, &passin, &passout)?
                 }
@@ -1183,9 +1187,8 @@ impl SrpArgs {
         } else {
             let default_path = PathBuf::from("openssl.cnf");
             if default_path.exists() {
-                ConfigParser::parse_file(&default_path).map_err(|e| {
-                    config_error(format!("failed to load default config: {e}"))
-                })?
+                ConfigParser::parse_file(&default_path)
+                    .map_err(|e| config_error(format!("failed to load default config: {e}")))?
             } else {
                 return Err(config_error(
                     "no --srpvfile or --config specified and no openssl.cnf found",
@@ -1281,8 +1284,7 @@ impl SrpArgs {
             .ok_or_else(|| arg_error(format!("unknown gN '{}'", self.gn)))?;
 
         // Get password for the new entry.
-        let password =
-            Self::get_password_for_user(username, passout, "Enter SRP password", true)?;
+        let password = Self::get_password_for_user(username, passout, "Enter SRP password", true)?;
 
         // Generate random salt.
         let salt = generate_random_bytes(SALT_LENGTH)
@@ -1338,9 +1340,7 @@ impl SrpArgs {
         let (stored_salt_hex, stored_verifier_hex, existing_gn_name) = {
             let existing = db
                 .find_by_id_and_type(username, &['V', 'v'])
-                .ok_or_else(|| {
-                    arg_error(format!("user '{username}' not found or revoked"))
-                })?;
+                .ok_or_else(|| arg_error(format!("user '{username}' not found or revoked")))?;
             (
                 existing.salt.clone(),
                 existing.verifier.clone(),
@@ -1368,9 +1368,9 @@ impl SrpArgs {
 
         if computed_verifier != stored_verifier {
             error!(user = username, "password verification failed");
-            return Err(CryptoError::Verification(
-                format!("SRP password verification failed for user '{username}'"),
-            ));
+            return Err(CryptoError::Verification(format!(
+                "SRP password verification failed for user '{username}'"
+            )));
         }
         debug!(user = username, "old password verified");
 
@@ -1402,18 +1402,11 @@ impl SrpArgs {
     /// Process DELETE mode for a single user.
     ///
     /// Mirrors srp.c:475–503 (DELETE branch): marks the entry type as `'R'`.
-    fn process_delete(
-        username: &str,
-        db: &mut SrpDatabase,
-    ) -> Result<bool, CryptoError> {
+    fn process_delete(username: &str, db: &mut SrpDatabase) -> Result<bool, CryptoError> {
         // Verify user exists and is active.
         let _existing = db
             .find_by_id_and_type(username, &['V', 'v'])
-            .ok_or_else(|| {
-                arg_error(format!(
-                    "user '{username}' not found or already revoked"
-                ))
-            })?;
+            .ok_or_else(|| arg_error(format!("user '{username}' not found or already revoked")))?;
 
         if let Some(entry) = db.find_by_id_mut(username) {
             entry.entry_type = 'R';
@@ -1597,11 +1590,20 @@ mod tests {
     #[test]
     fn test_suffixed_path() {
         let base = Path::new("/tmp/srpverifier");
-        assert_eq!(suffixed_path(base, "new"), PathBuf::from("/tmp/srpverifier.new"));
-        assert_eq!(suffixed_path(base, "old"), PathBuf::from("/tmp/srpverifier.old"));
+        assert_eq!(
+            suffixed_path(base, "new"),
+            PathBuf::from("/tmp/srpverifier.new")
+        );
+        assert_eq!(
+            suffixed_path(base, "old"),
+            PathBuf::from("/tmp/srpverifier.old")
+        );
 
         let with_ext = Path::new("/tmp/data.txt");
-        assert_eq!(suffixed_path(with_ext, "new"), PathBuf::from("/tmp/data.txt.new"));
+        assert_eq!(
+            suffixed_path(with_ext, "new"),
+            PathBuf::from("/tmp/data.txt.new")
+        );
     }
 
     #[test]

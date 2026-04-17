@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `storeutl` subcommand.
 #[derive(Args, Debug)]
-pub struct StoreutlArgs {
-}
+pub struct StoreutlArgs {}
 
 impl StoreutlArgs {
     /// Execute the `storeutl` subcommand.

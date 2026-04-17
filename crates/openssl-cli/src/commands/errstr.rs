@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `errstr` subcommand.
 #[derive(Args, Debug)]
-pub struct ErrstrArgs {
-}
+pub struct ErrstrArgs {}
 
 impl ErrstrArgs {
     /// Execute the `errstr` subcommand.

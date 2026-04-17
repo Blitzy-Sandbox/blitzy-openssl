@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `dsaparam` subcommand.
 #[derive(Args, Debug)]
-pub struct DsaparamArgs {
-}
+pub struct DsaparamArgs {}
 
 impl DsaparamArgs {
     /// Execute the `dsaparam` subcommand.

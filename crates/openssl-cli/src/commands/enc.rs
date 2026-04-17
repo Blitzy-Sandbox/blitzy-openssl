@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `enc` subcommand.
 #[derive(Args, Debug)]
-pub struct EncArgs {
-}
+pub struct EncArgs {}
 
 impl EncArgs {
     /// Execute the `enc` subcommand.

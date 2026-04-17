@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `rsa` subcommand.
 #[derive(Args, Debug)]
-pub struct RsaArgs {
-}
+pub struct RsaArgs {}
 
 impl RsaArgs {
     /// Execute the `rsa` subcommand.

@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `asn1parse` subcommand.
 #[derive(Args, Debug)]
-pub struct Asn1parseArgs {
-}
+pub struct Asn1parseArgs {}
 
 impl Asn1parseArgs {
     /// Execute the `asn1parse` subcommand.

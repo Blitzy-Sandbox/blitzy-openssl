@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `req` subcommand.
 #[derive(Args, Debug)]
-pub struct ReqArgs {
-}
+pub struct ReqArgs {}
 
 impl ReqArgs {
     /// Execute the `req` subcommand.

@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `dhparam` subcommand.
 #[derive(Args, Debug)]
-pub struct DhparamArgs {
-}
+pub struct DhparamArgs {}
 
 impl DhparamArgs {
     /// Execute the `dhparam` subcommand.

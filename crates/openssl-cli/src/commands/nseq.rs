@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `nseq` subcommand.
 #[derive(Args, Debug)]
-pub struct NseqArgs {
-}
+pub struct NseqArgs {}
 
 impl NseqArgs {
     /// Execute the `nseq` subcommand.

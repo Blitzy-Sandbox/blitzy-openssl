@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `mac` subcommand.
 #[derive(Args, Debug)]
-pub struct MacArgs {
-}
+pub struct MacArgs {}
 
 impl MacArgs {
     /// Execute the `mac` subcommand.

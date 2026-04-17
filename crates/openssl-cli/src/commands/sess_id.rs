@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `sess_id` subcommand.
 #[derive(Args, Debug)]
-pub struct SessIdArgs {
-}
+pub struct SessIdArgs {}
 
 impl SessIdArgs {
     /// Execute the `sess_id` subcommand.

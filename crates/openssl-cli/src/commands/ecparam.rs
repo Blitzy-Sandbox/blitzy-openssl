@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `ecparam` subcommand.
 #[derive(Args, Debug)]
-pub struct EcparamArgs {
-}
+pub struct EcparamArgs {}
 
 impl EcparamArgs {
     /// Execute the `ecparam` subcommand.

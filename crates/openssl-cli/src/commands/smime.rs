@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `smime` subcommand.
 #[derive(Args, Debug)]
-pub struct SmimeArgs {
-}
+pub struct SmimeArgs {}
 
 impl SmimeArgs {
     /// Execute the `smime` subcommand.

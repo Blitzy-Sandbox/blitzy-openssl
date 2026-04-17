@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `ciphers` subcommand.
 #[derive(Args, Debug)]
-pub struct CiphersArgs {
-}
+pub struct CiphersArgs {}
 
 impl CiphersArgs {
     /// Execute the `ciphers` subcommand.

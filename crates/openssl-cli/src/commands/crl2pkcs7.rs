@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `crl2pkcs7` subcommand.
 #[derive(Args, Debug)]
-pub struct Crl2pkcs7Args {
-}
+pub struct Crl2pkcs7Args {}
 
 impl Crl2pkcs7Args {
     /// Execute the `crl2pkcs7` subcommand.

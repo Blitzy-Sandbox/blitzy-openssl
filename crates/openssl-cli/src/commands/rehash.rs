@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `rehash` subcommand.
 #[derive(Args, Debug)]
-pub struct RehashArgs {
-}
+pub struct RehashArgs {}
 
 impl RehashArgs {
     /// Execute the `rehash` subcommand.

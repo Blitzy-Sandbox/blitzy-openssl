@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `speed` subcommand.
 #[derive(Args, Debug)]
-pub struct SpeedArgs {
-}
+pub struct SpeedArgs {}
 
 impl SpeedArgs {
     /// Execute the `speed` subcommand.

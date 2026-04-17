@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `list` subcommand.
 #[derive(Args, Debug)]
-pub struct ListArgs {
-}
+pub struct ListArgs {}
 
 impl ListArgs {
     /// Execute the `list` subcommand.

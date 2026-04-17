@@ -30,13 +30,13 @@
 //!   from the entry point.
 
 use std::fs::File;
-use std::io::{self, BufWriter, Write, stdout};
+use std::io::{self, stdout, BufWriter, Write};
 use std::path::PathBuf;
 
 use clap::Args;
 use tracing::{debug, info, warn};
 
-use openssl_common::config::{Config, ConfigParser, get_default_config_path};
+use openssl_common::config::{get_default_config_path, Config, ConfigParser};
 use openssl_common::error::CryptoError;
 use openssl_crypto::context::LibContext;
 
@@ -155,7 +155,10 @@ impl ConfigutlArgs {
         // ── Step 2: Parse and expand the configuration file ─────────────
         let config = ConfigParser::parse_file(&config_path)?;
         let section_count = config.sections().count();
-        debug!(sections = section_count, "Configuration parsed successfully");
+        debug!(
+            sections = section_count,
+            "Configuration parsed successfully"
+        );
 
         if self.verbose {
             info!(
@@ -218,8 +221,7 @@ impl ConfigutlArgs {
             warn!("No default configuration file path could be determined");
             Err(CryptoError::Common(
                 openssl_common::error::CommonError::Config {
-                    message: "unable to determine default configuration file path"
-                        .to_string(),
+                    message: "unable to determine default configuration file path".to_string(),
                 },
             ))
         }
@@ -268,7 +270,10 @@ impl ConfigutlArgs {
                 write_section_entries(writer, section_map)?;
             } else {
                 // Section enumerated but empty — log a diagnostic
-                warn!(section = section_name, "Section listed but contains no entries");
+                warn!(
+                    section = section_name,
+                    "Section listed but contains no entries"
+                );
             }
         }
 
@@ -288,7 +293,10 @@ impl ConfigutlArgs {
             write_section_entries(writer, section_map)?;
             Ok(())
         } else {
-            warn!(section = section_name, "Requested section not found in configuration");
+            warn!(
+                section = section_name,
+                "Requested section not found in configuration"
+            );
             Err(CryptoError::Common(
                 openssl_common::error::CommonError::Config {
                     message: format!("section '{section_name}' not found in configuration"),
@@ -400,10 +408,7 @@ mod tests {
     fn test_escape_special_chars() {
         let mut buf = Vec::new();
         write_escaped_value(&mut buf, r#"a"b'c#d\e$f"#).unwrap();
-        assert_eq!(
-            String::from_utf8(buf).unwrap(),
-            r#"a\"b\'c\#d\\e\$f"#
-        );
+        assert_eq!(String::from_utf8(buf).unwrap(), r#"a\"b\'c\#d\\e\$f"#);
     }
 
     /// Verify that control characters are escaped to their named forms.
@@ -411,10 +416,7 @@ mod tests {
     fn test_escape_control_chars() {
         let mut buf = Vec::new();
         write_escaped_value(&mut buf, "line1\nline2\r\t\x08end").unwrap();
-        assert_eq!(
-            String::from_utf8(buf).unwrap(),
-            "line1\\nline2\\r\\t\\bend"
-        );
+        assert_eq!(String::from_utf8(buf).unwrap(), "line1\\nline2\\r\\t\\bend");
     }
 
     /// Verify that leading and trailing spaces are quoted.

@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `passwd` subcommand.
 #[derive(Args, Debug)]
-pub struct PasswdArgs {
-}
+pub struct PasswdArgs {}
 
 impl PasswdArgs {
     /// Execute the `passwd` subcommand.

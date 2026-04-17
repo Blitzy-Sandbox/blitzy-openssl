@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `genpkey` subcommand.
 #[derive(Args, Debug)]
-pub struct GenpkeyArgs {
-}
+pub struct GenpkeyArgs {}
 
 impl GenpkeyArgs {
     /// Execute the `genpkey` subcommand.

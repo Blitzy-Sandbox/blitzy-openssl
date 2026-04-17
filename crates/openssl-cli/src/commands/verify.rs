@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `verify` subcommand.
 #[derive(Args, Debug)]
-pub struct VerifyArgs {
-}
+pub struct VerifyArgs {}
 
 impl VerifyArgs {
     /// Execute the `verify` subcommand.

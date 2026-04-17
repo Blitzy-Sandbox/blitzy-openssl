@@ -41,92 +41,92 @@
 // PKI / Certificate Commands
 // ============================================================================
 
-/// Certificate signing request (CSR) operations — replaces `apps/req.c`.
-pub mod req;
-/// X.509 certificate display, signing, and conversion — replaces `apps/x509.c`.
-pub mod x509;
 /// Certificate Authority management — replaces `apps/ca.c`.
 pub mod ca;
-/// Certificate chain verification — replaces `apps/verify.c`.
-pub mod verify;
 /// CRL inspection and generation — replaces `apps/crl.c`.
 pub mod crl;
+/// Certificate signing request (CSR) operations — replaces `apps/req.c`.
+pub mod req;
+/// Certificate chain verification — replaces `apps/verify.c`.
+pub mod verify;
+/// X.509 certificate display, signing, and conversion — replaces `apps/x509.c`.
+pub mod x509;
 
 // ============================================================================
 // Key Generation / Management Commands
 // ============================================================================
 
-/// Generate private keys or key parameters — replaces `apps/genpkey.c`.
-pub mod genpkey;
-/// Public/private key processing — replaces `apps/pkey.c`.
-pub mod pkey;
-/// Generate RSA private key — replaces `apps/genrsa.c`.
-pub mod genrsa;
-/// Generate DSA key from parameters — replaces `apps/gendsa.c`.
-pub mod gendsa;
 /// DH parameter generation and management — replaces `apps/dhparam.c`.
 pub mod dhparam;
+/// DSA key processing — replaces `apps/dsa.c`.
+pub mod dsa;
 /// DSA parameter generation — replaces `apps/dsaparam.c`.
 pub mod dsaparam;
-/// EC parameter generation — replaces `apps/ecparam.c`.
-#[cfg(feature = "ec")]
-pub mod ecparam;
 /// EC key processing — replaces `apps/ec.c`.
 #[cfg(feature = "ec")]
 pub mod ec;
-/// RSA key processing — replaces `apps/rsa.c`.
-pub mod rsa;
-/// DSA key processing — replaces `apps/dsa.c`.
-pub mod dsa;
+/// EC parameter generation — replaces `apps/ecparam.c`.
+#[cfg(feature = "ec")]
+pub mod ecparam;
+/// Generate DSA key from parameters — replaces `apps/gendsa.c`.
+pub mod gendsa;
+/// Generate private keys or key parameters — replaces `apps/genpkey.c`.
+pub mod genpkey;
+/// Generate RSA private key — replaces `apps/genrsa.c`.
+pub mod genrsa;
+/// Public/private key processing — replaces `apps/pkey.c`.
+pub mod pkey;
 /// Algorithm parameter round-trip — replaces `apps/pkeyparam.c`.
 pub mod pkeyparam;
+/// RSA key processing — replaces `apps/rsa.c`.
+pub mod rsa;
 
 // ============================================================================
 // Crypto Operation Commands
 // ============================================================================
 
-/// Symmetric cipher encryption/decryption — replaces `apps/enc.c`.
-pub mod enc;
-/// Message digest/signature generation and verification — replaces `apps/dgst.c`.
-pub mod dgst;
 /// CMS (Cryptographic Message Syntax) operations — replaces `apps/cms.c`.
 #[cfg(feature = "cms")]
 pub mod cms;
+/// Message digest/signature generation and verification — replaces `apps/dgst.c`.
+pub mod dgst;
+/// Symmetric cipher encryption/decryption — replaces `apps/enc.c`.
+pub mod enc;
+/// Key derivation function execution — replaces `apps/kdf.c`.
+pub mod kdf;
+/// MAC computation — replaces `apps/mac.c`.
+pub mod mac;
+/// Password hashing — replaces `apps/passwd.c`.
+pub mod passwd;
 /// PKCS#12 file operations — replaces `apps/pkcs12.c`.
 pub mod pkcs12;
 /// PKCS#7 data processing — replaces `apps/pkcs7.c`.
 pub mod pkcs7;
 /// PKCS#8 private key conversion — replaces `apps/pkcs8.c`.
 pub mod pkcs8;
-/// S/MIME mail operations — replaces `apps/smime.c`.
-pub mod smime;
-/// MAC computation — replaces `apps/mac.c`.
-pub mod mac;
-/// Key derivation function execution — replaces `apps/kdf.c`.
-pub mod kdf;
 /// Public key algorithm utility — replaces `apps/pkeyutl.c`.
 pub mod pkeyutl;
-/// RSA utility (legacy, deprecated) — replaces `apps/rsautl.c`.
-pub mod rsautl;
-/// Password hashing — replaces `apps/passwd.c`.
-pub mod passwd;
 /// Prime number generation and testing — replaces `apps/prime.c`.
 pub mod prime;
 /// Random data generation — replaces `apps/rand.c`.
 pub mod rand;
+/// RSA utility (legacy, deprecated) — replaces `apps/rsautl.c`.
+pub mod rsautl;
+/// S/MIME mail operations — replaces `apps/smime.c`.
+pub mod smime;
 
 // ============================================================================
 // TLS / Network Test Commands
 // ============================================================================
 
+/// Cipher suite listing — replaces `apps/ciphers.c`.
+pub mod ciphers;
 /// TLS/DTLS/QUIC client — replaces `apps/s_client.c`.
 pub mod s_client;
 /// TLS/DTLS/QUIC server — replaces `apps/s_server.c`.
 pub mod s_server;
 /// TLS connection timing benchmark — replaces `apps/s_time.c`.
 pub mod s_time;
-/// Cipher suite listing — replaces `apps/ciphers.c`.
-pub mod ciphers;
 /// SSL/TLS session data management — replaces `apps/sess_id.c`.
 pub mod sess_id;
 
@@ -134,29 +134,29 @@ pub mod sess_id;
 // Introspection / Info Commands
 // ============================================================================
 
-/// Display version information — replaces `apps/version.c`.
-pub mod version;
+/// ASN.1 data parsing and display — replaces `apps/asn1parse.c`.
+pub mod asn1parse;
+/// Translate error codes to strings — replaces `apps/errstr.c`.
+pub mod errstr;
+/// Display build information — replaces `apps/info.c`.
+pub mod info;
 /// List algorithms, providers, and capabilities — replaces `apps/list.c`.
 pub mod list;
 /// Cryptographic algorithm benchmark — replaces `apps/speed.c`.
 pub mod speed;
-/// Display build information — replaces `apps/info.c`.
-pub mod info;
-/// Translate error codes to strings — replaces `apps/errstr.c`.
-pub mod errstr;
-/// ASN.1 data parsing and display — replaces `apps/asn1parse.c`.
-pub mod asn1parse;
+/// Display version information — replaces `apps/version.c`.
+pub mod version;
 
 // ============================================================================
 // Protocol-Specific Commands (Feature-Gated)
 // ============================================================================
 
-/// OCSP client and responder — replaces `apps/ocsp.c`.
-#[cfg(feature = "ocsp")]
-pub mod ocsp;
 /// Certificate Management Protocol client — replaces `apps/cmp.c`.
 #[cfg(feature = "cmp")]
 pub mod cmp;
+/// OCSP client and responder — replaces `apps/ocsp.c`.
+#[cfg(feature = "ocsp")]
+pub mod ocsp;
 /// RFC 3161 Time Stamp Authority operations — replaces `apps/ts.c`.
 #[cfg(feature = "ts")]
 pub mod ts;
@@ -165,18 +165,18 @@ pub mod ts;
 // Utility Commands
 // ============================================================================
 
-/// Certificate directory hash link creation — replaces `apps/rehash.c`.
-pub mod rehash;
-/// FIPS module installation and configuration — replaces `apps/fipsinstall.c`.
-#[cfg(feature = "fips")]
-pub mod fipsinstall;
-/// Symmetric key generation utility — replaces `apps/skeyutl.c`.
-pub mod skeyutl;
 /// Configuration file expansion — replaces `apps/configutl.c`.
 pub mod configutl;
 /// ECH configuration management — replaces `apps/ech.c`.
 #[cfg(feature = "ech")]
 pub mod ech;
+/// FIPS module installation and configuration — replaces `apps/fipsinstall.c`.
+#[cfg(feature = "fips")]
+pub mod fipsinstall;
+/// Certificate directory hash link creation — replaces `apps/rehash.c`.
+pub mod rehash;
+/// Symmetric key generation utility — replaces `apps/skeyutl.c`.
+pub mod skeyutl;
 
 // ============================================================================
 // Legacy / Miscellaneous Commands
@@ -225,6 +225,7 @@ use openssl_crypto::context::LibContext;
 /// corresponding Cargo feature is enabled. This mirrors the C preprocessor
 /// pattern: `#ifndef OPENSSL_NO_<FEATURE>`.
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum CliCommand {
     // ===================================================================
     // PKI / Certificate Commands

@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `rsautl` subcommand.
 #[derive(Args, Debug)]
-pub struct RsautlArgs {
-}
+pub struct RsautlArgs {}
 
 impl RsautlArgs {
     /// Execute the `rsautl` subcommand.

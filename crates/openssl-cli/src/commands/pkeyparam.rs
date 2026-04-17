@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `pkeyparam` subcommand.
 #[derive(Args, Debug)]
-pub struct PkeyparamArgs {
-}
+pub struct PkeyparamArgs {}
 
 impl PkeyparamArgs {
     /// Execute the `pkeyparam` subcommand.

@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `fipsinstall` subcommand.
 #[derive(Args, Debug)]
-pub struct FipsinstallArgs {
-}
+pub struct FipsinstallArgs {}
 
 impl FipsinstallArgs {
     /// Execute the `fipsinstall` subcommand.

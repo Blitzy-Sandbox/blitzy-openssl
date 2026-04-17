@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `info` subcommand.
 #[derive(Args, Debug)]
-pub struct InfoArgs {
-}
+pub struct InfoArgs {}
 
 impl InfoArgs {
     /// Execute the `info` subcommand.

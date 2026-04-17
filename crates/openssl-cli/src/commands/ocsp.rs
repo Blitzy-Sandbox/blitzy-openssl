@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `ocsp` subcommand.
 #[derive(Args, Debug)]
-pub struct OcspArgs {
-}
+pub struct OcspArgs {}
 
 impl OcspArgs {
     /// Execute the `ocsp` subcommand.

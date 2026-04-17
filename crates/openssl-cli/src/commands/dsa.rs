@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `dsa` subcommand.
 #[derive(Args, Debug)]
-pub struct DsaArgs {
-}
+pub struct DsaArgs {}
 
 impl DsaArgs {
     /// Execute the `dsa` subcommand.

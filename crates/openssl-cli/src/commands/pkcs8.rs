@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `pkcs8` subcommand.
 #[derive(Args, Debug)]
-pub struct Pkcs8Args {
-}
+pub struct Pkcs8Args {}
 
 impl Pkcs8Args {
     /// Execute the `pkcs8` subcommand.

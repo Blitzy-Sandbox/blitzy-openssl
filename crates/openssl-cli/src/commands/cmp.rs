@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `cmp` subcommand.
 #[derive(Args, Debug)]
-pub struct CmpArgs {
-}
+pub struct CmpArgs {}
 
 impl CmpArgs {
     /// Execute the `cmp` subcommand.

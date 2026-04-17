@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `ca` subcommand.
 #[derive(Args, Debug)]
-pub struct CaArgs {
-}
+pub struct CaArgs {}
 
 impl CaArgs {
     /// Execute the `ca` subcommand.

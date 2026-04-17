@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `skeyutl` subcommand.
 #[derive(Args, Debug)]
-pub struct SkeyutlArgs {
-}
+pub struct SkeyutlArgs {}
 
 impl SkeyutlArgs {
     /// Execute the `skeyutl` subcommand.

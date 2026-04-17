@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `gendsa` subcommand.
 #[derive(Args, Debug)]
-pub struct GendsaArgs {
-}
+pub struct GendsaArgs {}
 
 impl GendsaArgs {
     /// Execute the `gendsa` subcommand.

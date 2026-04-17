@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `genrsa` subcommand.
 #[derive(Args, Debug)]
-pub struct GenrsaArgs {
-}
+pub struct GenrsaArgs {}
 
 impl GenrsaArgs {
     /// Execute the `genrsa` subcommand.

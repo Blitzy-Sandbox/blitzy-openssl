@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `spkac` subcommand.
 #[derive(Args, Debug)]
-pub struct SpkacArgs {
-}
+pub struct SpkacArgs {}
 
 impl SpkacArgs {
     /// Execute the `spkac` subcommand.

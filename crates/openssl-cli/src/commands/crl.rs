@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `crl` subcommand.
 #[derive(Args, Debug)]
-pub struct CrlArgs {
-}
+pub struct CrlArgs {}
 
 impl CrlArgs {
     /// Execute the `crl` subcommand.

@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `x509` subcommand.
 #[derive(Args, Debug)]
-pub struct X509Args {
-}
+pub struct X509Args {}
 
 impl X509Args {
     /// Execute the `x509` subcommand.

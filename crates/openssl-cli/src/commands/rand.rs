@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `rand` subcommand.
 #[derive(Args, Debug)]
-pub struct RandArgs {
-}
+pub struct RandArgs {}
 
 impl RandArgs {
     /// Execute the `rand` subcommand.

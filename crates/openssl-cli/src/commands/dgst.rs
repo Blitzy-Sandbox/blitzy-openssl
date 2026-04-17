@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `dgst` subcommand.
 #[derive(Args, Debug)]
-pub struct DgstArgs {
-}
+pub struct DgstArgs {}
 
 impl DgstArgs {
     /// Execute the `dgst` subcommand.

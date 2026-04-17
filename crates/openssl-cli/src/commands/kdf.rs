@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `kdf` subcommand.
 #[derive(Args, Debug)]
-pub struct KdfArgs {
-}
+pub struct KdfArgs {}
 
 impl KdfArgs {
     /// Execute the `kdf` subcommand.

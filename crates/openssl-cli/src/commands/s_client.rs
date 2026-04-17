@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `s_client` subcommand.
 #[derive(Args, Debug)]
-pub struct SClientArgs {
-}
+pub struct SClientArgs {}
 
 impl SClientArgs {
     /// Execute the `s_client` subcommand.

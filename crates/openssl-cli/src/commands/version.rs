@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `version` subcommand.
 #[derive(Args, Debug)]
-pub struct VersionArgs {
-}
+pub struct VersionArgs {}
 
 impl VersionArgs {
     /// Execute the `version` subcommand.

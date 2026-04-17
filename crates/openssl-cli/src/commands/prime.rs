@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `prime` subcommand.
 #[derive(Args, Debug)]
-pub struct PrimeArgs {
-}
+pub struct PrimeArgs {}
 
 impl PrimeArgs {
     /// Execute the `prime` subcommand.

@@ -64,6 +64,10 @@ struct Cli {
 /// subcommand names for digest/cipher name fallback dispatch, replicating
 /// the three-tier lookup from `apps/openssl.c:do_cmd()`.
 #[derive(Subcommand)]
+// The `Ts` variant carries a large `TsArgs` struct (624 bytes). Boxing would
+// break clap's derive-based argument propagation for subcommand variants.
+// Other variants are small unit types so the asymmetry is acceptable.
+#[allow(clippy::large_enum_variant)]
 enum CliCommand {
     // ===================================================================
     // Standard PKI Commands
@@ -284,7 +288,7 @@ enum CliCommand {
     /// RFC 3161 timestamp authority client.
     #[cfg(feature = "ts")]
     #[command(name = "ts")]
-    Ts,
+    Ts(commands::ts::TsArgs),
 
     /// FIPS module installation and configuration.
     #[cfg(feature = "fips")]
@@ -347,6 +351,26 @@ fn main() -> ExitCode {
         Some(CliCommand::Errstr(args)) => handle_errstr(&args),
         // External (unrecognized) subcommand → digest/cipher fallback.
         Some(CliCommand::External(args)) => handle_fallback_dispatch(&args),
+
+        // ── Feature-gated commands with full handler wiring ────────────
+        #[cfg(feature = "ts")]
+        Some(CliCommand::Ts(args)) => {
+            let ctx = openssl_crypto::context::LibContext::new();
+            match tokio::runtime::Runtime::new() {
+                Ok(rt) => match rt.block_on(args.execute(&ctx)) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("ts: {e}");
+                        ExitCode::FAILURE
+                    }
+                },
+                Err(e) => {
+                    eprintln!("ts: failed to create runtime: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+
         // Other recognized subcommands — pending full handler wiring.
         Some(_) => {
             eprintln!("Command dispatched successfully. Full handler implementation pending.");

@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `ech` subcommand.
 #[derive(Args, Debug)]
-pub struct EchArgs {
-}
+pub struct EchArgs {}
 
 impl EchArgs {
     /// Execute the `ech` subcommand.

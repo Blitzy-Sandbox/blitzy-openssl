@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `cms` subcommand.
 #[derive(Args, Debug)]
-pub struct CmsArgs {
-}
+pub struct CmsArgs {}
 
 impl CmsArgs {
     /// Execute the `cms` subcommand.

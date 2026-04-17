@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `s_server` subcommand.
 #[derive(Args, Debug)]
-pub struct SServerArgs {
-}
+pub struct SServerArgs {}
 
 impl SServerArgs {
     /// Execute the `s_server` subcommand.

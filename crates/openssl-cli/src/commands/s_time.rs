@@ -8,8 +8,7 @@ use openssl_crypto::context::LibContext;
 
 /// Arguments for the `s_time` subcommand.
 #[derive(Args, Debug)]
-pub struct STimeArgs {
-}
+pub struct STimeArgs {}
 
 impl STimeArgs {
     /// Execute the `s_time` subcommand.
