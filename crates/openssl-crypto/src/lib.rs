@@ -21,6 +21,9 @@ pub mod rand;
 pub mod symmetric;
 pub mod thread;
 
+#[cfg(feature = "dh")]
+pub mod dh;
+
 #[cfg(feature = "hpke")]
 pub mod hpke;
 
