@@ -6,6 +6,7 @@
 //! - [`EcKey`] — EC key pair (replaces C `EC_KEY`)
 //!
 //! Submodules:
+//! - [`ecdsa`] — ECDSA sign/verify operations
 //! - [`ecdh`] — ECDH key exchange
 //! - [`curve25519`] — X25519/Ed25519/X448/Ed448 primitives
 //!
@@ -32,10 +33,12 @@ use tracing::{debug, trace};
 
 pub mod curve25519;
 pub mod ecdh;
+pub mod ecdsa;
 
 // Re-export key types from submodules for ergonomic access.
 pub use curve25519::{EcxKeyPair, EcxKeyType, EcxPrivateKey, EcxPublicKey};
 pub use ecdh::{EcdhMode, SharedSecret};
+pub use ecdsa::{EcdsaSignature, NonceType};
 
 // ===========================================================================
 // NamedCurve — enumeration of supported elliptic curves
