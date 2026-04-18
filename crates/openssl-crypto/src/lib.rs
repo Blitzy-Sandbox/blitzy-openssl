@@ -24,6 +24,9 @@ pub mod thread;
 #[cfg(feature = "dh")]
 pub mod dh;
 
+#[cfg(feature = "dsa")]
+pub mod dsa;
+
 #[cfg(feature = "hpke")]
 pub mod hpke;
 
