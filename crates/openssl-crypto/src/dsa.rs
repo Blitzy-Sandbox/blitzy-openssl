@@ -921,7 +921,9 @@ fn sign_attempt(
     }
 
     // Step 3: kinv = k^(-1) mod q
-    let kinv = crate::bn::arithmetic::mod_inverse(&k, q)?;
+    // k is coprime to q (both are non-zero and q is prime), so inverse always exists.
+    let kinv = crate::bn::arithmetic::mod_inverse(&k, q)?
+        .ok_or_else(|| CryptoError::Key("DSA sign: k has no modular inverse".into()))?;
     // Zero k immediately after computing inverse
     k.clear();
 
@@ -1017,7 +1019,9 @@ pub fn verify(key: &DsaPublicKey, digest: &[u8], signature: &[u8]) -> CryptoResu
     }
 
     // Step 2: w = s^(-1) mod q
-    let w = crate::bn::arithmetic::mod_inverse(&sig.s, q)?;
+    // s is verified non-zero above and q is prime, so inverse always exists.
+    let w = crate::bn::arithmetic::mod_inverse(&sig.s, q)?
+        .ok_or_else(|| CryptoError::Key("DSA verify: s has no modular inverse".into()))?;
 
     // Truncate and convert digest to BigNum
     let m = digest_to_bignum(digest, q_byte_len);

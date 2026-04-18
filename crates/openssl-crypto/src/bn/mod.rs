@@ -1043,7 +1043,9 @@ impl Blinding {
         };
 
         // Compute unblinding factor: r^(-1) mod n
-        let ai = arithmetic::mod_inverse(&r, n)?;
+        // The inverse is guaranteed to exist because r is coprime to n (checked above).
+        let ai = arithmetic::mod_inverse(&r, n)?
+            .ok_or(BigNumError::NoInverse)?;
 
         // Compute blinding factor: r^e mod n
         let a = montgomery::mod_exp(&r, e, n)?;
