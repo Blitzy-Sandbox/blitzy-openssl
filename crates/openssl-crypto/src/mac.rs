@@ -40,6 +40,7 @@
 //! ```
 
 use openssl_common::{CryptoError, CryptoResult, Nid, ParamSet, ParamValue};
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // ---------------------------------------------------------------------------
@@ -2050,6 +2051,43 @@ impl MacContext {
         self.lifecycle = MacState::Finalized;
         Ok(tag)
     }
+
+    /// Finalizes the MAC computation and verifies the tag in constant time.
+    ///
+    /// This is the recommended way to verify a MAC tag. It uses
+    /// [`subtle::ConstantTimeEq`] to prevent timing side-channel attacks
+    /// that could leak information about the expected tag.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`CryptoError::Verification`] if the computed tag does not
+    ///   match `expected_tag` (length mismatch or content mismatch).
+    /// - Forwards any error from [`Self::finalize`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use openssl_crypto::mac::{MacType, MacContext};
+    /// let mut ctx = MacContext::new(MacType::Hmac);
+    /// // ... init, update ...
+    /// # let expected = vec![0u8; 32];
+    /// ctx.verify(&expected).expect("MAC verification failed");
+    /// ```
+    pub fn verify(&mut self, expected_tag: &[u8]) -> CryptoResult<()> {
+        let computed = self.finalize()?;
+        if computed.len() != expected_tag.len() {
+            return Err(CryptoError::Verification(
+                "MAC tag length mismatch".into(),
+            ));
+        }
+        if computed.ct_eq(expected_tag).into() {
+            Ok(())
+        } else {
+            Err(CryptoError::Verification(
+                "MAC tag verification failed".into(),
+            ))
+        }
+    }
 }
 
 // ===========================================================================
@@ -2076,6 +2114,28 @@ pub fn compute(
     ctx.init(key, params)?;
     ctx.update(data)?;
     ctx.finalize()
+}
+
+/// Computes a MAC tag and verifies it against an expected value in a single call.
+///
+/// Uses constant-time comparison via [`subtle::ConstantTimeEq`] to prevent
+/// timing side-channel attacks.
+///
+/// # Errors
+///
+/// - Returns [`CryptoError::Verification`] if the computed tag does not match.
+/// - Forwards any error from the underlying algorithm.
+pub fn verify(
+    mac_type: MacType,
+    key: &[u8],
+    data: &[u8],
+    expected_tag: &[u8],
+    params: Option<&ParamSet>,
+) -> CryptoResult<()> {
+    let mut ctx = MacContext::new(mac_type);
+    ctx.init(key, params)?;
+    ctx.update(data)?;
+    ctx.verify(expected_tag)
 }
 
 /// Computes an HMAC tag using the specified digest algorithm.

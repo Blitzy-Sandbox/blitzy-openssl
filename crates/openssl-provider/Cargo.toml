@@ -271,6 +271,7 @@ default = [
     "sha3",          # SHA-3/SHAKE/Keccak/KECCAK-KMAC/cSHAKE digest family
     "blake2",        # BLAKE2b-512 and BLAKE2s-256 digest family
     "sm3",           # SM3 Chinese national standard hash
+    "ec",            # EC key management (P-256, P-384, P-521, secp256k1)
 ]
 
 # --- Algorithm category features ---
@@ -330,7 +331,7 @@ digests = []
 # SSKDF, X963KDF, X942KDF, PKCS12KDF.
 # Maps to providers/implementations/kdfs/ (16 C files).
 # Sub-features: "argon2" and "scrypt" gate memory-hard KDFs independently.
-kdfs = ["argon2", "scrypt"]
+kdfs = ["argon2", "scrypt", "dep:hmac", "dep:sha2", "dep:digest", "dep:sha1", "dep:sha3", "dep:aes"]
 
 # Argon2 password hashing (RFC 9106): Argon2d, Argon2i, Argon2id.
 # Gated separately due to significant memory requirements.
@@ -504,6 +505,9 @@ criterion = { workspace = true, features = ["html_reports"] }
 
 # JSON serialization for test assertions (e.g., ProviderInfo serde round-trip).
 serde_json = { workspace = true }
+
+# Hex encoding/decoding for test vectors (RFC 5869, RFC 6070, etc.).
+hex = { workspace = true }
 
 # =============================================================================
 # Benchmark Harness

@@ -733,6 +733,18 @@ pub fn disable_conditional_error_state() {
     CONDITIONAL_ERROR_ENABLED.store(false, Ordering::SeqCst);
 }
 
+/// Re-enables conditional error state checking.
+///
+/// This is the inverse of [`disable_conditional_error_state`] and is
+/// intended for test isolation — resetting the module to its default
+/// behaviour between test runs. Production code should not need to call
+/// this because the conditional-error flag is only ever *disabled* (never
+/// re-enabled) during normal FIPS operation.
+#[cfg(test)]
+pub(crate) fn enable_conditional_error_state() {
+    CONDITIONAL_ERROR_ENABLED.store(true, Ordering::SeqCst);
+}
+
 /// Sets the FIPS module to the error state based on the error category.
 ///
 /// Handles different error categories per `self_test.c` lines 438-458:

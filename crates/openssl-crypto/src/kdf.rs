@@ -230,7 +230,14 @@ const SHA256_DIGEST_SIZE: usize = 32;
 // PBKDF2 constants (from providers/implementations/kdfs/pbkdf2.c)
 // ===========================================================================
 
-/// Minimum PBKDF2 iteration count per SP 800-132 (non-FIPS minimum = 1).
+/// Minimum PBKDF2 iteration count at the crypto layer.
+///
+/// This is intentionally set to 1 to match C OpenSSL behaviour. The FIPS
+/// provider (`openssl-fips`) enforces a higher minimum (≥1000 per NIST SP
+/// 800-132 §5.2) via its own parameter validation in
+/// `openssl_provider::implementations::kdfs::pbkdf2`. Application-level code
+/// should always use iteration counts ≥600 000 (OWASP 2024 recommendation)
+/// for password hashing.
 const PBKDF2_MIN_ITERATIONS: u32 = 1;
 
 /// Maximum PBKDF2 derived key length relative to hash output:
@@ -643,6 +650,15 @@ fn pbkdf2_derive_internal(
                 "PBKDF2 iterations {iterations} below minimum {PBKDF2_MIN_ITERATIONS}"
             )),
         ));
+    }
+    // Warn on iteration counts below the NIST SP 800-132 recommended minimum.
+    // The FIPS provider enforces a hard floor; this crypto-layer warning is
+    // advisory to help callers identify weak configurations early.
+    if iterations < 1000 {
+        tracing::warn!(
+            iterations,
+            "PBKDF2 iteration count below NIST SP 800-132 recommended minimum of 1000"
+        );
     }
     if length == 0 {
         return Err(CryptoError::Common(

@@ -553,8 +553,8 @@ fn test_dgst_sign_verify() {
 /// Caller chain: `main() → Cli::parse() → CliCommand::Rand → rand::execute()`
 #[test]
 fn test_rand_generates_bytes() {
-    // Verify the rand subcommand is recognized.
-    openssl_cmd().arg("rand").assert().success();
+    // Verify the rand subcommand is recognized and produces output with a byte count.
+    openssl_cmd().args(["rand", "1"]).assert().success();
 
     let dir = TempDir::new().expect("Failed to create temp dir");
     let out_path = dir.path().join("random.bin");
@@ -580,8 +580,8 @@ fn test_rand_generates_bytes() {
 /// Caller chain: `main() → Cli::parse() → CliCommand::Rand → rand::execute()`
 #[test]
 fn test_rand_hex_output() {
-    // Verify the rand subcommand is recognized.
-    openssl_cmd().arg("rand").assert().success();
+    // Verify the rand subcommand is recognized and produces output with a byte count.
+    openssl_cmd().args(["rand", "1"]).assert().success();
 
     let output = run_cmd_with_args("rand", &["-hex", "16"]);
 
@@ -618,8 +618,8 @@ fn test_rand_hex_output() {
 /// Caller chain: `main() → Cli::parse() → CliCommand::Rand → rand::execute()`
 #[test]
 fn test_rand_base64_output() {
-    // Verify the rand subcommand is recognized.
-    openssl_cmd().arg("rand").assert().success();
+    // Verify the rand subcommand is recognized and produces output with a byte count.
+    openssl_cmd().args(["rand", "1"]).assert().success();
 
     let output = run_cmd_with_args("rand", &["-base64", "32"]);
 

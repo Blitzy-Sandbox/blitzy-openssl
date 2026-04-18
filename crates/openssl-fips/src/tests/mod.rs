@@ -33,6 +33,32 @@ mod self_test_tests;
 mod state_tests;
 
 // ---------------------------------------------------------------------------
+// Shared serialisation primitive — all FIPS tests that mutate global state
+// ---------------------------------------------------------------------------
+
+/// Cross-module serialisation mutex for tests that mutate global FIPS state.
+///
+/// The FIPS module uses process-wide `static AtomicU32` / `AtomicBool` values
+/// for `FIPS_MODULE_STATE`, per-test `TestState` entries, and
+/// `CONDITIONAL_ERROR_ENABLED`.  Parallel test execution across different
+/// submodules causes non-deterministic interference (e.g., one test puts the
+/// module into `Error` while another expects `Init`).
+///
+/// Every test that calls `set_fips_state()`, `reset_fips_state()`,
+/// `initialize()`, `run()`, `run_deferred_test()`, or any other function that
+/// mutates global FIPS state **must** acquire this mutex as its first action:
+///
+/// ```ignore
+/// let _serial = super::TEST_MUTEX.lock().unwrap();
+/// ```
+///
+/// This is deliberately separate from the internal `self_test::SELF_TEST_LOCK`
+/// to avoid deadlocks when tests call `run()` (which acquires that lock
+/// internally).
+#[allow(dead_code)] // TEST-UTIL: used across multiple test submodules
+pub(crate) static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+// ---------------------------------------------------------------------------
 // Shared test utility helpers
 // ---------------------------------------------------------------------------
 

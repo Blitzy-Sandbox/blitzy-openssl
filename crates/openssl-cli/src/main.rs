@@ -180,11 +180,11 @@ enum CliCommand {
 
     /// Prime number generation and testing.
     #[command(name = "prime")]
-    Prime,
+    Prime(commands::prime::PrimeArgs),
 
     /// Random byte generation.
     #[command(name = "rand")]
-    Rand,
+    Rand(commands::rand::RandArgs),
 
     // ===================================================================
     // TLS / Network Commands
@@ -222,7 +222,7 @@ enum CliCommand {
 
     /// Algorithm performance benchmarking.
     #[command(name = "speed")]
-    Speed,
+    Speed(commands::speed::SpeedArgs),
 
     /// Build and installation information.
     #[command(name = "info")]
@@ -351,6 +351,56 @@ fn main() -> ExitCode {
         Some(CliCommand::Errstr(args)) => handle_errstr(&args),
         // External (unrecognized) subcommand → digest/cipher fallback.
         Some(CliCommand::External(args)) => handle_fallback_dispatch(&args),
+
+        // ── Introspection commands with async handlers ────────────────
+        Some(CliCommand::Speed(args)) => {
+            let ctx = openssl_crypto::context::LibContext::new();
+            match tokio::runtime::Runtime::new() {
+                Ok(rt) => match rt.block_on(args.execute(&ctx)) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("speed: {e}");
+                        ExitCode::FAILURE
+                    }
+                },
+                Err(e) => {
+                    eprintln!("speed: failed to create runtime: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Some(CliCommand::Prime(args)) => {
+            let ctx = openssl_crypto::context::LibContext::new();
+            match tokio::runtime::Runtime::new() {
+                Ok(rt) => match rt.block_on(args.execute(&ctx)) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("prime: {e}");
+                        ExitCode::FAILURE
+                    }
+                },
+                Err(e) => {
+                    eprintln!("prime: failed to create runtime: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Some(CliCommand::Rand(args)) => {
+            let ctx = openssl_crypto::context::LibContext::new();
+            match tokio::runtime::Runtime::new() {
+                Ok(rt) => match rt.block_on(args.execute(&ctx)) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("rand: {e}");
+                        ExitCode::FAILURE
+                    }
+                },
+                Err(e) => {
+                    eprintln!("rand: failed to create runtime: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
 
         // ── Feature-gated commands with full handler wiring ────────────
         #[cfg(feature = "ts")]

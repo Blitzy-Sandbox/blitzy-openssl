@@ -273,6 +273,7 @@ fn test_fips_indicator_config_individual_disable() {
 
 #[test]
 fn test_provider_initialize_success() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     reset_for_test();
 
     let config = build_minimal_init_params();
@@ -296,6 +297,7 @@ fn test_provider_initialize_success() {
 
 #[test]
 fn test_provider_initialize_missing_checksum() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     reset_for_test();
 
     let config = build_params_missing_checksum();
@@ -330,6 +332,7 @@ fn test_provider_initialize_missing_checksum() {
 
 #[test]
 fn test_provider_initialize_already_running() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     reset_for_test();
     // Pre-set state to Running (simulates an already-initialized module).
     set_fips_state(FipsState::Running);
@@ -637,6 +640,7 @@ fn test_gettable_params_list() {
 
 #[test]
 fn test_get_params_after_init() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     reset_for_test();
 
     // Create a FipsGlobal via new() — direct construction avoids
@@ -814,6 +818,7 @@ fn test_config_individual_accessors_after_disable() {
 
 #[test]
 fn test_provider_teardown() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     reset_for_test();
 
     let mut global = FipsGlobal::new();

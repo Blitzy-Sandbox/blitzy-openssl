@@ -275,6 +275,11 @@ mockall = { workspace = true }
 name = "crypto_bench"
 harness = false
 
+[[bench]]
+name = "aes_bench"
+harness = false
+path = "../../benches/aes_bench.rs"
+
 # ===========================================================================
 # Lint Configuration
 # ===========================================================================

@@ -333,6 +333,18 @@ pub struct DhPrivateKey {
 }
 
 impl DhPrivateKey {
+    /// Constructs a private key from raw big-endian bytes and domain parameters.
+    ///
+    /// Used by the provider layer when receiving raw key material from the
+    /// key exchange context. The caller is responsible for ensuring the bytes
+    /// represent a valid private exponent for the given parameters.
+    pub fn new_from_raw(value_bytes: Vec<u8>, params: DhParams) -> Self {
+        Self {
+            value_bytes,
+            params,
+        }
+    }
+
     /// Returns the private exponent as a [`BigNum`].
     ///
     /// # Security Note
@@ -378,6 +390,14 @@ pub struct DhPublicKey {
 }
 
 impl DhPublicKey {
+    /// Constructs a public key from a [`BigNum`] value and domain parameters.
+    ///
+    /// Used by the provider layer when receiving raw key material from the
+    /// key exchange context.
+    pub fn new_from_raw(value: BigNum, params: DhParams) -> Self {
+        Self { value, params }
+    }
+
     /// Returns a reference to the public value `y`.
     #[inline]
     pub fn value(&self) -> &BigNum {

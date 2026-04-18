@@ -4,7 +4,33 @@ expression: stdout
 ---
 Random byte generation
 
-Usage: openssl rand
+Usage: openssl rand [OPTIONS] <NUM>
+
+Arguments:
+  <NUM>
+          Number of random bytes to generate.
+          
+          Accepts an optional single-character suffix for binary scaling:
+          
+          | Suffix | Multiplier | Example | |--------|------------|---------| | `K`    | × 1 024    | `4K`    | | `M`    | × 1 048 576| `2M`    | | `G`    | × 1 073 741 824 | `1G` | | `T`    | × 1 099 511 627 776 | `1T` |
+          
+          Use `max` (case-insensitive) to request the maximum allowed output (2^61 bytes).
 
 Options:
-  -h, --help  Print help
+      --out <FILE>
+          Write output to the specified file instead of stdout.
+          
+          Replaces `-out FILE` from `apps/rand.c` `rand_options[]`.
+
+      --base64
+          Base64-encode the output.
+          
+          Uses `base64ct::Base64` constant-time encoding with 76-character line wrapping, matching `BIO_f_base64()`.
+
+      --hex
+          Hex-encode the output (lowercase hexadecimal with trailing newline).
+          
+          Encodes each byte as a two-character hex pair, matching the C `BIO_printf(out, "%02x", buf[i])` loop.
+
+  -h, --help
+          Print help (see a summary with '-h')

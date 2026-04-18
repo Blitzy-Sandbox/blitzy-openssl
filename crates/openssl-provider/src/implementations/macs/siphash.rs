@@ -32,6 +32,7 @@
 use crate::traits::{AlgorithmDescriptor, MacContext, MacProvider};
 use openssl_common::error::{CommonError, ProviderError};
 use openssl_common::{ParamBuilder, ParamSet, ProviderResult};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -150,7 +151,11 @@ fn le_u64(bytes: &[u8]) -> ProviderResult<u64> {
 /// Replaces the C `SIPHASH` struct from `crypto/siphash/siphash.c`.
 /// Holds the four 64-bit state words (v0–v3), a partial-block "leavings"
 /// buffer, and the algorithm configuration (output size, round counts).
-#[derive(Clone)]
+///
+/// Derives `Zeroize` and `ZeroizeOnDrop` to ensure key-derived state words
+/// (v0–v3) are securely erased when the state is dropped, matching the
+/// secure erasure behaviour of all other MAC implementations in this module.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 struct SipHashState {
     /// Internal state word 0.
     v0: u64,
@@ -598,6 +603,28 @@ impl Clone for SipHashContext {
             d_rounds: self.d_rounds,
             hash_size: self.hash_size,
         }
+    }
+}
+
+impl Drop for SipHashContext {
+    /// Securely zeroes all key-derived state when the context is dropped.
+    ///
+    /// Ensures v0–v3 state words, leavings buffers, and snapshot copies are
+    /// cleared, matching the secure erasure behaviour of all other MAC
+    /// implementations in this module (HMAC, CMAC, GMAC, KMAC, Poly1305).
+    fn drop(&mut self) {
+        // Zeroize the active computation state if present.
+        if let ContextState::Active(ref mut state) = self.state {
+            state.zeroize();
+        }
+        // Zeroize the snapshot copy of initial state used for keyless reinit.
+        if let Some(ref mut snap) = self.snapshot {
+            snap.zeroize();
+        }
+        // Zero configuration fields as defense-in-depth.
+        self.c_rounds = 0;
+        self.d_rounds = 0;
+        self.hash_size = 0;
     }
 }
 

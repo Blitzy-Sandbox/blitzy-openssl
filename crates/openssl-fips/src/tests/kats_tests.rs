@@ -99,6 +99,7 @@ fn find_test_with_dependencies() -> Option<(usize, usize)> {
 /// payload and that `execute_single_test` returns `Ok(())` with state `Passed`.
 #[test]
 fn test_kat_digest() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let digest_indices = find_test_indices_by_category(TestCategory::Digest);
     assert!(
@@ -163,6 +164,7 @@ fn test_kat_digest() {
 /// Checks that both encrypt and decrypt modes produce expected results.
 #[test]
 fn test_kat_cipher() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let cipher_indices = find_test_indices_by_category(TestCategory::Cipher);
     assert!(!cipher_indices.is_empty(), "Must have ≥1 cipher KAT");
@@ -231,6 +233,7 @@ fn test_kat_cipher() {
 /// Maps to `test_mac()` in self_test_kats.c lines 650–700.
 #[test]
 fn test_kat_mac() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let mac_indices = find_test_indices_by_category(TestCategory::Mac);
     assert!(!mac_indices.is_empty(), "Must have ≥1 MAC KAT");
@@ -273,6 +276,7 @@ fn test_kat_mac() {
 /// Maps to `test_kdf()` in self_test_kats.c lines 170–220.
 #[test]
 fn test_kat_kdf() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let kdf_indices = find_test_indices_by_category(TestCategory::Kdf);
     assert!(
@@ -324,6 +328,7 @@ fn test_kat_kdf() {
 /// generate → verify → zeroize.
 #[test]
 fn test_kat_drbg() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let drbg_indices = find_test_indices_by_category(TestCategory::Drbg);
     assert!(
@@ -376,6 +381,7 @@ fn test_kat_drbg() {
 /// Verifies deterministic signing with TEST-RAND entropy where applicable.
 #[test]
 fn test_kat_signature() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let sig_indices = find_test_indices_by_category(TestCategory::Signature);
     assert!(!sig_indices.is_empty(), "Must have ≥1 signature KAT");
@@ -438,6 +444,7 @@ fn test_kat_signature() {
 #[cfg(feature = "dh")]
 #[test]
 fn test_kat_kas() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let kas_indices = find_test_indices_by_category(TestCategory::Kas);
     assert!(
@@ -482,6 +489,7 @@ fn test_kat_kas() {
 #[cfg(feature = "ml-dsa")]
 #[test]
 fn test_kat_asym_keygen() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let keygen_indices = find_test_indices_by_category(TestCategory::AsymKeygen);
     assert!(
@@ -532,6 +540,7 @@ fn test_kat_asym_keygen() {
 #[cfg(feature = "ml-kem")]
 #[test]
 fn test_kat_kem() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let kem_indices = find_test_indices_by_category(TestCategory::Kem);
     assert!(
@@ -578,6 +587,7 @@ fn test_kat_kem() {
 /// Maps to `test_asym_cipher()` in self_test_kats.c lines 700–750.
 #[test]
 fn test_kat_asym_cipher() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let ac_indices = find_test_indices_by_category(TestCategory::AsymCipher);
     assert!(!ac_indices.is_empty(), "Must have ≥1 AsymCipher KAT");
@@ -619,6 +629,7 @@ fn test_kat_asym_cipher() {
 /// tests and each entry has valid metadata.
 #[test]
 fn test_all_tests_catalog_populated() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let count = ALL_TESTS.len();
     // Catalog must have at least 20 base tests (actual: 43)
@@ -663,6 +674,7 @@ fn test_all_tests_catalog_populated() {
 /// Verifies that all test IDs in `ALL_TESTS` are unique.
 #[test]
 fn test_all_tests_have_unique_ids() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let mut seen_ids = std::collections::HashSet::new();
     for test in ALL_TESTS.iter() {
@@ -683,6 +695,7 @@ fn test_all_tests_have_unique_ids() {
 /// Optional (feature-gated): Kas, AsymKeygen, Kem, AsymCipher.
 #[test]
 fn test_all_categories_represented() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     let all_categories: Vec<TestCategory> = ALL_TESTS.iter().map(|t| t.category).collect();
 
@@ -730,6 +743,7 @@ fn test_all_categories_represented() {
 /// Maps to `SELF_TEST_kat_deps()` in self_test_kats.c lines 900–950.
 #[test]
 fn test_dependency_chain_resolution() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.write().expect("STATE_RW_LOCK write");
     let (dep_test_idx, parent_idx) =
         find_test_with_dependencies().expect("Must have ≥1 test with dependencies");
@@ -775,6 +789,7 @@ fn test_dependency_chain_resolution() {
 /// Verifies that `resolve_dependencies` skips already-passed dependencies.
 #[test]
 fn test_dependency_already_passed_skipped() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.write().expect("STATE_RW_LOCK write");
     let (dep_test_idx, parent_idx) =
         find_test_with_dependencies().expect("Must have ≥1 test with dependencies");
@@ -807,6 +822,7 @@ fn test_dependency_already_passed_skipped() {
 /// Verifies that a failed dependency causes `resolve_dependencies` to error.
 #[test]
 fn test_dependency_failure_propagation() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.write().expect("STATE_RW_LOCK write");
     let (dep_test_idx, parent_idx) =
         find_test_with_dependencies().expect("Must have ≥1 test with dependencies");
@@ -847,6 +863,7 @@ fn test_dependency_failure_propagation() {
 /// State progression: Deferred → InProgress → Passed.
 #[test]
 fn test_deferred_test_lazy_execution() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.write().expect("STATE_RW_LOCK write");
     // Use a test without dependencies for simpler validation
     let simple_idx = find_test_indices_by_category(TestCategory::Digest)
@@ -884,6 +901,7 @@ fn test_deferred_test_lazy_execution() {
 /// Maps to `set_kat_drbg()` in self_test_kats.c lines 750–850.
 #[test]
 fn test_drbg_swap_guard_creation() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     // Create DRBG swap guard via the public API.
     // Explicit type annotation uses DrbgSwapGuard to verify the type is public.
@@ -913,6 +931,7 @@ fn test_drbg_swap_guard_creation() {
 /// drop and zeroizes test entropy (matching `OPENSSL_PEDANTIC_ZEROIZATION`).
 #[test]
 fn test_drbg_swap_guard_raii_cleanup() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     // Scope-bounded guard creation — RAII cleanup on scope exit
     {
@@ -1043,6 +1062,7 @@ const CORRUPTED_DIGEST_EXPECTED: &[u8] = &[
 /// wrong expected output and verifying the comparison mismatch is detected.
 #[test]
 fn test_kat_with_corrupted_output() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     // Demonstrate CorruptionCallback type usage (R10 wiring verification).
     // This type is used internally by execute_single_test_with_corruption;
@@ -1115,6 +1135,7 @@ fn test_kat_with_corrupted_output() {
 /// ensuring the error type is correctly wired for non-operational state errors.
 #[test]
 fn test_fips_error_not_operational_variant() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.read().expect("STATE_RW_LOCK read");
     // Verify FipsError::NotOperational is constructable and matchable
     let err = FipsError::NotOperational("FIPS module not ready".to_string());
@@ -1143,6 +1164,7 @@ fn test_fips_error_not_operational_variant() {
 /// includes the just-passed test ID to `Passed`.
 #[test]
 fn test_implicit_result_propagation() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.write().expect("STATE_RW_LOCK write");
     // Find a (parent, dependent) pair where dependent.depends_on has parent
     let (dep_test_idx, parent_idx) =
@@ -1190,6 +1212,7 @@ fn test_implicit_result_propagation() {
 /// Verifies that `Implicit` tests are NOT promoted when the parent test fails.
 #[test]
 fn test_implicit_not_promoted_on_parent_failure() {
+    let _serial = super::TEST_MUTEX.lock().unwrap();
     let _state_guard = STATE_RW_LOCK.write().expect("STATE_RW_LOCK write");
     let (dep_test_idx, parent_idx) =
         find_test_with_dependencies().expect("Need a test with dependencies");

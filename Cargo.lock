@@ -1387,6 +1387,7 @@ dependencies = [
  "criterion",
  "der",
  "digest",
+ "hex",
  "hmac",
  "mockall",
  "once_cell",
