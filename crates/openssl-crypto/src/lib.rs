@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod asn1;
 pub mod bio;
 pub mod bn;
 pub mod context;
