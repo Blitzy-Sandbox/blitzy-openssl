@@ -241,8 +241,7 @@ pub fn mod_lshift(a: &BigNum, n: u32, m: &BigNum) -> CryptoResult<BigNum> {
         return Err(BigNumError::DivisionByZero.into());
     }
     // Rule R6: lossless cast from u32 to usize via try_from
-    let shift_amount =
-        usize::try_from(n).map_err(|_| BigNumError::Overflow)?;
+    let shift_amount = usize::try_from(n).map_err(|_| BigNumError::Overflow)?;
     let shifted = a.inner() << shift_amount;
     Ok(BigNum::from_inner(shifted.mod_floor(m.inner())))
 }
@@ -261,8 +260,7 @@ pub fn mod_lshift(a: &BigNum, n: u32, m: &BigNum) -> CryptoResult<BigNum> {
 /// (cannot be converted to `usize` on this platform).
 pub fn lshift(a: &BigNum, n: u32) -> CryptoResult<BigNum> {
     // Rule R6: lossless cast from u32 to usize via try_from
-    let shift_amount =
-        usize::try_from(n).map_err(|_| BigNumError::Overflow)?;
+    let shift_amount = usize::try_from(n).map_err(|_| BigNumError::Overflow)?;
     Ok(BigNum::from_inner(a.inner() << shift_amount))
 }
 
@@ -553,9 +551,7 @@ pub fn kronecker(a: &BigNum, b: &BigNum) -> CryptoResult<i32> {
 
         // Apply (2/b_work) contribution for odd number of 2-factors
         if s & 1 == 1 {
-            let b_mod8 = (&b_work & BigUint::from(7u32))
-                .to_u32()
-                .unwrap_or(0);
+            let b_mod8 = (&b_work & BigUint::from(7u32)).to_u32().unwrap_or(0);
             // tab[b_mod8] gives (-1)^((b²-1)/8) for odd b
             if b_mod8 == 3 || b_mod8 == 5 {
                 result = -result;

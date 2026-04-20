@@ -22,7 +22,6 @@
 // the outer `#[cfg(feature = "ocsp")]` on the `mod test_ocsp` declaration
 // in `tests/mod.rs`).
 #![cfg(feature = "ocsp")]
-
 // Allow `.unwrap()` and `.expect()` in test code — these are tests, and
 // panicking on failure is the intended behaviour.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -208,7 +207,10 @@ fn build_single_response_der(
 fn build_tbs_response_data_der(responses_der: &[u8]) -> Vec<u8> {
     let mut content = Vec::new();
     // responderID: byKey [2] EXPLICIT OCTET STRING (dummy 4-byte key hash)
-    content.extend_from_slice(&der_explicit_tag(2, &der_octet_string(&[0xDE, 0xAD, 0xBE, 0xEF])));
+    content.extend_from_slice(&der_explicit_tag(
+        2,
+        &der_octet_string(&[0xDE, 0xAD, 0xBE, 0xEF]),
+    ));
     // producedAt: GeneralizedTime
     content.extend_from_slice(&der_generalized_time("20240101000000Z"));
     // responses: SEQUENCE OF SingleResponse
@@ -285,11 +287,7 @@ fn build_basic_response_no_certs_der(single_responses_concat: &[u8]) -> Vec<u8> 
 /// single `SingleResponse` with the given cert status and timestamps.
 ///
 /// Returns the DER bytes ready for `OcspResponse::from_der()`.
-fn make_test_response(
-    status_der: &[u8],
-    this_update: &str,
-    next_update: Option<&str>,
-) -> Vec<u8> {
+fn make_test_response(status_der: &[u8], this_update: &str, next_update: Option<&str>) -> Vec<u8> {
     let cert_id = build_cert_id_der(&[0xAA; 32], &[0xBB; 32], &[0x01, 0x02, 0x03]);
     let single = build_single_response_der(&cert_id, status_der, this_update, next_update);
     let basic = build_basic_response_der(&single);
@@ -320,8 +318,8 @@ fn test_ocsp_request_construction() {
     // Create a cert ID using SHA-256 hashes and a 3-byte serial
     let cert_id = OcspCertId::new(
         Nid::SHA256,
-        &[0xAA; 32], // issuer name hash
-        &[0xBB; 32], // issuer key hash
+        &[0xAA; 32],         // issuer name hash
+        &[0xBB; 32],         // issuer key hash
         &[0x01, 0x02, 0x03], // serial number
     )
     .expect("valid cert ID with SHA-256");
@@ -357,13 +355,8 @@ fn test_ocsp_request_construction() {
 /// present and matches the original value.
 #[test]
 fn test_ocsp_request_with_nonce() {
-    let cert_id = OcspCertId::new(
-        Nid::SHA256,
-        &[0xCC; 32],
-        &[0xDD; 32],
-        &[0x42],
-    )
-    .expect("valid cert ID");
+    let cert_id =
+        OcspCertId::new(Nid::SHA256, &[0xCC; 32], &[0xDD; 32], &[0x42]).expect("valid cert ID");
 
     let nonce_value = vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
 
@@ -399,8 +392,8 @@ fn test_ocsp_cert_id_creation() {
     let serial = [0x42, 0x43];
 
     // Create with SHA-256
-    let id1 = OcspCertId::new(Nid::SHA256, &name_hash, &key_hash, &serial)
-        .expect("SHA-256 cert ID");
+    let id1 =
+        OcspCertId::new(Nid::SHA256, &name_hash, &key_hash, &serial).expect("SHA-256 cert ID");
 
     // Verify all accessors
     assert_eq!(id1.hash_algorithm(), Nid::SHA256);
@@ -409,28 +402,28 @@ fn test_ocsp_cert_id_creation() {
     assert_eq!(id1.serial_number(), &serial);
 
     // Identical cert IDs must match
-    let id2 = OcspCertId::new(Nid::SHA256, &name_hash, &key_hash, &serial)
-        .expect("identical cert ID");
+    let id2 =
+        OcspCertId::new(Nid::SHA256, &name_hash, &key_hash, &serial).expect("identical cert ID");
     assert!(id1.matches(&id2), "identical cert IDs must match");
 
     // Different issuer name hash → no match
-    let id3 = OcspCertId::new(Nid::SHA256, &[0x33; 32], &key_hash, &serial)
-        .expect("different name hash");
+    let id3 =
+        OcspCertId::new(Nid::SHA256, &[0x33; 32], &key_hash, &serial).expect("different name hash");
     assert!(!id1.matches(&id3), "different name hash must not match");
 
     // Different serial → no match
-    let id4 = OcspCertId::new(Nid::SHA256, &name_hash, &key_hash, &[0x99])
-        .expect("different serial");
+    let id4 =
+        OcspCertId::new(Nid::SHA256, &name_hash, &key_hash, &[0x99]).expect("different serial");
     assert!(!id1.matches(&id4), "different serial must not match");
 
     // Different key hash → no match
-    let id5 = OcspCertId::new(Nid::SHA256, &name_hash, &[0x55; 32], &serial)
-        .expect("different key hash");
+    let id5 =
+        OcspCertId::new(Nid::SHA256, &name_hash, &[0x55; 32], &serial).expect("different key hash");
     assert!(!id1.matches(&id5), "different key hash must not match");
 
     // Create with SHA-1 to verify algorithm variety
-    let id_sha1 = OcspCertId::new(Nid::SHA1, &[0xAA; 20], &[0xBB; 20], &[0x01])
-        .expect("SHA-1 cert ID");
+    let id_sha1 =
+        OcspCertId::new(Nid::SHA1, &[0xAA; 20], &[0xBB; 20], &[0x01]).expect("SHA-1 cert ID");
     assert_eq!(id_sha1.hash_algorithm(), Nid::SHA1);
 
     // Invalid: UNDEF NID must fail (per R5 — no sentinel NID allowed)
@@ -490,18 +483,25 @@ fn test_ocsp_response_status_parsing() {
         );
 
         // as_raw must round-trip to the original status byte
-        assert_eq!(response.status().as_raw(), raw, "as_raw must round-trip for {raw}");
+        assert_eq!(
+            response.status().as_raw(),
+            raw,
+            "as_raw must round-trip for {raw}"
+        );
 
         // Display must produce non-empty string
         let display = format!("{}", expected);
-        assert!(!display.is_empty(), "Display must not be empty for status {raw}");
+        assert!(
+            !display.is_empty(),
+            "Display must not be empty for status {raw}"
+        );
     }
 
     // Non-successful responses must reject into_basic()
     for &status_val in &[1u8, 2, 3, 5, 6] {
         let der = build_error_ocsp_response_der(status_val);
-        let response = OcspResponse::from_der(&der)
-            .expect("non-successful OCSP response should parse");
+        let response =
+            OcspResponse::from_der(&der).expect("non-successful OCSP response should parse");
         assert_eq!(response.status().as_raw(), status_val);
 
         // Attempting to extract BasicResponse from non-successful must fail
@@ -519,12 +519,12 @@ fn test_ocsp_response_status_parsing() {
 fn test_ocsp_single_response_good() {
     let response_der = make_test_response(
         &build_good_status(),
-        "20200101000000Z",           // thisUpdate: 2020-01-01
-        Some("20401231235959Z"),     // nextUpdate: 2040-12-31 (far future)
+        "20200101000000Z",       // thisUpdate: 2020-01-01
+        Some("20401231235959Z"), // nextUpdate: 2040-12-31 (far future)
     );
 
-    let response = OcspResponse::from_der(&response_der)
-        .expect("successful OCSP response must parse");
+    let response =
+        OcspResponse::from_der(&response_der).expect("successful OCSP response must parse");
     assert_eq!(response.status(), OcspResponseStatus::Successful);
 
     let basic = response.into_basic().expect("into_basic must succeed");
@@ -569,14 +569,14 @@ fn test_ocsp_single_response_good() {
 #[test]
 fn test_ocsp_single_response_revoked() {
     let revoked_status = build_revoked_status(
-        "20230615120000Z",     // revocation time: 2023-06-15 12:00:00
-        Some(1),               // keyCompromise
+        "20230615120000Z", // revocation time: 2023-06-15 12:00:00
+        Some(1),           // keyCompromise
     );
 
     let response_der = make_test_response(
         &revoked_status,
-        "20230616000000Z",           // thisUpdate: day after revocation
-        Some("20401231235959Z"),     // nextUpdate: far future
+        "20230616000000Z",       // thisUpdate: day after revocation
+        Some("20401231235959Z"), // nextUpdate: far future
     );
 
     let response = OcspResponse::from_der(&response_der)
@@ -661,7 +661,11 @@ fn test_ocsp_cert_status_enum() {
         let parsed = OcspRevocationReason::from_raw(raw);
         assert!(parsed.is_some(), "reason {raw} must parse");
         assert_eq!(parsed.unwrap(), expected, "reason {raw} must match");
-        assert_eq!(parsed.unwrap().as_raw(), raw, "reason as_raw must round-trip");
+        assert_eq!(
+            parsed.unwrap().as_raw(),
+            raw,
+            "reason as_raw must round-trip"
+        );
 
         // Display
         let display = format!("{}", expected);
@@ -669,9 +673,18 @@ fn test_ocsp_cert_status_enum() {
     }
 
     // Invalid reason code
-    assert!(OcspRevocationReason::from_raw(7).is_none(), "reason 7 is reserved");
-    assert!(OcspRevocationReason::from_raw(11).is_none(), "reason 11 is undefined");
-    assert!(OcspRevocationReason::from_raw(-1).is_none(), "negative reason is invalid");
+    assert!(
+        OcspRevocationReason::from_raw(7).is_none(),
+        "reason 7 is reserved"
+    );
+    assert!(
+        OcspRevocationReason::from_raw(11).is_none(),
+        "reason 11 is undefined"
+    );
+    assert!(
+        OcspRevocationReason::from_raw(-1).is_none(),
+        "negative reason is invalid"
+    );
 
     // Verify Unknown status can be obtained by parsing a DER response
     let unknown_der = make_test_response(
@@ -711,17 +724,11 @@ fn test_ocsp_check_validity_current() -> CryptoResult<()> {
 
     // drift_seconds = 300 (5 minutes) — standard OCSP tolerance
     let result = check_validity(sr, 300)?;
-    assert!(
-        result,
-        "response within validity window must return true"
-    );
+    assert!(result, "response within validity window must return true");
 
     // Also valid with zero drift
     let result_zero = check_validity(sr, 0)?;
-    assert!(
-        result_zero,
-        "response must be valid even with zero drift"
-    );
+    assert!(result_zero, "response must be valid even with zero drift");
 
     // Negative drift is clamped to 0 — must still be valid
     let result_neg = check_validity(sr, -100)?;

@@ -35,10 +35,9 @@
 )]
 
 use crate::rand::{
-    collect_entropy, drbg_generate, drbg_reseed, new_drbg, rand_bytes, rand_priv_bytes,
-    rand_seed, rand_status, Drbg, DrbgState, DrbgType, EntropyPool,
-    PRIMARY_RESEED_INTERVAL, PRIMARY_RESEED_TIME_INTERVAL, SECONDARY_RESEED_INTERVAL,
-    SECONDARY_RESEED_TIME_INTERVAL,
+    collect_entropy, drbg_generate, drbg_reseed, new_drbg, rand_bytes, rand_priv_bytes, rand_seed,
+    rand_status, Drbg, DrbgState, DrbgType, EntropyPool, PRIMARY_RESEED_INTERVAL,
+    PRIMARY_RESEED_TIME_INTERVAL, SECONDARY_RESEED_INTERVAL, SECONDARY_RESEED_TIME_INTERVAL,
 };
 
 /// Mirror of `rand::MAX_REQUEST_SIZE` for test assertions.
@@ -125,7 +124,10 @@ fn test_rand_status_is_seeded() {
 fn test_rand_bytes_zero_length() {
     let mut buf = [0u8; 0];
     let result: CryptoResult<()> = rand_bytes(&mut buf);
-    assert!(result.is_ok(), "zero-length rand_bytes should succeed as no-op");
+    assert!(
+        result.is_ok(),
+        "zero-length rand_bytes should succeed as no-op"
+    );
 }
 
 /// Verify that `rand_bytes()` rejects requests exceeding `MAX_REQUEST_SIZE`.
@@ -313,7 +315,11 @@ fn test_drbg_reseed_with_additional_input() {
 #[test]
 fn test_entropy_collection() {
     let entropy = collect_entropy(32).unwrap();
-    assert_eq!(entropy.len(), 32, "collect_entropy should return exactly 32 bytes");
+    assert_eq!(
+        entropy.len(),
+        32,
+        "collect_entropy should return exactly 32 bytes"
+    );
 }
 
 /// Verify collected entropy has sufficient randomness (variance check).
@@ -325,7 +331,10 @@ fn test_entropy_collection() {
 fn test_entropy_randomness() {
     let e1 = collect_entropy(32).unwrap();
     let e2 = collect_entropy(32).unwrap();
-    assert_ne!(e1, e2, "two entropy collections should produce different output");
+    assert_ne!(
+        e1, e2,
+        "two entropy collections should produce different output"
+    );
 
     // Count unique byte values in the first sample.
     let unique_count = {
@@ -371,7 +380,10 @@ fn test_entropy_pool_basic() {
     let pool = EntropyPool::new(64);
     assert_eq!(pool.len(), 0, "new pool should have zero length");
     assert!(pool.is_empty(), "new pool should be empty");
-    assert!(pool.as_bytes().is_empty(), "new pool as_bytes should be empty");
+    assert!(
+        pool.as_bytes().is_empty(),
+        "new pool as_bytes should be empty"
+    );
 }
 
 /// Verify [`EntropyPool`] with zero capacity.

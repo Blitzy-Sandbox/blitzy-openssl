@@ -2076,9 +2076,7 @@ impl MacContext {
     pub fn verify(&mut self, expected_tag: &[u8]) -> CryptoResult<()> {
         let computed = self.finalize()?;
         if computed.len() != expected_tag.len() {
-            return Err(CryptoError::Verification(
-                "MAC tag length mismatch".into(),
-            ));
+            return Err(CryptoError::Verification("MAC tag length mismatch".into()));
         }
         if computed.ct_eq(expected_tag).into() {
             Ok(())

@@ -81,8 +81,16 @@ pub const DEFAULT_AIV: [u8; 4] = [0xA6, 0x59, 0x59, 0xA6];
 /// in the high byte — each `XORed` into the high byte of `temp` during key
 /// expansion. Translates the `rcon[]` table from `crypto/aes/aes_core.c`.
 const RCON: [u32; 10] = [
-    0x0100_0000, 0x0200_0000, 0x0400_0000, 0x0800_0000, 0x1000_0000, 0x2000_0000, 0x4000_0000,
-    0x8000_0000, 0x1B00_0000, 0x3600_0000,
+    0x0100_0000,
+    0x0200_0000,
+    0x0400_0000,
+    0x0800_0000,
+    0x1000_0000,
+    0x2000_0000,
+    0x4000_0000,
+    0x8000_0000,
+    0x1B00_0000,
+    0x3600_0000,
 ];
 
 // =============================================================================
@@ -382,7 +390,6 @@ fn byte(x: u32, shift: u32) -> usize {
     ((x >> shift) & 0xFF) as usize
 }
 
-
 // =============================================================================
 // AesKey — Expanded AES Key Schedule
 // =============================================================================
@@ -601,11 +608,8 @@ fn aes_encrypt_block_inner(block: &mut [u8; 16], key: &AesKey) {
     // Rounds 1..Nr-1: combined SubBytes + ShiftRows + MixColumns via T-tables.
     let mut rk_off: usize = 4;
     for _ in 0..(nr - 1) {
-        let t0 = TE0[byte(s0, 24)]
-            ^ te1(byte(s1, 16))
-            ^ te2(byte(s2, 8))
-            ^ te3(lo8(s3))
-            ^ rk[rk_off];
+        let t0 =
+            TE0[byte(s0, 24)] ^ te1(byte(s1, 16)) ^ te2(byte(s2, 8)) ^ te3(lo8(s3)) ^ rk[rk_off];
         let t1 = TE0[byte(s1, 24)]
             ^ te1(byte(s2, 16))
             ^ te2(byte(s3, 8))
@@ -674,11 +678,8 @@ fn aes_decrypt_block_inner(block: &mut [u8; 16], key: &AesKey) {
     // Rounds 1..Nr-1: combined InvSubBytes + InvShiftRows + InvMixColumns.
     let mut rk_off: usize = 4;
     for _ in 0..(nr - 1) {
-        let t0 = TD0[byte(s0, 24)]
-            ^ td1(byte(s3, 16))
-            ^ td2(byte(s2, 8))
-            ^ td3(lo8(s1))
-            ^ rk[rk_off];
+        let t0 =
+            TD0[byte(s0, 24)] ^ td1(byte(s3, 16)) ^ td2(byte(s2, 8)) ^ td3(lo8(s1)) ^ rk[rk_off];
         let t1 = TD0[byte(s1, 24)]
             ^ td1(byte(s0, 16))
             ^ td2(byte(s3, 8))
@@ -729,7 +730,6 @@ fn aes_decrypt_block_inner(block: &mut [u8; 16], key: &AesKey) {
     putu32(block, 8, out2);
     putu32(block, 12, out3);
 }
-
 
 // =============================================================================
 // Aes — High-Level Block Cipher Handle
@@ -850,7 +850,6 @@ impl SymmetricCipher for Aes {
         }
     }
 }
-
 
 // =============================================================================
 // GHashTable — Precomputed 4-bit GHASH Multiplication Table
@@ -1119,7 +1118,6 @@ impl GHashTable {
         }
     }
 }
-
 
 // =============================================================================
 // AES-GCM — Galois/Counter Mode Authenticated Encryption
@@ -1467,8 +1465,6 @@ impl AeadCipher for AesGcm {
     }
 }
 
-
-
 // =============================================================================
 // AES-CCM — Counter with CBC-MAC (NIST SP 800-38C, RFC 3610)
 // =============================================================================
@@ -1679,9 +1675,9 @@ impl AesCcm {
         b0[0] = flags;
         b0[1..=nonce.len()].copy_from_slice(nonce);
         let q_be = data_len_u64.to_be_bytes(); // 8 BE bytes
-        // Place the rightmost l_bytes of q_be into the last l_bytes of b0.
-        // Since data_len_u64 fits in L bytes when L<8, the upper bytes of
-        // q_be are zero; when L=8 we take the full 8 bytes.
+                                               // Place the rightmost l_bytes of q_be into the last l_bytes of b0.
+                                               // Since data_len_u64 fits in L bytes when L<8, the upper bytes of
+                                               // q_be are zero; when L=8 we take the full 8 bytes.
         b0[AES_BLOCK_SIZE - l_bytes..].copy_from_slice(&q_be[8 - l_bytes..]);
 
         // X_1 = AES(K, X_0 ⊕ B_0) = AES(K, B_0), since X_0 = 0.
@@ -1699,8 +1695,7 @@ impl AesCcm {
 
             let mut block = [0u8; AES_BLOCK_SIZE];
             block[0..a_len_size].copy_from_slice(&a_len_buf[0..a_len_size]);
-            block[a_len_size..a_len_size + first_aad_take]
-                .copy_from_slice(&aad[0..first_aad_take]);
+            block[a_len_size..a_len_size + first_aad_take].copy_from_slice(&aad[0..first_aad_take]);
             // Remainder of block is zero-padded implicitly.
 
             for idx in 0..AES_BLOCK_SIZE {
@@ -1914,8 +1909,6 @@ impl AeadCipher for AesCcm {
     }
 }
 
-
-
 // =============================================================================
 // AES-XTS — XEX-based Tweaked-codebook with Ciphertext Stealing
 // (IEEE Std 1619-2007, NIST SP 800-38E)
@@ -2027,11 +2020,7 @@ impl AesXts {
     /// # Errors
     /// * [`CryptoError::Common(CommonError::InvalidArgument)`] —
     ///   plaintext shorter than 16 bytes.
-    pub fn encrypt(
-        &self,
-        iv: &[u8; AES_BLOCK_SIZE],
-        plaintext: &[u8],
-    ) -> CryptoResult<Vec<u8>> {
+    pub fn encrypt(&self, iv: &[u8; AES_BLOCK_SIZE], plaintext: &[u8]) -> CryptoResult<Vec<u8>> {
         if plaintext.len() < AES_BLOCK_SIZE {
             return Err(CryptoError::Common(CommonError::InvalidArgument(format!(
                 "AES-XTS: plaintext must be at least {AES_BLOCK_SIZE} bytes, got {}",
@@ -2129,11 +2118,7 @@ impl AesXts {
     /// # Errors
     /// * [`CryptoError::Common(CommonError::InvalidArgument)`] —
     ///   ciphertext shorter than 16 bytes.
-    pub fn decrypt(
-        &self,
-        iv: &[u8; AES_BLOCK_SIZE],
-        ciphertext: &[u8],
-    ) -> CryptoResult<Vec<u8>> {
+    pub fn decrypt(&self, iv: &[u8; AES_BLOCK_SIZE], ciphertext: &[u8]) -> CryptoResult<Vec<u8>> {
         if ciphertext.len() < AES_BLOCK_SIZE {
             return Err(CryptoError::Common(CommonError::InvalidArgument(format!(
                 "AES-XTS: ciphertext must be at least {AES_BLOCK_SIZE} bytes, got {}",
@@ -2218,10 +2203,6 @@ impl AesXts {
     }
 }
 
-
-
-
-
 // =============================================================================
 // AES-OCB — Offset Codebook Mode (RFC 7253)
 // =============================================================================
@@ -2296,12 +2277,11 @@ pub const OCB_DEFAULT_NONCE_LEN: usize = 12;
 /// Translates `ocb_block_lshift` from `crypto/modes/ocb128.c`. Used only
 /// during `Offset_0` derivation where `shift` ∈ 0..=7 (caller's
 /// responsibility to uphold).
-fn ocb_block_lshift(
-    input: &[u8; AES_BLOCK_SIZE],
-    shift: usize,
-    output: &mut [u8; AES_BLOCK_SIZE],
-) {
-    debug_assert!(shift < 8, "ocb_block_lshift: shift must be < 8, got {shift}");
+fn ocb_block_lshift(input: &[u8; AES_BLOCK_SIZE], shift: usize, output: &mut [u8; AES_BLOCK_SIZE]) {
+    debug_assert!(
+        shift < 8,
+        "ocb_block_lshift: shift must be < 8, got {shift}"
+    );
     let shift_u32 = u32::try_from(shift).unwrap_or(0);
     let inv_shift = 8u32.saturating_sub(shift_u32);
     let mut carry: u8 = 0;
@@ -2840,7 +2820,6 @@ impl AeadCipher for AesOcb {
     }
 }
 
-
 // =============================================================================
 // AES-SIV — Synthetic Initialization Vector (RFC 5297)
 // =============================================================================
@@ -3261,7 +3240,6 @@ impl AeadCipher for AesSiv {
     }
 }
 
-
 // =============================================================================
 // Free-function AES mode wrappers
 // =============================================================================
@@ -3428,8 +3406,6 @@ pub fn aes_ofb_encrypt(
     ofb_encrypt(&aes, data, iv)
 }
 
-
-
 // =============================================================================
 // AES Key Wrap / Key Unwrap (RFC 3394 and RFC 5649)
 // -----------------------------------------------------------------------------
@@ -3545,8 +3521,7 @@ pub fn aes_key_wrap(
             // Load R[i] into the low half of B; high half already holds A.
             b[..AES_WRAP_SEMIBLOCK].copy_from_slice(&a);
             let r_start = AES_WRAP_SEMIBLOCK + i * AES_WRAP_SEMIBLOCK;
-            b[AES_WRAP_SEMIBLOCK..]
-                .copy_from_slice(&out[r_start..r_start + AES_WRAP_SEMIBLOCK]);
+            b[AES_WRAP_SEMIBLOCK..].copy_from_slice(&out[r_start..r_start + AES_WRAP_SEMIBLOCK]);
 
             // B = AES_Encrypt_KEK(B).
             aes.encrypt_block_array(&mut b);
@@ -3562,8 +3537,7 @@ pub fn aes_key_wrap(
             }
 
             // R[i] = LSB(64, B).
-            out[r_start..r_start + AES_WRAP_SEMIBLOCK]
-                .copy_from_slice(&b[AES_WRAP_SEMIBLOCK..]);
+            out[r_start..r_start + AES_WRAP_SEMIBLOCK].copy_from_slice(&b[AES_WRAP_SEMIBLOCK..]);
         }
     }
 
@@ -3637,16 +3611,14 @@ fn aes_key_unwrap_raw(
             // B = A || R[i].
             b[..AES_WRAP_SEMIBLOCK].copy_from_slice(&a);
             let r_start = i * AES_WRAP_SEMIBLOCK;
-            b[AES_WRAP_SEMIBLOCK..]
-                .copy_from_slice(&out[r_start..r_start + AES_WRAP_SEMIBLOCK]);
+            b[AES_WRAP_SEMIBLOCK..].copy_from_slice(&out[r_start..r_start + AES_WRAP_SEMIBLOCK]);
 
             // B = AES_Decrypt_KEK(B).
             aes.decrypt_block_array(&mut b);
 
             // A = MSB(64, B); R[i] = LSB(64, B).
             a.copy_from_slice(&b[..AES_WRAP_SEMIBLOCK]);
-            out[r_start..r_start + AES_WRAP_SEMIBLOCK]
-                .copy_from_slice(&b[AES_WRAP_SEMIBLOCK..]);
+            out[r_start..r_start + AES_WRAP_SEMIBLOCK].copy_from_slice(&b[AES_WRAP_SEMIBLOCK..]);
 
             t = t.wrapping_sub(1);
         }
@@ -3945,7 +3917,6 @@ pub fn aes_key_unwrap_pad(kek: &[u8], ciphertext: &[u8]) -> CryptoResult<Vec<u8>
     Ok(plaintext_buf)
 }
 
-
 // =============================================================================
 // Unit Tests — RFC/NIST Test Vectors
 // =============================================================================
@@ -4044,9 +4015,7 @@ mod tests {
     /// FIPS 197 Appendix C.3 — AES-256 forward direction.
     #[test]
     fn fips197_aes256_encrypt_block() {
-        let key = hex_to_bytes(
-            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-        );
+        let key = hex_to_bytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
         let pt = hex_to_array::<16>("00112233445566778899aabbccddeeff");
         let expected_ct = hex_to_array::<16>("8ea2b7ca516745bfeafc49904b496089");
 
@@ -4232,7 +4201,10 @@ mod tests {
         let err = aes_cbc_decrypt(&key, &iv, &[0u8; 15])
             .expect_err("must reject non-block-aligned ciphertext");
         // Non-block-aligned length is detected by pkcs7_unpad → Verification.
-        assert!(matches!(err, CryptoError::Verification(_) | CryptoError::Common(_)));
+        assert!(matches!(
+            err,
+            CryptoError::Verification(_) | CryptoError::Common(_)
+        ));
     }
 
     // =========================================================================
@@ -4462,7 +4434,11 @@ mod tests {
 
         let gcm = AesGcm::new(&key).expect("gcm new");
         let out = gcm.seal(&iv, &[], &pt).expect("seal");
-        assert_eq!(out[..pt.len()], expected_ct[..], "GCM TC3 ciphertext mismatch");
+        assert_eq!(
+            out[..pt.len()],
+            expected_ct[..],
+            "GCM TC3 ciphertext mismatch"
+        );
         assert_eq!(&out[pt.len()..], &expected_tag[..], "GCM TC3 tag mismatch");
 
         let recovered = gcm.open(&iv, &[], &out).expect("open");
@@ -4492,7 +4468,11 @@ mod tests {
 
         let gcm = AesGcm::new(&key).expect("gcm new");
         let out = gcm.seal(&iv, &aad, &pt).expect("seal");
-        assert_eq!(out[..pt.len()], expected_ct[..], "GCM TC4 ciphertext mismatch");
+        assert_eq!(
+            out[..pt.len()],
+            expected_ct[..],
+            "GCM TC4 ciphertext mismatch"
+        );
         assert_eq!(&out[pt.len()..], &expected_tag[..], "GCM TC4 tag mismatch");
 
         let recovered = gcm.open(&iv, &aad, &out).expect("open");
@@ -4515,7 +4495,9 @@ mod tests {
         let mut sealed = gcm.seal(&iv, &[], &pt).expect("seal");
         // Flip a bit in the ciphertext.
         sealed[0] ^= 0x01;
-        let err = gcm.open(&iv, &[], &sealed).expect_err("must reject tampered ct");
+        let err = gcm
+            .open(&iv, &[], &sealed)
+            .expect_err("must reject tampered ct");
         assert!(matches!(err, CryptoError::Verification(_)));
     }
 
@@ -4529,7 +4511,9 @@ mod tests {
         let mut sealed = gcm.seal(&iv, &[], &pt).expect("seal");
         let last = sealed.len() - 1;
         sealed[last] ^= 0x80;
-        let err = gcm.open(&iv, &[], &sealed).expect_err("must reject tampered tag");
+        let err = gcm
+            .open(&iv, &[], &sealed)
+            .expect_err("must reject tampered tag");
         assert!(matches!(err, CryptoError::Verification(_)));
     }
 
@@ -4598,8 +4582,16 @@ mod tests {
         let ccm = AesCcm::new(&key, 8, 13).expect("ccm new");
         let out = ccm.seal(&nonce, &aad, &pt).expect("seal");
         assert_eq!(out.len(), pt.len() + 8, "output = CT || 8-byte tag");
-        assert_eq!(&out[..pt.len()], &expected_ct[..], "RFC 3610 PV#1 CT mismatch");
-        assert_eq!(&out[pt.len()..], &expected_tag[..], "RFC 3610 PV#1 tag mismatch");
+        assert_eq!(
+            &out[..pt.len()],
+            &expected_ct[..],
+            "RFC 3610 PV#1 CT mismatch"
+        );
+        assert_eq!(
+            &out[pt.len()..],
+            &expected_tag[..],
+            "RFC 3610 PV#1 tag mismatch"
+        );
 
         let recovered = ccm.open(&nonce, &aad, &out).expect("open");
         assert_eq!(recovered, pt);
@@ -4684,13 +4676,18 @@ mod tests {
         let xts = AesXts::new(&combined_key).expect("xts new");
 
         // 4 blocks (64 bytes) — exercise pure block path (no stealing).
-        let pt: Vec<u8> = (0u8..64u8).map(|b| b.wrapping_mul(3).wrapping_add(7)).collect();
+        let pt: Vec<u8> = (0u8..64u8)
+            .map(|b| b.wrapping_mul(3).wrapping_add(7))
+            .collect();
         let ct = xts.encrypt(&tweak, &pt).expect("encrypt");
         assert_eq!(ct.len(), pt.len());
         assert_ne!(ct, pt, "ciphertext must differ from plaintext");
 
         let recovered = xts.decrypt(&tweak, &ct).expect("decrypt");
-        assert_eq!(recovered, pt, "XTS round-trip failed for block-aligned input");
+        assert_eq!(
+            recovered, pt,
+            "XTS round-trip failed for block-aligned input"
+        );
     }
 
     #[test]
@@ -4751,7 +4748,9 @@ mod tests {
         let combined_key: Vec<u8> = (0u8..64u8).collect();
         let tweak = [0u8; 16];
         let xts = AesXts::new(&combined_key).expect("xts new");
-        let err = xts.encrypt(&tweak, &[0u8; 15]).expect_err("< 1 block must fail");
+        let err = xts
+            .encrypt(&tweak, &[0u8; 15])
+            .expect_err("< 1 block must fail");
         assert!(matches!(err, CryptoError::Common(_) | CryptoError::Key(_)));
     }
 
@@ -4862,9 +4861,7 @@ mod tests {
         let ocb = AesOcb::new(&key, 16, 12).expect("ocb new");
 
         let sealed = ocb.seal(&nonce, &aad_good, &pt).expect("seal");
-        let err = ocb
-            .open(&nonce, &aad_bad, &sealed)
-            .expect_err("wrong aad");
+        let err = ocb.open(&nonce, &aad_bad, &sealed).expect_err("wrong aad");
         assert!(matches!(err, CryptoError::Verification(_)));
     }
 
@@ -5207,7 +5204,10 @@ mod tests {
         let kek = hex_to_bytes("000102030405060708090A0B0C0D0E0F");
         // Input must be at least 3 semiblocks (24 bytes) for valid unwrap.
         let err = aes_key_unwrap(&kek, &DEFAULT_IV, &[0u8; 16]).expect_err("too short");
-        assert!(matches!(err, CryptoError::Key(_) | CryptoError::Verification(_)));
+        assert!(matches!(
+            err,
+            CryptoError::Key(_) | CryptoError::Verification(_)
+        ));
     }
 
     // =========================================================================
@@ -5221,7 +5221,9 @@ mod tests {
     #[test]
     fn aes_key_wrap_pad_round_trip_various_lengths() {
         let kek = hex_to_bytes("000102030405060708090A0B0C0D0E0F");
-        for len in [1usize, 2, 7, 8, 9, 15, 16, 17, 20, 31, 32, 33, 48, 64, 100, 255] {
+        for len in [
+            1usize, 2, 7, 8, 9, 15, 16, 17, 20, 31, 32, 33, 48, 64, 100, 255,
+        ] {
             let pt: Vec<u8> = (0..len).map(|i| (i ^ 0x5A) as u8).collect();
             let ct = aes_key_wrap_pad(&kek, &pt).expect("wrap pad");
             // Output length: padded up to next multiple of 8, + 8 for AIV.
@@ -5288,4 +5290,3 @@ mod tests {
         assert!(matches!(err, CryptoError::Key(_)));
     }
 }
-

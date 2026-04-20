@@ -35,7 +35,7 @@
 // Per workspace lint config: "Tests and CLI main() may #[allow] with justification."
 #![allow(clippy::expect_used)] // Tests use .expect() to unwrap known-good Results.
 #![allow(clippy::unwrap_used)] // Tests use .unwrap() on values guaranteed to be Some/Ok.
-#![allow(clippy::panic)]       // Tests use panic!() in exhaustive match arms for error variants.
+#![allow(clippy::panic)] // Tests use panic!() in exhaustive match arms for error variants.
 
 use crate::hpke::*;
 use openssl_common::{CryptoError, CryptoResult};
@@ -94,19 +94,17 @@ fn roundtrip_seal_open(
 ) -> (
     CryptoResult<Vec<u8>>,
     HpkeSuite,
-    Vec<u8>,   // enc
-    Vec<u8>,   // ciphertext
+    Vec<u8>, // enc
+    Vec<u8>, // ciphertext
 ) {
     // Sender: setup + seal — explicit HpkeSenderContext type annotation
     let (mut sender_ctx, enc): (HpkeSenderContext, Vec<u8>) =
-        setup_sender(suite, mode, pk_r, info)
-            .expect("sender setup must succeed");
+        setup_sender(suite, mode, pk_r, info).expect("sender setup must succeed");
     assert_eq!(sender_ctx.suite(), suite, "sender suite must match");
     assert_eq!(sender_ctx.mode(), mode, "sender mode must match");
     assert_eq!(sender_ctx.seq(), 0, "initial seq must be 0");
 
-    let ciphertext = sender_ctx.seal(aad, plaintext)
-        .expect("seal must succeed");
+    let ciphertext = sender_ctx.seal(aad, plaintext).expect("seal must succeed");
     assert_eq!(
         ciphertext.len(),
         plaintext.len() + suite.aead().tag_len(),
@@ -116,8 +114,7 @@ fn roundtrip_seal_open(
 
     // Recipient: setup + open — explicit HpkeRecipientContext type annotation
     let mut recipient_ctx: HpkeRecipientContext =
-        setup_recipient(suite, mode, sk_r, &enc, info)
-            .expect("recipient setup must succeed");
+        setup_recipient(suite, mode, sk_r, &enc, info).expect("recipient setup must succeed");
     assert_eq!(recipient_ctx.suite(), suite, "recipient suite must match");
     assert_eq!(recipient_ctx.mode(), mode, "recipient mode must match");
     assert_eq!(recipient_ctx.seq(), 0, "recipient initial seq must be 0");
@@ -186,7 +183,9 @@ fn test_hpke_suite_construction() {
     assert_eq!(suite.aead, HpkeAead::Aes128Gcm);
 
     // Validation
-    suite.validate().expect("X25519 + SHA-256 + AES-128-GCM must be valid");
+    suite
+        .validate()
+        .expect("X25519 + SHA-256 + AES-128-GCM must be valid");
 
     // Suite ID: concat(I2OSP(0x0020,2), I2OSP(0x0001,2), I2OSP(0x0001,2))
     let id = suite.suite_id_bytes();
@@ -252,8 +251,14 @@ fn test_hpke_psk_mode_roundtrip() {
     let info = b"psk mode test";
 
     // Verify PSK mode properties
-    assert!(HpkeMode::Psk.requires_psk(), "PSK mode requires PSK material");
-    assert!(!HpkeMode::Psk.requires_auth(), "PSK mode does not require auth key");
+    assert!(
+        HpkeMode::Psk.requires_psk(),
+        "PSK mode requires PSK material"
+    );
+    assert!(
+        !HpkeMode::Psk.requires_auth(),
+        "PSK mode does not require auth key"
+    );
     assert_eq!(HpkeMode::Psk.id(), 0x01);
 
     // setup_sender with PSK mode must fail because the public API does
@@ -286,7 +291,10 @@ fn test_hpke_psk_mode_roundtrip() {
     let recip_result = setup_recipient(suite, HpkeMode::Psk, &sk_r, &dummy_enc, info);
     match recip_result {
         Err(CryptoError::Key(ref msg)) => {
-            assert!(msg.contains("PSK"), "recipient error must mention PSK: {msg}");
+            assert!(
+                msg.contains("PSK"),
+                "recipient error must mention PSK: {msg}"
+            );
         }
         Err(other) => {
             panic!("PSK recipient should return Key error, got: {other}");
@@ -312,13 +320,20 @@ fn test_hpke_auth_mode_roundtrip() {
     let plaintext = b"Hello, HPKE Auth mode!";
 
     // Sender: setup with Auth mode
-    let (mut sender_ctx, enc) = setup_sender(suite, HpkeMode::Auth, &pk_r, info)
-        .expect("Auth sender setup must succeed");
+    let (mut sender_ctx, enc) =
+        setup_sender(suite, HpkeMode::Auth, &pk_r, info).expect("Auth sender setup must succeed");
     assert_eq!(sender_ctx.mode(), HpkeMode::Auth);
-    assert!(!HpkeMode::Auth.requires_psk(), "Auth mode does not require PSK");
-    assert!(HpkeMode::Auth.requires_auth(), "Auth mode requires auth key");
+    assert!(
+        !HpkeMode::Auth.requires_psk(),
+        "Auth mode does not require PSK"
+    );
+    assert!(
+        HpkeMode::Auth.requires_auth(),
+        "Auth mode requires auth key"
+    );
 
-    let ciphertext = sender_ctx.seal(aad, plaintext)
+    let ciphertext = sender_ctx
+        .seal(aad, plaintext)
         .expect("Auth seal must succeed");
     assert_eq!(ciphertext.len(), plaintext.len() + suite.aead().tag_len());
 
@@ -358,8 +373,7 @@ fn test_hpke_export_secret() {
     let info = b"export secret test";
 
     // Sender-side export
-    let (sender_ctx, enc) = setup_sender(suite, HpkeMode::Base, &pk_r, info)
-        .expect("sender setup");
+    let (sender_ctx, enc) = setup_sender(suite, HpkeMode::Base, &pk_r, info).expect("sender setup");
 
     let export_ctx_1 = b"exporter context alpha";
     let export_ctx_2 = b"exporter context beta";
@@ -369,12 +383,14 @@ fn test_hpke_export_secret() {
     let secret_32 = secret_32.expect("32-byte export must succeed");
     assert_eq!(secret_32.len(), 32, "exported secret must be 32 bytes");
 
-    let secret_64 = sender_ctx.export_secret(export_ctx_1, 64)
+    let secret_64 = sender_ctx
+        .export_secret(export_ctx_1, 64)
         .expect("64-byte export must succeed");
     assert_eq!(secret_64.len(), 64, "exported secret must be 64 bytes");
 
     // Determinism: same context + same params → same output
-    let secret_32_again = sender_ctx.export_secret(export_ctx_1, 32)
+    let secret_32_again = sender_ctx
+        .export_secret(export_ctx_1, 32)
         .expect("repeated export must succeed");
     assert_eq!(
         secret_32, secret_32_again,
@@ -382,7 +398,8 @@ fn test_hpke_export_secret() {
     );
 
     // Domain separation: different exporter_context → different output
-    let secret_32_other = sender_ctx.export_secret(export_ctx_2, 32)
+    let secret_32_other = sender_ctx
+        .export_secret(export_ctx_2, 32)
         .expect("export with different context must succeed");
     assert_ne!(
         secret_32, secret_32_other,
@@ -390,11 +407,16 @@ fn test_hpke_export_secret() {
     );
 
     // Recipient-side export: verify it works independently
-    let recipient_ctx = setup_recipient(suite, HpkeMode::Base, &sk_r, &enc, info)
-        .expect("recipient setup");
-    let recipient_secret = recipient_ctx.export_secret(export_ctx_1, 32)
+    let recipient_ctx =
+        setup_recipient(suite, HpkeMode::Base, &sk_r, &enc, info).expect("recipient setup");
+    let recipient_secret = recipient_ctx
+        .export_secret(export_ctx_1, 32)
         .expect("recipient export must succeed");
-    assert_eq!(recipient_secret.len(), 32, "recipient export must be 32 bytes");
+    assert_eq!(
+        recipient_secret.len(),
+        32,
+        "recipient export must be 32 bytes"
+    );
 
     // Note: sender and recipient exports differ due to reference KEM
     // producing different shared secrets.  With a production KEM they
@@ -423,10 +445,9 @@ fn test_hpke_tampered_ciphertext_fails() {
     let plaintext = b"secret message";
 
     // Sender: seal
-    let (mut sender_ctx, enc) = setup_sender(suite, HpkeMode::Base, &pk_r, info)
-        .expect("sender setup");
-    let ciphertext = sender_ctx.seal(aad, plaintext)
-        .expect("seal must succeed");
+    let (mut sender_ctx, enc) =
+        setup_sender(suite, HpkeMode::Base, &pk_r, info).expect("sender setup");
+    let ciphertext = sender_ctx.seal(aad, plaintext).expect("seal must succeed");
 
     // Tamper: flip a bit in the ciphertext body (not the tag)
     let mut tampered = ciphertext.clone();
@@ -437,8 +458,8 @@ fn test_hpke_tampered_ciphertext_fails() {
     tampered[0] ^= 0xFF;
 
     // Recipient: open with tampered ciphertext must fail
-    let mut recipient_ctx = setup_recipient(suite, HpkeMode::Base, &sk_r, &enc, info)
-        .expect("recipient setup");
+    let mut recipient_ctx =
+        setup_recipient(suite, HpkeMode::Base, &sk_r, &enc, info).expect("recipient setup");
     let result = recipient_ctx.open(aad, &tampered);
 
     match result {
@@ -449,9 +470,7 @@ fn test_hpke_tampered_ciphertext_fails() {
             );
         }
         Err(other) => {
-            panic!(
-                "tampered ciphertext should return Verification error, got: {other}"
-            );
+            panic!("tampered ciphertext should return Verification error, got: {other}");
         }
         Ok(_) => {
             panic!("tampered ciphertext must not decrypt successfully");
@@ -464,8 +483,8 @@ fn test_hpke_tampered_ciphertext_fails() {
     tag_tampered[tag_start] ^= 0x01;
 
     // Reset recipient context for fresh sequence counter
-    let mut recipient_ctx_2 = setup_recipient(suite, HpkeMode::Base, &sk_r, &enc, info)
-        .expect("recipient setup 2");
+    let mut recipient_ctx_2 =
+        setup_recipient(suite, HpkeMode::Base, &sk_r, &enc, info).expect("recipient setup 2");
     let result_tag = recipient_ctx_2.open(aad, &tag_tampered);
     assert!(
         result_tag.is_err(),
@@ -486,8 +505,8 @@ fn test_hpke_wrong_key_fails() {
     let plaintext = b"confidential data";
 
     // Sender: seal with pk_r
-    let (mut sender_ctx, enc) = setup_sender(suite, HpkeMode::Base, &pk_r, info)
-        .expect("sender setup");
+    let (mut sender_ctx, enc) =
+        setup_sender(suite, HpkeMode::Base, &pk_r, info).expect("sender setup");
     let ciphertext = sender_ctx.seal(aad, plaintext).expect("seal");
 
     // Recipient with WRONG secret key (all 0xFF instead of 0x42)
@@ -496,10 +515,7 @@ fn test_hpke_wrong_key_fails() {
         .expect("wrong-key recipient setup must still succeed (KEM is structural)");
 
     let result = wrong_recipient.open(aad, &ciphertext);
-    assert!(
-        result.is_err(),
-        "open with wrong recipient key must fail"
-    );
+    assert!(result.is_err(), "open with wrong recipient key must fail");
     match result {
         Err(CryptoError::Verification(_)) => { /* expected */ }
         Err(other) => {
@@ -514,10 +530,7 @@ fn test_hpke_wrong_key_fails() {
         setup_recipient(suite, HpkeMode::Base, &x25519_test_sk(), &wrong_enc, info)
             .expect("wrong-enc recipient setup");
     let result_enc = wrong_enc_recipient.open(aad, &ciphertext);
-    assert!(
-        result_enc.is_err(),
-        "open with wrong enc must fail"
-    );
+    assert!(result_enc.is_err(), "open with wrong enc must fail");
 }
 
 /// Mismatched AAD → authentication failure.
@@ -535,25 +548,26 @@ fn test_hpke_aad_mismatch_fails() {
     let plaintext = b"aad-protected message";
 
     // Sender: seal with aad_seal
-    let (mut sender_ctx, enc) = setup_sender(suite, HpkeMode::Base, &pk_r, info)
-        .expect("sender setup");
-    let ciphertext = sender_ctx.seal(aad_seal, plaintext)
+    let (mut sender_ctx, enc) =
+        setup_sender(suite, HpkeMode::Base, &pk_r, info).expect("sender setup");
+    let ciphertext = sender_ctx
+        .seal(aad_seal, plaintext)
         .expect("seal must succeed");
 
     // Recipient: open with aad_open (mismatched)
-    let mut recipient_ctx = setup_recipient(suite, HpkeMode::Base, &sk_r, &enc, info)
-        .expect("recipient setup");
+    let mut recipient_ctx =
+        setup_recipient(suite, HpkeMode::Base, &sk_r, &enc, info).expect("recipient setup");
     let result = recipient_ctx.open(aad_open, &ciphertext);
 
     // Must fail — either because key schedules differ (reference KEM)
     // or because AAD mismatch invalidates the AEAD tag (production KEM).
-    assert!(
-        result.is_err(),
-        "open with mismatched AAD must fail"
-    );
+    assert!(result.is_err(), "open with mismatched AAD must fail");
     match result {
         Err(CryptoError::Verification(ref msg)) => {
-            assert!(!msg.is_empty(), "verification error message must not be empty");
+            assert!(
+                !msg.is_empty(),
+                "verification error message must not be empty"
+            );
         }
         Err(other) => {
             panic!("AAD mismatch should produce Verification error, got: {other}");
@@ -678,7 +692,11 @@ fn test_hpke_export_only_mode() {
     assert_eq!(suite.aead().nonce_len(), 0);
     assert_eq!(suite.aead().tag_len(), 0);
     assert_eq!(suite.aead().name(), None);
-    assert_eq!(suite.ciphertext_size(100), None, "ExportOnly has no ciphertext");
+    assert_eq!(
+        suite.ciphertext_size(100),
+        None,
+        "ExportOnly has no ciphertext"
+    );
 
     let pk_r = x25519_test_pk();
     let sk_r = x25519_test_sk();
@@ -704,15 +722,20 @@ fn test_hpke_export_only_mode() {
     }
 
     // Sender: export_secret must succeed
-    let sender_export = sender_ctx.export_secret(b"export context", 32)
+    let sender_export = sender_ctx
+        .export_secret(b"export context", 32)
         .expect("sender export must succeed in ExportOnly mode");
     assert_eq!(sender_export.len(), 32);
 
     // Verify export with various lengths
-    let export_48 = sender_ctx.export_secret(b"ctx", 48).expect("48-byte export");
+    let export_48 = sender_ctx
+        .export_secret(b"ctx", 48)
+        .expect("48-byte export");
     assert_eq!(export_48.len(), 48);
 
-    let export_16 = sender_ctx.export_secret(b"ctx", 16).expect("16-byte export");
+    let export_16 = sender_ctx
+        .export_secret(b"ctx", 16)
+        .expect("16-byte export");
     assert_eq!(export_16.len(), 16);
 
     // Recipient: setup succeeds
@@ -734,7 +757,8 @@ fn test_hpke_export_only_mode() {
     }
 
     // Recipient: export_secret must succeed
-    let recipient_export = recipient_ctx.export_secret(b"export context", 32)
+    let recipient_export = recipient_ctx
+        .export_secret(b"export context", 32)
         .expect("recipient export must succeed in ExportOnly mode");
     assert_eq!(recipient_export.len(), 32);
 }
