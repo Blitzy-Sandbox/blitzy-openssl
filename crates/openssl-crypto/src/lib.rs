@@ -37,5 +37,8 @@ pub mod ocsp;
 #[cfg(feature = "ts")]
 pub mod ts;
 
+#[cfg(feature = "pqc")]
+pub mod pqc;
+
 #[cfg(test)]
 mod tests;
