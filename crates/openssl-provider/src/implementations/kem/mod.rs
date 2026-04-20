@@ -8,11 +8,14 @@
 //!
 //! Each KEM struct implements `KemProvider` from `crate::traits`.
 
-use crate::traits::AlgorithmDescriptor;
 use super::algorithm;
+use crate::traits::AlgorithmDescriptor;
 
 /// Shared KEM utilities — mode name mapping and helpers.
 pub mod util;
+
+/// HPKE DHKEM over ECX curves (X25519, X448) — RFC 9180.
+pub mod ecx;
 
 // Re-export commonly used items from util for convenience.
 pub use util::{kem_mode_to_name, kem_modename_to_id, KemMode};
@@ -22,9 +25,14 @@ pub use util::{kem_mode_to_name, kem_modename_to_id, KemMode};
 /// Called by [`super::all_kem_descriptors()`] when the `"kem"` feature
 /// is enabled. Returns descriptors for every KEM variant supported
 /// by the default provider.
+///
+/// The ECX DHKEM suites (X25519-HKDF-SHA256 and X448-HKDF-SHA512) are
+/// obtained from [`ecx::descriptors()`] and registered under their RFC 9180
+/// canonical names `"X25519"` and `"X448"`. The generic `"DHKEM"` entry is
+/// retained as a lookup alias for non-specific DHKEM queries.
 #[must_use]
 pub fn descriptors() -> Vec<AlgorithmDescriptor> {
-    vec![
+    let mut out = vec![
         algorithm(
             &["ML-KEM-512"],
             "provider=default",
@@ -50,5 +58,11 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
             "provider=default",
             "RSA Key Encapsulation Mechanism",
         ),
-    ]
+    ];
+    // Append the concrete ECX DHKEM suites (X25519, X448) to the generic
+    // dispatch table so that `OSSL_PROVIDER` lookups by canonical curve
+    // name succeed. R10: ensures `ecx.rs` is reachable from the provider
+    // entry point via `implementations::all_kem_descriptors()`.
+    out.extend(ecx::descriptors());
+    out
 }
