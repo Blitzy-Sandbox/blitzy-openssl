@@ -74,7 +74,9 @@ pub use self::filter::{
     BufferFilter, FilterChainBuilder, LineBufferFilter, NullFilter, PrefixFilter, ReadBufferFilter,
 };
 pub use self::mem::{new_bio_pair, BioPairEnd, MemBio, SecureMemBio};
-pub use self::socket::{AcceptBio, BioAddr, ConnectBio, DatagramBio, SocketBio};
+pub use self::socket::{
+    new_dgram_pair, AcceptBio, BioAddr, ConnectBio, DatagramBio, DatagramPairBio, SocketBio,
+};
 
 // ---------------------------------------------------------------------------
 // Constants
