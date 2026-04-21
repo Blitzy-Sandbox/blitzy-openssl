@@ -7,3 +7,4 @@
 #![allow(unsafe_code)]
 
 pub mod bio;
+pub mod crypto;

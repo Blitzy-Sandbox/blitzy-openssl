@@ -1197,9 +1197,10 @@ impl LibContext {
     ///
     /// Translates `OSSL_LIB_CTX_new_child()` from `crypto/context.c`
     /// (lines 512–527).
-    // Cross-module use: called by provider module when providers spawn sub-contexts.
-    #[allow(dead_code)]
-    pub(crate) fn new_child() -> Arc<Self> {
+    ///
+    /// Called both by the provider module when providers spawn sub-contexts and
+    /// by the `openssl-ffi` crate's `OSSL_LIB_CTX_new_child()` FFI export.
+    pub fn new_child() -> Arc<Self> {
         tracing::debug!("Creating new child LibContext");
 
         let ctx = Self {
