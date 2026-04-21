@@ -10,6 +10,10 @@
 //!   Provides ML-KEM-512, ML-KEM-768, and ML-KEM-1024 key encapsulation.
 //! - [`ml_dsa`] — Module-Lattice-Based Digital Signature Algorithm (FIPS 204).
 //!   Provides ML-DSA-44, ML-DSA-65, and ML-DSA-87 digital signatures.
+//! - [`slh_dsa`] — Stateless Hash-Based Digital Signature Algorithm (FIPS 205).
+//!   Provides all 12 standardised parameter sets across the SHA-2 and SHAKE
+//!   families at 128/192/256-bit security in both slow (`s`) and fast (`f`)
+//!   variants.
 //!
 //! # Feature Gating
 //!
@@ -27,3 +31,4 @@
 
 pub mod ml_dsa;
 pub mod ml_kem;
+pub mod slh_dsa;
