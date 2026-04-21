@@ -8,6 +8,8 @@
 //!
 //! - [`ml_kem`] — Module-Lattice-Based Key Encapsulation Mechanism (FIPS 203).
 //!   Provides ML-KEM-512, ML-KEM-768, and ML-KEM-1024 key encapsulation.
+//! - [`ml_dsa`] — Module-Lattice-Based Digital Signature Algorithm (FIPS 204).
+//!   Provides ML-DSA-44, ML-DSA-65, and ML-DSA-87 digital signatures.
 //!
 //! # Feature Gating
 //!
@@ -23,4 +25,5 @@
 //! - NIST FIPS 205: Stateless Hash-Based Digital Signature Standard.
 //! - NIST SP 800-208: Recommendation for Stateful Hash-Based Signature Schemes.
 
+pub mod ml_dsa;
 pub mod ml_kem;
