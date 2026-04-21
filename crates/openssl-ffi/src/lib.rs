@@ -5,3 +5,5 @@
 //! for backward compatibility with existing C consumers.
 
 #![allow(unsafe_code)]
+
+pub mod bio;
