@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 pub mod method;
+pub mod record;
 
 #[cfg(feature = "quic")]
 pub mod quic;
