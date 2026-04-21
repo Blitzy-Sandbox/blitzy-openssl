@@ -69,7 +69,7 @@ pub mod socket;
 // Re-exports from submodules for convenience access
 // ---------------------------------------------------------------------------
 
-pub use self::file::{FdBio, FileBio, LogBio, NullBio, OpenMode};
+pub use self::file::{FdBio, FileBio, LogBio, LogLevel, NullBio, OpenMode};
 pub use self::filter::{
     BufferFilter, FilterChainBuilder, LineBufferFilter, NullFilter, PrefixFilter, ReadBufferFilter,
 };
