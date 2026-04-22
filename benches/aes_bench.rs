@@ -1,382 +1,409 @@
-//! AES benchmark harness for Gate 3 performance baseline.
+//! AES-256-GCM bulk encryption/decryption benchmark (Workload 1) for Gate 3.
 //!
-//! Measures wall-clock time for AES operations across multiple modes (GCM, CBC)
-//! and key sizes (128, 256). Uses the `criterion` framework with statistically
-//! rigorous measurement.
+//! This file provides the **first of ≥2 required criterion benchmarks** for
+//! AAP §0.8.2 Gate 3 (Performance Baseline). It measures AES-256-GCM
+//! authenticated encryption/decryption throughput at five input sizes
+//! (16 B, 256 B, 1 KiB, 8 KiB, 16 KiB) through the `openssl-crypto` EVP
+//! cipher abstraction — the same code path a real application would use.
 //!
-//! # Workloads
+//! # C → Rust Translation Reference
 //!
-//! 1. **AES-GCM Seal / Open** — Authenticated encryption with associated data
-//!    (AEAD). Measures throughput for 1 KiB, 4 KiB, and 64 KiB payloads.
-//! 2. **AES-CBC Encrypt / Decrypt** — Traditional block-cipher mode. Measures
-//!    throughput for 1 KiB, 4 KiB, and 64 KiB payloads.
-//! 3. **AES Key Construction** — Measures `Aes::new()` / `AesGcm::new()` key
-//!    setup overhead across key sizes.
+//! The benchmark mirrors the `apps/speed.c` AEAD test harness
+//! (`EVP_Update_loop_aead_enc`, lines 989–1050, and `EVP_Update_loop_aead_dec`,
+//! lines 1054–1140):
+//!
+//! | C Source (apps/speed.c) | Line(s)  | Rust Equivalent                              |
+//! |-------------------------|----------|----------------------------------------------|
+//! | `aead_lengths_list[]`   | 139–141  | [`BENCH_SIZES`] (per AAP: 16,256,1K,8K,16K)  |
+//! | `init_evp_cipher_ctx()` | 898–932  | [`Cipher::fetch`] + [`CipherCtx::new`]        |
+//! | `EVP_EncryptInit_ex()`  | 924      | [`CipherCtx::encrypt_init`]                   |
+//! | `EVP_EncryptUpdate(AAD)`| 1033     | [`CipherCtx::set_aad`]                        |
+//! | `EVP_EncryptUpdate`     | 1039     | [`CipherCtx::update`]                         |
+//! | `EVP_EncryptFinal_ex`   | 1044     | [`CipherCtx::finalize`]                       |
+//! | `EVP_CTRL_AEAD_GET_TAG` | 1046-ish | [`CipherCtx::get_aead_tag`]                   |
+//! | `aad[EVP_AEAD_TLS1_AAD_LEN]` | 596 | [`AAD`] = `[0xcc; 13]`                        |
+//! | `iv[MAX_BLOCK_SIZE/8]`  | 897      | [`GCM_IV`] (12-byte canonical GCM nonce)      |
 //!
 //! # Running
 //!
 //! ```bash
-//! cargo bench --bench aes_bench
+//! cargo bench --package openssl-crypto --bench aes_bench
 //! ```
 //!
-//! Reports are written to `target/criterion/`.
+//! HTML reports are emitted to `target/criterion/`.
+//!
+//! # Gate 3 Compliance
+//!
+//! Criterion reports both wall-clock (ns/op) AND throughput (MB/s) automatically
+//! via [`Throughput::Bytes`]. Results feed the overall `BENCHMARK_REPORT.md`
+//! artifact targeting ±20 % parity against the upstream C+perlasm baseline.
+//!
+//! # Rule Compliance (AAP §0.8.1)
+//!
+//! * **R5 (Nullability):** `Cipher::fetch(..., None)` uses `Option<&str>` not
+//!   sentinel; `Some(&GCM_IV)` binds the nonce.
+//! * **R6 (Lossless Casts):** All `usize → u64` conversions use
+//!   [`u64::try_from`] with descriptive `expect()`.
+//! * **R8 (Zero Unsafe):** Zero `unsafe` blocks in this file.
+//! * **R9 (Warning-Free):** No module-level suppressions beyond
+//!   `expect_used`/`unwrap_used`/`panic`, all of which are benchmark-setup
+//!   conventions explicitly permitted for `benches/` per workspace lint policy.
+//! * **R10 (Wiring):** Benchmarks exercise the exact EVP API path an
+//!   application would use: `LibContext` → `Cipher::fetch` → `CipherCtx`.
 
-// Benchmarks are not library code — panicking on setup failure is acceptable.
+// Benchmark code runs as a standalone harness; panics during setup or in the
+// inner loop are acceptable signals of environment failure rather than library
+// defects. The workspace-wide `clippy::expect_used`/`unwrap_used`/`panic` lints
+// are warn-level, so scoped `#[allow]`s here document that this file
+// legitimately follows the benchmark convention.
 #![allow(clippy::expect_used)]
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::missing_panics_doc)]
 
-use criterion::{
-    black_box, criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
-    Throughput,
-};
-use openssl_crypto::symmetric::aes::{aes_cbc_decrypt, aes_cbc_encrypt, Aes, AesGcm};
-use openssl_crypto::symmetric::{AeadCipher, SymmetricCipher};
+use std::hint::black_box;
+use std::sync::Arc;
+use std::time::Duration;
 
-// =============================================================================
-// Test Data Constants
-// =============================================================================
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
-/// 128-bit AES key (16 bytes) — NIST FIPS 197 Appendix A test vector.
-const KEY_128: [u8; 16] = [
-    0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c,
-];
+use openssl_crypto::context::LibContext;
+use openssl_crypto::evp::cipher::{Cipher, CipherCtx, CipherDirection, AES_256_GCM};
+use openssl_crypto::rand::rand_bytes;
 
-/// 256-bit AES key (32 bytes) — NIST FIPS 197 Appendix A test vector.
-const KEY_256: [u8; 32] = [
-    0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe, 0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
-    0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7, 0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4,
-];
+// ============================================================================
+// Benchmark Constants
+// ============================================================================
 
-/// 96-bit nonce for GCM (12 bytes) — standard GCM IV length.
-const NONCE_96: [u8; 12] = [
-    0xca, 0xfe, 0xba, 0xbe, 0xfa, 0xce, 0xdb, 0xad, 0xde, 0xca, 0xf8, 0x88,
-];
-
-/// 128-bit IV for CBC mode (16 bytes — one AES block).
-const IV_128: [u8; 16] = [
-    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-];
-
-/// Associated data for AEAD benchmarks (16 bytes).
-const AAD: [u8; 16] = [
-    0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60, 0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97,
-];
-
-/// Payload sizes for throughput benchmarks (1 KiB, 4 KiB, 64 KiB).
-const PAYLOAD_SIZES: &[(usize, &str)] = &[(1024, "1KiB"), (4096, "4KiB"), (65536, "64KiB")];
-
-// =============================================================================
-// Payload Generation
-// =============================================================================
-
-/// Generates a deterministic payload of the given size.
+/// Input buffer sizes (bytes) for the AES-256-GCM workload.
 ///
-/// Uses a simple counter pattern to produce reproducible data that is
-/// representative of real-world plaintext entropy distribution.
-fn make_payload(size: usize) -> Vec<u8> {
+/// These values match the AAP specification exactly — 16 B, 256 B, 1 KiB,
+/// 8 KiB, 16 KiB — and are a strict subset of the C baseline's
+/// `aead_lengths_list[]` (`apps/speed.c` lines 139–141):
+/// `{2, 31, 136, 1024, 8 * 1024, 16 * 1024}`.
+const BENCH_SIZES: &[usize] = &[16, 256, 1024, 8 * 1024, 16 * 1024];
+
+/// 256-bit AES key (32 bytes) used for all benchmarks.
+///
+/// The exact byte value is irrelevant to measured performance (AES key
+/// schedule runs in constant time), but a fixed non-zero pattern guards
+/// against opportunistic "zero key" code paths that some implementations
+/// might take. Mirrors the `key32` buffer in `apps/speed.c` which is
+/// populated by `RAND_bytes` at program start-up.
+const AES_256_KEY: [u8; 32] = [0x42u8; 32];
+
+/// Standard 96-bit (12-byte) GCM IV/nonce.
+///
+/// 12 bytes is the canonical GCM IV length recommended by NIST SP 800-38D
+/// and used by TLS 1.3. The C baseline allocates
+/// `iv[2 * MAX_BLOCK_SIZE / 8] = iv[32]` (`apps/speed.c` line 897) but only
+/// the first 12 bytes are used for GCM.
+const GCM_IV: [u8; 12] = [
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+];
+
+/// 13-byte Additional Authenticated Data (AAD).
+///
+/// Matches `EVP_AEAD_TLS1_AAD_LEN` — the 13-byte AAD a TLS 1.2 record
+/// binds to an AEAD cipher. Pattern is identical to `apps/speed.c` line 596:
+/// `static unsigned char aad[EVP_AEAD_TLS1_AAD_LEN] = { 0xcc };`.
+/// Using TLS-sized AAD makes the benchmark representative of real TLS traffic.
+const AAD: [u8; 13] = [0xcc; 13];
+
+/// GCM authentication tag length in bytes (128 bits — canonical).
+const GCM_TAG_LEN: usize = 16;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Generates a buffer of `size` cryptographically random bytes.
+///
+/// Uses [`rand_bytes`] (the Rust equivalent of C `RAND_bytes`) to fill the
+/// buffer. Random plaintext prevents the cipher implementation from taking
+/// constant-input shortcuts (branch prediction on all-zero input, etc.),
+/// producing more realistic throughput numbers.
+///
+/// Returns an empty `Vec` for `size == 0`.
+fn make_random_plaintext(size: usize) -> Vec<u8> {
     let mut buf = vec![0u8; size];
-    for (i, byte) in buf.iter_mut().enumerate() {
-        // Deterministic pseudo-random fill using xorshift-like mixing.
-        let val = i.wrapping_mul(0x9E37_79B9) ^ (i >> 4);
-        // TRUNCATION: val & 0xFF is provably in [0, 255], safe for u8.
-        #[allow(clippy::cast_possible_truncation)]
-        let mixed = (val & 0xFF) as u8;
-        *byte = mixed;
+    if size > 0 {
+        // rand_bytes on non-empty slices must succeed in a healthy environment.
+        rand_bytes(&mut buf).expect("rand_bytes: DRBG failed to produce plaintext");
     }
     buf
 }
 
-// =============================================================================
-// AES Key Construction Benchmarks
-// =============================================================================
-
-/// Benchmark AES key construction across key sizes.
+/// One-time benchmark setup: creates a [`LibContext`] and fetches the
+/// AES-256-GCM [`Cipher`] descriptor.
 ///
-/// Measures the overhead of `Aes::new()` and `AesGcm::new()`, which includes
-/// key schedule expansion. This is relevant for short-lived connections where
-/// key setup is a significant fraction of total cost.
-fn bench_aes_key_construction(c: &mut Criterion) {
-    let mut group = c.benchmark_group("aes_key_construction");
-
-    group.bench_function("Aes::new AES-128", |b| {
-        b.iter(|| {
-            let cipher = Aes::new(black_box(&KEY_128)).expect("AES-128 key construction");
-            black_box(cipher)
-        });
-    });
-
-    group.bench_function("Aes::new AES-256", |b| {
-        b.iter(|| {
-            let cipher = Aes::new(black_box(&KEY_256)).expect("AES-256 key construction");
-            black_box(cipher)
-        });
-    });
-
-    group.bench_function("AesGcm::new AES-128", |b| {
-        b.iter(|| {
-            let cipher = AesGcm::new(black_box(&KEY_128)).expect("AES-128-GCM key construction");
-            black_box(cipher)
-        });
-    });
-
-    group.bench_function("AesGcm::new AES-256", |b| {
-        b.iter(|| {
-            let cipher = AesGcm::new(black_box(&KEY_256)).expect("AES-256-GCM key construction");
-            black_box(cipher)
-        });
-    });
-
-    group.finish();
-}
-
-// =============================================================================
-// AES-GCM Seal / Open Benchmarks (AEAD Workload)
-// =============================================================================
-
-/// Helper: benchmark AES-GCM seal for a given key and payload size.
-fn bench_gcm_seal_inner(
-    group: &mut BenchmarkGroup<'_, WallTime>,
-    key: &[u8],
-    label_prefix: &str,
-    payload_size: usize,
-    size_label: &str,
-) {
-    let payload = make_payload(payload_size);
-    let cipher = AesGcm::new(key).expect("AES-GCM key construction");
-
-    group.throughput(Throughput::Bytes(payload_size as u64));
-    group.bench_function(format!("{label_prefix} seal {size_label}"), |b| {
-        b.iter(|| {
-            let result = cipher.seal(black_box(&NONCE_96), black_box(&AAD), black_box(&payload));
-            black_box(result)
-        });
-    });
-}
-
-/// Helper: benchmark AES-GCM open for a given key and payload size.
-fn bench_gcm_open_inner(
-    group: &mut BenchmarkGroup<'_, WallTime>,
-    key: &[u8],
-    label_prefix: &str,
-    payload_size: usize,
-    size_label: &str,
-) {
-    let payload = make_payload(payload_size);
-    let cipher = AesGcm::new(key).expect("AES-GCM key construction");
-    // Seal first to get valid ciphertext + tag for open benchmark.
-    let ciphertext = cipher
-        .seal(&NONCE_96, &AAD, &payload)
-        .expect("AES-GCM seal for open benchmark");
-
-    group.throughput(Throughput::Bytes(payload_size as u64));
-    group.bench_function(format!("{label_prefix} open {size_label}"), |b| {
-        b.iter(|| {
-            let result = cipher.open(
-                black_box(&NONCE_96),
-                black_box(&AAD),
-                black_box(&ciphertext),
-            );
-            black_box(result)
-        });
-    });
-}
-
-/// Benchmark AES-GCM seal and open across key sizes and payload sizes.
+/// The `LibContext` is cheap to construct but non-trivial — it initialises
+/// the provider registry, the property store, the method cache, and the
+/// default DRBG. Hoisting this work out of the per-iteration closure
+/// concentrates measurement on the actual crypto work.
 ///
-/// This is the primary AEAD workload (Workload 1 per Gate 3). AES-GCM is
-/// the most widely used authenticated cipher in TLS 1.3 and QUIC.
-fn bench_aes_gcm(c: &mut Criterion) {
-    let mut group = c.benchmark_group("aes_gcm");
+/// Returns an `(Arc<LibContext>, Cipher)` tuple. The `LibContext` must be
+/// held for the lifetime of the benchmark so that any `Arc`-held internal
+/// state remains valid through every call.
+fn fetch_aes_256_gcm() -> (Arc<LibContext>, Cipher) {
+    // LibContext::new() creates a fresh, non-default context; LibContext::default()
+    // would return the global singleton. Using new() gives each benchmark run a
+    // clean provider store, eliminating cross-test contamination when multiple
+    // benchmark binaries share a process.
+    let ctx = LibContext::new();
+    let cipher = Cipher::fetch(&ctx, AES_256_GCM, None)
+        .expect("Cipher::fetch: AES-256-GCM must be available from the default provider");
+    (ctx, cipher)
+}
 
-    for &(payload_size, size_label) in PAYLOAD_SIZES {
-        // AES-128-GCM
-        bench_gcm_seal_inner(
-            &mut group,
-            &KEY_128,
-            "AES-128-GCM",
-            payload_size,
-            size_label,
-        );
-        bench_gcm_open_inner(
-            &mut group,
-            &KEY_128,
-            "AES-128-GCM",
-            payload_size,
-            size_label,
-        );
+/// Initialises a [`CipherCtx`] for the requested [`CipherDirection`] and
+/// verifies the direction reflects the correct state.
+///
+/// Centralising the init logic through this helper:
+/// 1. Exercises `CipherDirection::{Encrypt, Decrypt}` (AAP schema requires
+///    both variants to be *used*, not just imported).
+/// 2. Asserts the newly-set direction via
+///    [`CipherCtx::direction`] — a Rule R10 wiring check that proves the
+///    init propagated through the real API, not just a stubbed setter.
+fn init_cipher_ctx(cipher: &Cipher, direction: CipherDirection) -> CipherCtx {
+    let mut ctx = CipherCtx::new();
+    match direction {
+        CipherDirection::Encrypt => {
+            ctx.encrypt_init(cipher, &AES_256_KEY, Some(&GCM_IV), None)
+                .expect("encrypt_init: AES-256-GCM with 32-byte key and 12-byte IV");
+        }
+        CipherDirection::Decrypt => {
+            ctx.decrypt_init(cipher, &AES_256_KEY, Some(&GCM_IV), None)
+                .expect("decrypt_init: AES-256-GCM with 32-byte key and 12-byte IV");
+        }
+    }
+    debug_assert_eq!(
+        ctx.direction(),
+        Some(direction),
+        "CipherCtx direction mismatch after init",
+    );
+    ctx
+}
 
-        // AES-256-GCM
-        bench_gcm_seal_inner(
-            &mut group,
-            &KEY_256,
-            "AES-256-GCM",
-            payload_size,
-            size_label,
-        );
-        bench_gcm_open_inner(
-            &mut group,
-            &KEY_256,
-            "AES-256-GCM",
-            payload_size,
-            size_label,
+/// Pre-encrypts `plaintext` with AES-256-GCM, returning `(ciphertext, tag)`.
+///
+/// Used to prepare fixture data for the decrypt benchmark: decryption must
+/// be fed a valid ciphertext + 16-byte authentication tag that was produced
+/// with the same key, IV, and AAD; otherwise
+/// [`CipherCtx::finalize`] would fail the tag check.
+///
+/// This encryption happens **once per size** during benchmark setup, not
+/// inside the measured loop.
+fn encrypt_fixture(cipher: &Cipher, plaintext: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let mut ctx = init_cipher_ctx(cipher, CipherDirection::Encrypt);
+    ctx.set_aad(&AAD)
+        .expect("set_aad: AES-256-GCM is AEAD and accepts 13-byte AAD");
+
+    // R6: output capacity uses checked_add implicitly via with_capacity's
+    // assumption that values fit; BENCH_SIZES max is 16 KiB + 16-byte tag.
+    let mut ciphertext = Vec::with_capacity(plaintext.len().saturating_add(GCM_TAG_LEN));
+    ctx.update(plaintext, &mut ciphertext)
+        .expect("update: AES-256-GCM encryption");
+    ctx.finalize(&mut ciphertext)
+        .expect("finalize: AES-256-GCM encryption");
+    let tag = ctx
+        .get_aead_tag(GCM_TAG_LEN)
+        .expect("get_aead_tag: tag retrieval after finalize");
+    debug_assert_eq!(tag.len(), GCM_TAG_LEN, "GCM tag must be 16 bytes");
+    (ciphertext, tag)
+}
+
+/// Converts a `usize` size to `u64` for [`Throughput::Bytes`].
+///
+/// Rule R6: avoids a bare `as u64` cast by routing through [`u64::try_from`].
+/// `BENCH_SIZES` values are all ≤ 16 KiB, so this conversion can never fail
+/// on any supported target.
+#[inline]
+fn size_to_u64(size: usize) -> u64 {
+    u64::try_from(size).expect("BENCH_SIZES values (≤ 16 KiB) always fit in u64")
+}
+
+// ============================================================================
+// Benchmark: AES-256-GCM Encrypt
+// ============================================================================
+
+/// Benchmarks AES-256-GCM encryption (seal) across [`BENCH_SIZES`].
+///
+/// Each iteration performs the complete TLS-like AEAD sequence:
+///
+/// 1. Create a fresh `CipherCtx` (mirrors C `EVP_CIPHER_CTX_new`).
+/// 2. `encrypt_init(&cipher, &KEY, Some(&IV), None)` (C `EVP_EncryptInit_ex`).
+/// 3. `set_aad(&AAD)` — 13-byte TLS-sized AAD (C `EVP_EncryptUpdate` with NULL out).
+/// 4. `update(plaintext, &mut ciphertext)` — bulk encrypt (C `EVP_EncryptUpdate`).
+/// 5. `finalize(&mut ciphertext)` — flush + compute tag (C `EVP_EncryptFinal_ex`).
+/// 6. `get_aead_tag(16)` — retrieve GCM tag (C `EVP_CTRL_AEAD_GET_TAG`).
+///
+/// Step 1 is intentionally inside the loop: real applications (particularly
+/// TLS record encryption) construct a fresh context per record. Keeping this
+/// in the hot path captures context-allocation + key-schedule cost that
+/// `apps/speed.c` amortises over its large `count` loop.
+fn bench_aes_256_gcm_encrypt(c: &mut Criterion) {
+    let (_lib_ctx, cipher) = fetch_aes_256_gcm();
+    let mut group = c.benchmark_group("aes_256_gcm_encrypt");
+
+    for &size in BENCH_SIZES {
+        let plaintext = make_random_plaintext(size);
+
+        // Throughput::Bytes drives MB/s reporting alongside ns/op wall-clock.
+        group.throughput(Throughput::Bytes(size_to_u64(size)));
+
+        group.bench_with_input(
+            BenchmarkId::new("encrypt", size),
+            &plaintext,
+            |bencher, plaintext_ref| {
+                bencher.iter(|| {
+                    let mut ctx = init_cipher_ctx(&cipher, CipherDirection::Encrypt);
+                    ctx.set_aad(&AAD).expect("set_aad");
+
+                    let mut ciphertext =
+                        Vec::with_capacity(plaintext_ref.len().saturating_add(GCM_TAG_LEN));
+                    ctx.update(black_box(plaintext_ref), &mut ciphertext)
+                        .expect("update");
+                    ctx.finalize(&mut ciphertext).expect("finalize");
+                    let tag = ctx.get_aead_tag(GCM_TAG_LEN).expect("get_aead_tag");
+
+                    // black_box prevents the optimiser from eliminating the
+                    // computation because the result appears unused.
+                    black_box((ciphertext, tag))
+                });
+            },
         );
     }
 
     group.finish();
 }
 
-// =============================================================================
-// AES-CBC Encrypt / Decrypt Benchmarks (Block-Cipher Workload)
-// =============================================================================
+// ============================================================================
+// Benchmark: AES-256-GCM Decrypt
+// ============================================================================
 
-/// Benchmark AES-CBC encrypt and decrypt across key sizes and payload sizes.
+/// Benchmarks AES-256-GCM decryption (open) across [`BENCH_SIZES`].
 ///
-/// This is the block-cipher mode workload (Workload 2 per Gate 3). AES-CBC is
-/// representative of non-AEAD cipher paths and remains widely used in PKCS#7,
-/// PKCS#12, and legacy TLS cipher suites.
-fn bench_aes_cbc(c: &mut Criterion) {
-    let mut group = c.benchmark_group("aes_cbc");
+/// Pre-encrypts each plaintext *once* during setup (outside the measured
+/// loop) to obtain a valid `(ciphertext, tag)` pair. Each benchmark iteration
+/// then performs the complete decrypt sequence:
+///
+/// 1. Create a fresh `CipherCtx` (C `EVP_CIPHER_CTX_new`).
+/// 2. `decrypt_init(&cipher, &KEY, Some(&IV), None)` (C `EVP_DecryptInit_ex`).
+/// 3. `set_aad(&AAD)` — 13-byte TLS-sized AAD.
+/// 4. `set_aead_tag(&tag)` — pre-set expected tag (C `EVP_CTRL_AEAD_SET_TAG`).
+/// 5. `update(ciphertext, &mut plaintext)` — bulk decrypt.
+/// 6. `finalize(&mut plaintext)` — verifies tag, fails on mismatch.
+///
+/// Successful finalize confirms round-trip correctness at every benchmark
+/// invocation (Gate 1 E2E Boundary check, implicitly).
+fn bench_aes_256_gcm_decrypt(c: &mut Criterion) {
+    let (_lib_ctx, cipher) = fetch_aes_256_gcm();
+    let mut group = c.benchmark_group("aes_256_gcm_decrypt");
 
-    for &(payload_size, size_label) in PAYLOAD_SIZES {
-        let payload = make_payload(payload_size);
+    for &size in BENCH_SIZES {
+        let plaintext = make_random_plaintext(size);
+        let (ciphertext, tag) = encrypt_fixture(&cipher, &plaintext);
 
-        // --- AES-128-CBC encrypt ---
-        group.throughput(Throughput::Bytes(payload_size as u64));
-        let label = format!("AES-128-CBC encrypt {size_label}");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let result =
-                    aes_cbc_encrypt(black_box(&KEY_128), black_box(&IV_128), black_box(&payload));
-                black_box(result)
-            });
-        });
+        group.throughput(Throughput::Bytes(size_to_u64(size)));
 
-        // --- AES-128-CBC decrypt ---
-        let ciphertext_128 = aes_cbc_encrypt(&KEY_128, &IV_128, &payload)
-            .expect("AES-128-CBC encrypt for decrypt bench");
-        group.throughput(Throughput::Bytes(ciphertext_128.len() as u64));
-        let label = format!("AES-128-CBC decrypt {size_label}");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let result = aes_cbc_decrypt(
-                    black_box(&KEY_128),
-                    black_box(&IV_128),
-                    black_box(&ciphertext_128),
-                );
-                black_box(result)
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("decrypt", size),
+            &(ciphertext, tag),
+            |bencher, fixture| {
+                let (ct, tag) = fixture;
+                bencher.iter(|| {
+                    let mut ctx = init_cipher_ctx(&cipher, CipherDirection::Decrypt);
+                    ctx.set_aad(&AAD).expect("set_aad");
+                    ctx.set_aead_tag(tag).expect("set_aead_tag");
 
-        // --- AES-256-CBC encrypt ---
-        group.throughput(Throughput::Bytes(payload_size as u64));
-        let label = format!("AES-256-CBC encrypt {size_label}");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let result =
-                    aes_cbc_encrypt(black_box(&KEY_256), black_box(&IV_128), black_box(&payload));
-                black_box(result)
-            });
-        });
+                    let mut recovered = Vec::with_capacity(ct.len());
+                    ctx.update(black_box(ct), &mut recovered).expect("update");
+                    // finalize verifies the tag; mismatch would panic here.
+                    ctx.finalize(&mut recovered).expect("finalize");
 
-        // --- AES-256-CBC decrypt ---
-        let ciphertext_256 = aes_cbc_encrypt(&KEY_256, &IV_128, &payload)
-            .expect("AES-256-CBC encrypt for decrypt bench");
-        group.throughput(Throughput::Bytes(ciphertext_256.len() as u64));
-        let label = format!("AES-256-CBC decrypt {size_label}");
-        group.bench_function(&label, |b| {
-            b.iter(|| {
-                let result = aes_cbc_decrypt(
-                    black_box(&KEY_256),
-                    black_box(&IV_128),
-                    black_box(&ciphertext_256),
-                );
-                black_box(result)
-            });
-        });
+                    black_box(recovered)
+                });
+            },
+        );
     }
 
     group.finish();
 }
 
-// =============================================================================
-// AES Block-Level Benchmarks
-// =============================================================================
+// ============================================================================
+// Benchmark: Encrypt → Decrypt Round-Trip
+// ============================================================================
 
-/// Benchmark raw AES single-block encrypt and decrypt.
+/// Benchmarks a complete AES-256-GCM encrypt-then-decrypt round-trip.
 ///
-/// This isolates the core AES round function performance from mode-of-operation
-/// overhead. Useful for comparing Rust AES performance against the C reference.
-fn bench_aes_block(c: &mut Criterion) {
-    let mut group = c.benchmark_group("aes_block");
+/// Useful for end-to-end AEAD throughput assessment — the single number
+/// reported here summarises total CPU cost of protecting + unprotecting a
+/// message, which approximates the symmetric path length inside a TLS
+/// record-layer exchange. Reports throughput relative to *plaintext size*
+/// (not 2× size), so MB/s is comparable between round-trip and one-way
+/// benchmarks.
+fn bench_aes_256_gcm_throughput(c: &mut Criterion) {
+    let (_lib_ctx, cipher) = fetch_aes_256_gcm();
+    let mut group = c.benchmark_group("aes_256_gcm_round_trip");
 
-    let cipher_128 = Aes::new(&KEY_128).expect("AES-128 key construction");
-    let cipher_256 = Aes::new(&KEY_256).expect("AES-256 key construction");
+    for &size in BENCH_SIZES {
+        let plaintext = make_random_plaintext(size);
 
-    group.throughput(Throughput::Bytes(16));
+        group.throughput(Throughput::Bytes(size_to_u64(size)));
 
-    group.bench_function("AES-128 encrypt_block", |b| {
-        let mut block = [
-            0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37,
-            0x07, 0x34u8,
-        ];
-        b.iter(|| {
-            cipher_128
-                .encrypt_block(black_box(&mut block))
-                .expect("encrypt_block");
-            black_box(&block);
-        });
-    });
+        group.bench_with_input(
+            BenchmarkId::new("round_trip", size),
+            &plaintext,
+            |bencher, plaintext_ref| {
+                bencher.iter(|| {
+                    // --- Encrypt phase ---
+                    let mut enc = init_cipher_ctx(&cipher, CipherDirection::Encrypt);
+                    enc.set_aad(&AAD).expect("enc set_aad");
+                    let mut ciphertext =
+                        Vec::with_capacity(plaintext_ref.len().saturating_add(GCM_TAG_LEN));
+                    enc.update(black_box(plaintext_ref), &mut ciphertext)
+                        .expect("enc update");
+                    enc.finalize(&mut ciphertext).expect("enc finalize");
+                    let tag = enc.get_aead_tag(GCM_TAG_LEN).expect("enc get_aead_tag");
 
-    group.bench_function("AES-128 decrypt_block", |b| {
-        let mut block = [
-            0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb, 0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a,
-            0x0b, 0x32u8,
-        ];
-        b.iter(|| {
-            cipher_128
-                .decrypt_block(black_box(&mut block))
-                .expect("decrypt_block");
-            black_box(&block);
-        });
-    });
+                    // --- Decrypt phase ---
+                    let mut dec = init_cipher_ctx(&cipher, CipherDirection::Decrypt);
+                    dec.set_aad(&AAD).expect("dec set_aad");
+                    dec.set_aead_tag(&tag).expect("dec set_aead_tag");
+                    let mut recovered = Vec::with_capacity(ciphertext.len());
+                    dec.update(&ciphertext, &mut recovered).expect("dec update");
+                    dec.finalize(&mut recovered).expect("dec finalize");
 
-    group.bench_function("AES-256 encrypt_block", |b| {
-        let mut block = [
-            0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37,
-            0x07, 0x34u8,
-        ];
-        b.iter(|| {
-            cipher_256
-                .encrypt_block(black_box(&mut block))
-                .expect("encrypt_block");
-            black_box(&block);
-        });
-    });
-
-    group.bench_function("AES-256 decrypt_block", |b| {
-        let mut block = [
-            0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb, 0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a,
-            0x0b, 0x32u8,
-        ];
-        b.iter(|| {
-            cipher_256
-                .decrypt_block(black_box(&mut block))
-                .expect("decrypt_block");
-            black_box(&block);
-        });
-    });
+                    black_box(recovered)
+                });
+            },
+        );
+    }
 
     group.finish();
 }
 
-// =============================================================================
-// Criterion Entry Point
-// =============================================================================
+// ============================================================================
+// Criterion Harness
+// ============================================================================
 
 criterion_group!(
-    benches,
-    bench_aes_key_construction,
-    bench_aes_gcm,
-    bench_aes_cbc,
-    bench_aes_block,
+    name = benches;
+    // Gate 3 tuning:
+    //   * 5-second measurement time is sufficient for symmetric crypto whose
+    //     per-iteration wall-clock is sub-microsecond at small sizes.
+    //   * 200 samples yields tight confidence intervals without exploding
+    //     the total bench runtime beyond CI budget.
+    //   * 2-second warm-up lets CPU-frequency scaling and JIT branch
+    //     predictors reach steady state before measurements begin.
+    config = Criterion::default()
+        .measurement_time(Duration::from_secs(5))
+        .sample_size(200)
+        .warm_up_time(Duration::from_secs(2));
+    targets =
+        bench_aes_256_gcm_encrypt,
+        bench_aes_256_gcm_decrypt,
+        bench_aes_256_gcm_throughput
 );
+
 criterion_main!(benches);
