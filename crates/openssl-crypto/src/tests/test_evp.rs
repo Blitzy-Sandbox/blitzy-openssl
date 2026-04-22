@@ -459,8 +459,8 @@ fn test_evp_pkey_derive() -> CryptoResult<()> {
 // types plus the free-function [`hkdf_derive`] entry point.
 
 /// Verifies that HKDF can be fetched by name through [`Kdf::fetch`] and
-/// also accessed directly through the module-level [`HKDF`] singleton.
-/// Both paths must report the same canonical algorithm name.
+/// that the module-level [`HKDF`] constant exposes the canonical name used
+/// by providers for lookup.  Both paths must agree.
 #[test]
 fn test_evp_kdf_fetch_hkdf() -> CryptoResult<()> {
     let ctx = default_ctx();
@@ -469,13 +469,13 @@ fn test_evp_kdf_fetch_hkdf() -> CryptoResult<()> {
     let kdf_fetched = Kdf::fetch(&ctx, "HKDF", None)?;
     assert_eq!(kdf_fetched.name(), "HKDF");
 
-    // Path 2: static singleton access.
-    let kdf_static: &Kdf = &HKDF;
-    assert_eq!(
-        kdf_static.name(),
-        "HKDF",
-        "HKDF static singleton reports the same name"
-    );
+    // Path 2: the canonical string constant must be equivalent to the
+    // name reported by the fetched Kdf.  After the C→Rust translation the
+    // HKDF module item is a `&'static str` algorithm-name constant rather
+    // than a pre-fetched Kdf singleton — this keeps the ownership story
+    // simple and mirrors the provider-fetch model used throughout EVP.
+    assert_eq!(HKDF, "HKDF", "HKDF constant matches provider name");
+    assert_eq!(kdf_fetched.name(), HKDF, "fetched Kdf matches constant");
 
     Ok(())
 }
@@ -486,11 +486,24 @@ fn test_evp_kdf_fetch_hkdf() -> CryptoResult<()> {
 /// free-function path.
 #[test]
 fn test_evp_kdf_derive() -> CryptoResult<()> {
+    use openssl_common::{ParamSet, ParamValue};
+
     let ctx = default_ctx();
 
-    // Path 1: KdfCtx stateful derivation.
+    // Path 1: KdfCtx stateful derivation.  `KdfCtx::new` is infallible in
+    // the Rust port (see `evp/kdf.rs`): it simply attaches the method.  We
+    // then set the required HKDF parameters and call `derive`.
     let kdf = Kdf::fetch(&ctx, "HKDF", None)?;
-    let mut kctx = KdfCtx::new(&kdf)?;
+    let mut kctx = KdfCtx::new(&kdf);
+    let mut params = ParamSet::new();
+    params.set("digest", ParamValue::Utf8String("SHA-256".to_string()));
+    params.set(
+        "key",
+        ParamValue::OctetString(b"input keying material".to_vec()),
+    );
+    params.set("salt", ParamValue::OctetString(b"salt value".to_vec()));
+    params.set("info", ParamValue::OctetString(b"context info".to_vec()));
+    kctx.set_params(&params)?;
     let derived_ctx = kctx.derive(42)?;
     assert_eq!(
         derived_ctx.len(),
