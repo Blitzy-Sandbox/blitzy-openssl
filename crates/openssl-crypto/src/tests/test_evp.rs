@@ -354,8 +354,10 @@ fn test_evp_pkey_generate_rsa() -> CryptoResult<()> {
     pkey_ctx.keygen_init()?;
     let pkey = pkey_ctx.keygen()?;
 
+    // `bits()` returns `CryptoResult<u32>` (R6 compliance) — propagate
+    // any error via `?` so a failure here surfaces as the test result.
     assert!(
-        pkey.bits() > 0,
+        pkey.bits()? > 0,
         "generated RSA key must report a bit strength"
     );
     assert!(
@@ -376,8 +378,9 @@ fn test_evp_pkey_generate_ec() -> CryptoResult<()> {
     pkey_ctx.keygen_init()?;
     let pkey = pkey_ctx.keygen()?;
 
+    // `bits()` returns `CryptoResult<u32>` (R6 compliance).
     assert!(
-        pkey.bits() > 0,
+        pkey.bits()? > 0,
         "generated EC key must report a bit strength"
     );
 
@@ -672,8 +675,9 @@ fn test_evp_encode_decode_key() -> CryptoResult<()> {
     decoder.set_expected_format(KeyFormat::Der);
     let decoded: PKey = decoder.decode_from_slice(&encoded)?;
     // Some diagnostic — the decoded key should report a non-zero bit-strength.
+    // `bits()` returns `CryptoResult<u32>` (R6 compliance); propagate via `?`.
     assert!(
-        decoded.bits() > 0,
+        decoded.bits()? > 0,
         "decoded key reports a positive bit strength"
     );
 
