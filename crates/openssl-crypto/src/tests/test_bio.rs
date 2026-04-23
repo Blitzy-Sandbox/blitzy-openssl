@@ -127,14 +127,14 @@ fn test_mem_bio_empty_read() {
     let result = bio.read(&mut buf);
     match result {
         Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-        other => panic!(
-            "default MemBio empty read expected WouldBlock, got {other:?}"
-        ),
+        other => panic!("default MemBio empty read expected WouldBlock, got {other:?}"),
     }
 
     // After enabling eof_on_empty, the same empty read must return Ok(0).
     bio.set_eof_on_empty(true);
-    let n = bio.read(&mut buf).expect("eof_on_empty read must not error");
+    let n = bio
+        .read(&mut buf)
+        .expect("eof_on_empty read must not error");
     assert_eq!(n, 0, "eof_on_empty empty read must return 0 (EOF)");
     assert!(
         <MemBio as Bio>::eof(&bio),
@@ -154,11 +154,11 @@ fn test_mem_bio_empty_read() {
     let second = ro
         .read(&mut scratch)
         .expect("exhausted read-only MemBio must not error");
-    assert_eq!(
-        second, 0,
-        "exhausted read-only MemBio must return 0 (EOF)"
+    assert_eq!(second, 0, "exhausted read-only MemBio must return 0 (EOF)");
+    assert!(
+        <MemBio as Bio>::eof(&ro),
+        "read-only MemBio must now be EOF"
     );
-    assert!(<MemBio as Bio>::eof(&ro), "read-only MemBio must now be EOF");
 }
 
 /// Multiple sequential writes accumulate and read back in order.
@@ -214,7 +214,10 @@ fn test_mem_bio_get_data() {
 
     // get_data returns a non-consuming view of the buffered bytes.
     let view = bio.get_data();
-    assert_eq!(view, PAYLOAD, "get_data must return buffered bytes verbatim");
+    assert_eq!(
+        view, PAYLOAD,
+        "get_data must return buffered bytes verbatim"
+    );
     assert_eq!(view.len(), PAYLOAD.len(), "view length must match payload");
 
     // as_bytes is an alias — same result.
@@ -306,8 +309,8 @@ fn test_file_bio_write_read() {
 
     // Write phase: open for writing (truncate) and write the payload.
     {
-        let mut writer = FileBio::new(&path, OpenMode::WriteBinary)
-            .expect("open for write must succeed");
+        let mut writer =
+            FileBio::new(&path, OpenMode::WriteBinary).expect("open for write must succeed");
         assert_eq!(writer.mode(), OpenMode::WriteBinary);
         assert_eq!(
             writer.path(),
@@ -335,8 +338,8 @@ fn test_file_bio_write_read() {
 
     // Read phase: reopen read-only and verify round-trip.
     {
-        let mut reader = FileBio::new(&path, OpenMode::ReadBinary)
-            .expect("open for read must succeed");
+        let mut reader =
+            FileBio::new(&path, OpenMode::ReadBinary).expect("open for read must succeed");
         assert_eq!(reader.mode(), OpenMode::ReadBinary);
         assert!(reader.mode().is_readable());
         assert!(!reader.mode().is_writable());
@@ -389,9 +392,7 @@ fn test_file_bio_nonexistent_error() {
                 e.kind()
             );
         }
-        Err(other) => panic!(
-            "expected CryptoError::Io, got {other:?} (Rule R5 violation)"
-        ),
+        Err(other) => panic!("expected CryptoError::Io, got {other:?} (Rule R5 violation)"),
         Ok(_) => panic!("must not successfully open a bogus path"),
     }
 
@@ -488,7 +489,6 @@ fn test_file_bio_read_write_trait() {
     drop(tmp);
 }
 
-
 // =============================================================================
 // Phase 4 — BIO Trait Tests (reference: test/bio_core_test.c)
 // =============================================================================
@@ -501,10 +501,7 @@ fn test_file_bio_read_write_trait() {
 #[test]
 fn test_bio_read_trait() {
     // Generic helper accepting any Read implementor.
-    fn read_exactly_max<R: Read>(
-        src: &mut R,
-        out: &mut [u8],
-    ) -> std::io::Result<usize> {
+    fn read_exactly_max<R: Read>(src: &mut R, out: &mut [u8]) -> std::io::Result<usize> {
         src.read(out)
     }
 
@@ -530,14 +527,12 @@ fn test_bio_read_trait() {
 
     // Case 3: FileBio sourced from a tempfile.
     let tmp = NamedTempFile::new().expect("tempfile");
-    std::fs::write(tmp.path(), b"file-backed content")
-        .expect("pre-seed tempfile must succeed");
-    let mut file_bio = FileBio::new(tmp.path(), OpenMode::ReadBinary)
-        .expect("open for read");
+    std::fs::write(tmp.path(), b"file-backed content").expect("pre-seed tempfile must succeed");
+    let mut file_bio = FileBio::new(tmp.path(), OpenMode::ReadBinary).expect("open for read");
 
     let mut file_buf = Vec::new();
-    let file_n = read_exactly_max_to_end(&mut file_bio, &mut file_buf)
-        .expect("FileBio read_to_end");
+    let file_n =
+        read_exactly_max_to_end(&mut file_bio, &mut file_buf).expect("FileBio read_to_end");
     assert_eq!(file_n, b"file-backed content".len());
     assert_eq!(file_buf.as_slice(), b"file-backed content");
     assert_eq!(
@@ -547,10 +542,7 @@ fn test_bio_read_trait() {
     drop(tmp);
 
     // Nested generic helper to exercise read_to_end through the trait.
-    fn read_exactly_max_to_end<R: Read>(
-        src: &mut R,
-        out: &mut Vec<u8>,
-    ) -> std::io::Result<usize> {
+    fn read_exactly_max_to_end<R: Read>(src: &mut R, out: &mut Vec<u8>) -> std::io::Result<usize> {
         src.read_to_end(out)
     }
 }
@@ -601,8 +593,7 @@ fn test_bio_write_trait() {
     let tmp = NamedTempFile::new().expect("tempfile");
     let path = tmp.path().to_path_buf();
     {
-        let mut file_bio = FileBio::new(&path, OpenMode::WriteBinary)
-            .expect("open for write");
+        let mut file_bio = FileBio::new(&path, OpenMode::WriteBinary).expect("open for write");
         let fn_ = write_and_flush(&mut file_bio, MSG).expect("FileBio write");
         assert_eq!(fn_, MSG.len());
         assert_eq!(file_bio.stats().bytes_written(), MSG.len() as u64);
@@ -670,7 +661,6 @@ fn test_bio_chain() {
     );
 }
 
-
 // =============================================================================
 // Phase 5 — Filter BIO Tests (reference: test/bio_enc_test.c)
 // =============================================================================
@@ -704,12 +694,10 @@ fn test_bio_filter_chain() {
     assert_eq!(offset, SENTENCE.len(), "all chunks accepted");
 
     // Flush the filter to push buffered bytes into the inner sink.
-    write_chain.flush().expect("flush must drain buffer to sink");
-    assert_eq!(
-        write_chain.wpending(),
-        0,
-        "wpending must be 0 after flush"
-    );
+    write_chain
+        .flush()
+        .expect("flush must drain buffer to sink");
+    assert_eq!(write_chain.wpending(), 0, "wpending must be 0 after flush");
 
     // Extract the inner sink — it now holds the full payload.
     let mut drained_sink = write_chain.into_inner();
@@ -738,11 +726,7 @@ fn test_bio_filter_chain() {
         source_bytes.as_slice(),
         "chain read preserves source bytes"
     );
-    assert_eq!(
-        read_chain.pending(),
-        0,
-        "read-side buffer drained at EOF"
-    );
+    assert_eq!(read_chain.pending(), 0, "read-side buffer drained at EOF");
 
     // Verify the builder also produces a NullFilter wrapping a source.
     let nested_source = MemBio::from_slice(b"null-wrapped");
@@ -854,26 +838,17 @@ impl RecordingCallback {
         Self::default()
     }
 
-    fn before_handles(
-        &self,
-    ) -> Arc<Mutex<Vec<(BioCallbackOp, BioType, usize)>>> {
+    fn before_handles(&self) -> Arc<Mutex<Vec<(BioCallbackOp, BioType, usize)>>> {
         Arc::clone(&self.before)
     }
 
-    fn after_handles(
-        &self,
-    ) -> Arc<Mutex<Vec<(BioCallbackOp, BioType, Result<usize, String>)>>> {
+    fn after_handles(&self) -> Arc<Mutex<Vec<(BioCallbackOp, BioType, Result<usize, String>)>>> {
         Arc::clone(&self.after)
     }
 }
 
 impl BioCallback for RecordingCallback {
-    fn before_op(
-        &self,
-        op: BioCallbackOp,
-        bio_type: BioType,
-        len: usize,
-    ) -> bool {
+    fn before_op(&self, op: BioCallbackOp, bio_type: BioType, len: usize) -> bool {
         self.before
             .lock()
             .expect("before-ops mutex must not be poisoned")
@@ -881,12 +856,7 @@ impl BioCallback for RecordingCallback {
         true
     }
 
-    fn after_op(
-        &self,
-        op: BioCallbackOp,
-        bio_type: BioType,
-        result: &std::io::Result<usize>,
-    ) {
+    fn after_op(&self, op: BioCallbackOp, bio_type: BioType, result: &std::io::Result<usize>) {
         let mapped = match result {
             Ok(n) => Ok(*n),
             Err(e) => Err(format!("{:?}", e.kind())),
@@ -941,10 +911,7 @@ fn test_bio_callback_on_read() {
     assert_eq!(&scratch[..n], PAYLOAD);
 
     // Verify callback recorded exactly one before event and one after event.
-    let before_events = before
-        .lock()
-        .expect("before lock")
-        .clone();
+    let before_events = before.lock().expect("before lock").clone();
     assert_eq!(
         before_events.len(),
         1,
@@ -959,10 +926,7 @@ fn test_bio_callback_on_read() {
         "event len must match read buffer capacity"
     );
 
-    let after_events = after
-        .lock()
-        .expect("after lock")
-        .clone();
+    let after_events = after.lock().expect("after lock").clone();
     assert_eq!(
         after_events.len(),
         1,
@@ -987,11 +951,7 @@ fn test_bio_callback_on_read() {
         &drain_result,
     );
     let all_after = after.lock().expect("after lock").clone();
-    assert_eq!(
-        all_after.len(),
-        2,
-        "second after_op must be recorded"
-    );
+    assert_eq!(all_after.len(), 2, "second after_op must be recorded");
     // The second after event must carry an error.
     match &all_after[1].2 {
         Err(kind) => assert_eq!(kind, &format!("{:?}", ErrorKind::WouldBlock)),
@@ -1021,11 +981,7 @@ fn test_bio_callback_on_write() {
     );
     assert!(ok, "before_op must return true by default");
     let wr = sink.write(MSG);
-    callback.after_op(
-        BioCallbackOp::Write,
-        <MemBio as Bio>::bio_type(&sink),
-        &wr,
-    );
+    callback.after_op(BioCallbackOp::Write, <MemBio as Bio>::bio_type(&sink), &wr);
 
     let n = wr.expect("write must succeed");
     assert_eq!(n, MSG.len());
@@ -1085,7 +1041,6 @@ fn test_bio_callback_on_write() {
     // layers.
     let _e = BioError::WriteToReadOnly;
 }
-
 
 // =============================================================================
 // Phase 7 — Property-Based Tests
@@ -1203,4 +1158,3 @@ proptest! {
 // Combined with the in-module tests inside mem.rs, file.rs, filter.rs, and
 // mod.rs, this suite contributes to meeting the 80% coverage target for the
 // BIO module specified by Gate 10.
-

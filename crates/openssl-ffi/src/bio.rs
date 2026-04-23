@@ -265,7 +265,6 @@ pub const BIO_NOCLOSE: c_int = 0x00;
 /// Close the underlying resource when the BIO is freed.
 pub const BIO_CLOSE: c_int = 0x01;
 
-
 // ---------------------------------------------------------------------------
 // Function-pointer types for custom BIO methods (from BIO_meth_*)
 // ---------------------------------------------------------------------------
@@ -966,7 +965,6 @@ pub unsafe extern "C" fn BIO_up_ref(bio: *mut BIO) -> c_int {
     1
 }
 
-
 // ---------------------------------------------------------------------------
 // Specialised factory methods (bss_mem.c / bss_file.c / bss_sock.c / bss_conn.c)
 // ---------------------------------------------------------------------------
@@ -1011,7 +1009,10 @@ pub unsafe extern "C" fn BIO_new_mem_buf(buf: *const c_void, len: c_int) -> *mut
     let slice = std::slice::from_raw_parts(buf.cast::<u8>(), byte_len);
 
     let method_inner = mem_method();
-    let mut inner = BioInner::new(core::ptr::from_ref(method_inner), BioVariant::Mem(MemBio::from_slice(slice)));
+    let mut inner = BioInner::new(
+        core::ptr::from_ref(method_inner),
+        BioVariant::Mem(MemBio::from_slice(slice)),
+    );
     inner.flags |= BIO_FLAGS_MEM_RDONLY;
     inner.init = 1;
 
@@ -1060,7 +1061,10 @@ pub unsafe extern "C" fn BIO_new_file(filename: *const c_char, mode: *const c_ch
     };
 
     let method_inner = file_method();
-    let mut inner = BioInner::new(core::ptr::from_ref(method_inner), BioVariant::File(file_bio));
+    let mut inner = BioInner::new(
+        core::ptr::from_ref(method_inner),
+        BioVariant::File(file_bio),
+    );
     inner.init = 1;
     into_raw(inner)
 }
@@ -1118,29 +1122,27 @@ pub unsafe extern "C" fn BIO_new_fd(fd: c_int, close_flag: c_int) -> *mut BIO {
         // storing a regular File via from_raw_fd.  When Windows
         // support is added, an explicit FdBio variant can be
         // introduced.
-        BioVariant::File(
-            FileBio::from_file(
-                // Safety: the file handle we just created is a
-                // legitimate std::fs::File; cloning via try_clone is
-                // not needed.
-                fd_bio.into_inner().unwrap_or_else(|| {
-                    // FdBio::into_inner returns None only for
-                    // stdout/stderr handles — which cannot be
-                    // produced by from_raw_fd on arbitrary fds.
-                    // Fall back to a fresh File<raw=fd> via an
-                    // unreachable branch in practice.
-                    //
-                    // SAFETY: The FD we originally wrapped is no
-                    // longer backed by a live File in this branch;
-                    // using it again would be UB.  Instead we
-                    // reconstruct a closed sentinel by opening
-                    // /dev/null read-only — a harmless no-op file
-                    // that satisfies the FileBio invariants.
-                    std::fs::File::open("/dev/null").unwrap_or_else(|_| unreachable!())
-                }),
-                close_on_drop,
-            ),
-        ),
+        BioVariant::File(FileBio::from_file(
+            // Safety: the file handle we just created is a
+            // legitimate std::fs::File; cloning via try_clone is
+            // not needed.
+            fd_bio.into_inner().unwrap_or_else(|| {
+                // FdBio::into_inner returns None only for
+                // stdout/stderr handles — which cannot be
+                // produced by from_raw_fd on arbitrary fds.
+                // Fall back to a fresh File<raw=fd> via an
+                // unreachable branch in practice.
+                //
+                // SAFETY: The FD we originally wrapped is no
+                // longer backed by a live File in this branch;
+                // using it again would be UB.  Instead we
+                // reconstruct a closed sentinel by opening
+                // /dev/null read-only — a harmless no-op file
+                // that satisfies the FileBio invariants.
+                std::fs::File::open("/dev/null").unwrap_or_else(|_| unreachable!())
+            }),
+            close_on_drop,
+        )),
     );
     inner.num = fd;
     inner.init = 1;
@@ -1173,7 +1175,10 @@ pub unsafe extern "C" fn BIO_new_socket(sock: c_int, close_flag: c_int) -> *mut 
     let socket_bio = SocketBio::new(stream, close_on_drop);
 
     let method_inner = socket_method();
-    let mut inner = BioInner::new(core::ptr::from_ref(method_inner), BioVariant::Socket(socket_bio));
+    let mut inner = BioInner::new(
+        core::ptr::from_ref(method_inner),
+        BioVariant::Socket(socket_bio),
+    );
     inner.num = sock;
     inner.init = 1;
     into_raw(inner)
@@ -1229,7 +1234,10 @@ pub unsafe extern "C" fn BIO_new_connect(host_port: *const c_char) -> *mut BIO {
 
     let connect_bio = ConnectBio::new(host, port);
     let method_inner = connect_method();
-    let mut inner = BioInner::new(core::ptr::from_ref(method_inner), BioVariant::Connect(connect_bio));
+    let mut inner = BioInner::new(
+        core::ptr::from_ref(method_inner),
+        BioVariant::Connect(connect_bio),
+    );
     inner.init = 1;
     into_raw(inner)
 }
@@ -1255,7 +1263,10 @@ pub unsafe extern "C" fn BIO_new_accept(host_port: *const c_char) -> *mut BIO {
 
     let accept_bio = AcceptBio::new(s);
     let method_inner = accept_method();
-    let mut inner = BioInner::new(core::ptr::from_ref(method_inner), BioVariant::Accept(accept_bio));
+    let mut inner = BioInner::new(
+        core::ptr::from_ref(method_inner),
+        BioVariant::Accept(accept_bio),
+    );
     inner.init = 1;
     into_raw(inner)
 }
@@ -1288,11 +1299,17 @@ pub unsafe extern "C" fn BIO_new_bio_pair(
     let method_inner = mem_method();
     let inner_a = BioInner {
         init: 1,
-        ..BioInner::new(core::ptr::from_ref(method_inner), BioVariant::BioPair(end_a))
+        ..BioInner::new(
+            core::ptr::from_ref(method_inner),
+            BioVariant::BioPair(end_a),
+        )
     };
     let inner_b = BioInner {
         init: 1,
-        ..BioInner::new(core::ptr::from_ref(method_inner), BioVariant::BioPair(end_b))
+        ..BioInner::new(
+            core::ptr::from_ref(method_inner),
+            BioVariant::BioPair(end_b),
+        )
     };
 
     // SAFETY: caller guarantees `bio1`/`bio2` point to writable
@@ -1319,7 +1336,10 @@ pub unsafe extern "C" fn BIO_new_dgram(fd: c_int, close_flag: c_int) -> *mut BIO
     let dgram_bio = DatagramBio::new(sock, close_on_drop);
 
     let method_inner = datagram_method();
-    let mut inner = BioInner::new(core::ptr::from_ref(method_inner), BioVariant::Datagram(dgram_bio));
+    let mut inner = BioInner::new(
+        core::ptr::from_ref(method_inner),
+        BioVariant::Datagram(dgram_bio),
+    );
     inner.num = fd;
     inner.init = 1;
     into_raw(inner)
@@ -1333,7 +1353,6 @@ pub unsafe extern "C" fn BIO_new_dgram(fd: c_int, close_flag: c_int) -> *mut BIO
     ptr::null_mut()
 }
 
-
 // ---------------------------------------------------------------------------
 // Read / Write dispatch helpers
 // ---------------------------------------------------------------------------
@@ -1345,9 +1364,10 @@ pub unsafe extern "C" fn BIO_new_dgram(fd: c_int, close_flag: c_int) -> *mut BIO
 /// `BioVariant` via the caller-owned retry flags.
 fn read_variant(variant: &mut BioVariant, buf: &mut [u8]) -> io::Result<usize> {
     match variant {
-        BioVariant::Uninitialized => {
-            Err(io::Error::new(io::ErrorKind::NotConnected, "uninitialized BIO"))
-        }
+        BioVariant::Uninitialized => Err(io::Error::new(
+            io::ErrorKind::NotConnected,
+            "uninitialized BIO",
+        )),
         BioVariant::Mem(m) => m.read(buf),
         BioVariant::SecureMem(m) => m.read(buf),
         BioVariant::File(f) => f.read(buf),
@@ -1360,7 +1380,10 @@ fn read_variant(variant: &mut BioVariant, buf: &mut [u8]) -> io::Result<usize> {
             // Accept BIOs do not support read/write; the OpenSSL C
             // code returns -2 (unsupported).  We surface that via a
             // dedicated error kind the caller maps to -2.
-            Err(io::Error::new(io::ErrorKind::Unsupported, "accept BIO has no read"))
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "accept BIO has no read",
+            ))
         }
     }
 }
@@ -1368,9 +1391,10 @@ fn read_variant(variant: &mut BioVariant, buf: &mut [u8]) -> io::Result<usize> {
 /// Core write helper: dispatches to the correct safe-Rust BIO variant.
 fn write_variant(variant: &mut BioVariant, buf: &[u8]) -> io::Result<usize> {
     match variant {
-        BioVariant::Uninitialized => {
-            Err(io::Error::new(io::ErrorKind::NotConnected, "uninitialized BIO"))
-        }
+        BioVariant::Uninitialized => Err(io::Error::new(
+            io::ErrorKind::NotConnected,
+            "uninitialized BIO",
+        )),
         BioVariant::Mem(m) => m.write(buf),
         BioVariant::SecureMem(m) => m.write(buf),
         BioVariant::File(f) => f.write(buf),
@@ -1379,9 +1403,10 @@ fn write_variant(variant: &mut BioVariant, buf: &[u8]) -> io::Result<usize> {
         BioVariant::BioPair(p) => p.write(buf),
         BioVariant::Null(n) => n.write(buf),
         BioVariant::Datagram(d) => d.send(buf),
-        BioVariant::Accept(_) => {
-            Err(io::Error::new(io::ErrorKind::Unsupported, "accept BIO has no write"))
-        }
+        BioVariant::Accept(_) => Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "accept BIO has no write",
+        )),
     }
 }
 
@@ -1406,7 +1431,11 @@ fn update_retry_flags(inner: &mut BioInner, err: &io::Error, reading: bool) {
     inner.flags &= !BIO_FLAGS_SHOULD_RETRY;
     if io_error_is_retry(err) {
         inner.flags |= BIO_FLAGS_SHOULD_RETRY;
-        inner.flags |= if reading { BIO_FLAGS_READ } else { BIO_FLAGS_WRITE };
+        inner.flags |= if reading {
+            BIO_FLAGS_READ
+        } else {
+            BIO_FLAGS_WRITE
+        };
     }
 }
 
@@ -1444,7 +1473,9 @@ pub unsafe extern "C" fn BIO_read(b: *mut BIO, data: *mut c_void, dlen: c_int) -
         let rc = bread(b, data.cast::<c_char>(), dlen);
         if rc > 0 {
             // `rc > 0` guaranteed by the guard; u64::try_from is lossless.
-            inner.num_read = inner.num_read.saturating_add(u64::try_from(rc).unwrap_or(0));
+            inner.num_read = inner
+                .num_read
+                .saturating_add(u64::try_from(rc).unwrap_or(0));
         }
         return rc;
     }
@@ -1452,8 +1483,7 @@ pub unsafe extern "C" fn BIO_read(b: *mut BIO, data: *mut c_void, dlen: c_int) -
     // Built-in dispatch.
     // SAFETY: caller guarantees `data` points to at least `dlen`
     // writable bytes.
-    let buf =
-        std::slice::from_raw_parts_mut(data.cast::<u8>(), usize::try_from(dlen).unwrap_or(0));
+    let buf = std::slice::from_raw_parts_mut(data.cast::<u8>(), usize::try_from(dlen).unwrap_or(0));
     match read_variant(&mut inner.variant, buf) {
         Ok(n) => {
             inner.flags &= !BIO_FLAGS_RWS;
@@ -1537,7 +1567,9 @@ pub unsafe extern "C" fn BIO_write(b: *mut BIO, data: *const c_void, dlen: c_int
         let rc = bwrite(b, data.cast::<c_char>(), dlen);
         if rc > 0 {
             // `rc > 0` guard ensures lossless conversion.
-            inner.num_write = inner.num_write.saturating_add(u64::try_from(rc).unwrap_or(0));
+            inner.num_write = inner
+                .num_write
+                .saturating_add(u64::try_from(rc).unwrap_or(0));
         }
         return rc;
     }
@@ -1706,7 +1738,12 @@ pub unsafe extern "C" fn BIO_gets(bp: *mut BIO, buf: *mut c_char, size: c_int) -
 /// with the ctrl return value if the command was handled here, or
 /// `None` if the caller should dispatch to the variant-specific
 /// handler.
-fn ctrl_common(inner: &mut BioInner, cmd: c_int, larg: c_long, parg: *mut c_void) -> Option<c_long> {
+fn ctrl_common(
+    inner: &mut BioInner,
+    cmd: c_int,
+    larg: c_long,
+    parg: *mut c_void,
+) -> Option<c_long> {
     match cmd {
         BIO_CTRL_GET_CLOSE => Some(c_long::from(inner.shutdown)),
         BIO_CTRL_SET_CLOSE => {
@@ -1748,7 +1785,9 @@ fn ctrl_common(inner: &mut BioInner, cmd: c_int, larg: c_long, parg: *mut c_void
                 // function-pointer slot (`void (**)(void)`); we
                 // write the installed callback into that slot.
                 let slot = parg.cast::<*mut c_void>();
-                let ptr = inner.callback.map_or(ptr::null_mut(), |cb| cb as *mut c_void);
+                let ptr = inner
+                    .callback
+                    .map_or(ptr::null_mut(), |cb| cb as *mut c_void);
                 unsafe { *slot = ptr };
             }
             Some(1)
@@ -1758,12 +1797,7 @@ fn ctrl_common(inner: &mut BioInner, cmd: c_int, larg: c_long, parg: *mut c_void
 }
 
 /// Dispatch a memory-BIO-specific ctrl command.
-fn ctrl_mem(
-    inner: &mut BioInner,
-    cmd: c_int,
-    larg: c_long,
-    parg: *mut c_void,
-) -> c_long {
+fn ctrl_mem(inner: &mut BioInner, cmd: c_int, larg: c_long, parg: *mut c_void) -> c_long {
     match cmd {
         BIO_CTRL_RESET => {
             if let BioVariant::Mem(m) = &mut inner.variant {
@@ -2123,7 +2157,6 @@ pub unsafe extern "C" fn BIO_get_callback_arg(b: *const BIO) -> *mut c_void {
     // *not* attempted; we only return the pointer value by copy.
     unsafe { to_inner(b.cast_mut()) }.map_or(ptr::null_mut(), |i| i.callback_arg)
 }
-
 
 // ---------------------------------------------------------------------------
 // BIO_ctrl convenience wrappers
@@ -2636,7 +2669,6 @@ pub unsafe extern "C" fn BIO_method_name(b: *const BIO) -> *const c_char {
     // callers that invoke `strlen`.
     method.name.as_c_str().as_ptr()
 }
-
 
 // ===========================================================================
 // Phase 10 — BIO_METHOD creation (custom BIO support)
@@ -3352,7 +3384,6 @@ pub unsafe extern "C" fn BIO_snprintf_literal(
     c_int::try_from(to_copy).unwrap_or(c_int::MAX)
 }
 
-
 // ===========================================================================
 // BIO_get_new_index — allocate a fresh custom BIO type index
 // ===========================================================================
@@ -3395,4 +3426,3 @@ pub extern "C" fn BIO_get_new_index() -> c_int {
     }
     c_int::try_from(new_index).unwrap_or(-1)
 }
-

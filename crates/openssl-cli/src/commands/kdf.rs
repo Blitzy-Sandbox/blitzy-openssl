@@ -448,10 +448,7 @@ fn parse_kdf_type(name: &str) -> Result<KdfType, CryptoError> {
 /// - A kdfopt string does not contain the `:` delimiter
 /// - Hex decoding fails for a `0x`-prefixed value
 /// - A dedicated setter rejects the provided value
-fn apply_options(
-    opts: &[String],
-    kdf_ctx: &mut KdfContext,
-) -> Result<ParamSet, CryptoError> {
+fn apply_options(opts: &[String], kdf_ctx: &mut KdfContext) -> Result<ParamSet, CryptoError> {
     let mut builder = ParamBuilder::new();
 
     for opt in opts {
@@ -535,13 +532,11 @@ fn parse_value_as_bytes(value: &str) -> Result<Vec<u8>, CryptoError> {
             ParamValue::OctetString(bytes) => Ok(bytes),
             // from_text returns OctetString for 0x-prefixed values; guard
             // against unexpected variant for robustness.
-            other => Err(CryptoError::Common(CommonError::InvalidArgument(
-                format!(
-                    "expected hex bytes from '{}', got {}",
-                    value,
-                    other.param_type_name()
-                ),
-            ))),
+            other => Err(CryptoError::Common(CommonError::InvalidArgument(format!(
+                "expected hex bytes from '{}', got {}",
+                value,
+                other.param_type_name()
+            )))),
         }
     } else {
         // Plain text: use raw UTF-8 byte representation
@@ -560,11 +555,7 @@ fn parse_value_as_bytes(value: &str) -> Result<Vec<u8>, CryptoError> {
 ///
 /// - **R6:** No bare `as` casts. Integer narrowing uses `i32::try_from`
 ///   / `u32::try_from`, falling through to the 64-bit push on overflow.
-fn push_param_value(
-    builder: ParamBuilder,
-    key: &'static str,
-    value: ParamValue,
-) -> ParamBuilder {
+fn push_param_value(builder: ParamBuilder, key: &'static str, value: ParamValue) -> ParamBuilder {
     match value {
         ParamValue::Utf8String(s) => builder.push_utf8(key, s),
         ParamValue::OctetString(bytes) => builder.push_octet(key, bytes),
@@ -701,8 +692,14 @@ mod tests {
 
     #[test]
     fn test_parse_kdf_type_all_variants() {
-        assert!(matches!(parse_kdf_type("HKDF-EXPAND"), Ok(KdfType::HkdfExpand)));
-        assert!(matches!(parse_kdf_type("HKDF-EXTRACT"), Ok(KdfType::HkdfExtract)));
+        assert!(matches!(
+            parse_kdf_type("HKDF-EXPAND"),
+            Ok(KdfType::HkdfExpand)
+        ));
+        assert!(matches!(
+            parse_kdf_type("HKDF-EXTRACT"),
+            Ok(KdfType::HkdfExtract)
+        ));
         assert!(matches!(parse_kdf_type("ARGON2I"), Ok(KdfType::Argon2i)));
         assert!(matches!(parse_kdf_type("ARGON2D"), Ok(KdfType::Argon2d)));
         assert!(matches!(parse_kdf_type("SSKDF"), Ok(KdfType::Sskdf)));
@@ -838,11 +835,7 @@ mod tests {
     #[test]
     fn test_push_param_value_octet() {
         let builder = ParamBuilder::new();
-        let builder = push_param_value(
-            builder,
-            "seed",
-            ParamValue::OctetString(vec![1, 2, 3, 4]),
-        );
+        let builder = push_param_value(builder, "seed", ParamValue::OctetString(vec![1, 2, 3, 4]));
         let params = builder.build();
         assert!(params.get("seed").is_some());
     }
@@ -851,11 +844,7 @@ mod tests {
     fn test_push_param_value_int64_narrow() {
         // Value fits in i32 — should be stored as i32
         let builder = ParamBuilder::new();
-        let builder = push_param_value(
-            builder,
-            "iterations",
-            ParamValue::Int64(10000),
-        );
+        let builder = push_param_value(builder, "iterations", ParamValue::Int64(10000));
         let params = builder.build();
         let val = params.get("iterations").unwrap();
         // Verify value is accessible
@@ -866,11 +855,7 @@ mod tests {
     fn test_push_param_value_uint64_narrow() {
         // Value fits in u32 — should be stored as u32
         let builder = ParamBuilder::new();
-        let builder = push_param_value(
-            builder,
-            "n",
-            ParamValue::UInt64(16384),
-        );
+        let builder = push_param_value(builder, "n", ParamValue::UInt64(16384));
         let params = builder.build();
         let val = params.get("n").unwrap();
         assert!(val.as_u32().is_some() || val.as_u64().is_some());

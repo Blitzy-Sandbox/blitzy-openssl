@@ -176,7 +176,7 @@ enum CliCommand {
 
     /// Password hashing utility.
     #[command(name = "passwd")]
-    Passwd,
+    Passwd(commands::passwd::PasswdArgs),
 
     /// Prime number generation and testing.
     #[command(name = "prime")]
@@ -397,6 +397,26 @@ fn main() -> ExitCode {
                 },
                 Err(e) => {
                     eprintln!("rand: failed to create runtime: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        // Rule R10 — Wiring Before Done: dispatch `openssl passwd` (apps/passwd.c)
+        // through the real execution path. PasswdArgs::execute is `async fn` to
+        // satisfy the established `CliCommand` dispatch signature, so we run it
+        // on a fresh tokio runtime mirroring the Prime/Rand pattern above.
+        Some(CliCommand::Passwd(args)) => {
+            let ctx = openssl_crypto::context::LibContext::new();
+            match tokio::runtime::Runtime::new() {
+                Ok(rt) => match rt.block_on(args.execute(&ctx)) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("passwd: {e}");
+                        ExitCode::FAILURE
+                    }
+                },
+                Err(e) => {
+                    eprintln!("passwd: failed to create runtime: {e}");
                     ExitCode::FAILURE
                 }
             }

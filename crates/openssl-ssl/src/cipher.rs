@@ -181,9 +181,14 @@ pub(crate) const SSL_E_SM4CCM: u32 = 0x0200_0000;
 pub(crate) const SSL_E_SM4CBC: u32 = 0x0040_0000;
 
 /// Composite AES mask (`SSL_AES`) — 128 and 256 in any mode.
-pub(crate) const SSL_E_AES: u32 =
-    SSL_E_AES128 | SSL_E_AES256 | SSL_E_AES128GCM | SSL_E_AES256GCM
-    | SSL_E_AES128CCM | SSL_E_AES256CCM | SSL_E_AES128CCM8 | SSL_E_AES256CCM8;
+pub(crate) const SSL_E_AES: u32 = SSL_E_AES128
+    | SSL_E_AES256
+    | SSL_E_AES128GCM
+    | SSL_E_AES256GCM
+    | SSL_E_AES128CCM
+    | SSL_E_AES256CCM
+    | SSL_E_AES128CCM8
+    | SSL_E_AES256CCM8;
 /// Combined AES-GCM (`SSL_AESGCM`).
 pub(crate) const SSL_E_AESGCM: u32 = SSL_E_AES128GCM | SSL_E_AES256GCM;
 /// Combined AES-CCM (`SSL_AESCCM`).
@@ -206,9 +211,15 @@ pub(crate) const SSL_E_ARIAGCM: u32 = SSL_E_ARIA128GCM | SSL_E_ARIA256GCM;
 /// Combined `ChaCha20` family (`SSL_CHACHA20`).
 pub(crate) const SSL_E_CHACHA20: u32 = SSL_E_CHACHA20POLY1305;
 /// CBC-mode combined mask (`SSL_CBC`).
-pub(crate) const SSL_E_CBC: u32 =
-    SSL_E_3DES | SSL_E_RC2 | SSL_E_IDEA | SSL_E_AES128 | SSL_E_AES256
-    | SSL_E_CAMELLIA128 | SSL_E_CAMELLIA256 | SSL_E_SEED | SSL_E_DES;
+pub(crate) const SSL_E_CBC: u32 = SSL_E_3DES
+    | SSL_E_RC2
+    | SSL_E_IDEA
+    | SSL_E_AES128
+    | SSL_E_AES256
+    | SSL_E_CAMELLIA128
+    | SSL_E_CAMELLIA256
+    | SSL_E_SEED
+    | SSL_E_DES;
 
 // ---------------------------------------------------------------------------
 // algorithm_mac bitmasks — ssl/ssl_local.h lines 177-205.
@@ -334,10 +345,10 @@ impl KeyExchangeAlgorithm {
     #[must_use]
     pub const fn nid(self) -> u32 {
         match self {
-            Self::Rsa => 6,    // NID_kx_rsa
-            Self::Dhe => 941,  // NID_kx_dhe
-            Self::Ecdhe => 942,// NID_kx_ecdhe
-            Self::Psk => 943,  // NID_kx_psk
+            Self::Rsa => 6,        // NID_kx_rsa
+            Self::Dhe => 941,      // NID_kx_dhe
+            Self::Ecdhe => 942,    // NID_kx_ecdhe
+            Self::Psk => 943,      // NID_kx_psk
             Self::EcdhePsk => 944, // NID_kx_ecdhe_psk
             Self::DhePsk => 945,   // NID_kx_dhe_psk
             Self::RsaPsk => 946,   // NID_kx_rsa_psk
@@ -607,7 +618,6 @@ impl MacAlgorithm {
         }
     }
 }
-
 
 /// Default cipher list string applied to newly-created TLS (< 1.3) contexts.
 ///
@@ -887,7 +897,6 @@ impl Display for CipherSuite {
         )
     }
 }
-
 
 // ===========================================================================
 // Static cipher catalog
@@ -1525,7 +1534,6 @@ pub static TLS13_CIPHERS: &[CipherSuite] = &[
     },
 ];
 
-
 // ===========================================================================
 // Rule-string parser — `parse_cipher_rule_string`
 // ===========================================================================
@@ -2005,9 +2013,7 @@ fn parse_token(token: &str) -> SslResult<(RuleOp, Predicate)> {
             )));
         }
         let Some(next) = resolve_alias(sub) else {
-            return Err(SslError::Protocol(format!(
-                "unknown cipher alias: {sub}"
-            )));
+            return Err(SslError::Protocol(format!("unknown cipher alias: {sub}")));
         };
         if first {
             predicate = next;
@@ -2185,8 +2191,8 @@ impl CipherList {
         // Default non-TLS-1.3 list derived from OpenSSL's baseline.
         let ciphers = parse_cipher_rule_string(DEFAULT_CIPHER_LIST).unwrap_or_default();
         // Default TLS 1.3 list — ordered by RFC 8446 recommendation.
-        let tls13_ciphers = Self::parse_tls13_rule_string(DEFAULT_TLS13_CIPHER_LIST)
-            .unwrap_or_default();
+        let tls13_ciphers =
+            Self::parse_tls13_rule_string(DEFAULT_TLS13_CIPHER_LIST).unwrap_or_default();
         Self {
             ciphers,
             tls13_ciphers,
@@ -2247,9 +2253,10 @@ impl CipherList {
             };
             // Guard against duplicates silently collapsing — preserve the
             // first occurrence's position.
-            if !list.iter().any(|existing: &&'static CipherSuite| {
-                std::ptr::eq(*existing, suite)
-            }) {
+            if !list
+                .iter()
+                .any(|existing: &&'static CipherSuite| std::ptr::eq(*existing, suite))
+            {
                 list.push(suite);
             }
         }
@@ -2291,7 +2298,8 @@ impl CipherList {
     /// Returns `None` if the cipher is not in the configured preferences.
     #[must_use]
     pub fn get_by_name(&self, name: &str) -> Option<&'static CipherSuite> {
-        self.iter().find(|c| c.name == name || c.standard_name == name)
+        self.iter()
+            .find(|c| c.name == name || c.standard_name == name)
     }
 }
 
@@ -2463,10 +2471,9 @@ impl CipherSuite {
         }
         // Protocol version overlap — uses wire ordering for TLS only.
         if let (Some(min_w), Some(max_w)) = (min_proto.wire_version(), max_proto.wire_version()) {
-            if let (Some(suite_min), Some(suite_max)) = (
-                self.min_tls.wire_version(),
-                self.max_tls.wire_version(),
-            ) {
+            if let (Some(suite_min), Some(suite_max)) =
+                (self.min_tls.wire_version(), self.max_tls.wire_version())
+            {
                 if suite_max < min_w || suite_min > max_w {
                     return true;
                 }
@@ -2476,17 +2483,12 @@ impl CipherSuite {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[allow(
-    clippy::expect_used,
-    clippy::unwrap_used,
-    clippy::panic
-)] // Justification: test code — expect()/unwrap()/panic on known-valid values is acceptable
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)] // Justification: test code — expect()/unwrap()/panic on known-valid values is acceptable
 mod tests {
     use super::*;
 
@@ -2713,8 +2715,8 @@ mod tests {
 
     #[test]
     fn tls13_aes128_gcm_sha256_lookup() {
-        let suite =
-            find_suite("TLS_AES_128_GCM_SHA256").expect("TLS_AES_128_GCM_SHA256 must be in TLS13_CIPHERS");
+        let suite = find_suite("TLS_AES_128_GCM_SHA256")
+            .expect("TLS_AES_128_GCM_SHA256 must be in TLS13_CIPHERS");
         assert!(suite.is_tls13());
         assert!(suite.is_aead());
         assert_eq!(suite.algorithm_enc, EncryptionAlgorithm::Aes128Gcm);
@@ -2729,12 +2731,27 @@ mod tests {
             .expect("TLS_AES_128_GCM_SHA256 must be in TLS13_CIPHERS");
         let desc = suite.description();
         // Must include the cipher name somewhere.
-        assert!(desc.contains(suite.name), "description missing name: {desc}");
+        assert!(
+            desc.contains(suite.name),
+            "description missing name: {desc}"
+        );
         // Must include the Kx= Au= Enc= Mac= columns.
-        assert!(desc.contains("Kx="), "description missing Kx= column: {desc}");
-        assert!(desc.contains("Au="), "description missing Au= column: {desc}");
-        assert!(desc.contains("Enc="), "description missing Enc= column: {desc}");
-        assert!(desc.contains("Mac="), "description missing Mac= column: {desc}");
+        assert!(
+            desc.contains("Kx="),
+            "description missing Kx= column: {desc}"
+        );
+        assert!(
+            desc.contains("Au="),
+            "description missing Au= column: {desc}"
+        );
+        assert!(
+            desc.contains("Enc="),
+            "description missing Enc= column: {desc}"
+        );
+        assert!(
+            desc.contains("Mac="),
+            "description missing Mac= column: {desc}"
+        );
     }
 
     #[test]
@@ -2808,8 +2825,8 @@ mod tests {
 
     #[test]
     fn parse_rule_default_produces_non_empty() {
-        let list = parse_cipher_rule_string("DEFAULT")
-            .expect("DEFAULT must parse into a non-empty list");
+        let list =
+            parse_cipher_rule_string("DEFAULT").expect("DEFAULT must parse into a non-empty list");
         assert!(!list.is_empty());
         // Every suite in DEFAULT must be authenticated (no aNULL).
         for suite in &list {
@@ -2824,8 +2841,7 @@ mod tests {
 
     #[test]
     fn parse_rule_all_includes_catalog() {
-        let list =
-            parse_cipher_rule_string("ALL").expect("ALL must parse");
+        let list = parse_cipher_rule_string("ALL").expect("ALL must parse");
         // ALL should at least include every non-null-encryption suite.
         let non_null_count = CIPHER_CATALOG
             .iter()
@@ -2840,10 +2856,8 @@ mod tests {
 
     #[test]
     fn parse_rule_kill_removes_ciphers() {
-        let baseline =
-            parse_cipher_rule_string("DEFAULT").expect("DEFAULT parses");
-        let no_aes = parse_cipher_rule_string("DEFAULT:!AES")
-            .expect("DEFAULT:!AES parses");
+        let baseline = parse_cipher_rule_string("DEFAULT").expect("DEFAULT parses");
+        let no_aes = parse_cipher_rule_string("DEFAULT:!AES").expect("DEFAULT:!AES parses");
         assert!(no_aes.len() < baseline.len());
         for suite in &no_aes {
             assert!(
@@ -2865,10 +2879,8 @@ mod tests {
 
     #[test]
     fn parse_rule_delete_removes_ciphers() {
-        let baseline =
-            parse_cipher_rule_string("DEFAULT").expect("DEFAULT parses");
-        let no_sha1 = parse_cipher_rule_string("DEFAULT:-SHA1")
-            .expect("DEFAULT:-SHA1 parses");
+        let baseline = parse_cipher_rule_string("DEFAULT").expect("DEFAULT parses");
+        let no_sha1 = parse_cipher_rule_string("DEFAULT:-SHA1").expect("DEFAULT:-SHA1 parses");
         // Deleted ciphers may be re-added, so length may not change — what
         // matters is that none of the output suites use SHA1 unless re-added.
         assert!(no_sha1.len() <= baseline.len());
@@ -2895,8 +2907,7 @@ mod tests {
 
     #[test]
     fn parse_rule_high_strength_filters_low_strength() {
-        let high =
-            parse_cipher_rule_string("HIGH").expect("HIGH parses");
+        let high = parse_cipher_rule_string("HIGH").expect("HIGH parses");
         for suite in &high {
             assert!(
                 suite.strength_bits >= 128,
@@ -2911,8 +2922,7 @@ mod tests {
     fn parse_rule_add_after_kill_does_not_resurrect() {
         // The OpenSSL semantics: once a cipher is killed with `!`, it cannot
         // be re-added by subsequent rules.
-        let list = parse_cipher_rule_string("!AES:AES")
-            .expect("!AES:AES parses");
+        let list = parse_cipher_rule_string("!AES:AES").expect("!AES:AES parses");
         for suite in &list {
             assert!(
                 !matches!(
@@ -2932,8 +2942,7 @@ mod tests {
 
     #[test]
     fn parse_rule_enull_selects_null_encryption() {
-        let list = parse_cipher_rule_string("eNULL")
-            .expect("eNULL should parse");
+        let list = parse_cipher_rule_string("eNULL").expect("eNULL should parse");
         // If any catalog entry uses Null encryption, it should appear here.
         let catalog_nulls: usize = CIPHER_CATALOG
             .iter()
@@ -2948,8 +2957,7 @@ mod tests {
     #[test]
     fn parse_rule_conjunction_with_plus() {
         // ECDHE+RSA — both kx=ECDHE AND au=RSA.
-        let list = parse_cipher_rule_string("ECDHE+aRSA")
-            .expect("ECDHE+aRSA should parse");
+        let list = parse_cipher_rule_string("ECDHE+aRSA").expect("ECDHE+aRSA should parse");
         for suite in &list {
             assert_eq!(
                 suite.algorithm_mkey,
@@ -3065,8 +3073,8 @@ mod tests {
 
     #[test]
     fn disabled_when_kx_mask_matches() {
-        let suite = find_suite("TLS_AES_128_GCM_SHA256")
-            .expect("TLS_AES_128_GCM_SHA256 must exist");
+        let suite =
+            find_suite("TLS_AES_128_GCM_SHA256").expect("TLS_AES_128_GCM_SHA256 must exist");
         // TLS 1.3 uses `SSL_kANY` which has no mask bits; to test the
         // disable path we use a TLS 1.2 suite instead.
         let tls12_ecdhe = CIPHER_CATALOG
@@ -3084,20 +3092,13 @@ mod tests {
         }
         // Sanity: without any disabled bits, the TLS 1.3 suite must NOT be
         // disabled for the TLS 1.3 window.
-        assert!(!suite.disabled(
-            ProtocolVersion::Tls1_3,
-            ProtocolVersion::Tls1_3,
-            0,
-            0,
-            0,
-            0
-        ));
+        assert!(!suite.disabled(ProtocolVersion::Tls1_3, ProtocolVersion::Tls1_3, 0, 0, 0, 0));
     }
 
     #[test]
     fn disabled_when_enc_mask_matches() {
-        let suite = find_suite("TLS_AES_128_GCM_SHA256")
-            .expect("TLS_AES_128_GCM_SHA256 must exist");
+        let suite =
+            find_suite("TLS_AES_128_GCM_SHA256").expect("TLS_AES_128_GCM_SHA256 must exist");
         assert!(suite.disabled(
             ProtocolVersion::Tls1_3,
             ProtocolVersion::Tls1_3,
@@ -3110,17 +3111,10 @@ mod tests {
 
     #[test]
     fn disabled_when_protocol_version_out_of_range() {
-        let suite = find_suite("TLS_AES_128_GCM_SHA256")
-            .expect("TLS_AES_128_GCM_SHA256 must exist");
+        let suite =
+            find_suite("TLS_AES_128_GCM_SHA256").expect("TLS_AES_128_GCM_SHA256 must exist");
         // Restricting to TLS 1.0-1.1 (excludes TLS 1.3) must disable.
-        assert!(suite.disabled(
-            ProtocolVersion::Tls1_0,
-            ProtocolVersion::Tls1_1,
-            0,
-            0,
-            0,
-            0,
-        ));
+        assert!(suite.disabled(ProtocolVersion::Tls1_0, ProtocolVersion::Tls1_1, 0, 0, 0, 0,));
     }
 
     // =====================================================================
@@ -3213,4 +3207,3 @@ mod tests {
         );
     }
 }
-

@@ -600,7 +600,6 @@ fn kdf(
     Ok(())
 }
 
-
 // ===========================================================================
 // Sampling (FIPS 203 Algorithms 6, 7, 8)
 // ===========================================================================
@@ -708,10 +707,8 @@ fn cbd_3(out: &mut Scalar, input: &[u8]) -> CryptoResult<()> {
             // Each popcount of 3 bits yields a value in 0..=3, which fits in u16.
             let a: u16 =
                 u16::try_from((bits & 1) + ((bits >> 1) & 1) + ((bits >> 2) & 1)).unwrap_or(0);
-            let b: u16 = u16::try_from(
-                ((bits >> 3) & 1) + ((bits >> 4) & 1) + ((bits >> 5) & 1),
-            )
-            .unwrap_or(0);
+            let b: u16 = u16::try_from(((bits >> 3) & 1) + ((bits >> 4) & 1) + ((bits >> 5) & 1))
+                .unwrap_or(0);
             out.c[4 * chunk + k] = reduce_once(a + ML_KEM_PRIME - b);
         }
     }
@@ -906,10 +903,7 @@ fn encode_pubkey(t: &[Scalar], rho: &[u8; RANDOM_BYTES]) -> Vec<u8> {
 /// Decode a public key: `pubkey_bytes = vector_bytes + RANDOM_BYTES`.
 /// Coefficients are validated to be less than `q` (FIPS 203 §7.2 public-key
 /// input validation).
-fn parse_pubkey(
-    data: &[u8],
-    rank: usize,
-) -> CryptoResult<(Vec<Scalar>, [u8; RANDOM_BYTES])> {
+fn parse_pubkey(data: &[u8], rank: usize) -> CryptoResult<(Vec<Scalar>, [u8; RANDOM_BYTES])> {
     let vec_bytes = 3 * ML_KEM_DEGREE / 2 * rank;
     if data.len() != vec_bytes + RANDOM_BYTES {
         return Err(CryptoError::Encoding(
@@ -991,7 +985,6 @@ fn parse_prvkey(
     );
     Ok((s, t, rho, pkhash, z))
 }
-
 
 // ===========================================================================
 // Ciphertext encoding (compressed polynomials)
@@ -1440,7 +1433,6 @@ impl MlKemKey {
     }
 }
 
-
 // ===========================================================================
 // Key generation (FIPS 203 Algorithms 15 and 16)
 // ===========================================================================
@@ -1745,10 +1737,7 @@ mod tests {
                 p.prvkey_bytes,
                 3 * ML_KEM_DEGREE / 2 * p.rank + p.pubkey_bytes + PKHASH_BYTES + RANDOM_BYTES
             );
-            assert_eq!(
-                p.ctext_bytes,
-                p.u_vector_bytes() + p.v_scalar_bytes()
-            );
+            assert_eq!(p.ctext_bytes, p.u_vector_bytes() + p.v_scalar_bytes());
         }
     }
 
@@ -1805,8 +1794,8 @@ mod tests {
             (3329u32.pow(2)) - 1,
             u32::from(ML_KEM_PRIME) * 2 - 1,
         ] {
-            let expected: u16 = u16::try_from(x % u32::from(ML_KEM_PRIME))
-                .expect("modulo always < q < 2^16");
+            let expected: u16 =
+                u16::try_from(x % u32::from(ML_KEM_PRIME)).expect("modulo always < q < 2^16");
             assert_eq!(reduce(x), expected, "reduce({}) mismatch", x);
         }
     }
@@ -1997,10 +1986,7 @@ mod tests {
         assert_eq!(k1.rho, k2.rho);
         assert_eq!(k1.pkhash, k2.pkhash);
         // Public-key byte encoding should also match exactly.
-        assert_eq!(
-            k1.encode_pubkey().unwrap(),
-            k2.encode_pubkey().unwrap(),
-        );
+        assert_eq!(k1.encode_pubkey().unwrap(), k2.encode_pubkey().unwrap(),);
     }
 
     #[test]
@@ -2085,4 +2071,3 @@ mod tests {
         assert_eq!(INVERSE_NTT_ROOTS[0], 1);
     }
 }
-

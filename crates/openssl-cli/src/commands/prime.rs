@@ -110,21 +110,13 @@ impl PrimeArgs {
     }
 
     /// Generates a random prime of the specified bit length.
-    fn run_generate(
-        &self,
-        out: &mut impl Write,
-        bits: u32,
-    ) -> Result<(), CryptoError> {
+    fn run_generate(&self, out: &mut impl Write, bits: u32) -> Result<(), CryptoError> {
         if bits < 2 {
-            return Err(CryptoError::Key(
-                "Bit length must be at least 2".into(),
-            ));
+            return Err(CryptoError::Key("Bit length must be at least 2".into()));
         }
         // Cap at reasonable bit length to prevent resource exhaustion
         if bits > 16384 {
-            return Err(CryptoError::Key(
-                "Bit length must not exceed 16384".into(),
-            ));
+            return Err(CryptoError::Key("Bit length must not exceed 16384".into()));
         }
 
         let prime = generate_prime(bits, self.safe)?;
@@ -139,11 +131,7 @@ impl PrimeArgs {
     }
 
     /// Tests a number for primality.
-    fn run_test(
-        &self,
-        out: &mut impl Write,
-        number_str: &str,
-    ) -> Result<(), CryptoError> {
+    fn run_test(&self, out: &mut impl Write, number_str: &str) -> Result<(), CryptoError> {
         let bn = if self.hex {
             BigNum::from_hex(number_str)?
         } else {
@@ -156,22 +144,14 @@ impl PrimeArgs {
             check_prime(&bn)?
         };
 
-        let display_str = if self.hex {
-            bn.to_hex()
-        } else {
-            bn.to_dec()
-        };
+        let display_str = if self.hex { bn.to_hex() } else { bn.to_dec() };
 
         match result {
             PrimalityResult::ProbablyPrime => {
                 writeln!(out, "{display_str} ({} bit) is prime", bn.num_bits())?;
             }
             PrimalityResult::Composite => {
-                writeln!(
-                    out,
-                    "{display_str} ({} bit) is not prime",
-                    bn.num_bits()
-                )?;
+                writeln!(out, "{display_str} ({} bit) is not prime", bn.num_bits())?;
             }
         }
 

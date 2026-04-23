@@ -128,21 +128,8 @@ const KNOWN_KDFS: &[&str] = &[
 
 /// Known public key method names.
 const KNOWN_PKEY_METHODS: &[&str] = &[
-    "RSA",
-    "RSA-PSS",
-    "DSA",
-    "DH",
-    "DHX",
-    "EC",
-    "ECDSA",
-    "ECDH",
-    "X25519",
-    "X448",
-    "ED25519",
-    "ED448",
-    "ML-KEM",
-    "ML-DSA",
-    "SLH-DSA",
+    "RSA", "RSA-PSS", "DSA", "DH", "DHX", "EC", "ECDSA", "ECDH", "X25519", "X448", "ED25519",
+    "ED448", "ML-KEM", "ML-DSA", "SLH-DSA",
 ];
 
 // ---------------------------------------------------------------------------
@@ -249,11 +236,7 @@ impl ListArgs {
 }
 
 /// Writes a category header followed by indented algorithm names.
-fn write_category(
-    out: &mut impl Write,
-    header: &str,
-    names: &[&str],
-) -> Result<(), CryptoError> {
+fn write_category(out: &mut impl Write, header: &str, names: &[&str]) -> Result<(), CryptoError> {
     writeln!(out, "{header}")?;
     for name in names {
         writeln!(out, "  {name}")?;
@@ -295,7 +278,9 @@ mod tests {
         };
         let ctx = LibContext::new();
         // Should not panic or return error
-        args.execute(&ctx).await.expect("list --all-algorithms should succeed");
+        args.execute(&ctx)
+            .await
+            .expect("list --all-algorithms should succeed");
     }
 
     #[tokio::test]
@@ -311,7 +296,9 @@ mod tests {
             all_algorithms: false,
         };
         let ctx = LibContext::new();
-        args.execute(&ctx).await.expect("list --digest-commands should succeed");
+        args.execute(&ctx)
+            .await
+            .expect("list --digest-commands should succeed");
     }
 
     #[tokio::test]
@@ -327,7 +314,9 @@ mod tests {
             all_algorithms: false,
         };
         let ctx = LibContext::new();
-        args.execute(&ctx).await.expect("list with no flags should succeed");
+        args.execute(&ctx)
+            .await
+            .expect("list with no flags should succeed");
     }
 
     #[test]

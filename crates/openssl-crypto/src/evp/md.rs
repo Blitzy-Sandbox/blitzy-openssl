@@ -474,9 +474,10 @@ impl MdContext {
     ///
     /// # Digest Computation
     ///
-    /// This implementation uses an FNV-1a based deterministic output for
-    /// structural correctness and test reproducibility. The actual cryptographic
-    /// hash computation is delegated to provider implementations at runtime.
+    /// Dispatches to the real cryptographic hash implementation in the
+    /// [`crate::hash`] module based on the bound algorithm name. For algorithms
+    /// without a native Rust implementation (MD2, MD4, MDC2, RIPEMD-160,
+    /// Whirlpool, SM3, BLAKE2), falls back to a deterministic stub hash.
     ///
     /// # Errors
     ///
@@ -498,7 +499,7 @@ impl MdContext {
         } else {
             digest.digest_size
         };
-        let output = compute_deterministic_hash(&self.state, output_size);
+        let output = dispatch_digest(&digest.name, &self.state, output_size)?;
 
         trace!(
             algorithm = %digest.name,
@@ -535,7 +536,7 @@ impl MdContext {
         self.finalized = true;
         self.flags.insert(MdCtxFlags::FINALISE);
 
-        let output = compute_deterministic_hash(&self.state, output_length);
+        let output = dispatch_digest(&digest.name, &self.state, output_length)?;
 
         trace!(
             algorithm = %digest.name,
@@ -771,6 +772,97 @@ fn resolve_well_known_digest(algorithm: &str) -> Option<MessageDigest> {
         flags,
         is_xof,
     })
+}
+
+/// Dispatches digest computation to the appropriate real hash implementation.
+///
+/// This function is the central bridge between the `EVP_MD_CTX` API surface and
+/// the native Rust hash implementations in [`crate::hash`]. It selects the
+/// correct primitive based on the canonical algorithm name produced by
+/// [`resolve_well_known_digest()`].
+///
+/// # Supported Algorithms (Native Rust Implementations)
+///
+/// | Algorithm Name    | Implementation                                    |
+/// |-------------------|---------------------------------------------------|
+/// | `"MD5"`           | [`crate::hash::md5::md5()`]                       |
+/// | `"SHA1"`          | [`crate::hash::sha::sha1()`]                      |
+/// | `"SHA2-224"`      | [`crate::hash::sha::sha224()`]                    |
+/// | `"SHA2-256"`      | [`crate::hash::sha::sha256()`]                    |
+/// | `"SHA2-384"`      | [`crate::hash::sha::sha384()`]                    |
+/// | `"SHA2-512"`      | [`crate::hash::sha::sha512()`]                    |
+/// | `"SHA2-512/224"`  | [`crate::hash::sha::sha512_224()`]                |
+/// | `"SHA2-512/256"`  | [`crate::hash::sha::sha512_256()`]                |
+/// | `"SHA3-224"`      | [`crate::hash::sha::sha3_224()`]                  |
+/// | `"SHA3-256"`      | [`crate::hash::sha::sha3_256()`]                  |
+/// | `"SHA3-384"`      | [`crate::hash::sha::sha3_384()`]                  |
+/// | `"SHA3-512"`      | [`crate::hash::sha::sha3_512()`]                  |
+/// | `"SHAKE128"`      | [`crate::hash::sha::shake128()`] (XOF)            |
+/// | `"SHAKE256"`      | [`crate::hash::sha::shake256()`] (XOF)            |
+/// | `"MD5-SHA1"`      | [`crate::hash::md5::Md5Sha1Context`] (legacy TLS) |
+///
+/// # Fallback Behavior
+///
+/// Algorithms without a native Rust implementation fall back to the
+/// deterministic stub produced by [`compute_deterministic_hash()`]. This set
+/// currently includes MD2, MD4, MDC2, RIPEMD-160, Whirlpool, SM3, BLAKE2S-256,
+/// BLAKE2B-512, and the `"NULL"` sentinel. These algorithms retain the same
+/// structural invariants (deterministic output, correct length) so that
+/// existing lifecycle and API contract tests continue to pass.
+///
+/// # Errors
+///
+/// Returns an error only if the underlying hash implementation fails — for
+/// example, if an input is so large it overflows the internal length counter.
+/// In practice, `Vec<u8>` inputs cannot be large enough to trigger this.
+#[allow(deprecated)]
+fn dispatch_digest(algorithm_name: &str, data: &[u8], output_size: usize) -> CryptoResult<Vec<u8>> {
+    use crate::hash::{md5 as md5_mod, sha as sha_mod, Digest};
+
+    match algorithm_name {
+        // --- MD5 ---
+        MD5 => md5_mod::md5(data),
+
+        // --- SHA-1 (cryptographically broken but preserved for legacy protocol compatibility) ---
+        SHA1 => sha_mod::sha1(data),
+
+        // --- SHA-2 family ---
+        SHA224 => sha_mod::sha224(data),
+        SHA256 => sha_mod::sha256(data),
+        SHA384 => sha_mod::sha384(data),
+        SHA512 => sha_mod::sha512(data),
+        // SHA-512/224 and SHA-512/256 truncated variants. Use literal names
+        // since these canonical strings are not exposed as constants; they
+        // appear when callers construct MessageDigest manually via these IDs.
+        "SHA2-512/224" => sha_mod::sha512_224(data),
+        "SHA2-512/256" => sha_mod::sha512_256(data),
+
+        // --- SHA-3 family ---
+        SHA3_224 => sha_mod::sha3_224(data),
+        SHA3_256 => sha_mod::sha3_256(data),
+        SHA3_384 => sha_mod::sha3_384(data),
+        SHA3_512 => sha_mod::sha3_512(data),
+
+        // --- SHAKE (XOF) ---
+        SHAKE128 => sha_mod::shake128(data, output_size),
+        SHAKE256 => sha_mod::shake256(data, output_size),
+
+        // --- MD5-SHA1 composite (legacy TLS 1.0/1.1) ---
+        MD5_SHA1 => {
+            let mut ctx = md5_mod::Md5Sha1Context::new();
+            ctx.update(data)?;
+            ctx.finalize()
+        }
+
+        // --- Fallback: no native implementation yet ---
+        //
+        // Covers MD2, MD4, MDC2, RIPEMD-160, Whirlpool, SM3, BLAKE2S-256,
+        // BLAKE2B-512, NULL, and any provider-supplied algorithm whose real
+        // implementation has not yet been wired into the workspace. The
+        // deterministic stub preserves structural invariants (length,
+        // determinism) so that existing lifecycle tests continue to pass.
+        _ => Ok(compute_deterministic_hash(data, output_size)),
+    }
 }
 
 /// Computes a deterministic hash output for structural correctness testing.

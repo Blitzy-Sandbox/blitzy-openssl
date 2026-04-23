@@ -355,7 +355,7 @@ fn test_aes_cbc_encrypt_decrypt() -> CryptoResult<()> {
 #[test]
 fn test_aes_ecb_encrypt_decrypt() -> CryptoResult<()> {
     let key = [0x2bu8; 16]; // AES-128-ECB
-    // Two identical 16-byte blocks: verifies ECB determinism.
+                            // Two identical 16-byte blocks: verifies ECB determinism.
     let plaintext = [0xccu8; 32];
 
     let aes = Aes::new(&key)?;
@@ -445,7 +445,10 @@ fn test_aes_wrap_unwrap() -> CryptoResult<()> {
     );
 
     let unwrapped = aes_key_unwrap(&kek, &DEFAULT_IV, &wrapped)?;
-    assert_eq!(unwrapped, plaintext_key, "AES key wrap round-trip must match");
+    assert_eq!(
+        unwrapped, plaintext_key,
+        "AES key wrap round-trip must match"
+    );
 
     // Wrapping a 7-byte input must fail (test/aeswrap_test.c negative case):
     // plaintext length must be a multiple of 8.

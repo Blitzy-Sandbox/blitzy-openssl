@@ -112,22 +112,10 @@ fn test_self_test_post_params_with_values() {
     };
 
     // Rule R5: verify Some, NOT empty-string sentinels.
-    assert_eq!(
-        params.module_filename.as_deref(),
-        Some("/path/to/fips.so")
-    );
-    assert_eq!(
-        params.module_checksum_data.as_deref(),
-        Some("abcd1234")
-    );
-    assert_eq!(
-        params.indicator_checksum_data.as_deref(),
-        Some("ef560789")
-    );
-    assert_eq!(
-        params.conditional_error_check.as_deref(),
-        Some("1")
-    );
+    assert_eq!(params.module_filename.as_deref(), Some("/path/to/fips.so"));
+    assert_eq!(params.module_checksum_data.as_deref(), Some("abcd1234"));
+    assert_eq!(params.indicator_checksum_data.as_deref(), Some("ef560789"));
+    assert_eq!(params.conditional_error_check.as_deref(), Some("1"));
     assert!(params.is_deferred_test);
 }
 
@@ -156,7 +144,10 @@ fn test_fips_option_custom() {
     };
 
     assert_eq!(opt.option.as_deref(), Some("security_checks"));
-    assert!(!opt.enabled, "custom FipsOption should honour enabled=false");
+    assert!(
+        !opt.enabled,
+        "custom FipsOption should honour enabled=false"
+    );
 }
 
 // =============================================================================
@@ -280,7 +271,11 @@ fn test_provider_initialize_success() {
     let result = provider::initialize(&config);
 
     // Successful initialization returns Ok(FipsGlobal).
-    assert!(result.is_ok(), "initialize should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "initialize should succeed: {:?}",
+        result.err()
+    );
     let global = result.unwrap();
 
     assert_eq!(global.name, "OpenSSL FIPS Provider");
@@ -391,10 +386,7 @@ fn assert_entries_well_formed(entries: &[FipsAlgorithmEntry]) {
 #[test]
 fn test_query_fips_digests() {
     let entries = provider::query_algorithms(OperationType::Digest);
-    assert!(
-        !entries.is_empty(),
-        "FIPS digest table must not be empty"
-    );
+    assert!(!entries.is_empty(), "FIPS digest table must not be empty");
 
     // Core FIPS-approved digests.
     assert_algorithm_present(entries, "SHA2-256");
@@ -417,10 +409,7 @@ fn test_query_fips_digests() {
 #[test]
 fn test_query_fips_ciphers() {
     let entries = provider::query_algorithms(OperationType::Cipher);
-    assert!(
-        !entries.is_empty(),
-        "FIPS cipher table must not be empty"
-    );
+    assert!(!entries.is_empty(), "FIPS cipher table must not be empty");
 
     assert_algorithm_present(entries, "AES-256-GCM");
     assert_algorithm_present(entries, "AES-128-GCM");
@@ -466,10 +455,7 @@ fn test_query_fips_signatures() {
 #[test]
 fn test_query_fips_kem() {
     let entries = provider::query_algorithms(OperationType::Kem);
-    assert!(
-        !entries.is_empty(),
-        "FIPS KEM table must not be empty"
-    );
+    assert!(!entries.is_empty(), "FIPS KEM table must not be empty");
 
     // RSA KEM is always present.
     assert_algorithm_present(entries, "RSA");
@@ -504,10 +490,7 @@ fn test_query_fips_rands() {
 #[test]
 fn test_query_fips_keymgmt() {
     let entries = provider::query_algorithms(OperationType::KeyMgmt);
-    assert!(
-        !entries.is_empty(),
-        "FIPS KeyMgmt table must not be empty"
-    );
+    assert!(!entries.is_empty(), "FIPS KeyMgmt table must not be empty");
 
     assert_algorithm_present(entries, "RSA");
     assert_algorithm_present(entries, "EC");
@@ -545,10 +528,7 @@ fn test_query_fips_asym_cipher() {
 #[test]
 fn test_query_fips_skeymgmt() {
     let entries = provider::query_algorithms(OperationType::SKeyMgmt);
-    assert!(
-        !entries.is_empty(),
-        "FIPS SKeyMgmt table must not be empty"
-    );
+    assert!(!entries.is_empty(), "FIPS SKeyMgmt table must not be empty");
 
     assert_algorithm_present(entries, "AES");
 
@@ -580,10 +560,7 @@ fn test_gettable_params_list() {
     let names = provider::gettable_params();
 
     // Core metadata params.
-    assert!(
-        names.contains(&"name"),
-        "gettable_params must list 'name'"
-    );
+    assert!(names.contains(&"name"), "gettable_params must list 'name'");
     assert!(
         names.contains(&"version"),
         "gettable_params must list 'version'"
@@ -635,7 +612,11 @@ fn test_gettable_params_list() {
     }
 
     // 4 metadata + 27 indicators = at least 31.
-    assert!(names.len() >= 31, "expected >= 31 params, got {}", names.len());
+    assert!(
+        names.len() >= 31,
+        "expected >= 31 params, got {}",
+        names.len()
+    );
 }
 
 #[test]
@@ -704,9 +685,9 @@ fn test_get_params_after_init() {
         "rsa-sign-pss-check",
     ];
     for ind in &indicator_names {
-        let val = ps.get(ind).unwrap_or_else(|| {
-            panic!("get_params missing indicator param '{ind}'")
-        });
+        let val = ps
+            .get(ind)
+            .unwrap_or_else(|| panic!("get_params missing indicator param '{ind}'"));
         assert_eq!(
             val.as_i32(),
             Some(1),

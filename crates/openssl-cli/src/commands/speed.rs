@@ -652,8 +652,6 @@ fn format_block_header(bytes: usize) -> String {
     }
 }
 
-
-
 // ---------------------------------------------------------------------------
 // bench_digest — translates EVP_Digest_loop (apps/speed.c line ~1313)
 // ---------------------------------------------------------------------------
@@ -1011,7 +1009,9 @@ fn bench_ecdsa(
     let mut kgen = PKeyCtx::new_from_name(Arc::clone(ctx), keytype, None)?;
     kgen.keygen_init()?;
     if !is_eddsa {
-        let params = ParamBuilder::new().push_utf8(PARAM_GROUP, curve.to_string()).build();
+        let params = ParamBuilder::new()
+            .push_utf8(PARAM_GROUP, curve.to_string())
+            .build();
         for k in params.keys() {
             if let Some(v) = params.get(k) {
                 kgen.set_param(k, v)?;
@@ -1067,7 +1067,9 @@ fn bench_ecdh(
     let mut gen_a = PKeyCtx::new_from_name(Arc::clone(ctx), keytype, None)?;
     gen_a.keygen_init()?;
     if keytype == "EC" {
-        let params = ParamBuilder::new().push_utf8(PARAM_GROUP, curve.to_string()).build();
+        let params = ParamBuilder::new()
+            .push_utf8(PARAM_GROUP, curve.to_string())
+            .build();
         for k in params.keys() {
             if let Some(v) = params.get(k) {
                 gen_a.set_param(k, v)?;
@@ -1079,7 +1081,9 @@ fn bench_ecdh(
     let mut gen_b = PKeyCtx::new_from_name(Arc::clone(ctx), keytype, None)?;
     gen_b.keygen_init()?;
     if keytype == "EC" {
-        let params = ParamBuilder::new().push_utf8(PARAM_GROUP, curve.to_string()).build();
+        let params = ParamBuilder::new()
+            .push_utf8(PARAM_GROUP, curve.to_string())
+            .build();
         for k in params.keys() {
             if let Some(v) = params.get(k) {
                 gen_b.set_param(k, v)?;
@@ -1112,7 +1116,9 @@ fn bench_ffdh(
 ) -> Result<BenchResult, CryptoError> {
     let mut gen_a = PKeyCtx::new_from_name(Arc::clone(ctx), "DH", None)?;
     gen_a.keygen_init()?;
-    let params = ParamBuilder::new().push_utf8(PARAM_GROUP, group.to_string()).build();
+    let params = ParamBuilder::new()
+        .push_utf8(PARAM_GROUP, group.to_string())
+        .build();
     for k in params.keys() {
         if let Some(v) = params.get(k) {
             gen_a.set_param(k, v)?;
@@ -1556,19 +1562,14 @@ fn run_benchmarks<W: Write>(
             for &bs in &block_sizes {
                 print_message_sym(out, cli, args.seconds, bs, mr).map_err(CryptoError::from)?;
                 match bench_digest(ctx, evp, bs, duration) {
-                    Ok(r) => print_result(
-                        out,
-                        &format!("{cli} {}", format_block_header(bs)),
-                        &r,
-                        mr,
-                    )
-                    .map_err(CryptoError::from)?,
+                    Ok(r) => {
+                        print_result(out, &format!("{cli} {}", format_block_header(bs)), &r, mr)
+                            .map_err(CryptoError::from)?
+                    }
                     Err(e) => warn!(alg = cli, error = %e, "digest benchmark failed"),
                 }
             }
-        } else if let Some((cli, evp)) =
-            CIPHER_ALGORITHMS.iter().find(|(c, _)| *c == lower)
-        {
+        } else if let Some((cli, evp)) = CIPHER_ALGORITHMS.iter().find(|(c, _)| *c == lower) {
             // Choose AEAD branch if the user asked for it AND we recognise
             // the algorithm as AEAD (GCM/CCM/OCB/ChaCha20-Poly1305).
             let is_aead_alg = cli.contains("gcm")
@@ -1585,13 +1586,10 @@ fn run_benchmarks<W: Write>(
                     bench_cipher(ctx, evp, bs, duration, args.decrypt)
                 };
                 match outcome {
-                    Ok(r) => print_result(
-                        out,
-                        &format!("{cli} {}", format_block_header(bs)),
-                        &r,
-                        mr,
-                    )
-                    .map_err(CryptoError::from)?,
+                    Ok(r) => {
+                        print_result(out, &format!("{cli} {}", format_block_header(bs)), &r, mr)
+                            .map_err(CryptoError::from)?
+                    }
                     Err(e) => warn!(alg = cli, error = %e, "cipher benchmark failed"),
                 }
             }
@@ -1675,16 +1673,12 @@ fn run_benchmarks<W: Write>(
         for cli in DEFAULT_CURATED_DIGESTS {
             if let Some((c, evp)) = DIGEST_ALGORITHMS.iter().find(|(k, _)| k == cli) {
                 for &bs in &block_sizes {
-                    print_message_sym(out, c, args.seconds, bs, mr)
-                        .map_err(CryptoError::from)?;
+                    print_message_sym(out, c, args.seconds, bs, mr).map_err(CryptoError::from)?;
                     match bench_digest(ctx, evp, bs, duration) {
-                        Ok(r) => print_result(
-                            out,
-                            &format!("{c} {}", format_block_header(bs)),
-                            &r,
-                            mr,
-                        )
-                        .map_err(CryptoError::from)?,
+                        Ok(r) => {
+                            print_result(out, &format!("{c} {}", format_block_header(bs)), &r, mr)
+                                .map_err(CryptoError::from)?
+                        }
                         Err(e) => warn!(alg = c, error = %e, "default digest failed"),
                     }
                 }
@@ -1693,16 +1687,12 @@ fn run_benchmarks<W: Write>(
         for cli in DEFAULT_CURATED_CIPHERS {
             if let Some((c, evp)) = CIPHER_ALGORITHMS.iter().find(|(k, _)| k == cli) {
                 for &bs in &block_sizes {
-                    print_message_sym(out, c, args.seconds, bs, mr)
-                        .map_err(CryptoError::from)?;
+                    print_message_sym(out, c, args.seconds, bs, mr).map_err(CryptoError::from)?;
                     match bench_cipher(ctx, evp, bs, duration, args.decrypt) {
-                        Ok(r) => print_result(
-                            out,
-                            &format!("{c} {}", format_block_header(bs)),
-                            &r,
-                            mr,
-                        )
-                        .map_err(CryptoError::from)?,
+                        Ok(r) => {
+                            print_result(out, &format!("{c} {}", format_block_header(bs)), &r, mr)
+                                .map_err(CryptoError::from)?
+                        }
                         Err(e) => warn!(alg = c, error = %e, "default cipher failed"),
                     }
                 }
@@ -1717,16 +1707,10 @@ fn run_benchmarks<W: Write>(
             Err(e) => warn!(alg = "rsa2048", error = %e, "default RSA-2048 failed"),
         }
         for &bs in &block_sizes {
-            print_message_sym(out, "rand", args.seconds, bs, mr)
-                .map_err(CryptoError::from)?;
+            print_message_sym(out, "rand", args.seconds, bs, mr).map_err(CryptoError::from)?;
             match bench_rand(bs, duration) {
-                Ok(r) => print_result(
-                    out,
-                    &format!("rand {}", format_block_header(bs)),
-                    &r,
-                    mr,
-                )
-                .map_err(CryptoError::from)?,
+                Ok(r) => print_result(out, &format!("rand {}", format_block_header(bs)), &r, mr)
+                    .map_err(CryptoError::from)?,
                 Err(e) => warn!(alg = "rand", error = %e, "default rand failed"),
             }
         }
@@ -1751,16 +1735,12 @@ fn run_one_token<W: Write>(
     match tok {
         AlgToken::Digest(cli, evp) => {
             for &bs in block_sizes {
-                print_message_sym(out, cli, args.seconds, bs, mr)
-                    .map_err(CryptoError::from)?;
+                print_message_sym(out, cli, args.seconds, bs, mr).map_err(CryptoError::from)?;
                 match bench_digest(ctx, evp, bs, duration) {
-                    Ok(r) => print_result(
-                        out,
-                        &format!("{cli} {}", format_block_header(bs)),
-                        &r,
-                        mr,
-                    )
-                    .map_err(CryptoError::from)?,
+                    Ok(r) => {
+                        print_result(out, &format!("{cli} {}", format_block_header(bs)), &r, mr)
+                            .map_err(CryptoError::from)?
+                    }
                     Err(e) => warn!(alg = cli, error = %e, "digest benchmark failed"),
                 }
             }
@@ -1773,21 +1753,17 @@ fn run_one_token<W: Write>(
                 || cli.contains("siv");
             let use_aead = args.aead && is_aead_alg;
             for &bs in block_sizes {
-                print_message_sym(out, cli, args.seconds, bs, mr)
-                    .map_err(CryptoError::from)?;
+                print_message_sym(out, cli, args.seconds, bs, mr).map_err(CryptoError::from)?;
                 let outcome = if use_aead {
                     bench_aead(ctx, evp, bs, duration, args.decrypt)
                 } else {
                     bench_cipher(ctx, evp, bs, duration, args.decrypt)
                 };
                 match outcome {
-                    Ok(r) => print_result(
-                        out,
-                        &format!("{cli} {}", format_block_header(bs)),
-                        &r,
-                        mr,
-                    )
-                    .map_err(CryptoError::from)?,
+                    Ok(r) => {
+                        print_result(out, &format!("{cli} {}", format_block_header(bs)), &r, mr)
+                            .map_err(CryptoError::from)?
+                    }
                     Err(e) => warn!(alg = cli, error = %e, "cipher benchmark failed"),
                 }
             }
@@ -1866,16 +1842,12 @@ fn run_one_token<W: Write>(
         }
         AlgToken::Rand => {
             for &bs in block_sizes {
-                print_message_sym(out, "rand", args.seconds, bs, mr)
-                    .map_err(CryptoError::from)?;
+                print_message_sym(out, "rand", args.seconds, bs, mr).map_err(CryptoError::from)?;
                 match bench_rand(bs, duration) {
-                    Ok(r) => print_result(
-                        out,
-                        &format!("rand {}", format_block_header(bs)),
-                        &r,
-                        mr,
-                    )
-                    .map_err(CryptoError::from)?,
+                    Ok(r) => {
+                        print_result(out, &format!("rand {}", format_block_header(bs)), &r, mr)
+                            .map_err(CryptoError::from)?
+                    }
                     Err(e) => warn!(alg = "rand", error = %e, "rand benchmark failed"),
                 }
             }
@@ -2081,10 +2053,11 @@ impl SpeedArgs {
         n: u32,
     ) -> Result<(), CryptoError> {
         // Per R6: cast u32 → usize using try_from to catch 32→16 archs.
-        let worker_count = usize::try_from(n)
-            .map_err(|e| CryptoError::Common(openssl_common::error::CommonError::InvalidArgument(
+        let worker_count = usize::try_from(n).map_err(|e| {
+            CryptoError::Common(openssl_common::error::CommonError::InvalidArgument(
                 format!("-multi {n}: does not fit in usize: {e}"),
-            )))?;
+            ))
+        })?;
 
         // Spawn each worker with a fresh args clone and context clone.
         let mut handles: Vec<thread::JoinHandle<Result<(), CryptoError>>> =
@@ -2313,7 +2286,10 @@ mod tests {
     #[test]
     fn classify_algorithm_recognises_pq() {
         matches!(classify_algorithm("ml-kem-768"), Some(AlgToken::Kem(_)));
-        matches!(classify_algorithm("ml-dsa-44"), Some(AlgToken::Signature(_)));
+        matches!(
+            classify_algorithm("ml-dsa-44"),
+            Some(AlgToken::Signature(_))
+        );
         matches!(
             classify_algorithm("slh-dsa-sha2-128s"),
             Some(AlgToken::Signature(_))
@@ -2519,4 +2495,3 @@ mod tests {
         assert!(res.is_err(), "expected misalign > 63 to fail");
     }
 }
-
