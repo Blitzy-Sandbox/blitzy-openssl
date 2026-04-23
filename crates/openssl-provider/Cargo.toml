@@ -243,6 +243,26 @@ spki = { workspace = true }
 # providers/implementations/encode_decode/decode_epki2pki.c.
 pkcs8 = { workspace = true, features = ["encryption"] }
 
+# ---------------------------------------------------------------------------
+# PEM (Privacy Enhanced Mail) Encoding/Decoding (AAP §0.6.1)
+# ---------------------------------------------------------------------------
+# RustCrypto PEM RFC 7468 types used by the pem_decoder module for strict
+# PEM parsing (PEM armor stripping and label extraction). The `alloc` feature
+# enables `decode_vec()` which returns an owned `Vec<u8>` for the DER body.
+# Pure Rust, constant-time Base64 decoding — zero unsafe per Rule R8.
+# Replaces C PEM_read_bio() from crypto/pem/pem_lib.c used in
+# providers/implementations/encode_decode/decode_pem2der.c.
+pem-rfc7468 = { workspace = true, features = ["alloc"] }
+
+# ---------------------------------------------------------------------------
+# Constant-Time Base64 Encoding/Decoding (AAP §0.6.1, Rule R8)
+# ---------------------------------------------------------------------------
+# Constant-time Base64 codec used by the pem_decoder module for body parsing
+# after RFC 1421 header separation (legacy encrypted PEM format). Constant-
+# time decoding prevents timing side-channels on key material. Pinned to
+# =1.6.0 (workspace-wide) because 1.8.x uses edition 2024 (exceeds MSRV).
+base64ct = { workspace = true }
+
 # =============================================================================
 # Feature Flags
 # =============================================================================

@@ -1383,6 +1383,7 @@ name = "openssl-provider"
 version = "0.1.0"
 dependencies = [
  "aes",
+ "base64ct",
  "bitflags",
  "criterion",
  "der",
@@ -1394,6 +1395,7 @@ dependencies = [
  "openssl-common",
  "openssl-crypto",
  "parking_lot",
+ "pem-rfc7468",
  "pkcs8",
  "proptest",
  "rand",
