@@ -1564,7 +1564,7 @@ fn run_benchmarks<W: Write>(
                 match bench_digest(ctx, evp, bs, duration) {
                     Ok(r) => {
                         print_result(out, &format!("{cli} {}", format_block_header(bs)), &r, mr)
-                            .map_err(CryptoError::from)?
+                            .map_err(CryptoError::from)?;
                     }
                     Err(e) => warn!(alg = cli, error = %e, "digest benchmark failed"),
                 }
@@ -1588,7 +1588,7 @@ fn run_benchmarks<W: Write>(
                 match outcome {
                     Ok(r) => {
                         print_result(out, &format!("{cli} {}", format_block_header(bs)), &r, mr)
-                            .map_err(CryptoError::from)?
+                            .map_err(CryptoError::from)?;
                     }
                     Err(e) => warn!(alg = cli, error = %e, "cipher benchmark failed"),
                 }
@@ -1677,7 +1677,7 @@ fn run_benchmarks<W: Write>(
                     match bench_digest(ctx, evp, bs, duration) {
                         Ok(r) => {
                             print_result(out, &format!("{c} {}", format_block_header(bs)), &r, mr)
-                                .map_err(CryptoError::from)?
+                                .map_err(CryptoError::from)?;
                         }
                         Err(e) => warn!(alg = c, error = %e, "default digest failed"),
                     }
@@ -1691,7 +1691,7 @@ fn run_benchmarks<W: Write>(
                     match bench_cipher(ctx, evp, bs, duration, args.decrypt) {
                         Ok(r) => {
                             print_result(out, &format!("{c} {}", format_block_header(bs)), &r, mr)
-                                .map_err(CryptoError::from)?
+                                .map_err(CryptoError::from)?;
                         }
                         Err(e) => warn!(alg = c, error = %e, "default cipher failed"),
                     }
@@ -1739,7 +1739,7 @@ fn run_one_token<W: Write>(
                 match bench_digest(ctx, evp, bs, duration) {
                     Ok(r) => {
                         print_result(out, &format!("{cli} {}", format_block_header(bs)), &r, mr)
-                            .map_err(CryptoError::from)?
+                            .map_err(CryptoError::from)?;
                     }
                     Err(e) => warn!(alg = cli, error = %e, "digest benchmark failed"),
                 }
@@ -1762,7 +1762,7 @@ fn run_one_token<W: Write>(
                 match outcome {
                     Ok(r) => {
                         print_result(out, &format!("{cli} {}", format_block_header(bs)), &r, mr)
-                            .map_err(CryptoError::from)?
+                            .map_err(CryptoError::from)?;
                     }
                     Err(e) => warn!(alg = cli, error = %e, "cipher benchmark failed"),
                 }
@@ -1846,7 +1846,7 @@ fn run_one_token<W: Write>(
                 match bench_rand(bs, duration) {
                     Ok(r) => {
                         print_result(out, &format!("rand {}", format_block_header(bs)), &r, mr)
-                            .map_err(CryptoError::from)?
+                            .map_err(CryptoError::from)?;
                     }
                     Err(e) => warn!(alg = "rand", error = %e, "rand benchmark failed"),
                 }
