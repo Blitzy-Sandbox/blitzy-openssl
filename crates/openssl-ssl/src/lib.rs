@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod cipher;
 pub mod method;
 pub mod record;
 
