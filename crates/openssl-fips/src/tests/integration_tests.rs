@@ -324,14 +324,11 @@ fn indicator_lifecycle_in_operational_module() {
 
     // check_indicator should succeed for an approved indicator
     let result = check_indicator(&global, &mut indicator, 0, "SHA2-256", "digest");
-    match result {
-        Ok(approved) => {
-            assert!(approved, "Approved indicator check should return true");
-        }
-        Err(_) => {
-            // Some check_indicator impls may error for unknown settable_id;
-            // the important thing is the path ran without panic.
-        }
+    if let Ok(approved) = result {
+        assert!(approved, "Approved indicator check should return true");
+    } else {
+        // Some check_indicator impls may error for unknown settable_id;
+        // the important thing is the path ran without panic.
     }
 
     reset_for_test();
