@@ -260,8 +260,21 @@ impl KeyData for RsaKeyData {}
 /// little-endian MSBLOB representation during parsing).
 ///
 /// For public keys, `private_key` is `None` per Rule R5.
+///
+/// # Dead-Code Justification
+///
+/// The fields are constructed by [`parse_dsa_blob`] and returned as a
+/// `Box<dyn KeyData>`, but there is no consumer in the current tree that
+/// downcasts the trait object back to `DsaKeyData` and reads the fields.
+/// Such a consumer belongs to the key-management (`keymgmt`) path that
+/// bridges MSBLOB-decoded key material into a `DsaKeyPair` — a future
+/// integration point that is out-of-scope for the signature provider
+/// implementation.  The fields are retained (rather than removed) because
+/// their byte layouts are the durable contract between the parser and the
+/// future consumer.
 #[cfg(feature = "dsa")]
 #[derive(Debug)]
+#[allow(dead_code)] // see preceding doc comment
 struct DsaKeyData {
     /// DSA prime `p` (big-endian byte representation).
     p: Vec<u8>,

@@ -293,6 +293,88 @@ impl DsaPrivateKey {
     pub fn params(&self) -> &DsaParams {
         &self.params
     }
+
+    /// Construct a DSA private key from its scalar `x` and domain parameters.
+    ///
+    /// This is the public constructor used by provider and decoder code
+    /// paths that recover a private key from encoded form (e.g., PKCS#8,
+    /// X9.42, raw parameter bags). Replaces the C `DSA_set0_key()` path
+    /// from `crypto/dsa/dsa_lib.c` when the `priv_key` argument is non-NULL.
+    ///
+    /// # Validation
+    ///
+    /// Performs partial validation of `x` per NIST SP 800-56A Rev. 3,
+    /// Section 5.6.2.1.2 (Owner Assurance of Private Key Validity),
+    /// matching `ossl_ffc_validate_private_key()` from
+    /// `crypto/ffc/ffc_key_validate.c`:
+    ///
+    /// - `x` must be `>= 1` (rejects zero and negatives;
+    ///   C flag `FFC_ERROR_PRIVKEY_TOO_SMALL`).
+    /// - `x` must be `< q` (rejects out-of-range values;
+    ///   C flag `FFC_ERROR_PRIVKEY_TOO_LARGE`).
+    ///
+    /// Combined, `x` must lie in `[1, q - 1]`, the FIPS 186-4 Section 4.5
+    /// range for DSA private keys.
+    ///
+    /// Full FIPS 186-4 validation (including pairwise consistency with
+    /// the corresponding public key) is left to an explicit check routine,
+    /// mirroring the C split between `DSA_set0_key()` (no validation) and
+    /// `ossl_dsa_check_priv_key()` (explicit check).
+    ///
+    /// # Security
+    ///
+    /// The byte representation of `x` is cached in `x_bytes` so that the
+    /// [`zeroize::Zeroize`] and [`Drop`] implementations can securely erase
+    /// the private key material when the value is no longer needed. This
+    /// mirrors the C `BN_clear_free()` pattern for secret BIGNUMs.
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::Key`] with message "DSA private key x must be
+    ///   positive (>= 1)" if `x` is zero or negative.
+    /// - [`CryptoError::Key`] with message "DSA private key x must be less
+    ///   than subprime q" if `x >= q`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use openssl_crypto::bn::BigNum;
+    /// use openssl_crypto::dsa::{DsaParams, DsaPrivateKey};
+    ///
+    /// # let p: BigNum = unimplemented!();
+    /// # let q: BigNum = unimplemented!();
+    /// # let g: BigNum = unimplemented!();
+    /// # let x: BigNum = unimplemented!();
+    /// let params = DsaParams::new(p, q, g)?;
+    /// let private_key = DsaPrivateKey::from_components(x, params)?;
+    /// # Ok::<(), openssl_common::CryptoError>(())
+    /// ```
+    pub fn from_components(x: BigNum, params: DsaParams) -> CryptoResult<Self> {
+        // Reject x <= 0 (matches C check `BN_cmp(priv, BN_value_one()) < 0`
+        // in ossl_ffc_validate_private_key; the comparison against one is
+        // strict-less, so zero and negatives are rejected).
+        if x.is_zero() || x.is_negative() {
+            return Err(CryptoError::Key(
+                "DSA private key x must be positive (>= 1)".into(),
+            ));
+        }
+
+        // Reject x >= q (matches C check `BN_cmp(priv, upper) >= 0`
+        // in ossl_ffc_validate_private_key, where `upper` is params->q).
+        // Uses ordering comparison — Rule R6: no bare `as` casts.
+        if x.cmp(params.q()) != std::cmp::Ordering::Less {
+            return Err(CryptoError::Key(
+                "DSA private key x must be less than subprime q".into(),
+            ));
+        }
+
+        // Cache byte representation for Zeroize synchronisation.
+        // `to_bytes_be()` produces the canonical big-endian encoding that
+        // `Drop` can securely overwrite without re-serialising from `x`.
+        let x_bytes = x.to_bytes_be();
+
+        Ok(Self { x, params, x_bytes })
+    }
 }
 
 // =============================================================================
@@ -333,6 +415,78 @@ impl DsaPublicKey {
     #[must_use]
     pub fn params(&self) -> &DsaParams {
         &self.params
+    }
+
+    /// Construct a DSA public key from its value `y` and domain parameters.
+    ///
+    /// This is the public constructor used by provider and decoder code
+    /// paths that recover a public key from encoded form (e.g., SPKI DER,
+    /// X9.42, raw parameter bags). Replaces the C `DSA_set0_key()` path
+    /// from `crypto/dsa/dsa_lib.c` when the `pub_key` argument is non-NULL.
+    ///
+    /// # Validation
+    ///
+    /// Performs partial validation of `y` per NIST SP 800-56A Rev. 3,
+    /// Section 5.6.2.3.1 (FFC Partial Public Key Validation), matching
+    /// `ossl_ffc_validate_public_key_partial()` from
+    /// `crypto/ffc/ffc_key_validate.c`:
+    ///
+    /// - `y` must be `>= 2` (rejects 0, 1, and negatives;
+    ///   C flag `FFC_ERROR_PUBKEY_TOO_SMALL`).
+    /// - `y` must be `<= p - 2` (rejects values at or above `p - 1`;
+    ///   C flag `FFC_ERROR_PUBKEY_TOO_LARGE`).
+    ///
+    /// Combined, `y` must lie in `[2, p - 2]`.
+    ///
+    /// Full validation additionally requires the modular exponentiation
+    /// check `y^q mod p == 1`; that step is left to an explicit check
+    /// routine, mirroring the C split between
+    /// `ossl_ffc_validate_public_key_partial()` (basic bounds) and
+    /// `ossl_ffc_validate_public_key()` (includes exponentiation).
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::Key`] with message "DSA public key y must be
+    ///   greater than 1" if `y <= 1` or is negative.
+    /// - [`CryptoError::Key`] with message "DSA public key y must be at
+    ///   most p - 2" if `y >= p - 1`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use openssl_crypto::bn::BigNum;
+    /// use openssl_crypto::dsa::{DsaParams, DsaPublicKey};
+    ///
+    /// # let p: BigNum = unimplemented!();
+    /// # let q: BigNum = unimplemented!();
+    /// # let g: BigNum = unimplemented!();
+    /// # let y: BigNum = unimplemented!();
+    /// let params = DsaParams::new(p, q, g)?;
+    /// let public_key = DsaPublicKey::from_components(y, params)?;
+    /// # Ok::<(), openssl_common::CryptoError>(())
+    /// ```
+    pub fn from_components(y: BigNum, params: DsaParams) -> CryptoResult<Self> {
+        // Reject y <= 1 (matches C check `BN_cmp(pub_key, tmp) <= 0`
+        // where `tmp == 1` in ossl_ffc_validate_public_key_partial).
+        // Handles negatives, zero, and one in a single predicate.
+        if y.is_zero() || y.is_one() || y.is_negative() {
+            return Err(CryptoError::Key(
+                "DSA public key y must be greater than 1".into(),
+            ));
+        }
+
+        // Reject y >= p - 1 (matches C check
+        // `BN_copy(tmp, params->p); BN_sub_word(tmp, 1); BN_cmp(pub_key, tmp) >= 0`
+        // in ossl_ffc_validate_public_key_partial).
+        // We compute `p - 1` using BigNum subtraction (no `as` casts; Rule R6).
+        let p_minus_one = params.p() - &BigNum::one();
+        if y.cmp(&p_minus_one) != std::cmp::Ordering::Less {
+            return Err(CryptoError::Key(
+                "DSA public key y must be at most p - 2".into(),
+            ));
+        }
+
+        Ok(Self { y, params })
     }
 }
 

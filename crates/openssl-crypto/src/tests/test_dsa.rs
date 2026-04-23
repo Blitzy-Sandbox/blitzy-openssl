@@ -272,7 +272,10 @@ fn test_dsa_generate_key() {
         !y.is_one(),
         "generated DSA public key y must not equal one (rejects y = 1 per SP 800-89)"
     );
-    assert!(y < params.p(), "generated DSA public key y must satisfy y < p");
+    assert!(
+        y < params.p(),
+        "generated DSA public key y must satisfy y < p"
+    );
 
     // Params accessor on DsaKeyPair must return the same parameter set
     // used at generation time (by-value equality).
@@ -430,9 +433,7 @@ fn test_dsa_verify_wrong_key_fails() {
             panic!("signature verified under wrong public key — DSA soundness broken");
         }
         Err(e) => {
-            panic!(
-                "wrong-key verification must return Ok(false), not an error; got Err({e:?})"
-            );
+            panic!("wrong-key verification must return Ok(false), not an error; got Err({e:?})");
         }
     }
 }
@@ -484,9 +485,7 @@ fn test_dsa_verify_tampered_signature_fails() {
             panic!("tampered signature verified as valid — DSA soundness broken");
         }
         Err(e) => {
-            panic!(
-                "tampered signature must return Ok(false) or Err(Verification), got Err({e:?})"
-            );
+            panic!("tampered signature must return Ok(false) or Err(Verification), got Err({e:?})");
         }
     }
 }
@@ -524,9 +523,7 @@ fn test_dsa_verify_tampered_digest_fails() {
             );
         }
         Err(e) => {
-            panic!(
-                "tampered-digest verification must return Ok(false), got Err({e:?})"
-            );
+            panic!("tampered-digest verification must return Ok(false), got Err({e:?})");
         }
     }
 }

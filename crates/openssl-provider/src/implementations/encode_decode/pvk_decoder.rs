@@ -915,7 +915,18 @@ pub fn all_pvk_decoders() -> Vec<AlgorithmDescriptor> {
 /// Exported as an internal helper (crate-visible) used by integration
 /// tests and by any future wrapper that needs to surface the decoder's
 /// result through the framework's uniform [`DecodedObject`] channel.
+///
+/// # Dead-Code Justification
+///
+/// The helper is kept available so higher-level glue code (a future
+/// decoder-to-key-management adapter) can emit uniformly structured
+/// `DecodedObject` values without re-implementing the field mapping.
+/// The current tree does not yet contain that adapter, so the function
+/// is exercised only by (gated) integration tests.  The `#[allow]`
+/// prevents `-D warnings` from failing the `--features dsa` build while
+/// the out-of-scope adapter is pending.
 #[cfg(any(feature = "rsa", feature = "dsa"))]
+#[allow(dead_code)] // see preceding doc comment
 pub(crate) fn decoded_object_for(key_type: PvkKeyType, data: Vec<u8>) -> DecodedObject {
     DecodedObject {
         object_type: ObjectType::Pkey,
