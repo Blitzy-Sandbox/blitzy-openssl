@@ -68,7 +68,7 @@ use std::fmt;
 use bitflags::bitflags;
 use openssl_common::CryptoResult;
 
-use super::{Asn1Class, Asn1Error, TagNumber};
+use super::{Asn1Class, Asn1Error, Asn1Object, Asn1String, Asn1Tag, Asn1Type, TagNumber};
 
 // =============================================================================
 // Constants
@@ -905,9 +905,15 @@ pub struct ScanContext {
     /// (e.g., `"tbsCertificate"`).
     pub field_name: &'static str,
 
-    /// Primitive tag number if the current element is primitive,
+    /// Primitive ASN.1 tag if the current element is primitive,
     /// otherwise `None`.
-    pub primitive_type: Option<TagNumber>,
+    ///
+    /// When the scan context descends into a primitive field (INTEGER,
+    /// OCTET STRING, `UTF8String`, etc.), the template engine populates
+    /// this field with the concrete [`Asn1Tag`] variant so that
+    /// diagnostic printers and constraint checkers can distinguish
+    /// between, for example, `PrintableString` and `UTF8String`.
+    pub primitive_type: Option<Asn1Tag>,
 }
 
 impl ScanContext {
@@ -1088,6 +1094,114 @@ pub fn pack_item<T: Asn1Item>(value: &T) -> CryptoResult<Vec<u8>> {
 /// [`CryptoError::Encoding`] for malformed input.
 pub fn unpack_item<T: Asn1Item>(data: &[u8]) -> CryptoResult<T> {
     T::decode_der(data)
+}
+
+// =============================================================================
+// Type-bridge helpers — expose concrete `Asn1*` values to the template engine
+// =============================================================================
+//
+// These helpers form the bridge between the template system (which speaks in
+// terms of `Asn1Template` descriptors, `ItemType` classifications, and
+// `TemplateFlags`) and the concrete value types defined in the parent `asn1`
+// module (`Asn1Tag`, `Asn1String`, `Asn1Object`, `Asn1Type`). They are the
+// Rust analogues of the C accessor macros in `asn1_local.h` such as
+// `asn1_get_field_ptr`, `ASN1_TYPE_get`, and the `OBJ_cmp` dispatch used
+// during ADB (Automatic Database) resolution.
+
+/// Return the ASN.1 tag identifying an [`Asn1String`] value.
+///
+/// Primarily used when populating [`ScanContext::primitive_type`] while
+/// walking template fields whose declared type is one of the universal
+/// string types (`UTF8String`, `PrintableString`, `IA5String`, ...). The
+/// tag encodes the exact string subtype so that diagnostic printers and
+/// constraint checkers can distinguish between, for example,
+/// `PrintableString` and `UTF8String`.
+///
+/// Replaces the C field-access pattern `s->type` from `asn1_local.h`,
+/// where `s` is an `ASN1_STRING *`.
+#[inline]
+#[must_use]
+pub fn asn1_string_tag(value: &Asn1String) -> Asn1Tag {
+    value.tag()
+}
+
+/// Return the ASN.1 tag identifying the variant of an [`Asn1Type`]
+/// tagged-union value.
+///
+/// Used during ANY-type template processing (when
+/// [`TemplateFlags::ANY_TYPE`] is set on the template) to discover the
+/// concrete runtime type of a decoded value and populate
+/// [`ScanContext::primitive_type`] accordingly.
+///
+/// Replaces the C pattern `ASN1_TYPE_get(p)` from
+/// `crypto/asn1/tasn_utl.c`, which extracts the `type` field from an
+/// `ASN1_TYPE` tagged union to dispatch further handling.
+#[inline]
+#[must_use]
+pub fn asn1_type_tag(value: &Asn1Type) -> Asn1Tag {
+    value.get_tag()
+}
+
+/// Encode an [`Asn1Type`] and return the length of the complete TLV in
+/// octets, or `None` when encoding fails.
+///
+/// Provides a non-fallible way for scan / diagnostic code to size the
+/// encoded representation of an ANY-typed field without panicking. The
+/// equivalent C pattern uses `i2d_ASN1_TYPE(p, NULL)` which returns the
+/// required buffer length without producing output. The Rust version
+/// performs an encode into an owned buffer and discards the bytes —
+/// slightly less efficient than the C variant but keeps the engine
+/// entirely within safe Rust.
+#[must_use]
+pub fn asn1_type_encoded_len(value: &Asn1Type) -> Option<usize> {
+    value.encode_der().ok().map(|bytes| bytes.len())
+}
+
+/// Return `true` when two [`Asn1Object`] values represent the same OID.
+///
+/// Used by the ADB-OID dispatch path (`ASN1_ADB_OID` / corresponding
+/// logic in `crypto/asn1/tasn_utl.c`) to locate the correct variant of a
+/// CHOICE / ANY DEFINED BY structure based on the OID carried in a
+/// sibling field.
+///
+/// Delegates to the [`PartialEq`] implementation of [`Asn1Object`], which
+/// compares the canonical DER byte representation — matching the C
+/// semantics of `OBJ_cmp()` which likewise compares the underlying
+/// `ASN1_OBJECT` data fields.
+#[inline]
+#[must_use]
+pub fn asn1_object_matches(a: &Asn1Object, b: &Asn1Object) -> bool {
+    a == b
+}
+
+/// Convert a raw [`TagNumber`] (unsigned 32-bit) into a known universal
+/// [`Asn1Tag`] variant, or [`None`] when the value is outside the
+/// universal tag range (0..=30) or does not correspond to a defined tag.
+///
+/// Bridges the gap between the numeric tag representation carried by
+/// [`Asn1Template::tag`] (a `TagNumber`) and the typed [`Asn1Tag`]
+/// variants used by [`ScanContext::primitive_type`] for diagnostic
+/// printing and cross-field consistency checks.
+///
+/// Lossless per rule R6: a `TagNumber` that does not fit in a `u8`
+/// returns [`None`] rather than wrapping. Replaces the unchecked
+/// `(uint8_t) tag` cast pattern in
+/// `crypto/asn1/tasn_dec.c::asn1_template_ex_d2i()`.
+///
+/// # Examples
+///
+/// ```ignore
+/// use openssl_crypto::asn1::template::classify_tag_number;
+/// use openssl_crypto::asn1::Asn1Tag;
+///
+/// // Known universal tag — resolves to the matching variant.
+/// assert_eq!(classify_tag_number(2), Some(Asn1Tag::Integer));
+/// // Out of u8 range — returns None.
+/// assert_eq!(classify_tag_number(u32::MAX), None);
+/// ```
+#[must_use]
+pub fn classify_tag_number(tag: TagNumber) -> Option<Asn1Tag> {
+    u8::try_from(tag).ok().and_then(Asn1Tag::from_u8)
 }
 
 // =============================================================================
@@ -1435,5 +1549,105 @@ mod tests {
         assert!(!v.encoded.get());
         v.pre_encode().unwrap();
         assert!(v.encoded.get());
+    }
+
+    // =========================================================================
+    // Type-bridge helper tests
+    // =========================================================================
+
+    #[test]
+    fn asn1_string_tag_returns_constructor_tag() {
+        // An Asn1String constructed with a specific string tag must report
+        // that exact tag back through the helper.
+        let s_utf8 = Asn1String::new(Asn1Tag::Utf8String);
+        assert_eq!(asn1_string_tag(&s_utf8), Asn1Tag::Utf8String);
+
+        let s_printable = Asn1String::new(Asn1Tag::PrintableString);
+        assert_eq!(asn1_string_tag(&s_printable), Asn1Tag::PrintableString);
+
+        let s_ia5 = Asn1String::new(Asn1Tag::Ia5String);
+        assert_eq!(asn1_string_tag(&s_ia5), Asn1Tag::Ia5String);
+    }
+
+    #[test]
+    fn asn1_type_tag_matches_variant() {
+        // Null variant yields the Null tag.
+        let null_value = Asn1Type::Null(crate::asn1::Asn1Null);
+        assert_eq!(asn1_type_tag(&null_value), Asn1Tag::Null);
+
+        // A string variant carrying a UTF8String reports Utf8String.
+        let utf8 = Asn1Type::Utf8String(Asn1String::new(Asn1Tag::Utf8String));
+        assert_eq!(asn1_type_tag(&utf8), Asn1Tag::Utf8String);
+    }
+
+    #[test]
+    fn asn1_type_encoded_len_reports_tlv_size() {
+        // Encoding NULL produces exactly two octets: 0x05 0x00.
+        let null_value = Asn1Type::Null(crate::asn1::Asn1Null);
+        assert_eq!(asn1_type_encoded_len(&null_value), Some(2));
+
+        // An empty UTF8String encodes to tag (0x0C) + length (0x00).
+        let utf8 = Asn1Type::Utf8String(Asn1String::new(Asn1Tag::Utf8String));
+        assert_eq!(asn1_type_encoded_len(&utf8), Some(2));
+    }
+
+    #[test]
+    fn asn1_object_matches_is_symmetric_and_reflexive() {
+        // OID 1.2.840.113549.1.1.1 = rsaEncryption
+        let oid1 = Asn1Object::from_oid_string("1.2.840.113549.1.1.1").unwrap();
+        let oid1_copy = Asn1Object::from_oid_string("1.2.840.113549.1.1.1").unwrap();
+        // OID 1.2.840.113549.1.1.11 = sha256WithRSAEncryption
+        let oid2 = Asn1Object::from_oid_string("1.2.840.113549.1.1.11").unwrap();
+
+        // Reflexive: a value matches itself.
+        assert!(asn1_object_matches(&oid1, &oid1));
+        // Symmetric: if a ≡ b then b ≡ a.
+        assert!(asn1_object_matches(&oid1, &oid1_copy));
+        assert!(asn1_object_matches(&oid1_copy, &oid1));
+        // Different OIDs must not match.
+        assert!(!asn1_object_matches(&oid1, &oid2));
+        assert!(!asn1_object_matches(&oid2, &oid1));
+    }
+
+    #[test]
+    fn classify_tag_number_known_universal_tags() {
+        // Each universal tag must round-trip through the classifier.
+        assert_eq!(classify_tag_number(1), Some(Asn1Tag::Boolean));
+        assert_eq!(classify_tag_number(2), Some(Asn1Tag::Integer));
+        assert_eq!(classify_tag_number(3), Some(Asn1Tag::BitString));
+        assert_eq!(classify_tag_number(4), Some(Asn1Tag::OctetString));
+        assert_eq!(classify_tag_number(5), Some(Asn1Tag::Null));
+        assert_eq!(classify_tag_number(6), Some(Asn1Tag::ObjectIdentifier));
+        assert_eq!(classify_tag_number(16), Some(Asn1Tag::Sequence));
+        assert_eq!(classify_tag_number(17), Some(Asn1Tag::Set));
+        assert_eq!(classify_tag_number(30), Some(Asn1Tag::BmpString));
+    }
+
+    #[test]
+    fn classify_tag_number_out_of_range_returns_none() {
+        // Values that exceed u8::MAX must return None (lossless per R6).
+        assert_eq!(classify_tag_number(256), None);
+        assert_eq!(classify_tag_number(u32::MAX), None);
+        // Undefined universal tag numbers also return None.
+        assert_eq!(classify_tag_number(200), None);
+    }
+
+    #[test]
+    fn scan_context_primitive_type_stores_asn1_tag() {
+        // Verify the field type change: ScanContext::primitive_type now
+        // stores Asn1Tag values (not raw TagNumber values). This test
+        // exists to guard against accidental regression of the fix
+        // applied to match the AAP specification.
+        let mut ctx = ScanContext::new("DeclarativeType");
+        assert!(ctx.primitive_type.is_none());
+
+        // Populate via the classify helper, demonstrating the bridge
+        // between TagNumber (from template.tag) and Asn1Tag.
+        ctx.primitive_type = classify_tag_number(2);
+        assert_eq!(ctx.primitive_type, Some(Asn1Tag::Integer));
+
+        // Entering a child field must clear the primitive type.
+        let child = ctx.enter_field("subfield", ItemType::Sequence);
+        assert!(child.primitive_type.is_none());
     }
 }
