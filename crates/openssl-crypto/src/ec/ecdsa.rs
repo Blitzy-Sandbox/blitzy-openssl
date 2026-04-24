@@ -21,7 +21,8 @@
 
 use openssl_common::{CryptoError, CryptoResult};
 
-use crate::bn::arithmetic::{mod_add, mod_inverse_checked, mod_mul, nnmod, rshift};
+use crate::bn::arithmetic::{mod_add, mod_inverse_checked, mod_mul, nnmod, rshift, sub_word};
+use crate::bn::montgomery::mod_exp_consttime;
 use crate::bn::BigNum;
 
 use subtle::ConstantTimeEq;
@@ -650,12 +651,77 @@ fn sign_setup_internal(
     }
 
     // Step 4: k_inverse = k^-1 mod order
-    let k_inv = mod_inverse_checked(&k, order)?;
+    //
+    // SECURITY (CRITICAL #10 from review): Use Fermat's little theorem to
+    // compute the modular inverse instead of the extended-Euclidean GCD
+    // (`mod_inverse_checked`). The latter has a data-dependent iteration
+    // count that leaks bits of the secret nonce `k` via timing — combined
+    // with the (now-fixed) non-CT scalar-multiplication leak above, this
+    // formed a "double timing vulnerability" that enables ECDSA private-
+    // key recovery via Minerva-class lattice attacks on biased nonces.
+    //
+    // Since the curve order `order` is prime, Fermat's little theorem
+    // gives `k^(order-1) ≡ 1 (mod order)`, hence `k^(order-2) ≡ k^-1
+    // (mod order)`. The exponentiation is performed in constant time
+    // (relative to control flow and table-access pattern) by
+    // `mod_exp_consttime`, which uses a fixed-window Montgomery ladder
+    // with constant-time conditional table lookups via
+    // `subtle::ConditionallySelectable`.
+    //
+    // The exponent `n - 2` is itself derived only from the public curve
+    // parameters and contains no secret material; therefore its bit
+    // pattern is not a side-channel concern.
+    let k_inv = ct_mod_inverse_prime(&k, order)?;
 
     // Zero the nonce immediately (AAP §0.7.6)
     k.clear();
 
     Ok((k_inv, r_value))
+}
+
+/// Constant-time modular inverse for a prime modulus, via Fermat's little
+/// theorem.
+///
+/// Given a prime `p` and an integer `a` with `gcd(a, p) = 1` (i.e. `a` not
+/// divisible by `p`), Fermat's little theorem states `a^(p-1) ≡ 1 (mod p)`,
+/// hence `a^(p-2) ≡ a^-1 (mod p)`.
+///
+/// This is used to compute the modular inverse of a *secret* value (the
+/// ECDSA nonce `k`) without leaking its bit pattern through the data-
+/// dependent iteration count of the extended-Euclidean GCD algorithm. The
+/// underlying [`mod_exp_consttime`] uses a fixed-window Montgomery ladder
+/// with constant-time table lookups.
+///
+/// # Preconditions
+///
+/// - `prime` MUST be a prime greater than 2 (so `prime - 2 ≥ 1`)
+/// - `a` MUST satisfy `1 ≤ a < prime` (so `gcd(a, prime) = 1`)
+///
+/// All ECDSA curve orders satisfy these preconditions by construction
+/// (orders are large primes ≥ 2^160).
+///
+/// # Errors
+///
+/// Returns an error if `prime` is too small (less than 3) or if the
+/// underlying [`mod_exp_consttime`] fails (e.g., the modulus is even or
+/// negative).
+///
+/// # Security note
+///
+/// The constant-time guarantee covers only the control-flow and table-
+/// access pattern: the bigint-multiplication primitive underneath
+/// [`mod_exp_consttime`] (provided by `num-bigint`) is documented as not
+/// itself constant-time at the limb-arithmetic level. A production
+/// deployment requiring full constant-time guarantees against an
+/// arithmetic-level side-channel should swap this primitive for a
+/// dedicated constant-time bignum library. See `bn/montgomery.rs`
+/// docstring on [`mod_exp_consttime`] for the upstream limitation.
+fn ct_mod_inverse_prime(a: &BigNum, prime: &BigNum) -> CryptoResult<BigNum> {
+    // n - 2: the public exponent for Fermat's little theorem.
+    // sub_word is infallible for u64 subtrahends (returns CryptoResult only
+    // for API consistency) and computes `prime - 2` as a BigNum.
+    let exp = sub_word(prime, 2)?;
+    mod_exp_consttime(a, &exp, prime)
 }
 
 // ===========================================================================
@@ -1542,5 +1608,193 @@ mod tests {
         assert_eq!(result[1], 0x34);
         assert_eq!(result[2], 0x4c);
         assert_eq!(result[3], 0x61);
+    }
+
+    // -----------------------------------------------------------------------
+    // ct_mod_inverse_prime tests (Group B #2: CRITICAL #10 — Fermat's little
+    // theorem replacing extended-Euclidean GCD for nonce inverse)
+    //
+    // Correctness invariant: for any prime `p` and any `a` with
+    // `1 ≤ a < p`, the helper must return `b` such that `(a * b) mod p == 1`.
+    // -----------------------------------------------------------------------
+
+    use crate::bn::arithmetic::mod_mul as test_mod_mul;
+    use crate::ec::EcGroup;
+    use crate::ec::NamedCurve;
+
+    /// Helper: assert that `ct_mod_inverse_prime(a, p)` returns the modular
+    /// inverse of `a` mod `p`, by verifying `(a * inv) mod p == 1`.
+    fn assert_inverse_correct(a: &BigNum, p: &BigNum) {
+        let inv = ct_mod_inverse_prime(a, p).expect("inversion must succeed");
+        let product = test_mod_mul(a, &inv, p).expect("mod_mul must succeed");
+        assert_eq!(
+            product,
+            BigNum::one(),
+            "(a * inv(a)) mod p must equal 1; a = {a:?}, p = {p:?}, inv = {inv:?}, product = {product:?}"
+        );
+    }
+
+    #[test]
+    fn ct_mod_inverse_one_is_one() {
+        // 1^-1 ≡ 1 (mod p) for any prime p
+        let p = BigNum::from_u64(7);
+        let a = BigNum::one();
+        let inv = ct_mod_inverse_prime(&a, &p).unwrap();
+        assert_eq!(inv, BigNum::one());
+    }
+
+    #[test]
+    fn ct_mod_inverse_small_prime_7() {
+        // 2 * 4 = 8 ≡ 1 (mod 7) so 2^-1 ≡ 4 (mod 7)
+        let p = BigNum::from_u64(7);
+        let a = BigNum::from_u64(2);
+        let inv = ct_mod_inverse_prime(&a, &p).unwrap();
+        assert_eq!(inv, BigNum::from_u64(4));
+
+        // 3 * 5 = 15 ≡ 1 (mod 7) so 3^-1 ≡ 5 (mod 7)
+        let a = BigNum::from_u64(3);
+        let inv = ct_mod_inverse_prime(&a, &p).unwrap();
+        assert_eq!(inv, BigNum::from_u64(5));
+
+        // 6 * 6 = 36 ≡ 1 (mod 7) so 6^-1 ≡ 6 (mod 7)  (6 ≡ -1)
+        let a = BigNum::from_u64(6);
+        let inv = ct_mod_inverse_prime(&a, &p).unwrap();
+        assert_eq!(inv, BigNum::from_u64(6));
+    }
+
+    #[test]
+    fn ct_mod_inverse_small_prime_13() {
+        // Verify (a * inv(a)) mod 13 == 1 for all 1 ≤ a < 13
+        let p = BigNum::from_u64(13);
+        for a_val in 1..13u64 {
+            let a = BigNum::from_u64(a_val);
+            assert_inverse_correct(&a, &p);
+        }
+    }
+
+    #[test]
+    fn ct_mod_inverse_small_prime_257() {
+        // Verify (a * inv(a)) mod 257 == 1 for all 1 ≤ a < 257
+        // 257 is a Fermat prime (2^8 + 1), exercises larger window code path
+        let p = BigNum::from_u64(257);
+        for a_val in 1..257u64 {
+            let a = BigNum::from_u64(a_val);
+            assert_inverse_correct(&a, &p);
+        }
+    }
+
+    #[test]
+    fn ct_mod_inverse_p256_order() {
+        // Use the actual P-256 curve order (a 256-bit prime) and check that
+        // inversion of a few canonical small values is correct. This is the
+        // exact code path exercised by ECDSA `sign_setup_internal` on P-256.
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1).unwrap();
+        let order = group.order();
+
+        for a_val in [1u64, 2, 3, 7, 13, 65_537, u64::MAX] {
+            let a = BigNum::from_u64(a_val);
+            assert_inverse_correct(&a, order);
+        }
+    }
+
+    #[test]
+    fn ct_mod_inverse_p384_order() {
+        // Same correctness check on P-384 (384-bit prime order)
+        let group = EcGroup::from_curve_name(NamedCurve::Secp384r1).unwrap();
+        let order = group.order();
+
+        for a_val in [1u64, 2, 3, 7, 13, 65_537, u64::MAX] {
+            let a = BigNum::from_u64(a_val);
+            assert_inverse_correct(&a, order);
+        }
+    }
+
+    #[test]
+    fn ct_mod_inverse_secp256k1_order() {
+        // secp256k1 order (used by Bitcoin/Ethereum); 256-bit prime.
+        let group = EcGroup::from_curve_name(NamedCurve::Secp256k1).unwrap();
+        let order = group.order();
+
+        for a_val in [1u64, 2, 3, 7, 13, 65_537, u64::MAX] {
+            let a = BigNum::from_u64(a_val);
+            assert_inverse_correct(&a, order);
+        }
+    }
+
+    #[test]
+    fn ct_mod_inverse_n_minus_one_p256() {
+        // Edge case: a = n - 1 ≡ -1 (mod n) so inv(a) = a (since (-1)*(-1) = 1)
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1).unwrap();
+        let order = group.order();
+        let n_minus_one = sub_word(order, 1).unwrap();
+
+        let inv = ct_mod_inverse_prime(&n_minus_one, order).unwrap();
+        assert_eq!(inv, n_minus_one, "inv(n-1) must equal n-1");
+        assert_inverse_correct(&n_minus_one, order);
+    }
+
+    #[test]
+    fn ct_mod_inverse_matches_extended_euclidean_p256() {
+        // For correctness equivalence: the new CT path must produce the same
+        // inverse as the old `mod_inverse_checked` (extended-Euclidean) path
+        // on the public P-256 order. This is a regression check that catches
+        // any algorithmic divergence introduced by the Fermat replacement.
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1).unwrap();
+        let order = group.order();
+
+        for a_val in [2u64, 3, 7, 11, 13, 17, 19, 23, 29, 31, 65_537] {
+            let a = BigNum::from_u64(a_val);
+            let inv_fermat = ct_mod_inverse_prime(&a, order).unwrap();
+            let inv_eea = mod_inverse_checked(&a, order).unwrap();
+            assert_eq!(
+                inv_fermat, inv_eea,
+                "Fermat and EEA inverses must agree for a = {a_val} on P-256"
+            );
+        }
+    }
+
+    #[test]
+    fn ct_mod_inverse_used_by_sign_setup_p256() {
+        // End-to-end test that exercises the new CT inverse path through the
+        // public ECDSA sign API. If `ct_mod_inverse_prime` were producing
+        // incorrect inverses, sign->verify roundtrip would fail.
+        use crate::ec::EcKey;
+
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1).unwrap();
+        let key = EcKey::generate(&group).unwrap();
+        let digest = [0xAAu8; 32];
+
+        // sign() invokes sign_setup_internal which now uses ct_mod_inverse_prime
+        let sig = sign(&key, &digest).unwrap();
+        let verified = verify(&key, &digest, &sig).unwrap();
+        assert!(verified, "sign->verify must roundtrip after Fermat inverse");
+    }
+
+    #[test]
+    fn ct_mod_inverse_used_by_sign_setup_p384() {
+        // Same end-to-end test on P-384 (384-bit order)
+        use crate::ec::EcKey;
+
+        let group = EcGroup::from_curve_name(NamedCurve::Secp384r1).unwrap();
+        let key = EcKey::generate(&group).unwrap();
+        let digest = [0xBBu8; 48];
+
+        let sig = sign(&key, &digest).unwrap();
+        let verified = verify(&key, &digest, &sig).unwrap();
+        assert!(verified, "sign->verify must roundtrip on P-384 after Fermat inverse");
+    }
+
+    #[test]
+    fn ct_mod_inverse_used_by_sign_setup_secp256k1() {
+        // Same end-to-end test on secp256k1
+        use crate::ec::EcKey;
+
+        let group = EcGroup::from_curve_name(NamedCurve::Secp256k1).unwrap();
+        let key = EcKey::generate(&group).unwrap();
+        let digest = [0xCCu8; 32];
+
+        let sig = sign(&key, &digest).unwrap();
+        let verified = verify(&key, &digest, &sig).unwrap();
+        assert!(verified, "sign->verify must roundtrip on secp256k1 after Fermat inverse");
     }
 }
