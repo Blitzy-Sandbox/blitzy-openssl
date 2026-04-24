@@ -341,6 +341,12 @@ pub mod asn1;
 /// layered on top of the `pem-rfc7468` crate.
 pub mod pem;
 
+/// X.509 certificate and Certificate Revocation List (CRL) processing.
+///
+/// Translates `crypto/x509/*.c` (98 files) into idiomatic Rust,
+/// starting with CRL processing (`crl.rs`) per RFC 5280 §5.
+pub mod x509;
+
 // =============================================================================
 // Module Declarations — Protocol Extensions (feature-gated)
 // =============================================================================
