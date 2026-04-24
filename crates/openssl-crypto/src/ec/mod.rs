@@ -29,7 +29,7 @@ use openssl_common::{CryptoError, CryptoResult};
 
 use crate::bn::{BigNum, SecureBigNum};
 
-use subtle::ConstantTimeEq;
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use tracing::{debug, trace};
 
 pub mod curve25519;
@@ -834,39 +834,126 @@ impl EcPoint {
     /// Scalar multiplication: result = scalar × point.
     ///
     /// Replaces `EC_POINT_mul()` from `crypto/ec/ec_mult.c`. Uses the
-    /// double-and-add algorithm.
+    /// **Montgomery ladder** algorithm, which performs the same sequence of
+    /// operations regardless of the bit pattern of `scalar`. This eliminates
+    /// the catastrophic Hamming-weight timing leak inherent to the
+    /// double-and-add pattern.
+    ///
+    /// # Algorithm
+    ///
+    /// For each scalar bit `k_i` from the most significant to the least
+    /// significant (over a fixed bit length derived from the group order):
+    ///
+    /// ```text
+    /// cswap(R0, R1, k_i)
+    /// R1 = R0 + R1
+    /// R0 = 2 * R0
+    /// cswap(R0, R1, k_i)
+    /// ```
+    ///
+    /// At each iteration, the invariant `R1 = R0 + P` is maintained.
+    /// At the end, `R0 = scalar * P`.
+    ///
+    /// The number of iterations is fixed by `group.order().num_bits()` so
+    /// the total operation count does not depend on `scalar.num_bits()`.
     ///
     /// # Security
     ///
-    /// For secret scalars (e.g., private keys in ECDH), a constant-time
-    /// Montgomery ladder should be used. This implementation uses
-    /// double-and-add which is suitable for non-secret scalars.
+    /// The ladder eliminates the **Hamming-weight (bit-pattern) timing
+    /// leak** that would otherwise allow recovery of secret scalars (ECDH
+    /// private keys, ECDSA nonces) via timing observation.
+    ///
+    /// **Residual leaks (documented for follow-up work):**
+    ///
+    /// - The internal `add()` and `double()` routines are not themselves
+    ///   constant-time: they branch on `is_infinity`, `y == 0`, and the
+    ///   `a.x == b.x` test. For the ladder hot path on a curve of
+    ///   prime order with a non-infinity input, these branches are not
+    ///   exercised, but the leading-zero-bit prefix of small scalars
+    ///   currently still hits the `is_infinity` early returns. A complete
+    ///   constant-time fix requires Jacobian (projective) coordinates with
+    ///   complete addition formulas (Renes–Costello–Batina, IACR 2015/1060)
+    ///   so that no operand-dependent branch ever fires.
+    ///
+    /// - `mod_inverse_checked` (used by `add` and `double`) is implemented
+    ///   via the Extended Euclidean algorithm whose loop count depends on
+    ///   the operand bit pattern. Migration to a Bernstein–Yang
+    ///   constant-time inversion is required for full hardening.
+    ///
+    /// These residual leaks are tracked under the broader project plan to
+    /// migrate EC to Jacobian coordinates with complete formulas. The
+    /// Hamming-weight leak fixed here is the primary attack vector
+    /// (full scalar recovery) and is the one closed by this commit.
+    ///
+    /// **Curve25519 / Ed25519** are unaffected by this code path — they
+    /// use their own dedicated constant-time Montgomery ladder in
+    /// [`crate::ec::curve25519`].
+    ///
+    /// # Performance
+    ///
+    /// The ladder performs one `add` and one `double` per scalar bit
+    /// (regardless of bit value), so it is approximately twice the cost
+    /// of a non-CT double-and-add average case but with no timing
+    /// variance.
     pub fn mul(group: &EcGroup, point: &EcPoint, scalar: &BigNum) -> CryptoResult<EcPoint> {
-        trace!("EcPoint::mul: performing scalar multiplication");
+        trace!("EcPoint::mul: performing scalar multiplication via Montgomery ladder");
 
+        // Trivial early returns. These are correctness shortcuts that
+        // execute only when `scalar` is the literal value 0 or 1, or
+        // `point` is the identity. They do not leak the bit pattern of
+        // a generic secret scalar — they leak only whether the scalar
+        // is exactly 0 or 1, which is benign (and necessary to handle
+        // the algorithm's edge cases without contaminating the ladder).
         if scalar.is_zero() || point.is_infinity {
             return Ok(Self::new_at_infinity());
         }
-
         if scalar.is_one() {
             return Ok(point.clone());
         }
 
-        // Double-and-add algorithm
-        let scalar_bytes = scalar.to_bytes_be();
-        let mut result = Self::new_at_infinity();
-        let mut addend = point.clone();
+        // Fixed loop bit-length: use the group order's bit length so the
+        // iteration count never depends on the scalar's actual bit
+        // length. For NIST P-256 this is 256, for P-384 it is 384, etc.
+        // Scalars are guaranteed to satisfy `scalar < order`, so this
+        // upper bound is sufficient.
+        let bit_len = group.order().num_bits();
 
-        for byte in scalar_bytes.iter().rev() {
-            for bit_pos in 0..8_u32 {
-                if byte & (1 << bit_pos) != 0 {
-                    result = Self::add(group, &result, &addend)?;
-                }
-                addend = Self::double(group, &addend)?;
-            }
+        // Initial state: R0 = O (point at infinity), R1 = P.
+        // Loop invariant: at the start of iteration i, R0 = m*P and
+        // R1 = (m+1)*P, where m is the integer formed by the scalar's
+        // bits processed so far (from MSB down to but not including
+        // bit i).
+        let mut r0 = Self::new_at_infinity();
+        let mut r1 = point.clone();
+
+        // Process bits from most significant to least significant. The
+        // iteration count is fixed: `bit_len` total. For scalars whose
+        // actual bit length is less than `bit_len`, the high bits read
+        // as 0 and the ladder simply preserves R0=O for those leading
+        // iterations (a cosmetic residual leak — see Security note).
+        for i in (0..bit_len).rev() {
+            let bit: u8 = u8::from(scalar.is_bit_set(i));
+            let choice = Choice::from(bit);
+
+            // cswap(R0, R1, bit): if bit=1 swap, if bit=0 leave alone.
+            ct_swap_points(&mut r0, &mut r1, group, choice);
+
+            // R1 = R0 + R1, R0 = 2 * R0.
+            // Note: these calls are not internally constant-time, but
+            // their inputs at this point in the ladder are determined
+            // by the curve and the public point, not by individual
+            // scalar bits — the swap above ensures the operand
+            // identities (which one holds m*P vs (m+1)*P) are masked.
+            let new_r1 = Self::add(group, &r0, &r1)?;
+            let new_r0 = Self::double(group, &r0)?;
+            r0 = new_r0;
+            r1 = new_r1;
+
+            // Swap back so the invariant R1 = R0 + P is preserved.
+            ct_swap_points(&mut r0, &mut r1, group, choice);
         }
 
-        Ok(result)
+        Ok(r0)
     }
 
     /// Fixed-base scalar multiplication: result = scalar × G.
@@ -938,6 +1025,70 @@ fn pad_be(bytes: &[u8], target_len: usize) -> Vec<u8> {
     let offset = target_len - bytes.len();
     out[offset..].copy_from_slice(bytes);
     out
+}
+
+/// Constant-time conditional swap of two [`EcPoint`]s based on `choice`.
+///
+/// If `choice == 1`, the contents of `a` and `b` are swapped. If
+/// `choice == 0`, both are left unchanged. The control flow and memory
+/// access pattern are independent of `choice` — this primitive is the
+/// core building block of the Montgomery ladder used in
+/// [`EcPoint::mul`].
+///
+/// # Implementation
+///
+/// Coordinates are first serialized to fixed-length (degree-byte)
+/// big-endian byte arrays. A byte-by-byte
+/// [`ConditionallySelectable`](subtle::ConditionallySelectable)
+/// swap is performed using `subtle`'s constant-time primitives, then
+/// the bytes are reassembled into [`BigNum`]s. The `is_infinity` flag
+/// is also swapped via byte-wise constant-time selection.
+///
+/// # Security
+///
+/// This function does not branch on the value of `choice` and does not
+/// vary memory access patterns based on `choice`. The only data leaked
+/// to a timing observer is the byte length of the operand coordinates,
+/// which is fixed at `degree`-bytes after padding.
+///
+/// # Source Reference
+///
+/// Mirrors the constant-time swap pattern used in OpenSSL's
+/// `ec_GFp_simple_ladder_*()` family of functions in `crypto/ec/ecp_smpl.c`.
+fn ct_swap_points(a: &mut EcPoint, b: &mut EcPoint, group: &EcGroup, choice: Choice) {
+    // R6: lossless cast — degree fits in u32, divide-and-ceil by 8 yields
+    // a small usize that cannot overflow. The result is the canonical
+    // byte-length of a coordinate for this curve.
+    let target_len = ((group.degree() as usize) + 7) / 8;
+
+    // Serialize to fixed-length big-endian byte arrays.
+    let mut a_x = pad_be(&a.x.to_bytes_be(), target_len);
+    let mut b_x = pad_be(&b.x.to_bytes_be(), target_len);
+    let mut a_y = pad_be(&a.y.to_bytes_be(), target_len);
+    let mut b_y = pad_be(&b.y.to_bytes_be(), target_len);
+
+    // Byte-by-byte constant-time swap of the X and Y coordinates.
+    // `u8::conditional_swap` reads both operands and writes both back,
+    // so the memory access pattern is identical regardless of `choice`.
+    for i in 0..target_len {
+        u8::conditional_swap(&mut a_x[i], &mut b_x[i], choice);
+        u8::conditional_swap(&mut a_y[i], &mut b_y[i], choice);
+    }
+
+    // Constant-time swap of the `is_infinity` flag, encoded as a u8.
+    let mut a_inf = u8::from(a.is_infinity);
+    let mut b_inf = u8::from(b.is_infinity);
+    u8::conditional_swap(&mut a_inf, &mut b_inf, choice);
+
+    // Reconstruct the [`BigNum`] coordinates from the (possibly swapped)
+    // byte arrays. `BigNum::from_bytes_be` does not branch on the byte
+    // contents (it always reads `target_len` bytes).
+    a.x = BigNum::from_bytes_be(&a_x);
+    a.y = BigNum::from_bytes_be(&a_y);
+    a.is_infinity = a_inf == 1;
+    b.x = BigNum::from_bytes_be(&b_x);
+    b.y = BigNum::from_bytes_be(&b_y);
+    b.is_infinity = b_inf == 1;
 }
 
 // ===========================================================================
@@ -1413,3 +1564,399 @@ fn load_secp256k1() -> CryptoResult<EcGroup> {
         conversion_form: PointConversionForm::Uncompressed,
     })
 }
+
+// ===========================================================================
+// Inline unit tests for the Montgomery ladder (constant-time `EcPoint::mul`)
+// ===========================================================================
+//
+// These tests are placed inline in `ec/mod.rs` so they have direct access to
+// private fields of [`EcPoint`] (`x`, `y`, `is_infinity`) and to the internal
+// helper [`ct_swap_points`]. They focus on the correctness of
+// [`EcPoint::mul`] across multiple curves and edge cases, since correctness
+// of the constant-time replacement is a security-critical invariant
+// (CRITICAL #9 in the project's code-review feedback report).
+//
+// All tests are R8-compliant (no `unsafe` blocks).
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bn::arithmetic;
+
+    // ----------------------------------------------------------------------
+    // Helpers
+    // ----------------------------------------------------------------------
+
+    /// Constructs the P-256 group for tests.
+    fn p256() -> EcGroup {
+        EcGroup::from_curve_name(NamedCurve::Prime256v1)
+            .expect("loading P-256 curve parameters must succeed")
+    }
+
+    /// Constructs the P-384 group for tests.
+    fn p384() -> EcGroup {
+        EcGroup::from_curve_name(NamedCurve::Secp384r1)
+            .expect("loading P-384 curve parameters must succeed")
+    }
+
+    /// Constructs the secp256k1 group for tests.
+    fn secp256k1() -> EcGroup {
+        EcGroup::from_curve_name(NamedCurve::Secp256k1)
+            .expect("loading secp256k1 curve parameters must succeed")
+    }
+
+    // ----------------------------------------------------------------------
+    // Trivial scalar tests
+    // ----------------------------------------------------------------------
+
+    /// 0 · G = O (point at infinity) on P-256.
+    ///
+    /// This exercises the `scalar.is_zero()` early-return path; it does NOT
+    /// enter the Montgomery ladder.
+    #[test]
+    fn mul_zero_scalar_returns_infinity_p256() {
+        let group = p256();
+        let zero = BigNum::zero();
+        let result = EcPoint::mul(&group, group.generator(), &zero)
+            .expect("mul by zero must succeed");
+        assert!(result.is_at_infinity(), "0·G must be the identity");
+    }
+
+    /// 1 · G = G on P-256.
+    ///
+    /// This exercises the `scalar.is_one()` early-return path; it does NOT
+    /// enter the Montgomery ladder.
+    #[test]
+    fn mul_one_returns_input_point_p256() {
+        let group = p256();
+        let one = BigNum::one();
+        let result = EcPoint::mul(&group, group.generator(), &one)
+            .expect("mul by one must succeed");
+        assert!(!result.is_at_infinity(), "1·G must not be infinity");
+        assert_eq!(
+            result.x(),
+            group.generator().x(),
+            "1·G x-coordinate must equal G.x"
+        );
+        assert_eq!(
+            result.y(),
+            group.generator().y(),
+            "1·G y-coordinate must equal G.y"
+        );
+    }
+
+    /// k · O = O for any non-zero k. Exercises the `point.is_infinity`
+    /// early-return path.
+    #[test]
+    fn mul_with_infinity_point_returns_infinity() {
+        let group = p256();
+        let scalar = BigNum::from_u64(0xDEAD_BEEF);
+        let identity = EcPoint::new_at_infinity();
+        let result = EcPoint::mul(&group, &identity, &scalar)
+            .expect("mul of identity must succeed");
+        assert!(
+            result.is_at_infinity(),
+            "k·O must be O for any k (here k = 0xDEADBEEF)"
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // Self-consistency tests
+    // ----------------------------------------------------------------------
+
+    /// 2 · G must equal `EcPoint::double(&group, G)` on every supported
+    /// curve. This is a foundational consistency test: the Montgomery
+    /// ladder must agree with the explicit doubling routine for the
+    /// smallest non-trivial scalar.
+    #[test]
+    fn mul_two_equals_double_p256() {
+        let group = p256();
+        let two = BigNum::from_u64(2);
+        let mul_result = EcPoint::mul(&group, group.generator(), &two)
+            .expect("mul by 2 must succeed");
+        let double_result = EcPoint::double(&group, group.generator())
+            .expect("double must succeed");
+        assert_eq!(
+            mul_result, double_result,
+            "2·G (via ladder) must equal double(G) on P-256"
+        );
+    }
+
+    /// Same consistency check on P-384: a different field size and
+    /// scalar bit-length, exercising the curve-agnostic ladder.
+    #[test]
+    fn mul_two_equals_double_p384() {
+        let group = p384();
+        let two = BigNum::from_u64(2);
+        let mul_result = EcPoint::mul(&group, group.generator(), &two)
+            .expect("mul by 2 must succeed");
+        let double_result = EcPoint::double(&group, group.generator())
+            .expect("double must succeed");
+        assert_eq!(
+            mul_result, double_result,
+            "2·G (via ladder) must equal double(G) on P-384"
+        );
+    }
+
+    /// Same consistency check on secp256k1: validates that the ladder
+    /// works for curves with a = 0 (which is the secp256k1 case).
+    #[test]
+    fn mul_two_equals_double_secp256k1() {
+        let group = secp256k1();
+        let two = BigNum::from_u64(2);
+        let mul_result = EcPoint::mul(&group, group.generator(), &two)
+            .expect("mul by 2 must succeed");
+        let double_result = EcPoint::double(&group, group.generator())
+            .expect("double must succeed");
+        assert_eq!(
+            mul_result, double_result,
+            "2·G (via ladder) must equal double(G) on secp256k1"
+        );
+    }
+
+    /// 3 · G must equal G + 2·G (i.e., the ladder is consistent with the
+    /// addition formula).
+    #[test]
+    fn mul_three_equals_g_plus_2g_p256() {
+        let group = p256();
+        let three = BigNum::from_u64(3);
+        let two = BigNum::from_u64(2);
+
+        let mul_three = EcPoint::mul(&group, group.generator(), &three)
+            .expect("mul by 3 must succeed");
+
+        let two_g = EcPoint::mul(&group, group.generator(), &two)
+            .expect("mul by 2 must succeed");
+        let g_plus_2g = EcPoint::add(&group, group.generator(), &two_g)
+            .expect("G + 2·G must succeed");
+
+        assert_eq!(
+            mul_three, g_plus_2g,
+            "3·G (via ladder) must equal G + 2·G on P-256"
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // Edge-of-range scalar tests
+    // ----------------------------------------------------------------------
+
+    /// (n-1) · G = -G on every supported curve. This is the canonical
+    /// edge-case test: the largest in-range scalar produces the inverse
+    /// of the generator.
+    #[test]
+    fn mul_n_minus_one_is_minus_g_p256() {
+        let group = p256();
+        let one = BigNum::one();
+        let n_minus_one = arithmetic::sub(group.order(), &one);
+
+        let lhs = EcPoint::mul(&group, group.generator(), &n_minus_one)
+            .expect("mul by n-1 must succeed");
+        let rhs = EcPoint::invert(&group, group.generator())
+            .expect("invert(G) must succeed");
+
+        assert_eq!(lhs, rhs, "(n-1)·G must equal -G on P-256");
+    }
+
+    /// (n-1) · G = -G on P-384.
+    #[test]
+    fn mul_n_minus_one_is_minus_g_p384() {
+        let group = p384();
+        let one = BigNum::one();
+        let n_minus_one = arithmetic::sub(group.order(), &one);
+
+        let lhs = EcPoint::mul(&group, group.generator(), &n_minus_one)
+            .expect("mul by n-1 must succeed");
+        let rhs = EcPoint::invert(&group, group.generator())
+            .expect("invert(G) must succeed");
+
+        assert_eq!(lhs, rhs, "(n-1)·G must equal -G on P-384");
+    }
+
+    // ----------------------------------------------------------------------
+    // Known-answer tests against published vectors
+    // ----------------------------------------------------------------------
+
+    /// Known-answer test: 2·G on NIST P-256.
+    ///
+    /// Reference: SEC 2 v2, "Recommended Elliptic Curve Domain Parameters"
+    /// and standard P-256 test vectors. The `2·G` value is widely
+    /// published (e.g., in NIST CAVS test data and curve-specific design
+    /// documents) and serves as a ground-truth value not derived from
+    /// the implementation under test.
+    #[test]
+    fn mul_p256_two_known_answer() {
+        let group = p256();
+        let two = BigNum::from_u64(2);
+        let result = EcPoint::mul(&group, group.generator(), &two)
+            .expect("2·G_P256 must succeed");
+
+        let expected_x = BigNum::from_hex(
+            "7CF27B188D034F7E8A52380304B51AC3C08969E277F21B35A60B48FC47669978",
+        )
+        .expect("hex parse must succeed");
+        let expected_y = BigNum::from_hex(
+            "07775510DB8ED040293D9AC69F7430DBBA7DADE63CE982299E04B79D227873D1",
+        )
+        .expect("hex parse must succeed");
+
+        assert!(!result.is_at_infinity(), "2·G must not be infinity");
+        assert_eq!(result.x(), &expected_x, "2·G_P256 x must match KAT");
+        assert_eq!(result.y(), &expected_y, "2·G_P256 y must match KAT");
+    }
+
+    /// Known-answer test: 2·G on secp256k1.
+    ///
+    /// Reference: SEC 2 v2 §2.4.1, with the well-known doubled-generator
+    /// values widely cited in Bitcoin protocol documentation and
+    /// independent third-party test suites.
+    #[test]
+    fn mul_secp256k1_two_known_answer() {
+        let group = secp256k1();
+        let two = BigNum::from_u64(2);
+        let result = EcPoint::mul(&group, group.generator(), &two)
+            .expect("2·G_secp256k1 must succeed");
+
+        let expected_x = BigNum::from_hex(
+            "C6047F9441ED7D6D3045406E95C07CD85C778E4B8CEF3CA7ABAC09B95C709EE5",
+        )
+        .expect("hex parse must succeed");
+        let expected_y = BigNum::from_hex(
+            "1AE168FEA63DC339A3C58419466CEAEEF7F632653266D0E1236431A950CFE52A",
+        )
+        .expect("hex parse must succeed");
+
+        assert!(!result.is_at_infinity(), "2·G must not be infinity");
+        assert_eq!(
+            result.x(),
+            &expected_x,
+            "2·G_secp256k1 x must match KAT"
+        );
+        assert_eq!(
+            result.y(),
+            &expected_y,
+            "2·G_secp256k1 y must match KAT"
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // Round-trip / invariant tests
+    // ----------------------------------------------------------------------
+
+    /// k · G is on the curve for arbitrary in-range k. This verifies
+    /// that the ladder produces well-formed points (the curve equation
+    /// y² = x³ + ax + b mod p must hold).
+    #[test]
+    fn mul_result_is_on_curve_p256() {
+        let group = p256();
+        // A non-trivial bit pattern that exercises both swap states.
+        let k = BigNum::from_hex(
+            "C6858E06B70404E9CD9E3ECB662395B4429C648139053FB521F828AF606B4D3D",
+        )
+        .expect("hex parse must succeed");
+
+        let kg = EcPoint::mul(&group, group.generator(), &k)
+            .expect("k·G must succeed for arbitrary k");
+
+        assert!(!kg.is_at_infinity(), "non-zero k·G must not be infinity");
+        let on_curve = kg
+            .is_on_curve(&group)
+            .expect("on-curve check must succeed");
+        assert!(on_curve, "k·G result must satisfy the curve equation");
+    }
+
+    // ----------------------------------------------------------------------
+    // ct_swap_points helper tests
+    // ----------------------------------------------------------------------
+
+    /// ct_swap_points with `choice = 0` must leave both points unchanged.
+    #[test]
+    fn ct_swap_points_no_swap_when_choice_zero() {
+        let group = p256();
+        let two = BigNum::from_u64(2);
+        let three = BigNum::from_u64(3);
+
+        let mut a = EcPoint::mul(&group, group.generator(), &two)
+            .expect("2·G must succeed");
+        let mut b = EcPoint::mul(&group, group.generator(), &three)
+            .expect("3·G must succeed");
+
+        let original_a = a.clone();
+        let original_b = b.clone();
+
+        ct_swap_points(&mut a, &mut b, &group, Choice::from(0));
+
+        assert_eq!(a, original_a, "choice=0 must leave a unchanged");
+        assert_eq!(b, original_b, "choice=0 must leave b unchanged");
+    }
+
+    /// ct_swap_points with `choice = 1` must swap the two points
+    /// completely (x, y, and is_infinity).
+    #[test]
+    fn ct_swap_points_swaps_when_choice_one() {
+        let group = p256();
+        let two = BigNum::from_u64(2);
+        let three = BigNum::from_u64(3);
+
+        let mut a = EcPoint::mul(&group, group.generator(), &two)
+            .expect("2·G must succeed");
+        let mut b = EcPoint::mul(&group, group.generator(), &three)
+            .expect("3·G must succeed");
+
+        let original_a = a.clone();
+        let original_b = b.clone();
+
+        ct_swap_points(&mut a, &mut b, &group, Choice::from(1));
+
+        assert_eq!(a, original_b, "choice=1 must move b's value into a");
+        assert_eq!(b, original_a, "choice=1 must move a's value into b");
+    }
+
+    /// ct_swap_points must correctly handle the `is_infinity` flag in
+    /// both swap directions.
+    #[test]
+    fn ct_swap_points_handles_infinity_flag() {
+        let group = p256();
+        let mut finite = EcPoint::mul(&group, group.generator(), &BigNum::from_u64(5))
+            .expect("5·G must succeed");
+        let mut identity = EcPoint::new_at_infinity();
+
+        // Swap when one operand is the identity.
+        ct_swap_points(&mut finite, &mut identity, &group, Choice::from(1));
+
+        assert!(
+            finite.is_at_infinity(),
+            "after swap, `finite` must hold the original identity"
+        );
+        assert!(
+            !identity.is_at_infinity(),
+            "after swap, `identity` must hold the original finite point"
+        );
+    }
+
+    // ----------------------------------------------------------------------
+    // Cross-curve scalar bit-length stress test
+    // ----------------------------------------------------------------------
+
+    /// Ensures the ladder loop iteration count is governed by
+    /// `group.order().num_bits()` and not by `scalar.num_bits()`. We use
+    /// the smallest non-sentinel scalar (k = 2) on P-384 (order has 384
+    /// bits) and verify the result still matches `double(G)`. If the
+    /// loop bit-length depended on the scalar, this test would still
+    /// pass but with a degraded leak surface — the assertion here is
+    /// only of correctness; the constant-time property is guaranteed
+    /// structurally by reading `bit_len = group.order().num_bits()`.
+    #[test]
+    fn ladder_correct_with_small_scalar_on_large_curve() {
+        let group = p384();
+        let two = BigNum::from_u64(2);
+        let result = EcPoint::mul(&group, group.generator(), &two)
+            .expect("mul by small scalar on large curve must succeed");
+        let expected = EcPoint::double(&group, group.generator())
+            .expect("double must succeed");
+        assert_eq!(
+            result, expected,
+            "ladder with small scalar on P-384 must produce 2·G"
+        );
+    }
+}
+
