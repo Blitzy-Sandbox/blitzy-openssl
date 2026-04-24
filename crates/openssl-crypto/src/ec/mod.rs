@@ -27,8 +27,9 @@
 
 use openssl_common::{CryptoError, CryptoResult};
 
-use crate::bn::BigNum;
+use crate::bn::{BigNum, SecureBigNum};
 
+use subtle::ConstantTimeEq;
 use tracing::{debug, trace};
 
 pub mod curve25519;
@@ -400,21 +401,40 @@ impl EcGroup {
     ///
     /// `true` if all checks pass, `false` otherwise.
     pub fn check(&self) -> CryptoResult<bool> {
-        // Verify discriminant is non-zero (curve is non-singular).
-        // disc = 4*a^3 + 27*b^2 mod p
+        // Verify discriminant is non-zero modulo p (curve is non-singular).
+        // discriminant = (4*a^3 + 27*b^2) mod p
+        //
+        // For short Weierstrass curves y² = x³ + ax + b over GF(p),
+        // the discriminant must be non-zero in GF(p) to ensure the curve
+        // has no singular points.
+        let p = &self.field;
         let four = BigNum::from_u64(4);
         let twenty_seven = BigNum::from_u64(27);
-        let a_cubed = &(&self.a * &self.a) * &self.a;
-        let b_squared = &self.b * &self.b;
-        let term1 = &four * &a_cubed;
-        let term2 = &twenty_seven * &b_squared;
-        let discriminant = &term1 + &term2;
+        let a_squared_pre = &self.a * &self.a;
+        let a_squared = crate::bn::arithmetic::nnmod(&a_squared_pre, p)?;
+        let a_cubed_pre = &a_squared * &self.a;
+        let a_cubed = crate::bn::arithmetic::nnmod(&a_cubed_pre, p)?;
+        let b_squared_pre = &self.b * &self.b;
+        let b_squared = crate::bn::arithmetic::nnmod(&b_squared_pre, p)?;
+        let term1 = crate::bn::arithmetic::mod_mul(&four, &a_cubed, p)?;
+        let term2 = crate::bn::arithmetic::mod_mul(&twenty_seven, &b_squared, p)?;
+        let disc_pre = &term1 + &term2;
+        let discriminant = crate::bn::arithmetic::nnmod(&disc_pre, p)?;
         if discriminant.is_zero() {
             return Ok(false);
         }
 
-        // Verify generator is on the curve
+        // Verify generator is on the curve.
         if !self.generator.is_on_curve(self)? {
+            return Ok(false);
+        }
+
+        // Verify that order × G = point at infinity.
+        // This confirms that `order` is truly the order of the generator's
+        // subgroup, a critical sanity check that protects against
+        // group-parameter attacks.
+        let order_times_g = EcPoint::mul(self, &self.generator, &self.order)?;
+        if !order_times_g.is_at_infinity() {
             return Ok(false);
         }
 
@@ -630,21 +650,61 @@ impl EcPoint {
                 Ok(Self::from_affine(x, y))
             }
             0x02 | 0x03 => {
-                // Compressed form — point decompression
+                // Compressed form — point decompression.
+                //
+                // Given x and a parity bit, recover y by solving
+                //     y² ≡ x³ + ax + b (mod p)
+                // using a Tonelli–Shanks-based modular square root, then
+                // selecting the root whose parity matches the low bit encoded
+                // in the leading byte (0x02 = even y, 0x03 = odd y).
+                //
+                // Replaces the OpenSSL C implementation of
+                // `ossl_ec_GFp_simple_point_oct2point()` compressed decode
+                // path in `crypto/ec/ecp_smpl.c`.
                 if bytes.len() != 1 + field_len {
                     return Err(CryptoError::Encoding(
                         "EC: invalid compressed point length".to_string(),
                     ));
                 }
                 let x = BigNum::from_bytes_be(&bytes[1..]);
-                // Decompression requires solving y² = x³ + ax + b (mod p)
-                // and selecting the root matching the parity bit.
-                let x_squared = &x * &x;
-                let x_cubed = &x_squared * &x;
-                let a_x = &group.a * &x;
-                let rhs = &(&x_cubed + &a_x) + &group.b;
-                // Simplified: use rhs directly as y (proper impl needs modular sqrt)
-                let y = rhs;
+                let p = &group.field;
+
+                // Reject x >= p as an invalid encoding.
+                if &x >= p {
+                    return Err(CryptoError::Encoding(
+                        "EC: compressed point x-coordinate >= field prime".to_string(),
+                    ));
+                }
+
+                // Compute rhs = x³ + a·x + b (mod p)
+                let x_squared_pre = &x * &x;
+                let x_squared = crate::bn::arithmetic::nnmod(&x_squared_pre, p)?;
+                let x_cubed_pre = &x_squared * &x;
+                let x_cubed = crate::bn::arithmetic::nnmod(&x_cubed_pre, p)?;
+                let a_x_pre = &group.a * &x;
+                let a_x = crate::bn::arithmetic::nnmod(&a_x_pre, p)?;
+                let sum_pre = &(&x_cubed + &a_x) + &group.b;
+                let rhs = crate::bn::arithmetic::nnmod(&sum_pre, p)?;
+
+                // Solve y² ≡ rhs (mod p) for y via modular square root.
+                let Some(y_candidate) = crate::bn::arithmetic::mod_sqrt(&rhs, p)? else {
+                    return Err(CryptoError::Encoding(
+                        "EC: invalid compressed point (not a quadratic residue)".to_string(),
+                    ));
+                };
+
+                // Select the root whose parity matches the encoded bit.
+                // 0x03 → want_odd = true; 0x02 → want_odd = false.
+                let want_odd = bytes[0] == 0x03;
+                let y_is_odd = y_candidate.is_odd();
+                let y = if want_odd == y_is_odd {
+                    y_candidate
+                } else {
+                    // The other root is p - y.
+                    let neg_pre = p - &y_candidate;
+                    crate::bn::arithmetic::nnmod(&neg_pre, p)?
+                };
+
                 Ok(Self::from_affine(x, y))
             }
             0x06 | 0x07 => {
@@ -750,15 +810,24 @@ impl EcPoint {
         Ok(Self::from_affine(x3, y3))
     }
 
-    /// Inverts a point: result = -P (negate y-coordinate).
+    /// Inverts a point: result = -P (negate y-coordinate modulo p).
     ///
     /// Replaces `EC_POINT_invert()` from `crypto/ec/ec_lib.c`.
+    ///
+    /// For a point `P = (x, y)` on a short Weierstrass curve, the inverse
+    /// is `-P = (x, -y mod p)`. The point at infinity is self-inverse, and
+    /// when `y = 0` the point equals its own inverse.
     pub fn invert(group: &EcGroup, point: &EcPoint) -> CryptoResult<EcPoint> {
         if point.is_infinity {
             return Ok(Self::new_at_infinity());
         }
-        // -P = (x, p - y)
-        let neg_y = &group.field - &point.y;
+        // A point with y = 0 is its own inverse (it satisfies 2P = O).
+        if point.y.is_zero() {
+            return Ok(Self::from_affine(point.x.clone(), BigNum::zero()));
+        }
+        // -P = (x, (p - y) mod p)
+        let neg_y_pre = &group.field - &point.y;
+        let neg_y = crate::bn::arithmetic::nnmod(&neg_y_pre, &group.field)?;
         Ok(Self::from_affine(point.x.clone(), neg_y))
     }
 
@@ -810,21 +879,66 @@ impl EcPoint {
 }
 
 impl PartialEq for EcPoint {
-    /// Compares two EC points.
+    /// Compares two EC points in constant time.
     ///
-    /// Both coordinates and the infinity flag must match.
+    /// Both coordinates and the infinity flag must match. The comparison
+    /// uses [`subtle::ConstantTimeEq`] to prevent timing side-channel
+    /// leaks during sensitive operations such as ECDSA verification or
+    /// ECDH shared-secret validation.
+    ///
+    /// Replaces the C pattern `CRYPTO_memcmp()` from
+    /// `crypto/ec/ec_lib.c` (`EC_POINT_cmp()`).
     fn eq(&self, other: &Self) -> bool {
-        if self.is_infinity && other.is_infinity {
-            return true;
-        }
-        if self.is_infinity != other.is_infinity {
-            return false;
-        }
-        self.x == other.x && self.y == other.y
+        // The infinity flag is compared as a constant-time byte
+        // compare on the 0/1 value, so a timing observer cannot tell
+        // whether the difference came from the infinity flag or the
+        // coordinate comparison.
+        let self_inf = u8::from(self.is_infinity);
+        let other_inf = u8::from(other.is_infinity);
+        let inf_eq = self_inf.ct_eq(&other_inf);
+
+        // If both are infinity, their (zero) coordinates compare
+        // equal and the overall result is `inf_eq`. If one is
+        // infinity and the other is not, the coordinate comparison
+        // below may produce a spurious result, but `inf_eq` will be
+        // 0 and ANDing kills the result.
+        //
+        // Use a common byte length for the byte-wise comparison so
+        // that leading-zero differences do not cause early exit.
+        let sx = self.x.to_bytes_be();
+        let ox = other.x.to_bytes_be();
+        let sy = self.y.to_bytes_be();
+        let oy = other.y.to_bytes_be();
+        let max_x = sx.len().max(ox.len());
+        let max_y = sy.len().max(oy.len());
+        let sxp = pad_be(&sx, max_x);
+        let oxp = pad_be(&ox, max_x);
+        let syp = pad_be(&sy, max_y);
+        let oyp = pad_be(&oy, max_y);
+
+        let x_eq = sxp.ct_eq(&oxp);
+        let y_eq = syp.ct_eq(&oyp);
+
+        (inf_eq & x_eq & y_eq).unwrap_u8() == 1
     }
 }
 
 impl Eq for EcPoint {}
+
+/// Pads a big-endian byte slice with leading zeros to the specified length.
+///
+/// Used to normalize coordinate byte lengths prior to constant-time
+/// comparison so that trailing-length differences do not perturb timing.
+#[inline]
+fn pad_be(bytes: &[u8], target_len: usize) -> Vec<u8> {
+    if bytes.len() >= target_len {
+        return bytes.to_vec();
+    }
+    let mut out = vec![0_u8; target_len];
+    let offset = target_len - bytes.len();
+    out[offset..].copy_from_slice(bytes);
+    out
+}
 
 // ===========================================================================
 // EcKey — EC key pair
@@ -848,8 +962,12 @@ pub struct EcKey {
     group: EcGroup,
     /// Public key (point on curve) — None if not yet computed
     public_key: Option<EcPoint>,
-    /// Private key (scalar) — None for public-only keys
-    private_key: Option<BigNum>,
+    /// Private key (scalar) — None for public-only keys.
+    ///
+    /// Wrapped in [`SecureBigNum`] so the scalar is zeroed via the
+    /// `zeroize` crate when this `EcKey` is dropped. Replaces the C
+    /// pattern `BN_clear_free(priv_key)` in `EC_KEY_free()`.
+    private_key: Option<SecureBigNum>,
     /// Point encoding form for this key
     conversion_form: PointConversionForm,
 }
@@ -868,11 +986,9 @@ impl EcKey {
         let curve_label = group.curve_name().map_or("custom", |c| c.name());
         trace!(curve = curve_label, "EcKey: generating new key pair");
 
-        // Generate a random scalar in [1, order-1]
-        // For a proper implementation, this uses a CSPRNG.
-        // The random generation is delegated to the rand module.
+        // Generate a random scalar in [1, order-1] via the crate CSPRNG.
         let order = group.order();
-        let priv_key = generate_random_scalar(order);
+        let priv_key = generate_random_scalar(order)?;
 
         // Compute public key: pub = priv × G
         let pub_key = EcPoint::generator_mul(group, &priv_key)?;
@@ -885,7 +1001,7 @@ impl EcKey {
         Ok(Self {
             group: group.clone(),
             public_key: Some(pub_key),
-            private_key: Some(priv_key),
+            private_key: Some(SecureBigNum::new(priv_key)),
             conversion_form: group.conversion_form(),
         })
     }
@@ -904,11 +1020,17 @@ impl EcKey {
                 "EC: private key scalar is zero".to_string(),
             ));
         }
+        // Reject private keys that are out of range [1, order - 1].
+        if &priv_key >= group.order() {
+            return Err(CryptoError::Key(
+                "EC: private key scalar is not in [1, order-1]".to_string(),
+            ));
+        }
         let pub_key = EcPoint::generator_mul(group, &priv_key)?;
         Ok(Self {
             group: group.clone(),
             public_key: Some(pub_key),
-            private_key: Some(priv_key),
+            private_key: Some(SecureBigNum::new(priv_key)),
             conversion_form: group.conversion_form(),
         })
     }
@@ -939,10 +1061,14 @@ impl EcKey {
 
     /// Returns the private key scalar, if present.
     ///
-    /// Returns `None` for public-only keys.
+    /// Returns `None` for public-only keys. The returned reference
+    /// borrows through the internal [`SecureBigNum`] wrapper via
+    /// `Deref<Target = BigNum>`, so callers can continue to use the
+    /// scalar as `&BigNum` while the underlying storage remains
+    /// zeroed-on-drop.
     #[inline]
     pub fn private_key(&self) -> Option<&BigNum> {
-        self.private_key.as_ref()
+        self.private_key.as_deref()
     }
 
     /// Returns `true` if this key contains a private key component.
@@ -961,21 +1087,56 @@ impl EcKey {
     /// Validates the key pair.
     ///
     /// Replaces `EC_KEY_check_key()` from `crypto/ec/ec_key.c`.
-    /// Checks that:
-    /// - The public key is on the curve
-    /// - `order × pub_key = infinity`
-    /// - If a private key is present: `priv × G = pub_key`
+    ///
+    /// Verifies the full set of invariants required for safe use of the
+    /// key in signature or key-agreement operations:
+    ///
+    /// 1. The public key is present and lies on the curve.
+    /// 2. The public key is not the point at infinity.
+    /// 3. `order × pub_key = infinity` (the public key is in the
+    ///    generator's prime-order subgroup).
+    /// 4. If a private key is present:
+    ///    a. The scalar is in the range `[1, order - 1]`.
+    ///    b. `priv × G = pub_key` (the key pair is consistent).
+    ///
+    /// Returns `Ok(true)` only if every check passes.
     pub fn check_key(&self) -> CryptoResult<bool> {
-        if let Some(pub_key) = &self.public_key {
-            // Check public key is on curve
-            if !pub_key.is_on_curve(&self.group)? {
+        // A key without a public key component cannot be validated.
+        let Some(pub_key) = &self.public_key else {
+            return Ok(false);
+        };
+
+        // Check 1: public key is on the curve.
+        if !pub_key.is_on_curve(&self.group)? {
+            return Ok(false);
+        }
+        // Check 2: public key is not at infinity.
+        if pub_key.is_at_infinity() {
+            return Ok(false);
+        }
+        // Check 3: order × pub_key = infinity.
+        let order = self.group.order();
+        let order_times_pub = EcPoint::mul(&self.group, pub_key, order)?;
+        if !order_times_pub.is_at_infinity() {
+            return Ok(false);
+        }
+
+        // Check 4: if a private key is present, verify it.
+        if let Some(priv_key) = self.private_key.as_deref() {
+            // Scalar must be in [1, order - 1].
+            if priv_key.is_zero() {
                 return Ok(false);
             }
-            // Check public key is not at infinity
-            if pub_key.is_at_infinity() {
+            if priv_key >= order {
+                return Ok(false);
+            }
+            // priv × G must equal pub_key.
+            let computed_pub = EcPoint::generator_mul(&self.group, priv_key)?;
+            if &computed_pub != pub_key {
                 return Ok(false);
             }
         }
+
         Ok(true)
     }
 
@@ -987,14 +1148,24 @@ impl EcKey {
 }
 
 impl Drop for EcKey {
-    /// Securely zeroes the private key material when the key is dropped.
+    /// Explicitly dropping an `EcKey` relies on the
+    /// [`SecureBigNum`] wrapper around the private key scalar, which
+    /// implements its own `Drop` that zeroes the backing storage via the
+    /// `zeroize` crate.
     ///
     /// Replaces the C pattern `BN_clear_free(ec->priv_key)` from
     /// `crypto/ec/ec_key.c` `EC_KEY_free()`.
+    ///
+    /// This impl is intentionally present — and not a no-op
+    /// `drop_in_place` — to document the intent and to provide a
+    /// single site for future defensive clearing of other fields
+    /// should additional sensitive state be added.
     fn drop(&mut self) {
-        if let Some(ref mut pk) = self.private_key {
-            pk.clear();
-        }
+        // Explicitly drop the private key so that its zeroing Drop
+        // runs before any subsequent move of `self`.
+        let _private_key = self.private_key.take();
+        // `_private_key` drops here, which in turn runs
+        // `SecureBigNum::drop` to zero the scalar.
     }
 }
 
@@ -1063,68 +1234,65 @@ pub enum EcError {
 // Internal helpers
 // ===========================================================================
 
-/// Generates a random scalar in the range `[1, order - 1]`.
+/// Generates a uniformly random scalar in the range `[1, order - 1]`.
 ///
-/// Used for private key generation. In a full implementation, this
-/// would use the crate's CSPRNG. Currently uses a deterministic
-/// approach for the initial scaffold.
-fn generate_random_scalar(order: &BigNum) -> BigNum {
-    // In a proper implementation, use crate::rand::generate_bytes()
-    // to get random bytes, then reduce modulo (order - 1) and add 1.
-    // For the initial implementation, we use a simple deterministic
-    // approach that produces a valid scalar.
-    let order_bytes = order.to_bytes_be();
-    let mut scalar_bytes = vec![0u8; order_bytes.len()];
-
-    // Fill with a deterministic pattern (this is NOT cryptographically
-    // secure — the full rand module integration provides proper CSPRNG).
-    // We use a simple pattern that produces a non-zero result.
-    for (i, byte) in scalar_bytes.iter_mut().enumerate() {
-        // (i + 1) % 256 always fits in u8 since result is in [0, 255].
-        *byte = u8::try_from((i + 1) % 256).unwrap_or(0);
+/// Used for private key generation. Delegates to
+/// [`BigNum::priv_rand_range`], which uses the crate's CSPRNG
+/// (`BN_priv_rand_range` in C OpenSSL). Loops until a non-zero
+/// candidate is sampled to ensure the scalar is a valid private key.
+///
+/// # Errors
+///
+/// Propagates any error from the underlying CSPRNG.
+///
+/// # Security
+///
+/// The sampling is uniform over `[0, order)` and the rejection loop
+/// for zero is constant-time-equivalent in expectation because the
+/// probability of sampling zero is `1/order`, which is astronomically
+/// small for every supported curve.
+fn generate_random_scalar(order: &BigNum) -> CryptoResult<BigNum> {
+    // A defensive retry cap — the probability of sampling zero is
+    // bounded above by 1/order, so 256 iterations suffices for every
+    // named curve in the built-in catalog by many orders of magnitude.
+    const MAX_ITERATIONS: usize = 256;
+    for _ in 0..MAX_ITERATIONS {
+        let candidate = BigNum::priv_rand_range(order)?;
+        if !candidate.is_zero() {
+            return Ok(candidate);
+        }
     }
-
-    let scalar = BigNum::from_bytes_be(&scalar_bytes);
-
-    // Ensure scalar is in valid range [1, order-1]
-    if scalar.is_zero() || scalar >= *order {
-        // Fallback to 1 — valid but weak (only for bootstrapping)
-        return BigNum::one();
-    }
-
-    scalar
+    Err(CryptoError::Rand(
+        "EC: failed to sample a non-zero scalar after retries".to_string(),
+    ))
 }
 
 /// Loads built-in curve parameters for a named curve.
 ///
 /// Replaces the curve parameter catalog in `crypto/ec/ec_curve.c`.
-/// Contains hard-coded parameters for the most commonly used curves.
+/// Contains hard-coded parameters for the most commonly used curves:
+/// NIST P-256 / P-384 / P-521 and secp256k1.
+///
+/// # Errors
+///
+/// Returns [`CryptoError::Key`] wrapping a `UnsupportedCurve` message for
+/// curves that are not yet included in the built-in catalog. This keeps
+/// the error path explicit rather than silently constructing an invalid
+/// group — a principle enforced by AAP rule R5 (no placeholders).
+///
+/// Curves that are explicitly handled elsewhere (X25519/Ed25519/X448/Ed448)
+/// live in the [`curve25519`](crate::ec::curve25519) submodule and will
+/// be rejected here because they do not use short-Weierstrass parameters.
 fn load_curve_params(curve: NamedCurve) -> CryptoResult<EcGroup> {
     match curve {
         NamedCurve::Prime256v1 => load_p256(),
         NamedCurve::Secp384r1 => load_p384(),
         NamedCurve::Secp521r1 => load_p521(),
         NamedCurve::Secp256k1 => load_secp256k1(),
-        _ => {
-            // For curves not yet loaded with parameters, return a
-            // placeholder with the correct degree and cofactor = 1.
-            let bits = curve.key_size_bits();
-            let field_bytes = curve.field_size_bytes();
-            let mut field_val = vec![0xFF_u8; field_bytes];
-            field_val[0] = 0x7F; // Ensure it's a reasonable prime-like value
-            let field = BigNum::from_bytes_be(&field_val);
-            Ok(EcGroup {
-                curve_name: Some(curve),
-                field: field.clone(),
-                a: BigNum::zero(),
-                b: BigNum::from_u64(7),
-                generator: EcPoint::from_affine(BigNum::one(), BigNum::from_u64(2)),
-                order: field,
-                cofactor: BigNum::one(),
-                degree: bits,
-                conversion_form: PointConversionForm::Uncompressed,
-            })
-        }
+        _ => Err(CryptoError::Key(format!(
+            "EC: curve '{}' parameters not yet implemented in the built-in catalog",
+            curve.name()
+        ))),
     }
 }
 
