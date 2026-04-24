@@ -748,7 +748,7 @@ pub fn generate_params(bits: u32) -> CryptoResult<DsaParams> {
     let q_bits = select_subprime_bits(bits)?;
 
     // Step 1: Generate random prime q of q_bits
-    let q = crate::bn::prime::generate_prime(q_bits, false)?;
+    let q = crate::bn::prime::generate_random_prime(q_bits)?;
 
     // Step 2: Find prime p of `bits` where q divides (p - 1)
     let one = BigNum::one();

@@ -29,7 +29,9 @@ use std::io::{self, Write};
 use clap::Args;
 
 use openssl_common::error::CryptoError;
-use openssl_crypto::bn::prime::{check_prime, generate_prime, PrimalityResult};
+use openssl_crypto::bn::prime::{
+    check_prime, generate_prime, GeneratePrimeOptions, PrimalityResult,
+};
 use openssl_crypto::bn::BigNum;
 use openssl_crypto::context::LibContext;
 
@@ -119,7 +121,12 @@ impl PrimeArgs {
             return Err(CryptoError::Key("Bit length must not exceed 16384".into()));
         }
 
-        let prime = generate_prime(bits, self.safe)?;
+        let prime = generate_prime(&GeneratePrimeOptions {
+            bits,
+            safe: self.safe,
+            add: None,
+            rem: None,
+        })?;
 
         if self.hex {
             writeln!(out, "{}", prime.to_hex())?;
