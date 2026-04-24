@@ -1,0 +1,8 @@
+---
+source: crates/openssl-crypto/src/tests/test_asn1.rs
+expression: rendered
+---
+commonName        = 55 04 03
+rsaEncryption     = 2a 86 48 86 f7 0d 01 01 01
+sha256WithRSA     = 2a 86 48 86 f7 0d 01 01 0b
+prime256v1 (P-256)= 2a 86 48 ce 3d 03 01 07

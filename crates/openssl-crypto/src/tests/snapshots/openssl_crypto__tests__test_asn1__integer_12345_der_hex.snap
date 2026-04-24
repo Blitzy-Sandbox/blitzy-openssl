@@ -1,0 +1,5 @@
+---
+source: crates/openssl-crypto/src/tests/test_asn1.rs
+expression: hex
+---
+02023039
