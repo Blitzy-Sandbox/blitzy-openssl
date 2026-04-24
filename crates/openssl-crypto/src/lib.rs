@@ -289,6 +289,15 @@ pub mod pqc;
 /// (GCM, CCM, OCB, SIV, GCM-SIV) and legacy modes (CBC, CTR, CFB, OFB, XTS).
 pub mod symmetric;
 
+/// Block cipher modes of operation — GCM, CCM, CTR, CFB, OFB, XTS, SIV,
+/// GCM-SIV, CBC, ECB.
+///
+/// Thin re-export facade over [`symmetric`] that surfaces each mode under
+/// a dedicated submodule, matching the layout mandated by AAP §0.4.1.
+/// Consolidates `crypto/modes/*.c` (12 files) into named submodules that
+/// forward to the canonical cipher-aware implementations.
+pub mod modes;
+
 /// Hash functions — SHA-1/2/3, MD5, legacy, and SM3.
 ///
 /// Consolidates `crypto/sha/`, `crypto/md5/`, `crypto/md2/`, `crypto/md4/`,

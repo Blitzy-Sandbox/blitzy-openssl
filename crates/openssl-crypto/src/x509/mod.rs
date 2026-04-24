@@ -1,11 +1,25 @@
 //! X.509 certificate and Certificate Revocation List (CRL) processing.
 //!
 //! This module translates the OpenSSL `crypto/x509/*.c` sources (98 files
-//! in the original C tree) into idiomatic Rust.  The initial scope covers
-//! Certificate Revocation List (CRL) processing per RFC 5280 §5 via the
-//! [`crl`] submodule — additional sub-modules (certificate parsing, chain
-//! verification, extension handling, etc.) will be added as the C→Rust
-//! migration progresses.
+//! in the original C tree) into idiomatic Rust.  It is organised into the
+//! following submodules:
+//!
+//! | Submodule       | Purpose                                         | C source analogue                                         |
+//! |-----------------|-------------------------------------------------|-----------------------------------------------------------|
+//! | [`certificate`] | Full RFC 5280 certificate parse + accessors     | `crypto/x509/x_x509.c`, `x509_cmp.c`, `x509_set.c`        |
+//! | [`crl`]         | Certificate Revocation List processing          | `crypto/x509/x_crl.c`, `x509cset.c`, `t_crl.c`            |
+//! | [`store`]       | Trust anchor & intermediate certificate store   | `crypto/x509/x509_lu.c`, `x509_local.h::X509_STORE`       |
+//! | [`verify`]      | RFC 5280 §6 PKIX chain validation               | `crypto/x509/x509_vfy.c`, `v3_purp.c`, `x509_vpm.c`       |
+//!
+//! ## Relationship between `certificate` and `crl`
+//!
+//! The [`crl`] module pre-dates the [`certificate`] module and contains a
+//! minimal internal `X509Certificate` type that carries only
+//! `{issuer, serial}` — the bare minimum needed to query a revocation
+//! list.  The richer [`certificate::Certificate`] type bridges the two
+//! via [`certificate::Certificate::to_crl_lookup_handle`] so that CRL
+//! lookups remain ergonomic for callers who have already parsed the full
+//! certificate.
 //!
 //! ## Rule compliance
 //!
@@ -14,25 +28,32 @@
 //! * **R6** — All numeric conversions use checked/lossless patterns
 //!   (`try_from`, `i64::from`, `saturating_*`); no bare `as` casts for
 //!   narrowing operations.
-//! * **R8** — Zero `unsafe` blocks in this module or its descendants.
+//! * **R7** — Every shared-mutable data structure carries an explicit
+//!   `// LOCK-SCOPE:` annotation documenting its contention model.
+//! * **R8** — Zero `unsafe` blocks anywhere in this submodule tree.
 //! * **R9** — All public items carry `///` doc comments; the code is
 //!   warning-free under `#![deny(warnings)]`.
 //! * **R10** — Every exported item is reachable from the crate root via
-//!   `openssl_crypto::x509::...` and is exercised by the CRL test suite.
-//!
-//! ## Module layout
-//!
-//! | Submodule | Purpose | C source analogue |
-//! |-----------|---------|-------------------|
-//! | [`crl`]   | Certificate Revocation List processing | `crypto/x509/x_crl.c`, `x509cset.c`, `t_crl.c` |
+//!   `openssl_crypto::x509::...` and is exercised by the submodule test
+//!   suites.
 
 #![allow(clippy::module_inception)]
 
+pub mod certificate;
 pub mod crl;
+pub mod store;
+pub mod verify;
 
-// Re-export the six required public items at the `x509::` namespace so
-// downstream consumers can write `use openssl_crypto::x509::X509Crl;` and
-// similar succinct imports.
+// Re-export the common public types at the `x509::` namespace so that
+// downstream consumers can write `use openssl_crypto::x509::Certificate;`
+// and similar succinct imports.
+pub use certificate::{
+    Certificate, CertificateValidity, CertificateVersion, PublicKeyInfo, SignatureAlgorithmId,
+};
 pub use crl::{
     CrlMethod, DefaultCrlMethod, IssuingDistPoint, RevocationReason, RevokedEntry, X509Crl,
+};
+pub use store::{TrustAnchor, X509Store};
+pub use verify::{
+    VerificationError, VerificationOptions, VerificationResult, VerifiedChain, Verifier,
 };

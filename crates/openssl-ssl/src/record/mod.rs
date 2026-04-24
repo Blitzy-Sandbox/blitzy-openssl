@@ -36,6 +36,8 @@
 //! * **R8 — No unsafe:** The module contains zero `unsafe` blocks.
 //!   The crate root declares `#![forbid(unsafe_code)]`.
 
+use core::any::Any;
+
 use openssl_common::error::{SslError, SslResult};
 use openssl_common::param::{ParamBuilder, ParamSet, ParamValue};
 use openssl_crypto::bio::{Bio, MemBio};
@@ -43,6 +45,23 @@ use tracing::{debug, trace, warn};
 use zeroize::Zeroize;
 
 use crate::method::ProtocolVersion;
+
+// ---------------------------------------------------------------------------
+// Concrete record-method implementations
+// ---------------------------------------------------------------------------
+
+/// TLS record-layer implementation for TLS 1.0 / 1.1 / 1.2 / 1.3.
+///
+/// Translated from `ssl/record/rec_layer_s3.c` and
+/// `ssl/record/methods/tls_*.c` upstream.
+pub mod tls;
+
+/// DTLS record-layer implementation for DTLS 1.0 / 1.2 (and DTLS 1.3 when
+/// feature-gated).
+///
+/// Translated from `ssl/record/rec_layer_d1.c` and
+/// `ssl/record/methods/dtls_meth.c` upstream.
+pub mod dtls;
 
 // ---------------------------------------------------------------------------
 // Public constants
@@ -242,6 +261,14 @@ impl RecordHandle {
 /// `write_records` to describe an outbound record. The backing buffer is
 /// owned by the caller; the template carries a borrow for the duration of
 /// the write.
+///
+/// `Clone`/`Copy` are derived because all three fields are themselves `Copy`
+/// (`u8`, `u16`, and a shared `&[u8]` slice). This permits constructing
+/// pipelines of identical templates via `vec![tpl; n]` in tests and call sites
+/// that batch-write the same payload across multiple records — mirroring C's
+/// stack-allocated `OSSL_RECORD_TEMPLATE[]` arrays in the upstream record
+/// layer.
+#[derive(Clone, Copy)]
 pub struct RecordTemplate<'a> {
     /// Record content type (one of `SSL3_RT_*`).
     pub record_type: u8,
@@ -279,6 +306,12 @@ impl<'a> RecordTemplate<'a> {
 ///   must be returned via [`RecordMethod::release_record`].
 /// * If `rechandle` is `None`, `data` is a locally-allocated `Vec<u8>` and
 ///   will be dropped (and zeroized) when the record is cleared.
+///
+/// `Debug` is derived to support diagnostic printing of containers (e.g.
+/// `BTreeMap<(u16, u64), TlsRecord>`) used by the DTLS retransmit-reorder
+/// queue. The derived implementation prints the raw `data` buffer; callers
+/// that handle plaintext-sensitive records should redact before logging.
+#[derive(Debug)]
 pub struct TlsRecord {
     /// Opaque handle for provider-managed lifetime.
     /// `None` means the record buffer is owned locally (DTLS path).
@@ -377,12 +410,39 @@ pub type RecordPaddingCallback = Box<dyn Fn(u8, usize) -> usize + Send + Sync>;
 /// concrete type returned by each backend. Downcasting is performed by the
 /// backend itself; the record-layer framework only ever accesses the
 /// instance through the [`RecordMethod`] trait methods.
-pub trait RecordLayerInstance: Send {
+///
+/// # Safe Downcasting (R8 — no `unsafe`)
+///
+/// Concrete backends (e.g. `TlsRecordInstance`, `DtlsRecordInstance`)
+/// must downcast a `&dyn RecordLayerInstance` to their concrete type when
+/// dispatching. To remain in safe Rust the trait requires
+/// [`as_any`](RecordLayerInstance::as_any) and
+/// [`as_any_mut`](RecordLayerInstance::as_any_mut). Each implementor
+/// returns `self` (which automatically coerces to `&dyn Any` /
+/// `&mut dyn Any`). The framework then calls `.downcast_ref` /
+/// `.downcast_mut` on the returned trait object — both are safe APIs
+/// provided by the standard library. This avoids both raw pointer casts
+/// and reliance on TypeId-tagged unsafe transmutes.
+pub trait RecordLayerInstance: Send + Any {
     /// Returns a human-readable identifier for diagnostic logging.
-    /// Default: the type name.
+    /// Default: a generic placeholder; backends override with a concrete
+    /// label such as `"tls-record-instance"` or `"dtls-record-instance"`.
     fn name(&self) -> &'static str {
         "record-layer-instance"
     }
+
+    /// Returns a `&dyn Any` view of this instance.
+    ///
+    /// Backends must implement this as `fn as_any(&self) -> &dyn Any { self }`.
+    /// Used by backend-specific downcast helpers to recover the concrete
+    /// type without resorting to `unsafe`.
+    fn as_any(&self) -> &dyn Any;
+
+    /// Returns a `&mut dyn Any` view of this instance.
+    ///
+    /// Backends must implement this as
+    /// `fn as_any_mut(&mut self) -> &mut dyn Any { self }`.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 // ---------------------------------------------------------------------------
@@ -1949,6 +2009,7 @@ pub fn param_get_bool(set: &ParamSet, key: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::any::Any;
 
     // ------------------------------------------------------------------
     // Fixture: minimal RecordMethod implementation for tests.
@@ -1967,6 +2028,14 @@ mod tests {
     impl RecordLayerInstance for TestInstance {
         fn name(&self) -> &'static str {
             "test-instance"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
         }
     }
 

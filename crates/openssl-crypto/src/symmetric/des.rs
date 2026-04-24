@@ -1751,6 +1751,20 @@ impl DesKeySchedule {
         }
         Ok(Self::set_key_unchecked(key))
     }
+
+    /// Encrypts a single 8-byte DES block in place using this pre-expanded
+    /// sub-key schedule.
+    ///
+    /// This is a thin wrapper over the internal `des_block_encrypt` routine,
+    /// exposed to support algorithms (such as MDC2 in `crate::hash::legacy`)
+    /// that derive DES keys on the fly via [`Self::set_key_unchecked`] and
+    /// therefore cannot use the weak-key-rejecting [`Des::new`] constructor.
+    ///
+    /// Translates the `DES_encrypt1(&block, &schedule, DES_ENCRYPT)` call
+    /// pattern from `crypto/mdc2/mdc2dgst.c`.
+    pub fn encrypt_block(&self, block: &mut [u8; DES_BLOCK_BYTES]) {
+        des_block_encrypt(block, self, true);
+    }
 }
 
 // ---------------------------------------------------------------------------
