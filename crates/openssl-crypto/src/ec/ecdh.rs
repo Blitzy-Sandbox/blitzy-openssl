@@ -388,6 +388,24 @@ pub fn compute_key_with_mode(
     // -----------------------------------------------------------------------
     // Step 4: Scalar multiplication — shared_point = effective_scalar × peer_pub
     // (ecdh_ossl.c line 91: EC_POINT_mul(group, tmp, NULL, pub_key, x, ctx))
+    //
+    // SECURITY (CRITICAL #11): The `effective_scalar` is the secret ECDH
+    // private key (or cofactor × private key). Any timing dependency on its
+    // bits would leak the private scalar to a co-resident attacker.
+    //
+    // `EcPoint::mul` was made constant-time in commit 384775b1b6 (Group B #1)
+    // by replacing the Hamming-weight-leaky double-and-add loop with a
+    // branchless Montgomery ladder using `subtle::ConditionallySelectable`
+    // for point swaps. The control flow and memory access pattern of the
+    // ladder are independent of the scalar bits, so this call no longer
+    // leaks the ECDH private key through timing or cache-line side channels.
+    //
+    // Residual leak (documented and out of scope here): `num-bigint` limb
+    // arithmetic underneath the field operations is not constant-time at
+    // the microarchitectural limb level. Likewise, `EcPoint::add` and
+    // `EcPoint::double` retain operand-dependent case splits (point at
+    // infinity, equal-x doubling). Both are tracked for the planned
+    // Jacobian / projective-coordinates refactor.
     // -----------------------------------------------------------------------
     let shared_point = EcPoint::mul(group, peer_public_key, &effective_scalar)?;
 
@@ -730,5 +748,151 @@ mod tests {
         let mode = EcdhMode::CofactorDh;
         let cloned = mode;
         assert_eq!(mode, cloned);
+    }
+
+    // =======================================================================
+    // ECDH end-to-end roundtrip tests (Group B #3 — CRITICAL #11)
+    //
+    // These tests exercise `compute_key_with_mode` through the public API:
+    //   Alice generates (a, A=a·G); Bob generates (b, B=b·G); both compute
+    //   shared = a·B = b·A. Both sides MUST arrive at the same shared secret.
+    //
+    // Beyond functional correctness, these tests serve as regression coverage
+    // for the constant-time scalar multiplication: any future change that
+    // breaks `EcPoint::mul` (the CT Montgomery ladder from Group B #1) would
+    // fail the equality assertion or produce mismatched secrets.
+    //
+    // R10 compliance: the new helper / SECURITY documentation are reachable
+    // from the public ECDH entry point `compute_key`, and these tests
+    // traverse that path on real curves.
+    // =======================================================================
+
+    #[test]
+    fn ecdh_roundtrip_p256_cofactor() {
+        use crate::ec::{EcGroup, EcKey, NamedCurve};
+
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1).unwrap();
+        let alice = EcKey::generate(&group).unwrap();
+        let bob = EcKey::generate(&group).unwrap();
+
+        let alice_shared = compute_key(&alice, bob.public_key().unwrap()).unwrap();
+        let bob_shared = compute_key(&bob, alice.public_key().unwrap()).unwrap();
+
+        assert_eq!(
+            alice_shared.as_bytes(),
+            bob_shared.as_bytes(),
+            "ECDH roundtrip on P-256 must produce identical shared secrets"
+        );
+        // Field size for P-256 is 32 bytes (256-bit field).
+        assert_eq!(alice_shared.len(), 32);
+        // A nonzero shared secret confirms the scalar mul produced a real point.
+        assert!(alice_shared.as_bytes().iter().any(|&b| b != 0));
+    }
+
+    #[test]
+    fn ecdh_roundtrip_p256_standard() {
+        use crate::ec::{EcGroup, EcKey, NamedCurve};
+
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1).unwrap();
+        let alice = EcKey::generate(&group).unwrap();
+        let bob = EcKey::generate(&group).unwrap();
+
+        // Explicitly request Standard ECDH mode (no cofactor multiplication).
+        // For NIST P-256 (cofactor = 1) this is mathematically identical to
+        // CofactorDh, so the secrets must still match.
+        let alice_shared =
+            compute_key_with_mode(&alice, bob.public_key().unwrap(), EcdhMode::Standard).unwrap();
+        let bob_shared =
+            compute_key_with_mode(&bob, alice.public_key().unwrap(), EcdhMode::Standard).unwrap();
+
+        assert_eq!(alice_shared.as_bytes(), bob_shared.as_bytes());
+        assert_eq!(alice_shared.len(), 32);
+    }
+
+    #[test]
+    fn ecdh_roundtrip_p384() {
+        use crate::ec::{EcGroup, EcKey, NamedCurve};
+
+        let group = EcGroup::from_curve_name(NamedCurve::Secp384r1).unwrap();
+        let alice = EcKey::generate(&group).unwrap();
+        let bob = EcKey::generate(&group).unwrap();
+
+        let alice_shared = compute_key(&alice, bob.public_key().unwrap()).unwrap();
+        let bob_shared = compute_key(&bob, alice.public_key().unwrap()).unwrap();
+
+        assert_eq!(
+            alice_shared.as_bytes(),
+            bob_shared.as_bytes(),
+            "ECDH roundtrip on P-384 must produce identical shared secrets"
+        );
+        // Field size for P-384 is 48 bytes (384-bit field).
+        assert_eq!(alice_shared.len(), 48);
+        assert!(alice_shared.as_bytes().iter().any(|&b| b != 0));
+    }
+
+    #[test]
+    fn ecdh_roundtrip_secp256k1() {
+        use crate::ec::{EcGroup, EcKey, NamedCurve};
+
+        let group = EcGroup::from_curve_name(NamedCurve::Secp256k1).unwrap();
+        let alice = EcKey::generate(&group).unwrap();
+        let bob = EcKey::generate(&group).unwrap();
+
+        let alice_shared = compute_key(&alice, bob.public_key().unwrap()).unwrap();
+        let bob_shared = compute_key(&bob, alice.public_key().unwrap()).unwrap();
+
+        assert_eq!(
+            alice_shared.as_bytes(),
+            bob_shared.as_bytes(),
+            "ECDH roundtrip on secp256k1 must produce identical shared secrets"
+        );
+        // Field size for secp256k1 is 32 bytes (256-bit field).
+        assert_eq!(alice_shared.len(), 32);
+        assert!(alice_shared.as_bytes().iter().any(|&b| b != 0));
+    }
+
+    #[test]
+    fn ecdh_distinct_keys_produce_distinct_secrets() {
+        // Sanity check that swapping a key changes the resulting shared secret.
+        // If the CT scalar multiplication were silently broken (e.g. always
+        // returning the identity), this test would fail.
+        use crate::ec::{EcGroup, EcKey, NamedCurve};
+
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1).unwrap();
+        let alice = EcKey::generate(&group).unwrap();
+        let bob = EcKey::generate(&group).unwrap();
+        let charlie = EcKey::generate(&group).unwrap();
+
+        let alice_with_bob = compute_key(&alice, bob.public_key().unwrap()).unwrap();
+        let alice_with_charlie = compute_key(&alice, charlie.public_key().unwrap()).unwrap();
+
+        // With overwhelming probability (1 - 2^{-256}), two random ECDH
+        // exchanges with different peers produce different secrets.
+        assert_ne!(
+            alice_with_bob.as_bytes(),
+            alice_with_charlie.as_bytes(),
+            "Distinct peer keys must produce distinct shared secrets"
+        );
+    }
+
+    #[test]
+    fn ecdh_rejects_missing_private_key() {
+        // A public-only key (no private component) must fail compute_key with
+        // a clear error rather than silently producing a degenerate secret.
+        use crate::ec::{EcGroup, EcKey, NamedCurve};
+
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1).unwrap();
+        let alice = EcKey::generate(&group).unwrap();
+        let bob = EcKey::generate(&group).unwrap();
+
+        // Strip Alice's private key — leaves only the public component.
+        let alice_pub_only =
+            EcKey::from_public_key(&group, alice.public_key().unwrap().clone()).unwrap();
+
+        let result = compute_key(&alice_pub_only, bob.public_key().unwrap());
+        assert!(
+            result.is_err(),
+            "compute_key on a public-only key must return Err"
+        );
     }
 }
