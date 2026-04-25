@@ -79,14 +79,54 @@ use std::cmp::Ordering;
 use std::fmt::{self, Display, Formatter};
 
 use bitflags::bitflags;
-use tracing::{debug, warn};
+use der::{Decode, Encode};
+use spki::SubjectPublicKeyInfoRef;
+use subtle::ConstantTimeEq;
+use tracing::{debug, trace, warn};
 
 use openssl_common::time::OsslTime;
 use openssl_common::{CryptoError, CryptoResult};
 
+use super::certificate::{
+    PublicKeyInfo, SignatureAlgorithmId, OID_ECDSA_SHA256, OID_ECDSA_SHA384, OID_ECDSA_SHA512,
+    OID_ED25519, OID_ED448, OID_SHA256_WITH_RSA, OID_SHA384_WITH_RSA, OID_SHA512_WITH_RSA,
+};
 use crate::asn1::{
     parse_tlv_header, AlgorithmIdentifier, Asn1Class, Asn1Object, Asn1Tag, Asn1Time,
 };
+use crate::bn::montgomery::mod_exp;
+use crate::bn::BigNum;
+use crate::ec::curve25519::{ed25519_verify, ed448_verify};
+use crate::ec::ecdsa::verify_der as ecdsa_verify_der;
+use crate::ec::{EcGroup, EcKey, EcPoint, EcxKeyType, EcxPublicKey, NamedCurve};
+use crate::hash::{create_sha_digest, ShaAlgorithm};
+
+// ---------------------------------------------------------------------------
+// CRL signature verification — local OID constants
+//
+// These OIDs are the same as those in `crate::x509::verify` but those private
+// constants are not exported. We replicate them here to keep the CRL
+// verification self-contained. Group D will deduplicate this when the
+// shared signature-verification module is introduced (along with the EC SHA
+// duplication referenced in the review feedback). LOCK-SCOPE: const data,
+// no synchronization needed; values reflect IETF/NIST canonical assignments.
+// ---------------------------------------------------------------------------
+
+/// SHA-256 algorithm identifier OID (NIST).
+const OID_SHA256: &str = "2.16.840.1.101.3.4.2.1";
+/// SHA-384 algorithm identifier OID (NIST).
+const OID_SHA384: &str = "2.16.840.1.101.3.4.2.2";
+/// SHA-512 algorithm identifier OID (NIST).
+const OID_SHA512: &str = "2.16.840.1.101.3.4.2.3";
+
+/// NIST P-256 (prime256v1) curve OID.
+const OID_ECC_P256: &str = "1.2.840.10045.3.1.7";
+/// NIST P-384 (secp384r1) curve OID.
+const OID_ECC_P384: &str = "1.3.132.0.34";
+/// NIST P-521 (secp521r1) curve OID.
+const OID_ECC_P521: &str = "1.3.132.0.35";
+/// SECG secp256k1 curve OID.
+const OID_ECC_SECP256K1: &str = "1.3.132.0.10";
 
 // =============================================================================
 // Section 1 — Revocation Reason Codes (RFC 5280 §5.3.1)
@@ -1647,18 +1687,38 @@ impl X509Crl {
     /// backends should construct a [`DefaultCrlMethod`] or implement
     /// [`CrlMethod`] directly.
     ///
-    /// The `issuer_key` is an opaque byte sequence whose format depends
-    /// on the signature algorithm (e.g., `SubjectPublicKeyInfo` bytes).
-    /// This wrapper stub returns a provisional `Ok(true)` for valid
-    /// CRLs that have a non-empty cached TBS DER; the full signature
-    /// arithmetic is performed by the signature layer (outside this
-    /// module) when a real `CrlMethod` implementation is wired in.
+    /// The `issuer_key` is the DER encoding of the issuer's
+    /// `SubjectPublicKeyInfo` structure (RFC 5280 §4.1.2.7). The
+    /// verification dispatches to RSASSA-PKCS1-v1_5 (RSA), ECDSA, or
+    /// `EdDSA` based on the CRL's `signatureAlgorithm` OID.
+    ///
+    /// # Return Contract
+    ///
+    /// - `Ok(true)` — the signature is cryptographically valid for the
+    ///   given TBS bytes and issuer public key.
+    /// - `Ok(false)` — the CRL is structurally well-formed but the
+    ///   signature does not verify (tampered TBS, wrong issuer key,
+    ///   corrupt signature, malformed embedded EMSA-PKCS1-v1_5
+    ///   encoding for RSA, etc.).
+    /// - `Err(CryptoError::Verification(_))` — a structural error
+    ///   prevented verification (missing cached TBS DER, missing
+    ///   signature, outer/inner `signatureAlgorithm` OID mismatch
+    ///   per RFC 5280 §5.1.1.2, malformed `SubjectPublicKeyInfo`,
+    ///   or an unsupported signature algorithm).
+    ///
+    /// # Supported Algorithms
+    ///
+    /// - RSASSA-PKCS1-v1_5 with SHA-256 / SHA-384 / SHA-512.
+    /// - ECDSA over P-256 / P-384 / P-521 / secp256k1, paired with
+    ///   the corresponding SHA digest per the `signatureAlgorithm` OID.
+    /// - Pure Ed25519 and pure Ed448 (RFC 8410 + RFC 8032 §5.1/§5.2;
+    ///   X.509 CRL signatures are always pure, never `*ph` / `*ctx`).
     ///
     /// # Errors
     ///
-    /// Returns [`CryptoError::Verification`] if the CRL has no TBS
-    /// DER cached (cannot be verified), no signature, or was flagged
-    /// invalid during parsing.
+    /// Returns [`CryptoError::Verification`] for any structural error
+    /// listed above. Cryptographic verification failures return
+    /// `Ok(false)` and never an error variant.
     pub fn verify_signature(&self, issuer_key: &[u8]) -> CryptoResult<bool> {
         let method = DefaultCrlMethod::new();
         method.verify(self, issuer_key)
@@ -1820,15 +1880,31 @@ impl DefaultCrlMethod {
 impl CrlMethod for DefaultCrlMethod {
     /// Verifies the CRL signature.
     ///
-    /// This default implementation validates the precondition invariants
-    /// (non-empty TBS, non-empty signature, valid flags) and returns a
-    /// provisional `Ok(true)` when the CRL structure is sound. Actual
-    /// cryptographic verification is delegated to the signature layer
-    /// via the issuer key's verify operation, which is not yet wired
-    /// through this stub — the return value of `Ok(true)` indicates
-    /// "structural preconditions met"; callers requiring end-to-end
-    /// signature check must use the signature layer directly with
-    /// [`X509Crl::tbs_der`] and [`X509Crl::signature`].
+    /// This implementation performs full cryptographic verification of
+    /// `signatureValue` over `tbsCertList` per RFC 5280 §5.1.1.3, with
+    /// the algorithm-consistency check from RFC 5280 §5.1.1.2 (the outer
+    /// `signatureAlgorithm` MUST equal the inner `signature` field of
+    /// `TBSCertList`).
+    ///
+    /// `issuer_key` is expected to be the DER encoding of a
+    /// `SubjectPublicKeyInfo` (SPKI) — the same encoding stored under
+    /// `tbs_certificate.subject_public_key_info` in the issuing
+    /// certificate. Callers invoking this from the chain-verification
+    /// path obtain the bytes from
+    /// [`super::certificate::PublicKeyInfo::subject_public_key_info_der`].
+    ///
+    /// Supported signature algorithms:
+    /// - RSASSA-PKCS1-v1_5 with SHA-256, SHA-384, SHA-512 (RFC 8017 §8.2)
+    /// - ECDSA over P-256 / P-384 / P-521 / secp256k1 with SHA-256,
+    ///   SHA-384, SHA-512 (X9.62 / RFC 5480)
+    /// - Pure Ed25519 / Ed448 (RFC 8410, RFC 8032 §5.1/§5.2)
+    ///
+    /// Returns:
+    /// - `Ok(true)` — signature verifies cryptographically.
+    /// - `Ok(false)` — well-formed inputs but signature does not verify.
+    /// - `Err(CryptoError::Verification(_))` — structural error
+    ///   (malformed inputs, unsupported algorithm, mismatched outer/inner
+    ///   algorithm, key parsing failure).
     fn verify(&self, crl: &X509Crl, issuer_key: &[u8]) -> CryptoResult<bool> {
         if !crl.is_valid() {
             return Err(CryptoError::Verification(
@@ -1850,15 +1926,93 @@ impl CrlMethod for DefaultCrlMethod {
                 "issuer public key is empty".to_string(),
             ));
         }
-        // The actual signature arithmetic is provided by the signature
-        // layer; this default method verifies structural preconditions.
+
         debug!(
             tbs_len = crl.info.tbs_der.len(),
             sig_len = crl.signature.len(),
             key_len = issuer_key.len(),
-            "DefaultCrlMethod: preconditions validated",
+            "DefaultCrlMethod: preconditions validated; entering crypto",
         );
-        Ok(true)
+
+        // RFC 5280 §5.1.1.2 — outer and inner signatureAlgorithm MUST match.
+        let outer_oid = crl
+            .signature_algorithm
+            .algorithm
+            .to_oid_string()
+            .map_err(|e| {
+                CryptoError::Verification(format!(
+                    "CRL outer signatureAlgorithm OID decode: {e}"
+                ))
+            })?;
+        let inner_oid = crl
+            .info
+            .signature_algorithm
+            .algorithm
+            .to_oid_string()
+            .map_err(|e| {
+                CryptoError::Verification(format!(
+                    "CRL inner (TBS) signatureAlgorithm OID decode: {e}"
+                ))
+            })?;
+        if outer_oid != inner_oid {
+            return Err(CryptoError::Verification(format!(
+                "CRL outer/inner signatureAlgorithm mismatch: {outer_oid} != {inner_oid}",
+            )));
+        }
+
+        // Encode outer parameters back to DER for SignatureAlgorithmId.
+        let parameters_der = match crl.signature_algorithm.parameters.as_ref() {
+            Some(asn1_type) => Some(asn1_type.encode_der().map_err(|e| {
+                CryptoError::Verification(format!(
+                    "CRL signatureAlgorithm parameters encode: {e}"
+                ))
+            })?),
+            None => None,
+        };
+        let sig_alg = SignatureAlgorithmId {
+            oid: outer_oid,
+            parameters_der,
+        };
+
+        // Parse the issuer SubjectPublicKeyInfo via the spki crate so
+        // that we can route the algorithm OID and key material into the
+        // RSA / ECDSA / EdDSA branches consistently with the certificate
+        // verification path in `crate::x509::verify`.
+        let spki = SubjectPublicKeyInfoRef::from_der(issuer_key).map_err(|e| {
+            CryptoError::Verification(format!(
+                "CRL issuer SubjectPublicKeyInfo decode: {e}"
+            ))
+        })?;
+        let alg_params_der = match spki.algorithm.parameters.as_ref() {
+            Some(any) => Some(any.to_der().map_err(|e| {
+                CryptoError::Verification(format!(
+                    "CRL issuer SPKI parameters encode: {e}"
+                ))
+            })?),
+            None => None,
+        };
+        let public_key_info = PublicKeyInfo {
+            algorithm_oid: spki.algorithm.oid.to_string(),
+            algorithm_parameters_der: alg_params_der,
+            public_key_bytes: spki.subject_public_key.raw_bytes().to_vec(),
+            subject_public_key_info_der: issuer_key.to_vec(),
+        };
+
+        let tbs = crl.info.tbs_der.as_slice();
+        let sig = crl.signature.as_slice();
+
+        if sig_alg.is_rsa() {
+            crl_verify_rsa_pkcs1_v1_5(&sig_alg, &public_key_info, tbs, sig)
+        } else if sig_alg.is_ecdsa() {
+            crl_verify_ecdsa(&sig_alg, &public_key_info, tbs, sig)
+        } else if sig_alg.is_eddsa() {
+            crl_verify_eddsa(&sig_alg, &public_key_info, tbs, sig)
+        } else {
+            Err(CryptoError::Verification(format!(
+                "CRL signatureAlgorithm OID {} not supported",
+                sig_alg.oid
+            )))
+        }
     }
 
     /// Looks up a revoked entry by serial number.
@@ -1904,6 +2058,342 @@ impl CrlMethod for DefaultCrlMethod {
 
         Ok(Some(entry.clone()))
     }
+}
+
+// =============================================================================
+// Section 11.X — CRL Signature Verification Helpers
+//
+// These helpers replicate the certificate signature-verification path in
+// `crate::x509::verify` (RSA-PKCS1-v1_5, ECDSA, EdDSA) but adapted to the
+// CRL-specific return contract:
+//   - `Ok(true)`  : signature verifies cryptographically
+//   - `Ok(false)` : signature is well-formed but does NOT verify (or the
+//                   recovered EM is malformed for RSA, signaling a
+//                   forgery / corruption)
+//   - `Err(CryptoError::Verification(_))` : structural / decoding error
+//                   that prevents verification from being performed
+//
+// They share the same OID dispatch tables, EMSA-PKCS1-v1_5 parser, and
+// SubjectPublicKeyInfo plumbing as the certificate path. Group D (per
+// the review feedback) will deduplicate this with the verify.rs path
+// when the shared signature-verification module is introduced.
+//
+// LOCK-SCOPE: pure functions with no shared mutable state.
+// SAFETY/UNSAFE: zero `unsafe` (R8 ABSOLUTE).
+// R6: all length-narrowing conversions use checked `try_from`.
+// R5: structural-failure paths return `Ok(false)`, never sentinel ints.
+// =============================================================================
+
+/// Verifies a CRL signature using RSASSA-PKCS1-v1_5 per RFC 8017 §8.2.2.
+///
+/// Mirrors `verify_rsa_pkcs1_v1_5` in `crate::x509::verify` (verify.rs:1192)
+/// but returns `CryptoResult<bool>` for CRL semantics:
+///   - `Ok(true)` if `RSAVP1(s) == EMSA-PKCS1-v1_5-encode(H(tbs))`
+///   - `Ok(false)` if signature length mismatches modulus, EM is malformed,
+///                 or `DigestInfo` OID/digest mismatch
+///   - `Err(...)` if the SPKI cannot be decoded as `RSAPublicKey` or modular
+///                 exponentiation fails for an internal reason
+fn crl_verify_rsa_pkcs1_v1_5(
+    sig_alg: &SignatureAlgorithmId,
+    spki: &PublicKeyInfo,
+    tbs: &[u8],
+    sig: &[u8],
+) -> CryptoResult<bool> {
+    let sha = crl_sha_for_rsa_sig(&sig_alg.oid)?;
+    let hash_oid = crl_sha_digest_oid(sha)?;
+
+    let mut digest = create_sha_digest(sha)?;
+    let expected_hash = digest.digest(tbs)?;
+
+    let (modulus, exponent) = crl_parse_rsa_public_key(&spki.public_key_bytes)?;
+
+    let modulus_byte_count = modulus.num_bytes();
+    let mod_byte_len = usize::try_from(modulus_byte_count)
+        .map_err(|_| CryptoError::Verification("RSA modulus size overflow".into()))?;
+    if mod_byte_len == 0 {
+        return Err(CryptoError::Verification(
+            "RSA modulus must be non-zero".into(),
+        ));
+    }
+    if sig.len() != mod_byte_len {
+        // RFC 8017 §8.2.2 step 1: signature length MUST equal modulus length.
+        return Ok(false);
+    }
+
+    // RFC 8017 §8.2.2 step 2: RSAVP1 — recovered_int = sig_int^exponent mod modulus.
+    let sig_int = BigNum::from_bytes_be(sig);
+    let recovered_int = mod_exp(&sig_int, &exponent, &modulus)?;
+    let encoded_message = recovered_int.to_bytes_be_padded(mod_byte_len)?;
+
+    // RFC 8017 §9.2: parse EMSA-PKCS1-v1_5 encoding and extract digest.
+    let Some(embedded_digest) = crl_parse_emsa_pkcs1_v1_5(&encoded_message, hash_oid) else {
+        return Ok(false);
+    };
+
+    // Constant-time compare to avoid timing side-channel on the digest.
+    let digests_match = bool::from(embedded_digest.ct_eq(expected_hash.as_slice()));
+    Ok(digests_match)
+}
+
+/// Verifies a CRL signature using ECDSA per ANSI X9.62 / RFC 5759.
+///
+/// Mirrors `verify_ecdsa` in `crate::x509::verify` (verify.rs:1097) but
+/// returns `CryptoResult<bool>` directly. The `tbsCertList` is hashed
+/// with the SHA variant determined from the signatureAlgorithm OID, then
+/// the resulting digest is verified against the SPKI public key.
+fn crl_verify_ecdsa(
+    sig_alg: &SignatureAlgorithmId,
+    spki: &PublicKeyInfo,
+    tbs: &[u8],
+    sig: &[u8],
+) -> CryptoResult<bool> {
+    let sha = crl_sha_for_ecdsa_sig(&sig_alg.oid)?;
+    let curve_oid = crl_curve_oid_from_spki_params(spki)?;
+    let curve = crl_curve_for_oid(&curve_oid)?;
+    let group = EcGroup::from_curve_name(curve)?;
+    let point = EcPoint::from_bytes(&group, &spki.public_key_bytes)?;
+    let key = EcKey::from_public_key(&group, point)?;
+
+    let mut digest = create_sha_digest(sha)?;
+    let hash = digest.digest(tbs)?;
+
+    // ecdsa_verify_der already returns CryptoResult<bool>: Ok(true) for
+    // valid, Ok(false) for invalid-but-well-formed, Err for structural.
+    ecdsa_verify_der(&key, &hash, sig)
+}
+
+/// Verifies a CRL signature using `PureEdDSA` (Ed25519 / Ed448) per RFC 8410.
+///
+/// Mirrors `verify_eddsa` in `crate::x509::verify` (verify.rs:1132) but
+/// returns `CryptoResult<bool>` directly. RFC 8410 §6 mandates pure-mode
+/// Ed25519/Ed448 for X.509 (and by extension CRL) signatures: no context
+/// string is permitted, so `context = None`.
+fn crl_verify_eddsa(
+    sig_alg: &SignatureAlgorithmId,
+    spki: &PublicKeyInfo,
+    tbs: &[u8],
+    sig: &[u8],
+) -> CryptoResult<bool> {
+    match sig_alg.oid.as_str() {
+        OID_ED25519 => {
+            let pk = EcxPublicKey::new(EcxKeyType::Ed25519, spki.public_key_bytes.clone())?;
+            // X.509 / CRL signatures use Pure Ed25519 (RFC 8410 + RFC 8032 §5.1):
+            // no context string is permitted.
+            ed25519_verify(&pk, tbs, sig, None)
+        }
+        OID_ED448 => {
+            let pk = EcxPublicKey::new(EcxKeyType::Ed448, spki.public_key_bytes.clone())?;
+            ed448_verify(&pk, tbs, sig, None)
+        }
+        other => Err(CryptoError::Verification(format!(
+            "EdDSA OID {other} not supported"
+        ))),
+    }
+}
+
+/// Maps an RSASSA-PKCS1-v1_5 signatureAlgorithm OID to its SHA digest variant.
+fn crl_sha_for_rsa_sig(oid: &str) -> CryptoResult<ShaAlgorithm> {
+    match oid {
+        OID_SHA256_WITH_RSA => Ok(ShaAlgorithm::Sha256),
+        OID_SHA384_WITH_RSA => Ok(ShaAlgorithm::Sha384),
+        OID_SHA512_WITH_RSA => Ok(ShaAlgorithm::Sha512),
+        other => Err(CryptoError::Verification(format!(
+            "RSA signature hash OID {other} not supported"
+        ))),
+    }
+}
+
+/// Maps an ECDSA signatureAlgorithm OID to its SHA digest variant.
+fn crl_sha_for_ecdsa_sig(oid: &str) -> CryptoResult<ShaAlgorithm> {
+    match oid {
+        OID_ECDSA_SHA256 => Ok(ShaAlgorithm::Sha256),
+        OID_ECDSA_SHA384 => Ok(ShaAlgorithm::Sha384),
+        OID_ECDSA_SHA512 => Ok(ShaAlgorithm::Sha512),
+        other => Err(CryptoError::Verification(format!(
+            "ECDSA signature hash OID {other} not supported"
+        ))),
+    }
+}
+
+/// Maps a SHA variant to the digest-OID string used inside the
+/// EMSA-PKCS1-v1_5 `DigestInfo` structure.
+fn crl_sha_digest_oid(alg: ShaAlgorithm) -> CryptoResult<&'static str> {
+    match alg {
+        ShaAlgorithm::Sha256 => Ok(OID_SHA256),
+        ShaAlgorithm::Sha384 => Ok(OID_SHA384),
+        ShaAlgorithm::Sha512 => Ok(OID_SHA512),
+        other => Err(CryptoError::Verification(format!(
+            "{} not supported for PKCS1-v1.5 DigestInfo",
+            other.name()
+        ))),
+    }
+}
+
+/// Maps an EC named-curve OID to its `NamedCurve` enum variant.
+fn crl_curve_for_oid(oid: &str) -> CryptoResult<NamedCurve> {
+    match oid {
+        OID_ECC_P256 => Ok(NamedCurve::Prime256v1),
+        OID_ECC_P384 => Ok(NamedCurve::Secp384r1),
+        OID_ECC_P521 => Ok(NamedCurve::Secp521r1),
+        OID_ECC_SECP256K1 => Ok(NamedCurve::Secp256k1),
+        other => Err(CryptoError::Verification(format!(
+            "ECC curve OID {other} not supported"
+        ))),
+    }
+}
+
+/// Extracts the named-curve OID from an SPKI's algorithm parameters
+/// (`ECParameters ::= namedCurve OBJECT IDENTIFIER`).
+fn crl_curve_oid_from_spki_params(pk: &PublicKeyInfo) -> CryptoResult<String> {
+    let params = pk.algorithm_parameters_der.as_ref().ok_or_else(|| {
+        CryptoError::Verification("ECDSA SPKI missing algorithm parameters".into())
+    })?;
+    let oid = der::asn1::ObjectIdentifier::from_der(params).map_err(|e| {
+        CryptoError::Verification(format!("ECDSA SPKI params not an OID: {e}"))
+    })?;
+    Ok(oid.to_string())
+}
+
+/// Parses an `RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }`
+/// per RFC 8017 §A.1.1 from the `subject_public_key_bytes` of an SPKI.
+///
+/// Mirrors `parse_rsa_public_key` in `crate::x509::verify` (verify.rs:1246).
+fn crl_parse_rsa_public_key(der_bytes: &[u8]) -> CryptoResult<(BigNum, BigNum)> {
+    use der::{Reader, SliceReader};
+
+    let mut root = SliceReader::new(der_bytes).map_err(|e| {
+        CryptoError::Verification(format!("RSA SPKI outer read: {e}"))
+    })?;
+    let mut inner = root
+        .sequence(|r| {
+            let n = crl_decode_unsigned_integer(r)?;
+            let e = crl_decode_unsigned_integer(r)?;
+            Ok((n, e))
+        })
+        .map_err(|e| CryptoError::Verification(format!("RSA SPKI SEQ: {e}")))?;
+
+    if !root.is_finished() {
+        trace!("crl_verify: trailing bytes after RSAPublicKey sequence");
+    }
+
+    let (n_bytes, e_bytes) = (
+        inner.0.take().unwrap_or_default(),
+        inner.1.take().unwrap_or_default(),
+    );
+    if n_bytes.is_empty() || e_bytes.is_empty() {
+        return Err(CryptoError::Verification(
+            "RSA SPKI has empty modulus or exponent".into(),
+        ));
+    }
+    Ok((
+        BigNum::from_bytes_be(&n_bytes),
+        BigNum::from_bytes_be(&e_bytes),
+    ))
+}
+
+/// Decodes an ASN.1 INTEGER as an unsigned big-endian byte vector,
+/// stripping the leading 0x00 sign-padding byte when present.
+///
+/// The reader is generic over any [`der::Reader`] so this can be invoked
+/// from both top-level and inner-sequence contexts. Mirrors
+/// `decode_unsigned_integer` in `crate::x509::verify` (verify.rs:1286).
+fn crl_decode_unsigned_integer<'a, R: der::Reader<'a>>(
+    r: &mut R,
+) -> der::Result<CrlUnsignedHolder> {
+    let header = r.peek_header()?;
+    if header.tag != der::Tag::Integer {
+        return Err(header.tag.unexpected_error(Some(der::Tag::Integer)));
+    }
+    let tlv = der::asn1::Int::decode(r)?;
+    let bytes = tlv.as_bytes();
+    // ASN.1 DER encodes unsigned INTEGERs by prepending a 0x00 sign byte
+    // whenever the high bit of the first content byte is set; some encoders
+    // also emit a redundant leading 0x00 even when not strictly required.
+    // Both cases require stripping the leading 0x00 before treating the
+    // remainder as the unsigned big-endian magnitude. RFC 8017 §4.1 / X.690
+    // §8.3.3.
+    let stripped: Vec<u8> = if bytes.len() > 1 && bytes[0] == 0x00 {
+        bytes[1..].to_vec()
+    } else {
+        bytes.to_vec()
+    };
+    Ok(CrlUnsignedHolder(Some(stripped)))
+}
+
+/// Owning holder for an unsigned integer's stripped big-endian bytes.
+/// Mirrors `UnsignedHolder` in `crate::x509::verify` (verify.rs:1309).
+struct CrlUnsignedHolder(Option<Vec<u8>>);
+
+impl CrlUnsignedHolder {
+    fn take(&mut self) -> Option<Vec<u8>> {
+        self.0.take()
+    }
+}
+
+/// Parses an EMSA-PKCS1-v1_5 encoded message per RFC 8017 §9.2 and
+/// returns the embedded digest if and only if all structural checks
+/// pass and the embedded `digestAlgorithm` OID matches `expected_hash_oid`.
+///
+/// Returns `None` for any structural failure or OID mismatch — callers
+/// translate this to `Ok(false)` (well-formed but invalid signature).
+///
+/// Mirrors `parse_emsa_pkcs1_v1_5` in `crate::x509::verify` (verify.rs:1328)
+/// but uses `Option` for the failure path because, for CRL semantics, all
+/// EM-decoding failures are treated as "signature does not verify" rather
+/// than as decode-time errors (the EM is the recovered signer output, so
+/// a malformed EM means the signature itself is bad).
+fn crl_parse_emsa_pkcs1_v1_5(em: &[u8], expected_hash_oid: &str) -> Option<Vec<u8>> {
+    if em.len() < 11 {
+        return None;
+    }
+    if em[0] != 0x00 || em[1] != 0x01 {
+        return None;
+    }
+    let mut idx = 2usize;
+    while idx < em.len() && em[idx] == 0xFF {
+        idx = idx.saturating_add(1);
+    }
+    // RFC 8017 §9.2: PS MUST be at least 8 bytes of 0xFF.
+    if idx < 2usize.saturating_add(8) {
+        return None;
+    }
+    if idx >= em.len() || em[idx] != 0x00 {
+        return None;
+    }
+    let t = &em[idx.saturating_add(1)..];
+
+    let (hash_oid, digest) = crl_parse_digest_info(t).ok()?;
+    if hash_oid != expected_hash_oid {
+        return None;
+    }
+    Some(digest)
+}
+
+/// Parses a `DigestInfo ::= SEQUENCE { digestAlgorithm AlgorithmIdentifier, digest OCTET STRING }`
+/// structure from RFC 8017 §9.2 / RFC 5280.
+///
+/// Returns the digest-algorithm OID (dotted-decimal) and the digest bytes.
+/// Mirrors `parse_digest_info` in `crate::x509::verify` (verify.rs:1361).
+fn crl_parse_digest_info(bytes: &[u8]) -> CryptoResult<(String, Vec<u8>)> {
+    use der::{Reader, SliceReader};
+
+    let mut r = SliceReader::new(bytes).map_err(|e| {
+        CryptoError::Verification(format!("DigestInfo outer read: {e}"))
+    })?;
+    let (oid, digest): (String, Vec<u8>) = r
+        .sequence(|r| {
+            let (oid, _params) = r.sequence(|ai| {
+                let oid = der::asn1::ObjectIdentifier::decode(ai)?;
+                let rest = ai.read_slice(ai.remaining_len())?;
+                Ok((oid, rest.to_vec()))
+            })?;
+            let octets = der::asn1::OctetStringRef::decode(r)?;
+            Ok((oid.to_string(), octets.as_bytes().to_vec()))
+        })
+        .map_err(|e| {
+            CryptoError::Verification(format!("DigestInfo decode: {e}"))
+        })?;
+    Ok((oid, digest))
 }
 
 // =============================================================================
@@ -4855,13 +5345,30 @@ mod tests {
     }
 
     #[test]
-    fn default_crl_method_verify_succeeds_with_all_prerequisites() -> CryptoResult<()> {
+    fn default_crl_method_verify_rejects_malformed_spki() -> CryptoResult<()> {
+        // Updated for Group C #10: `DefaultCrlMethod::verify` now performs
+        // real cryptographic verification (RSASSA-PKCS1-v1_5 / ECDSA / EdDSA)
+        // rather than returning a provisional `Ok(true)` once preconditions
+        // are met. With the new dispatch, supplying garbage bytes for the
+        // issuer's `SubjectPublicKeyInfo` must produce a structural
+        // `CryptoError::Verification` (not `Ok(false)` and not `Ok(true)`),
+        // because SPKI parsing fails before any signature math is attempted.
         let mut crl = X509Crl::new_empty()?;
         crl.info.tbs_der = vec![0x01, 0x02];
         crl.signature = vec![0xAB, 0xCD];
         let method = DefaultCrlMethod::default();
-        let result = method.verify(&crl, &[0x10, 0x20])?;
-        assert!(result);
+        match method.verify(&crl, &[0x10, 0x20]) {
+            Err(CryptoError::Verification(msg)) => {
+                assert!(
+                    msg.contains("SubjectPublicKeyInfo")
+                        || msg.contains("not supported"),
+                    "expected SPKI decode or unsupported-algorithm error, got: {msg}"
+                );
+            }
+            other => panic!(
+                "expected Err(CryptoError::Verification(_)) for malformed SPKI input, got: {other:?}"
+            ),
+        }
         Ok(())
     }
 
@@ -4917,12 +5424,498 @@ mod tests {
     }
 
     #[test]
-    fn x509_crl_verify_signature_delegates_to_default_method() -> CryptoResult<()> {
+    fn x509_crl_verify_signature_delegates_through_to_dispatch() -> CryptoResult<()> {
+        // Updated for Group C #10: `X509Crl::verify_signature` is a thin
+        // wrapper around `DefaultCrlMethod::verify` (instantiates a default
+        // method and forwards). This test asserts the delegation path by
+        // confirming that calling the wrapper yields the same structural
+        // verification error (malformed SPKI) as calling the method
+        // directly. Both paths must reject `[0x10, 0x20]` as it cannot be
+        // decoded as a `SubjectPublicKeyInfo`.
         let mut crl = X509Crl::new_empty()?;
         crl.info.tbs_der = vec![0x01, 0x02];
         crl.signature = vec![0xAB, 0xCD];
-        let ok = crl.verify_signature(&[0x10, 0x20])?;
-        assert!(ok);
+
+        let wrapper_result = crl.verify_signature(&[0x10, 0x20]);
+        let direct_result = DefaultCrlMethod::default().verify(&crl, &[0x10, 0x20]);
+
+        match (&wrapper_result, &direct_result) {
+            (
+                Err(CryptoError::Verification(wrapper_msg)),
+                Err(CryptoError::Verification(direct_msg)),
+            ) => {
+                // Delegation invariant: the wrapper must produce the
+                // identical error message as the underlying method.
+                assert_eq!(
+                    wrapper_msg, direct_msg,
+                    "wrapper and direct dispatch produced different errors"
+                );
+                assert!(
+                    wrapper_msg.contains("SubjectPublicKeyInfo")
+                        || wrapper_msg.contains("not supported"),
+                    "expected SPKI decode or unsupported-algorithm error, got: {wrapper_msg}"
+                );
+            }
+            (wrapper, direct) => panic!(
+                "expected matching Err(CryptoError::Verification(_)) from both dispatch paths; \
+                 wrapper={wrapper:?}, direct={direct:?}"
+            ),
+        }
+        Ok(())
+    }
+
+    // ----------------------------------------------------------------
+    // Group C #10 — Positive/negative signature verification tests
+    //
+    // These tests exercise the `DefaultCrlMethod::verify` cryptographic
+    // dispatch (RFC 5280 §5.1.1.2) implemented in this commit. They
+    // cover:
+    //   * Outer/inner signatureAlgorithm mismatch detection
+    //   * Unsupported signatureAlgorithm OID rejection
+    //   * Valid ECDSA-P256 CRL signature acceptance
+    //   * Tampered CRL rejection (Ok(false))
+    //   * Valid Ed25519 CRL signature acceptance
+    //
+    // RSA verification testing is deferred (no in-tree RSA signing path
+    // available in `openssl-crypto`) — the dispatch is exercised by the
+    // unsupported-algorithm path here and by upstream provider/openssl-cli
+    // integration tests once an RSA signer lands.
+    // ----------------------------------------------------------------
+
+    #[test]
+    fn verify_signature_rejects_outer_inner_alg_mismatch() -> CryptoResult<()> {
+        // RFC 5280 §5.1.1.2: the outer `signatureAlgorithm` field MUST equal
+        // the inner `signature` field of `tbsCertList`. The verify dispatch
+        // rejects mismatches before doing any crypto. This test sets outer
+        // to ECDSA-SHA256 and inner to Ed25519 to provoke the mismatch path.
+        let mut crl = X509Crl::new_empty()?;
+        crl.info.tbs_der = vec![0x01, 0x02];
+        crl.signature = vec![0xAB, 0xCD];
+
+        // Outer = ECDSA-SHA256, inner = Ed25519 (mismatch).
+        crl.set_signature_algorithm(AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(OID_ECDSA_SHA256)?,
+            None,
+        ));
+        crl.info.signature_algorithm = AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(OID_ED25519)?,
+            None,
+        );
+
+        let method = DefaultCrlMethod::default();
+        match method.verify(&crl, &[0x10, 0x20]) {
+            Err(CryptoError::Verification(msg)) => {
+                assert!(
+                    msg.contains("outer/inner signatureAlgorithm mismatch"),
+                    "expected outer/inner mismatch error, got: {msg}"
+                );
+                // Sanity: both OIDs must appear in the diagnostic message.
+                assert!(
+                    msg.contains(OID_ECDSA_SHA256),
+                    "diagnostic must include outer OID, got: {msg}"
+                );
+                assert!(
+                    msg.contains(OID_ED25519),
+                    "diagnostic must include inner OID, got: {msg}"
+                );
+            }
+            other => panic!(
+                "expected Err(CryptoError::Verification(_)) for outer/inner mismatch, got: {other:?}"
+            ),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn verify_signature_rejects_unsupported_algorithm() -> CryptoResult<()> {
+        // The dispatch path falls through to a "not supported" error when the
+        // outer/inner OIDs match each other but neither matches RSA, ECDSA,
+        // nor EdDSA. The SPKI MUST decode successfully because parsing
+        // happens BEFORE algorithm dispatch (see verify() at line ~1976);
+        // an unparseable SPKI fires the "SubjectPublicKeyInfo decode" error
+        // first. To exercise the dispatch fall-through cleanly, build a
+        // syntactically valid `SubjectPublicKeyInfoOwned` carrying an
+        // arbitrary unsupported OID and 32 bytes of placeholder key
+        // material. Both inner/outer CRL `signatureAlgorithm` fields are
+        // also set to that same arbitrary OID so the mismatch check at the
+        // top of verify() passes before the dispatch is reached.
+        use der::asn1::BitString;
+        use spki::{AlgorithmIdentifierOwned, ObjectIdentifier, SubjectPublicKeyInfoOwned};
+
+        // Arbitrary syntactically valid OID that does NOT match any of the
+        // RSA/ECDSA/EdDSA OID groups recognized by `SignatureAlgorithmId`.
+        // 1.2.3.4 is a well-known "fake/test" OID conventionally used in
+        // examples (RFC 5280 examples use the same prefix).
+        let unsupported_oid_str = "1.2.3.4";
+        let unsupported_oid = ObjectIdentifier::new_unwrap(unsupported_oid_str);
+
+        // 32 bytes of placeholder key material — the SPKI decoder only
+        // validates the BIT STRING is well-formed; it does not interpret
+        // the key contents at this stage of dispatch.
+        let pk_placeholder = [0u8; 32];
+        let subject_public_key = BitString::from_bytes(&pk_placeholder)
+            .expect("BitString::from_bytes never fails for non-empty byte slices");
+
+        let spki = SubjectPublicKeyInfoOwned {
+            algorithm: AlgorithmIdentifierOwned {
+                oid: unsupported_oid,
+                parameters: None,
+            },
+            subject_public_key,
+        };
+        let issuer_key_der = spki
+            .to_der()
+            .expect("SubjectPublicKeyInfoOwned encodes to DER for valid OID + bit-string");
+
+        // Build a CRL with both inner and outer signatureAlgorithm pointing
+        // at the same unsupported OID so the mismatch guard at the top of
+        // verify() passes and dispatch is reached.
+        let mut crl = X509Crl::new_empty()?;
+        crl.info.tbs_der = vec![0x01, 0x02];
+        crl.signature = vec![0xAB, 0xCD];
+
+        crl.set_signature_algorithm(AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(unsupported_oid_str)?,
+            None,
+        ));
+        crl.info.signature_algorithm = AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(unsupported_oid_str)?,
+            None,
+        );
+
+        let method = DefaultCrlMethod::default();
+        match method.verify(&crl, &issuer_key_der) {
+            Err(CryptoError::Verification(msg)) => {
+                assert!(
+                    msg.contains("not supported"),
+                    "expected unsupported-algorithm error, got: {msg}"
+                );
+                assert!(
+                    msg.contains(unsupported_oid_str),
+                    "diagnostic must include the unsupported OID for forensic clarity, got: {msg}"
+                );
+                assert!(
+                    msg.contains("CRL signatureAlgorithm OID"),
+                    "diagnostic must identify the field that is unsupported, got: {msg}"
+                );
+            }
+            other => panic!(
+                "expected Err(CryptoError::Verification(_)) for unsupported algorithm OID {unsupported_oid_str}, got: {other:?}"
+            ),
+        }
+        Ok(())
+    }
+
+    /// Group C #10 / Test #3 (Positive): a CRL signed with ECDSA-SHA256 over a
+    /// freshly-generated NIST P-256 keypair must verify successfully.
+    ///
+    /// This exercises the production cryptographic path end-to-end:
+    ///   1. `EcKey::generate(P-256)` produces a real keypair.
+    ///   2. The public key is encoded into a DER-serialised
+    ///      `SubjectPublicKeyInfo` carrying:
+    ///        * algorithm OID = `id-ecPublicKey` (1.2.840.10045.2.1)
+    ///        * parameters    = the namedCurve OID (`OID_ECC_P256`)
+    ///        * subjectPublicKey = the SEC1 uncompressed point (`0x04‖X‖Y`)
+    ///      — exactly what `crl_verify_ecdsa` parses via
+    ///      `EcPoint::from_bytes(&group, &spki.public_key_bytes)`.
+    ///   3. A synthetic `tbsCertList` byte sequence is hashed with SHA-256
+    ///      and signed via `crate::ec::ecdsa::sign_der`.
+    ///   4. Both outer (`X509Crl::signature_algorithm`) and inner
+    ///      (`info.signature_algorithm`) algorithm identifiers are set to
+    ///      `OID_ECDSA_SHA256` so the dispatch reaches the ECDSA branch.
+    ///   5. `DefaultCrlMethod::verify` must return `Ok(true)`.
+    ///
+    /// Together with the negative tests above, this proves that the new
+    /// implementation is doing actual cryptographic verification rather than
+    /// a structural-only check (resolving the original CRITICAL/HIGH defect
+    /// in the review report — `crypto/x509/crl.rs:DefaultCrlMethod::verify`
+    /// "Structural-only implementation — does not verify CRL issuer
+    /// signature over TBSCertList").
+    #[test]
+    fn verify_signature_accepts_valid_ecdsa_p256_crl() -> CryptoResult<()> {
+        use der::asn1::BitString;
+        use der::Any;
+        use spki::{AlgorithmIdentifierOwned, ObjectIdentifier, SubjectPublicKeyInfoOwned};
+
+        use crate::ec::PointConversionForm;
+
+        // -----------------------------------------------------------------
+        // 1. Generate a fresh P-256 keypair.
+        // -----------------------------------------------------------------
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1)?;
+        let key = EcKey::generate(&group)?;
+
+        // Encode the public point in SEC1 uncompressed form (`0x04 || X || Y`,
+        // exactly `1 + 2 * 32 = 65` bytes for P-256). This matches the format
+        // consumed by `crl_verify_ecdsa` via
+        // `EcPoint::from_bytes(&group, &spki.public_key_bytes)`.
+        let pub_point = key
+            .public_key()
+            .expect("EcKey::generate populates the public component");
+        let pub_uncompressed = pub_point.to_bytes(&group, PointConversionForm::Uncompressed)?;
+
+        // -----------------------------------------------------------------
+        // 2. Build the SubjectPublicKeyInfo DER.
+        //
+        //   SubjectPublicKeyInfo ::= SEQUENCE {
+        //       algorithm        AlgorithmIdentifier {
+        //           algorithm   id-ecPublicKey   (1.2.840.10045.2.1),
+        //           parameters  namedCurve OID   (P-256)
+        //       },
+        //       subjectPublicKey BIT STRING (uncompressed point bytes)
+        //   }
+        // -----------------------------------------------------------------
+        // id-ecPublicKey OID per RFC 5480 §2.1.1.
+        const ID_EC_PUBLIC_KEY: &str = "1.2.840.10045.2.1";
+        let id_ec_public_key = ObjectIdentifier::new_unwrap(ID_EC_PUBLIC_KEY);
+        let p256_curve_oid = ObjectIdentifier::new_unwrap(OID_ECC_P256);
+
+        let spki = SubjectPublicKeyInfoOwned {
+            algorithm: AlgorithmIdentifierOwned {
+                oid: id_ec_public_key,
+                parameters: Some(Any::from(p256_curve_oid)),
+            },
+            subject_public_key: BitString::from_bytes(&pub_uncompressed)
+                .expect("BitString::from_bytes accepts non-empty uncompressed point bytes"),
+        };
+        let issuer_key_der = spki
+            .to_der()
+            .expect("SubjectPublicKeyInfoOwned encodes to DER for a valid ECDSA SPKI");
+
+        // -----------------------------------------------------------------
+        // 3. Construct a synthetic `tbsCertList` and sign it with ECDSA-SHA256.
+        //
+        // The verifier hashes `crl.info.tbs_der` with SHA-256 (selected by
+        // `OID_ECDSA_SHA256`) and verifies the DER-encoded ECDSA signature.
+        // The structure of the `tbsCertList` does not need to be a syntactically
+        // valid `TBSCertList`; the verifier only treats it as the byte
+        // sequence to be hashed.
+        // -----------------------------------------------------------------
+        let tbs_der: Vec<u8> = vec![0x30, 0x05, 0x02, 0x01, 0x01, 0x05, 0x00];
+        let digest = crate::hash::sha::sha256(&tbs_der)?;
+        let sig_der = crate::ec::ecdsa::sign_der(&key, &digest)?;
+
+        // -----------------------------------------------------------------
+        // 4. Build the `X509Crl` with matching outer + inner signatureAlgorithm
+        //    fields (both = ecdsa-with-SHA256).
+        // -----------------------------------------------------------------
+        let mut crl = X509Crl::new_empty()?;
+        crl.info.tbs_der = tbs_der;
+        crl.signature = sig_der;
+        crl.set_signature_algorithm(AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(OID_ECDSA_SHA256)?,
+            None,
+        ));
+        crl.info.signature_algorithm = AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(OID_ECDSA_SHA256)?,
+            None,
+        );
+
+        // -----------------------------------------------------------------
+        // 5. Verify — must return `Ok(true)`.
+        // -----------------------------------------------------------------
+        let method = DefaultCrlMethod::default();
+        let result = method.verify(&crl, &issuer_key_der)?;
+        assert!(
+            result,
+            "valid ECDSA-P256 CRL signed by a freshly-generated keypair must verify successfully"
+        );
+        Ok(())
+    }
+
+    /// Group C #10 / Test #4 (Negative — tampered TBS): a CRL whose `tbsCertList`
+    /// has been mutated after signing must NOT verify.
+    ///
+    /// This builds an otherwise-valid ECDSA-P256 CRL using the same construction
+    /// recipe as `verify_signature_accepts_valid_ecdsa_p256_crl` (test #3), then
+    /// flips a single bit in `crl.info.tbs_der` BEFORE invoking
+    /// `DefaultCrlMethod::verify`. The signature itself is well-formed (valid
+    /// ECDSA-Sig-Value DER) and the SPKI parses cleanly, so the verifier MUST
+    /// reach the cryptographic-verification path and return `Ok(false)` — not
+    /// `Err(_)`. The contract is documented at `crl.rs:2161-2162`:
+    ///
+    ///     "ecdsa_verify_der already returns CryptoResult<bool>: Ok(true) for
+    ///      valid, Ok(false) for invalid-but-well-formed, Err for structural."
+    ///
+    /// This proves the verifier is doing real signature checking rather than
+    /// returning `Ok(true)` blindly: any mutation of the signed data must be
+    /// detected, exactly as required by RFC 5280 §5.1.2 (CRL signature must
+    /// cover the entire `tbsCertList`).
+    #[test]
+    fn verify_signature_rejects_tampered_crl() -> CryptoResult<()> {
+        use der::asn1::BitString;
+        use der::Any;
+        use spki::{AlgorithmIdentifierOwned, ObjectIdentifier, SubjectPublicKeyInfoOwned};
+
+        use crate::ec::PointConversionForm;
+
+        // -----------------------------------------------------------------
+        // 1. Build a valid signed CRL exactly as in test #3.
+        // -----------------------------------------------------------------
+        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1)?;
+        let key = EcKey::generate(&group)?;
+
+        let pub_point = key
+            .public_key()
+            .expect("EcKey::generate populates the public component");
+        let pub_uncompressed = pub_point.to_bytes(&group, PointConversionForm::Uncompressed)?;
+
+        const ID_EC_PUBLIC_KEY: &str = "1.2.840.10045.2.1";
+        let id_ec_public_key = ObjectIdentifier::new_unwrap(ID_EC_PUBLIC_KEY);
+        let p256_curve_oid = ObjectIdentifier::new_unwrap(OID_ECC_P256);
+
+        let spki = SubjectPublicKeyInfoOwned {
+            algorithm: AlgorithmIdentifierOwned {
+                oid: id_ec_public_key,
+                parameters: Some(Any::from(p256_curve_oid)),
+            },
+            subject_public_key: BitString::from_bytes(&pub_uncompressed)
+                .expect("BitString::from_bytes accepts non-empty uncompressed point bytes"),
+        };
+        let issuer_key_der = spki
+            .to_der()
+            .expect("SubjectPublicKeyInfoOwned encodes to DER for a valid ECDSA SPKI");
+
+        let original_tbs: Vec<u8> = vec![0x30, 0x05, 0x02, 0x01, 0x01, 0x05, 0x00];
+        let digest = crate::hash::sha::sha256(&original_tbs)?;
+        let sig_der = crate::ec::ecdsa::sign_der(&key, &digest)?;
+
+        let mut crl = X509Crl::new_empty()?;
+        crl.info.tbs_der = original_tbs;
+        crl.signature = sig_der;
+        crl.set_signature_algorithm(AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(OID_ECDSA_SHA256)?,
+            None,
+        ));
+        crl.info.signature_algorithm = AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(OID_ECDSA_SHA256)?,
+            None,
+        );
+
+        // -----------------------------------------------------------------
+        // 2. Tamper with `tbs_der` AFTER the signature was computed.
+        //
+        // Flipping the low bit of the first byte changes the tbsCertList
+        // (and therefore the SHA-256 digest the verifier computes) without
+        // affecting the wire-format of the signature or SPKI structures.
+        // -----------------------------------------------------------------
+        let original_first_byte = crl.info.tbs_der[0];
+        crl.info.tbs_der[0] ^= 0x01;
+        assert_ne!(
+            crl.info.tbs_der[0], original_first_byte,
+            "tampering must actually mutate the tbsCertList byte"
+        );
+
+        // -----------------------------------------------------------------
+        // 3. Verify must return `Ok(false)` — NOT `Err(_)`.
+        // -----------------------------------------------------------------
+        let method = DefaultCrlMethod::default();
+        let result = method.verify(&crl, &issuer_key_der)?;
+        assert!(
+            !result,
+            "tampered CRL must NOT verify: ECDSA signature does not cover the mutated tbsCertList"
+        );
+        Ok(())
+    }
+
+    /// Group C #10 / Test #5 (Positive — Ed25519): a CRL signed with PureEd25519
+    /// over a freshly-generated Ed25519 keypair must verify successfully.
+    ///
+    /// This exercises the EdDSA branch of `DefaultCrlMethod::verify` end-to-end:
+    ///   1. `crate::ec::curve25519::generate_keypair(EcxKeyType::Ed25519)`
+    ///      produces a real 32-byte private + 32-byte public Ed25519 keypair.
+    ///   2. The public key is encoded into a DER-serialised
+    ///      `SubjectPublicKeyInfo` per RFC 8410 §3:
+    ///        * algorithm OID = `id-Ed25519` (1.3.101.112)
+    ///        * parameters    = absent (RFC 8410 §3 mandates no parameters)
+    ///        * subjectPublicKey = the raw 32-byte public key (no SEC1 prefix)
+    ///      — exactly what `crl_verify_eddsa` consumes via
+    ///      `EcxPublicKey::new(EcxKeyType::Ed25519, spki.public_key_bytes.clone())`.
+    ///   3. A synthetic `tbsCertList` byte sequence is signed via
+    ///      `crate::ec::curve25519::ed25519_sign(private_key, tbs, None)`.
+    ///      Pure Ed25519 (no context, no pre-hash) is mandated by RFC 8410 §6
+    ///      for X.509 / CRL signatures, matching `crl_verify_eddsa`'s call.
+    ///   4. Both outer (`X509Crl::signature_algorithm`) and inner
+    ///      (`info.signature_algorithm`) algorithm identifiers are set to
+    ///      `OID_ED25519` with `parameters = None`.
+    ///   5. `DefaultCrlMethod::verify` must return `Ok(true)`.
+    ///
+    /// Together with the ECDSA positive test (#3) and the negative tests
+    /// (#1 outer/inner mismatch, #2 unsupported OID, #4 tampered TBS), this
+    /// covers all currently-supported CRL signature algorithm families and
+    /// proves that EdDSA verification is wired through to the real Ed25519
+    /// implementation in `crate::ec::curve25519`.
+    #[test]
+    fn verify_signature_accepts_valid_ed25519_crl() -> CryptoResult<()> {
+        use der::asn1::BitString;
+        use spki::{AlgorithmIdentifierOwned, ObjectIdentifier, SubjectPublicKeyInfoOwned};
+
+        // -----------------------------------------------------------------
+        // 1. Generate a fresh Ed25519 keypair.
+        // -----------------------------------------------------------------
+        let keypair = crate::ec::curve25519::generate_keypair(EcxKeyType::Ed25519)?;
+        let pub_bytes = keypair.public_key().as_bytes(); // 32 bytes
+
+        // -----------------------------------------------------------------
+        // 2. Build the SubjectPublicKeyInfo DER per RFC 8410 §3.
+        //
+        //   SubjectPublicKeyInfo ::= SEQUENCE {
+        //       algorithm        AlgorithmIdentifier {
+        //           algorithm   id-Ed25519       (1.3.101.112),
+        //           parameters  ABSENT            (RFC 8410 §3)
+        //       },
+        //       subjectPublicKey BIT STRING (32 raw public-key bytes)
+        //   }
+        // -----------------------------------------------------------------
+        let ed25519_alg_oid = ObjectIdentifier::new_unwrap(OID_ED25519);
+
+        let spki = SubjectPublicKeyInfoOwned {
+            algorithm: AlgorithmIdentifierOwned {
+                oid: ed25519_alg_oid,
+                parameters: None,
+            },
+            subject_public_key: BitString::from_bytes(pub_bytes)
+                .expect("BitString::from_bytes accepts a 32-byte Ed25519 public key"),
+        };
+        let issuer_key_der = spki
+            .to_der()
+            .expect("SubjectPublicKeyInfoOwned encodes to DER for a valid Ed25519 SPKI");
+
+        // -----------------------------------------------------------------
+        // 3. Sign a synthetic `tbsCertList` with PureEd25519.
+        //
+        // Per RFC 8410 §6 / RFC 8032 §5.1, PureEd25519 takes the raw message
+        // (no pre-hashing) and an empty context — matching the verifier's
+        // call to `ed25519_verify(&pk, tbs, sig, None)`.
+        // -----------------------------------------------------------------
+        let tbs_der: Vec<u8> = vec![0x30, 0x05, 0x02, 0x01, 0x01, 0x05, 0x00];
+        let sig = crate::ec::curve25519::ed25519_sign(keypair.private_key(), &tbs_der, None)?;
+
+        // -----------------------------------------------------------------
+        // 4. Build the `X509Crl` with matching outer + inner signatureAlgorithm
+        //    fields (both = id-Ed25519, parameters absent).
+        // -----------------------------------------------------------------
+        let mut crl = X509Crl::new_empty()?;
+        crl.info.tbs_der = tbs_der;
+        crl.signature = sig;
+        crl.set_signature_algorithm(AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(OID_ED25519)?,
+            None,
+        ));
+        crl.info.signature_algorithm = AlgorithmIdentifier::new(
+            crate::asn1::Asn1Object::from_oid_string(OID_ED25519)?,
+            None,
+        );
+
+        // -----------------------------------------------------------------
+        // 5. Verify — must return `Ok(true)`.
+        // -----------------------------------------------------------------
+        let method = DefaultCrlMethod::default();
+        let result = method.verify(&crl, &issuer_key_der)?;
+        assert!(
+            result,
+            "valid Ed25519 CRL signed by a freshly-generated keypair must verify successfully"
+        );
         Ok(())
     }
 
