@@ -974,47 +974,91 @@ fn default_private_key_bits(prime_bits: u32) -> u32 {
 
 /// Generates a private key appropriate for the given DH parameters.
 ///
-/// If `q` (subgroup order) is available, the private key is generated
-/// uniformly in `[2, q-1]`. Otherwise, it is generated with the
-/// configured bit length.
+/// Translation of `ossl_ffc_generate_private_key` from
+/// `crypto/ffc/ffc_key_generate.c` (NIST SP 800-56A Rev. 3 §5.6.1.1.4).
+/// The key insight is that when both `q` and `length` are available, the
+/// private exponent must be bounded by `M = min(2^N, q)` — **not** just
+/// by `q`. Otherwise FIPS-grade callers such as RFC 7919 named groups,
+/// where `length` is hard-coded to the security strength (e.g. 225 bits
+/// for FFDHE2048), end up with private exponents close to the size of
+/// `q` (~2047 bits for FFDHE2048). That divergence breaks the
+/// pairwise-consistency check at the provider layer (`y == g^x mod p`)
+/// because the structural range check there demands `x.num_bits() <=
+/// params.length()`.
+///
+/// Algorithm (mirroring the C reference):
+///
+/// 1. `N = params.length` (defaulting to `default_private_key_bits(p)`
+///    when not set, matching the C code's
+///    `params->keylength ? params->keylength : 2 * s` fallback).
+/// 2. `two_pow_n = 2^N`.
+/// 3. `M = min(two_pow_n, q)` if `q` is set, else `M = two_pow_n`.
+/// 4. Loop (rejection sampling): draw `r ∈ [0, 2^N)`, set
+///    `priv = r + 1` (so `priv ∈ [1, 2^N]`), accept iff `priv < M`.
 fn generate_private_key(params: &DhParams) -> CryptoResult<BigNum> {
-    if let Some(ref q) = params.q {
-        // Generate x ∈ [2, q-1] uniformly
-        // BigNum::rand_range generates [0, range), so we generate [0, q-2) and add 2
-        let two = BigNum::from_u64(2);
-        let q_minus_2 = crate::bn::arithmetic::sub(q, &two);
-        if q_minus_2.is_zero() || q_minus_2.cmp(&BigNum::one()) == std::cmp::Ordering::Less {
+    // Step 1 — determine N (the private-key bit length).
+    let p_bits = params.p.num_bits();
+    let mut n_bits = params
+        .length
+        .unwrap_or_else(|| default_private_key_bits(p_bits));
+
+    // Defensive: N must be at least 2 to allow a non-trivial range, and
+    // strictly less than p_bits so that priv < p. The C reference
+    // expects callers to satisfy `N >= 2 * s` and `N <= qbits`; we cap
+    // at p_bits - 2 here to mirror the original Rust safety net for
+    // unusual parameter inputs.
+    if n_bits < 2 {
+        return Err(CryptoError::Key(
+            "DH key length parameter too small for key generation".into(),
+        ));
+    }
+    if n_bits >= p_bits {
+        if p_bits > 2 {
+            n_bits = p_bits - 2;
+        } else {
             return Err(CryptoError::Key(
-                "DH q value too small for key generation".into(),
+                "DH prime modulus is too small for key generation".into(),
             ));
         }
-        let random_offset = BigNum::rand_range(&q_minus_2)?;
-        Ok(crate::bn::arithmetic::add(&random_offset, &two))
-    } else {
-        // No q available: generate a random private key with the configured bit length
-        let p_bits = params.p.num_bits();
-        let key_bits = params
-            .length
-            .unwrap_or_else(|| default_private_key_bits(p_bits));
+    }
 
-        // Ensure key_bits is valid
-        let effective_bits = if key_bits >= p_bits {
-            // Private key length must be less than prime length
-            if p_bits > 2 {
-                p_bits - 2
-            } else {
-                1
-            }
-        } else {
-            key_bits
-        };
+    // Step 2 — compute 2^N via the existing `Shl<u32>` operator on
+    // `&BigNum` (returns an owned `BigNum`).
+    let two_pow_n: BigNum = &BigNum::one() << n_bits;
 
-        // Generate random number with top bit set (ensures exact bit length)
-        BigNum::rand(
-            effective_bits,
-            crate::bn::TopBit::One,
-            crate::bn::BottomBit::Any,
-        )
+    // Step 3 — M = min(2^N, q) when q is provided; otherwise M = 2^N.
+    // BigNum implements Clone via #[derive(Clone)], used here to bind
+    // the chosen branch into an owned value.
+    let m: BigNum = match params.q.as_ref() {
+        Some(q) if two_pow_n.cmp(q) == std::cmp::Ordering::Greater => q.clone(),
+        _ => two_pow_n.clone(),
+    };
+
+    // Defensive bound: M must be at least 2 so that the half-open range
+    // `[1, M-1]` is non-empty. This rejects pathological parameters
+    // (q == 0 or q == 1) and matches the original Rust q-branch's
+    // "q too small" error.
+    if m.cmp(&BigNum::from_u64(2)) == std::cmp::Ordering::Less {
+        return Err(CryptoError::Key(
+            "DH parameters yield empty private key range".into(),
+        ));
+    }
+
+    // Step 4 — rejection-sampling loop. Mirrors the C
+    // `do { rand_range(priv, two_powN); priv += 1; } while (priv >= m)`.
+    let one = BigNum::one();
+    loop {
+        // r ∈ [0, 2^N) via uniform rejection sampling inside
+        // `BigNum::rand_range`.
+        let r = BigNum::rand_range(&two_pow_n)?;
+        // candidate = r + 1 ∈ [1, 2^N]
+        let candidate = crate::bn::arithmetic::add(&r, &one);
+        if candidate.cmp(&m) == std::cmp::Ordering::Less {
+            return Ok(candidate);
+        }
+        // Otherwise, retry. With M = 2^N, the rejection probability is
+        // 1/2^N (only `r = 2^N - 1` is rejected). With M = q < 2^N,
+        // the rejection probability is at most 1/2.
     }
 }
 

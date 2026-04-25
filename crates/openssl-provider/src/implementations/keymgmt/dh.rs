@@ -70,6 +70,7 @@
 //! | [`DhxKeyMgmt`]               | `ossl_dhx_keymgmt_functions`              | `dh_kmgmt.c:889-960`       |
 //! | [`dh_descriptors()`]         | `deflt_keymgmt[]` DH/DHX entries          | `defltprov.c:580-696`      |
 
+use std::cmp::Ordering;
 use std::fmt;
 
 use tracing::{debug, trace, warn};
@@ -78,6 +79,7 @@ use zeroize::Zeroizing;
 use openssl_common::error::{ProviderError, ProviderResult};
 use openssl_common::param::{ParamSet, ParamValue};
 
+use openssl_crypto::bn::montgomery::mod_exp_consttime;
 use openssl_crypto::bn::BigNum;
 use openssl_crypto::dh::{
     check_params, from_named_group, generate_key, generate_params, DhCheckResult, DhNamedGroup,
@@ -820,22 +822,45 @@ impl DhKeyData {
         true
     }
 
-    /// Validates the requested components.
+    /// Performs structural and pairwise validation of the selected
+    /// components.
     ///
-    /// Replaces `dh_validate()` from `dh_kmgmt.c:255-325`. Performs:
+    /// Replaces C `dh_validate()` from `dh_kmgmt.c:255-325` and
+    /// incorporates the pairwise consistency check from
+    /// `crypto/dh/dh_check.c` (`DH_check_pub_key()` /
+    /// `ossl_dh_check_pairwise()`). Validation has four layers:
     ///
-    /// * Domain-parameter validation via
+    /// - **Domain parameters**: enforced via
     ///   [`check_params`][openssl_crypto::dh::check_params] (safe prime,
-    ///   generator range, etc.).
-    /// * Public-key range: `1 < y < p - 1`.
-    /// * Private-key range: `0 < x` and (when `length` is set)
-    ///   `num_bits(x) <= length`.
-    /// * Pairwise consistency (public key must have matching parameters).
+    ///   generator range, subgroup order constraints).
+    /// - **Public key** `y`: must satisfy `1 < y < p - 1`. The
+    ///   non-zero/non-one check is required because `y = 1` would yield
+    ///   a trivial subgroup element.
+    /// - **Private key** `x`: must satisfy `0 < x` and, when `length`
+    ///   is set on the parameters, `num_bits(x) <= length`.
+    /// - **Pairwise consistency** (NIST SP 800-56A Rev. 3 §5.6.2.1.4):
+    ///   when the selection includes both `PUBLIC_KEY` and
+    ///   `PRIVATE_KEY` and domain parameters are present, the
+    ///   recomputed `g^x mod p` must equal the stored public value `y`.
+    ///   Performed via [`mod_exp_consttime`] because the private
+    ///   exponent `x` is secret material; the limb-level
+    ///   non-constant-time behavior of the underlying `num-bigint`
+    ///   crate is a documented residual leak that applies
+    ///   workspace-wide, not specific to this routine.
     ///
     /// This is the concrete accessor; the trait
-    /// [`KeyMgmtProvider::validate`] delegates to the Debug-string based
-    /// [`KeyMgmtProvider::has`] check because `&dyn KeyData` does not
-    /// provide a downcast path.
+    /// [`KeyMgmtProvider::validate`] delegates to the Debug-string
+    /// based [`KeyMgmtProvider::has`] check because `&dyn KeyData`
+    /// does not provide a downcast path.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Ok(true)` when all present components pass validation,
+    /// `Ok(false)` when structural or pairwise checks fail, and
+    /// [`ProviderError`] only when the selection is internally
+    /// inconsistent (e.g., asks to validate a component that is not
+    /// present after the `has_selection` guard) or when the
+    /// constant-time modular exponentiation reports an internal error.
     pub fn validate_selection(&self, selection: KeySelection) -> ProviderResult<bool> {
         // A validation request for components we do not hold is trivially
         // false, matching `DH_check_*` return codes in the C path.
@@ -892,6 +917,63 @@ impl DhKeyData {
                         return Ok(false);
                     }
                 }
+            }
+        }
+
+        // Pairwise consistency check (NIST SP 800-56A Rev. 3
+        // §5.6.2.1.4). When the caller asks for both PUBLIC_KEY and
+        // PRIVATE_KEY validation and we have domain parameters, the
+        // recomputed `g^x mod p` must equal the stored public value
+        // `y`. This rejects mismatched pairs that the structural range
+        // checks above cannot detect.
+        //
+        // Constant-time scalar multiplication is mandatory here because
+        // `x` is secret. The Montgomery-ladder-style
+        // [`mod_exp_consttime`] routine has uniform control flow w.r.t.
+        // the exponent; underlying limb arithmetic in `num-bigint` is
+        // not constant-time at the limb level — a workspace-wide
+        // residual leak documented in `bn/montgomery.rs` and tracked
+        // separately from this finding.
+        if selection.contains(KeySelection::PUBLIC_KEY)
+            && selection.contains(KeySelection::PRIVATE_KEY)
+        {
+            if let Some(params) = self.params.as_ref() {
+                let priv_key = self.private_key.as_ref().ok_or_else(|| {
+                    ProviderError::Dispatch(
+                        "private_key missing after has_selection check".to_string(),
+                    )
+                })?;
+                let pub_key = self.public_key.as_ref().ok_or_else(|| {
+                    ProviderError::Dispatch(
+                        "public_key missing after has_selection check".to_string(),
+                    )
+                })?;
+
+                // `priv_key.value()` returns an OWNED `BigNum`
+                // (reconstructed from the raw byte buffer), so we bind
+                // it to a local before taking a reference.
+                let x = priv_key.value();
+                let y = pub_key.value();
+
+                let recomputed_y =
+                    mod_exp_consttime(params.g(), &x, params.p()).map_err(|e| {
+                        ProviderError::Dispatch(format!(
+                            "DH pairwise check: mod_exp_consttime failed: {e}"
+                        ))
+                    })?;
+
+                if recomputed_y.cmp(y) != Ordering::Equal {
+                    warn!(
+                        target: "openssl_provider::keymgmt::dh",
+                        "validate_selection: pairwise check failed (y != g^x mod p)",
+                    );
+                    return Ok(false);
+                }
+
+                debug!(
+                    target: "openssl_provider::keymgmt::dh",
+                    "validate_selection: pairwise consistency verified (y == g^x mod p)",
+                );
             }
         }
 
@@ -1315,6 +1397,33 @@ mod tests {
         data
     }
 
+    /// Builds a `DhKeyData` whose `(p, g, x, y)` actually satisfy
+    /// `y == g^x mod p` so that the pairwise consistency layer of
+    /// [`DhKeyData::validate_selection`] can be exercised. Uses the
+    /// FFDHE2048 named group from RFC 7919 to keep the cost low and
+    /// deterministic compared to fresh `generate_params` calls.
+    fn gen_real_dh_keydata() -> DhKeyData {
+        let params = from_named_group(DhNamedGroup::Ffdhe2048);
+        let kp = generate_key(&params).expect("DH key generation must succeed on FFDHE2048");
+
+        // `DhPrivateKey` stores raw bytes (not `BigNum`); convert via
+        // `BigNum::to_bytes_be()` and feed them back through the
+        // public constructor. `DhPublicKey` holds a `BigNum` directly.
+        let priv_bn = kp.private_key().value();
+        let priv_bytes = priv_bn.to_bytes_be();
+        let priv_key = DhPrivateKey::new_from_raw(priv_bytes, params.clone());
+
+        let pub_bn = kp.public_key().value().clone();
+        let pub_key = DhPublicKey::new_from_raw(pub_bn, params.clone());
+
+        DhKeyData {
+            params: Some(params),
+            private_key: Some(priv_key),
+            public_key: Some(pub_key),
+            dh_type: DhKeyType::Dh,
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Trait-surface tests — DhKeyMgmt
     // -------------------------------------------------------------------------
@@ -1660,8 +1769,13 @@ mod tests {
     #[test]
     fn dh_key_data_validate_selection_fully_populated() {
         let data = fully_populated_ffdhe2048();
-        // All three selections should validate OK with fully populated
-        // ffdhe2048 fixtures.
+        // The synthetic fixture supplies bytes that satisfy the
+        // structural range checks for each individual selection
+        // (DOMAIN_PARAMETERS, PUBLIC_KEY, PRIVATE_KEY) but does NOT
+        // satisfy the pairwise invariant `y == g^x mod p`. Pairwise
+        // semantics are exercised by the
+        // `dh_validate_pairwise_passes_for_real_keypair` test below
+        // using `gen_real_dh_keydata()`.
         assert!(data
             .validate_selection(KeySelection::DOMAIN_PARAMETERS)
             .expect("validate domain"));
@@ -1671,9 +1785,6 @@ mod tests {
         assert!(data
             .validate_selection(KeySelection::PRIVATE_KEY)
             .expect("validate private"),);
-        assert!(data
-            .validate_selection(KeySelection::KEYPAIR)
-            .expect("validate keypair"));
     }
 
     #[test]
@@ -1976,5 +2087,199 @@ mod tests {
         let debug = format!("{data:?}");
         assert!(debug.starts_with("DhKeyData"));
         assert!(debug.contains("Dhx"));
+    }
+
+    // -------------------------------------------------------------------------
+    // validate_selection — pairwise check (NIST SP 800-56A R3 §5.6.2.1.4)
+    // -------------------------------------------------------------------------
+    //
+    // Mirrors C `ossl_dh_check_pairwise()` at `crypto/dh/dh_check.c`.
+    // The pairwise check fires when:
+    //   1. selection.contains(PUBLIC_KEY)                           AND
+    //   2. selection.contains(PRIVATE_KEY)                          AND
+    //   3. self.params.is_some()
+    // It then verifies that `g^x mod p == y`. Mismatch returns Ok(false).
+    //
+    // These tests use the FFDHE2048 named group from RFC 7919 (via
+    // `from_named_group`) for fast deterministic keypair generation.
+    // The same fixture builder (`gen_real_dh_keydata`) is defined
+    // earlier in this file alongside the structural fixtures.
+
+    #[test]
+    fn dh_validate_pairwise_passes_for_real_keypair() {
+        // Positive case: a freshly-generated DH key pair satisfies
+        // `y = g^x mod p` by construction. The pairwise check must
+        // confirm this and return `Ok(true)`.
+        let key = gen_real_dh_keydata();
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate must not error on a real key pair");
+        assert!(
+            r,
+            "real DH key pair must satisfy the pairwise check (y == g^x mod p)"
+        );
+    }
+
+    #[test]
+    fn dh_validate_pairwise_passes_with_domain_parameters_selection() {
+        // Equivalent to the previous test but additionally requests
+        // DOMAIN_PARAMETERS in the selection. The pairwise check is
+        // independent of the DOMAIN_PARAMETERS bit — it depends only
+        // on the presence of the `params` field — and must still pass.
+        let key = gen_real_dh_keydata();
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR | KeySelection::DOMAIN_PARAMETERS)
+            .expect("validate must not error");
+        assert!(r, "KEYPAIR | DOMAIN_PARAMETERS must validate cleanly");
+    }
+
+    #[test]
+    fn dh_validate_pairwise_rejects_tampered_public_value() {
+        // Negative case: replace the stored public value `y` with the
+        // generator `g`. Since `y' = g^x mod p` for a freshly-generated
+        // random `x`, the recomputed value will virtually never equal
+        // `g` (would require `x ≡ 1 mod q`). The pairwise check must
+        // reject this with `Ok(false)`. `g` is in `[1, p)` so the
+        // structural y-range check still passes.
+        let mut key = gen_real_dh_keydata();
+        let params = key
+            .params
+            .as_ref()
+            .expect("params present after gen_real_dh_keydata")
+            .clone();
+        let tampered_y = params.g().clone();
+        key.public_key = Some(DhPublicKey::new_from_raw(tampered_y, params));
+
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate must not error on structurally-valid components");
+        assert!(
+            !r,
+            "tampered public value must fail the pairwise check"
+        );
+    }
+
+    #[test]
+    fn dh_validate_pairwise_rejects_tampered_private_value() {
+        // Negative case: replace the stored private value `x` with `2`
+        // (still in `[1, p)` for any FFDHE prime). The recomputed
+        // public value `g^2 mod p` will not match the original `y`
+        // that was generated from the original random `x`. Returns
+        // `Ok(false)`.
+        let mut key = gen_real_dh_keydata();
+        let params = key
+            .params
+            .as_ref()
+            .expect("params present after gen_real_dh_keydata")
+            .clone();
+        let tampered_x_bytes = BigNum::from_u64(2).to_bytes_be();
+        key.private_key = Some(DhPrivateKey::new_from_raw(tampered_x_bytes, params));
+
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate must not error on structurally-valid components");
+        assert!(
+            !r,
+            "tampered private value must fail the pairwise check (g^2 != y)"
+        );
+    }
+
+    #[test]
+    fn dh_validate_pairwise_skipped_for_public_only_selection() {
+        // PUBLIC_KEY-only selection must NOT trigger the pairwise check
+        // even when the underlying private value is wrong. The
+        // structural y-range check still passes (real y is `1 < y < p`),
+        // so the overall result must be `Ok(true)`.
+        let mut key = gen_real_dh_keydata();
+        let params = key
+            .params
+            .as_ref()
+            .expect("params present after gen_real_dh_keydata")
+            .clone();
+        // Tamper the private value — irrelevant for PUBLIC_KEY-only.
+        let tampered_x_bytes = BigNum::from_u64(2).to_bytes_be();
+        key.private_key = Some(DhPrivateKey::new_from_raw(tampered_x_bytes, params));
+
+        let r = key
+            .validate_selection(KeySelection::PUBLIC_KEY)
+            .expect("validate must not error");
+        assert!(
+            r,
+            "PUBLIC_KEY-only selection must skip pairwise check and return true"
+        );
+    }
+
+    #[test]
+    fn dh_validate_pairwise_skipped_for_private_only_selection() {
+        // PRIVATE_KEY-only selection must NOT trigger the pairwise
+        // check even when the public value has been replaced with an
+        // inconsistent (but still in-range) value.
+        let mut key = gen_real_dh_keydata();
+        let params = key
+            .params
+            .as_ref()
+            .expect("params present after gen_real_dh_keydata")
+            .clone();
+        let tampered_y = params.g().clone();
+        key.public_key = Some(DhPublicKey::new_from_raw(tampered_y, params));
+
+        let r = key
+            .validate_selection(KeySelection::PRIVATE_KEY)
+            .expect("validate must not error");
+        assert!(
+            r,
+            "PRIVATE_KEY-only selection must skip pairwise check and return true"
+        );
+    }
+
+    #[test]
+    fn dh_validate_pairwise_skipped_when_params_absent() {
+        // KEYPAIR selection but `params` is `None` — the pairwise check
+        // requires domain parameters and is silently skipped, matching
+        // the C reference at `crypto/dh/dh_check.c` which short-circuits
+        // when the underlying params pointer is NULL. Structural range
+        // checks that require params are also skipped (since
+        // `params.p()` cannot be consulted), so the function returns
+        // `Ok(true)` as long as the components are present.
+        //
+        // Construct a `DhKeyData` directly with `params = None` while
+        // keeping private/public values from a real key pair so they
+        // remain mutually consistent (even though that consistency
+        // cannot be checked when params are absent).
+        let real = gen_real_dh_keydata();
+        let key = DhKeyData {
+            params: None,
+            private_key: real.private_key,
+            public_key: real.public_key,
+            dh_type: DhKeyType::Dh,
+        };
+
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate must not error");
+        assert!(
+            r,
+            "KEYPAIR without params must skip pairwise check and return true"
+        );
+    }
+
+    #[test]
+    fn dh_validate_pairwise_check_uses_constant_time_path() {
+        // Smoke-test that the pairwise check delegates to
+        // `mod_exp_consttime`. We cannot directly observe constant-time
+        // behavior from a unit test, but we can at minimum verify that
+        // the function returns a determined Boolean (rather than a
+        // ProviderError) on a structurally-valid keypair — proving the
+        // import resolution and function call path is wired through.
+        // This guards against regression of the
+        // `use ...mod_exp_consttime` import which the pairwise check
+        // requires.
+        let key = gen_real_dh_keydata();
+        let result = key.validate_selection(KeySelection::KEYPAIR);
+        assert!(
+            result.is_ok(),
+            "validate_selection must return Ok, not Err, for a real key pair"
+        );
+        assert_eq!(result.expect("ok"), true);
     }
 }
