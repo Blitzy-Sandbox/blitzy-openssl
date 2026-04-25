@@ -103,6 +103,7 @@ use zeroize::Zeroizing;
 use openssl_common::error::{ProviderError, ProviderResult};
 use openssl_common::param::{ParamSet, ParamValue};
 
+use openssl_crypto::bn::montgomery::mod_exp_consttime;
 use openssl_crypto::bn::BigNum;
 use openssl_crypto::dsa::{generate_key, generate_params, DsaParams};
 
@@ -947,11 +948,12 @@ impl DsaKeyData {
         true
     }
 
-    /// Performs structural validation of the selected components.
+    /// Performs structural and pairwise validation of the selected
+    /// components.
     ///
-    /// Replaces C `dsa_validate()` (~line 175). Since the `BigNum` API does
-    /// not expose modular exponentiation, validation is limited to range
-    /// checks that can be performed with basic comparisons:
+    /// Replaces C `dsa_validate()` (~line 175) and incorporates the pairwise
+    /// consistency check from C `ossl_dsa_check_pairwise()` at
+    /// `crypto/dsa/dsa_check.c:103-133`. Validation has three layers:
     ///
     /// - **Domain parameters**: enforced at construction time by
     ///   [`DsaParams::new`] — if `params` is present, the constructor
@@ -961,13 +963,22 @@ impl DsaKeyData {
     ///   trivial subgroup element.
     /// - **Private key** `x`: must satisfy `1 ≤ x < q`. When both `x` and
     ///   `q` are present, the upper bound is enforced.
+    /// - **Pairwise consistency** (NIST SP 800-56A Rev. 3 §5.6.2.1.4): when
+    ///   the selection includes both `PUBLIC_KEY` and `PRIVATE_KEY` and
+    ///   domain parameters are present, the recomputed `g^x mod p` must
+    ///   equal the stored public value `y`. Performed via
+    ///   [`mod_exp_consttime`] because the private exponent `x` is secret
+    ///   material; the limb-level non-constant-time behavior of the
+    ///   underlying `num-bigint` crate is a documented residual leak that
+    ///   applies workspace-wide, not specific to this routine.
     ///
     /// # Errors
     ///
     /// Returns `Ok(true)` when all present components pass validation,
-    /// `Ok(false)` when structural checks fail, and [`ProviderError`] only
-    /// when the selection is inconsistent (e.g., asks to validate a
-    /// component that is not present).
+    /// `Ok(false)` when structural or pairwise checks fail, and
+    /// [`ProviderError`] only when the selection is inconsistent (e.g.,
+    /// asks to validate a component that is not present) or when the
+    /// constant-time modular exponentiation reports an internal error.
     pub fn validate_selection(&self, selection: KeySelection) -> ProviderResult<bool> {
         trace!(
             target: "openssl_provider::keymgmt::dsa",
@@ -1031,6 +1042,66 @@ impl DsaKeyData {
                     );
                     return Ok(false);
                 }
+            }
+        }
+
+        // Pairwise consistency check (NIST SP 800-56A Rev. 3 §5.6.2.1.4).
+        //
+        // Mirrors C `ossl_dsa_check_pairwise()` at
+        // `crypto/dsa/dsa_check.c:103-133`: when both halves of the key pair
+        // are in scope and domain parameters are available, recompute
+        // `y' = g^x mod p` and verify it equals the stored public value `y`.
+        // This catches mismatches between an imported `(x, y)` pair (e.g.,
+        // from a tampered or corrupted PKCS#8 key bag) before any signature
+        // operation can be performed with that key.
+        //
+        // We require all three of `params`, `private_value`, `public_value`.
+        // If any are absent, the selection-only structural checks above
+        // already constitute the strongest guarantee available, and the
+        // pairwise check is silently skipped — matching the C reference
+        // which short-circuits when `params == NULL || priv_key == NULL ||
+        // pub_key == NULL` at lines 110-114.
+        //
+        // Constant-time scalar multiplication is mandatory here because `x`
+        // is secret. The Montgomery-ladder-style `mod_exp_consttime`
+        // routine has uniform control flow w.r.t. the exponent; underlying
+        // limb arithmetic in `num-bigint` is not constant-time at the limb
+        // level — a workspace-wide residual leak documented in
+        // `bn/montgomery.rs` and tracked separately from this finding.
+        if selection.contains(KeySelection::PUBLIC_KEY)
+            && selection.contains(KeySelection::PRIVATE_KEY)
+        {
+            if let Some(params) = self.params.as_ref() {
+                let x = self.private_value.as_ref().ok_or_else(|| {
+                    ProviderError::Dispatch(
+                        "private_value missing after has_selection check".to_string(),
+                    )
+                })?;
+                let y = self.public_value.as_ref().ok_or_else(|| {
+                    ProviderError::Dispatch(
+                        "public_value missing after has_selection check".to_string(),
+                    )
+                })?;
+
+                let recomputed_y =
+                    mod_exp_consttime(params.g(), x, params.p()).map_err(|e| {
+                        ProviderError::Dispatch(format!(
+                            "DSA pairwise check: mod_exp_consttime failed: {e}"
+                        ))
+                    })?;
+
+                if recomputed_y.cmp(y) != Ordering::Equal {
+                    warn!(
+                        target: "openssl_provider::keymgmt::dsa",
+                        "validate_selection: pairwise check failed (y != g^x mod p)",
+                    );
+                    return Ok(false);
+                }
+
+                debug!(
+                    target: "openssl_provider::keymgmt::dsa",
+                    "validate_selection: pairwise consistency verified (y == g^x mod p)",
+                );
             }
         }
 
@@ -1851,6 +1922,193 @@ mod tests {
         // Two empty keys match under `KeySelection::ALL` — delegated to
         // `DsaKeyData::match_keys`.
         assert!(mgmt.match_keys(&a, &b));
+    }
+
+    // -------------------------------------------------------------------------
+    // validate_selection — pairwise check (NIST SP 800-56A R3 §5.6.2.1.4)
+    // -------------------------------------------------------------------------
+    //
+    // Mirrors C `ossl_dsa_check_pairwise()` at `crypto/dsa/dsa_check.c:103-133`.
+    // The pairwise check fires when:
+    //   1. selection.contains(PUBLIC_KEY)                           AND
+    //   2. selection.contains(PRIVATE_KEY)                          AND
+    //   3. self.params.is_some()
+    // It then verifies that `g^x mod p == y`. Mismatch returns Ok(false).
+    //
+    // These tests use 1024-bit DSA parameters for fast generation
+    // (160-bit subprime, 20-byte signature). The same fast-test pattern
+    // is used by `crates/openssl-crypto/src/tests/test_dsa.rs::gen_params_1024`.
+
+    /// Build a fully-populated `DsaKeyData` containing real, mutually
+    /// consistent `(p, q, g, x, y)` values from a fresh 1024-bit DSA
+    /// key generation. Helper for the pairwise tests below.
+    fn gen_real_dsa_keydata() -> DsaKeyData {
+        let params = generate_params(1024)
+            .expect("1024-bit DSA parameter generation must succeed");
+        let kp =
+            generate_key(&params).expect("DSA key generation must succeed on valid params");
+        let mut key = DsaKeyData::new();
+        key.private_value = Some(kp.private_key().value().clone());
+        key.public_value = Some(kp.public_key().value().clone());
+        key.params = Some(params);
+        key
+    }
+
+    #[test]
+    fn dsa_validate_pairwise_passes_for_real_keypair() {
+        // Positive case: a freshly-generated DSA key pair satisfies
+        // `y = g^x mod p` by construction. The pairwise check must
+        // confirm this and return `Ok(true)`.
+        let key = gen_real_dsa_keydata();
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate must not error on a real key pair");
+        assert!(
+            r,
+            "real DSA key pair must satisfy the pairwise check (y == g^x mod p)"
+        );
+    }
+
+    #[test]
+    fn dsa_validate_pairwise_passes_with_domain_parameters_selection() {
+        // Equivalent to the previous test but additionally requests
+        // DOMAIN_PARAMETERS in the selection. The pairwise check is
+        // independent of the DOMAIN_PARAMETERS bit — it depends only on
+        // the presence of the `params` field — and must still pass.
+        let key = gen_real_dsa_keydata();
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR | KeySelection::DOMAIN_PARAMETERS)
+            .expect("validate must not error");
+        assert!(r, "KEYPAIR | DOMAIN_PARAMETERS must validate cleanly");
+    }
+
+    #[test]
+    fn dsa_validate_pairwise_rejects_tampered_public_value() {
+        // Negative case: replace the stored public value `y` with the
+        // generator `g`. Since `y' = g^x mod p` for a freshly-generated
+        // random `x`, the recomputed value will virtually never equal
+        // `g` (would require `x ≡ 1 mod q`). The pairwise check must
+        // reject this with `Ok(false)`.
+        let mut key = gen_real_dsa_keydata();
+        let tampered_y = key
+            .params
+            .as_ref()
+            .expect("params present after gen_real_dsa_keydata")
+            .g()
+            .clone();
+        key.public_value = Some(tampered_y);
+
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate must not error on structurally-valid components");
+        assert!(
+            !r,
+            "tampered public value must fail the pairwise check"
+        );
+    }
+
+    #[test]
+    fn dsa_validate_pairwise_rejects_tampered_private_value() {
+        // Negative case: replace the stored private value `x` with `2`
+        // (still in `[1, q)` for any 1024-bit DSA q). The recomputed
+        // public value `g^2 mod p` will not match the original `y` that
+        // was generated from the original random `x`. Returns `Ok(false)`.
+        let mut key = gen_real_dsa_keydata();
+        key.private_value = Some(BigNum::from_u64(2));
+
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate must not error on structurally-valid components");
+        assert!(
+            !r,
+            "tampered private value must fail the pairwise check (g^2 != y)"
+        );
+    }
+
+    #[test]
+    fn dsa_validate_pairwise_skipped_for_public_only_selection() {
+        // PUBLIC_KEY-only selection must NOT trigger the pairwise check
+        // even when the underlying private value is wrong. The structural
+        // y-range check still passes (real y is `1 < y < p`), so the
+        // overall result must be `Ok(true)`.
+        let mut key = gen_real_dsa_keydata();
+        // Tamper the private value — irrelevant for PUBLIC_KEY-only.
+        key.private_value = Some(BigNum::from_u64(2));
+
+        let r = key
+            .validate_selection(KeySelection::PUBLIC_KEY)
+            .expect("validate must not error");
+        assert!(
+            r,
+            "PUBLIC_KEY-only selection must skip pairwise check and return true"
+        );
+    }
+
+    #[test]
+    fn dsa_validate_pairwise_skipped_for_private_only_selection() {
+        // PRIVATE_KEY-only selection must NOT trigger the pairwise check
+        // even when the public value has been replaced with an
+        // inconsistent (but still in-range) value.
+        let mut key = gen_real_dsa_keydata();
+        let tampered_y = key
+            .params
+            .as_ref()
+            .expect("params present after gen_real_dsa_keydata")
+            .g()
+            .clone();
+        key.public_value = Some(tampered_y);
+
+        let r = key
+            .validate_selection(KeySelection::PRIVATE_KEY)
+            .expect("validate must not error");
+        assert!(
+            r,
+            "PRIVATE_KEY-only selection must skip pairwise check and return true"
+        );
+    }
+
+    #[test]
+    fn dsa_validate_pairwise_skipped_when_params_absent() {
+        // KEYPAIR selection but `params` is `None` — the pairwise check
+        // requires domain parameters and is silently skipped, matching
+        // the C reference at `crypto/dsa/dsa_check.c:110-114` which
+        // short-circuits when `params == NULL`. Structural range checks
+        // that require params are also skipped (since `params.p()` /
+        // `params.q()` cannot be consulted), so the function returns
+        // `Ok(true)` as long as `x != 0`, `y != 0`, `y != 1`.
+        let params = generate_params(1024).expect("paramgen");
+        let kp = generate_key(&params).expect("keygen");
+        let mut key = DsaKeyData::new();
+        key.private_value = Some(kp.private_key().value().clone());
+        key.public_value = Some(kp.public_key().value().clone());
+        // Note: `params` deliberately left as `None`.
+
+        let r = key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate must not error");
+        assert!(
+            r,
+            "KEYPAIR without params must skip pairwise check and return true"
+        );
+    }
+
+    #[test]
+    fn dsa_validate_pairwise_check_uses_constant_time_path() {
+        // Smoke-test that the pairwise check delegates to
+        // `mod_exp_consttime`. We cannot directly observe constant-time
+        // behavior from a unit test, but we can at minimum verify that
+        // the function returns a determined Boolean (rather than a
+        // ProviderError) on a structurally-valid keypair — proving the
+        // import resolution and function call path is wired through.
+        // This guards against regression of the `use ...mod_exp_consttime`
+        // import which the pairwise check requires.
+        let key = gen_real_dsa_keydata();
+        let result = key.validate_selection(KeySelection::KEYPAIR);
+        assert!(
+            result.is_ok(),
+            "validate_selection must return Ok, not Err, for a real key pair"
+        );
+        assert_eq!(result.expect("ok"), true);
     }
 }
 

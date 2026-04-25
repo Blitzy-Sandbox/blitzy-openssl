@@ -938,6 +938,22 @@ impl DsaSignatureContext {
     /// function. That precondition is verified at sign-time in
     /// [`Self::sign_digest`] rather than here so this gate remains a
     /// pure-state check.
+    ///
+    /// # `#[allow(clippy::unnecessary_wraps)]` justification
+    ///
+    /// Both currently-defined [`NonceType`] variants are supported, so the
+    /// match arms always return `Ok(())`. The `ProviderResult<()>` return
+    /// type is intentionally retained as a forward-compatible gate: future
+    /// variants (for example a hypothetical hardware-backed `NonceType`
+    /// requiring RNG attestation, or runtime-disabled deterministic mode
+    /// when policy forbids hash binding) are expected to surface as
+    /// [`ProviderError::Init`] from this gate without rippling the callers
+    /// in [`Self::sign_digest`]. Removing the `Result` would force a
+    /// signature change across the dispatch path the moment such a variant
+    /// is added, undermining the gate-as-a-policy-checkpoint design.
+    /// Per project rule R9, the `#[allow]` carries this justification
+    /// comment in lieu of changing the architecture.
+    #[allow(clippy::unnecessary_wraps)]
     fn require_supported_nonce(&self, call: &'static str) -> ProviderResult<()> {
         match self.nonce_type {
             NonceType::Default => {
