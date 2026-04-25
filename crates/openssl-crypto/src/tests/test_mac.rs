@@ -85,50 +85,79 @@ fn test_hmac_sha256_known_vector() {
     );
 }
 
-/// HMAC-SHA-1 known-answer test.
+/// HMAC-SHA-1 known-answer test (RFC 2202 §3 Test Case 1).
 ///
-/// The current implementation only includes a native SHA-256 hash engine;
-/// SHA-1 is accepted by the API (key/block size validated) but the inner
-/// hash is SHA-256.  With a key ≤ 64 bytes the block-size matches SHA-256
-/// so the output equals HMAC-SHA-256 for the same inputs.  We verify the
-/// API contract: returns `Ok`, non-empty tag, deterministic.
+///   key  = 0x0b repeated 20 times
+///   data = "Hi There"
+///   tag  = b617318655057264e28bc0b6fb378c8ef146be00
+///
+/// Verifies that `HmacState` correctly dispatches to the SHA-1 backend
+/// (block size 64, output 20 bytes) — formerly hardcoded to SHA-256.
 #[test]
 fn test_hmac_sha1_known_vector() {
-    let key = b"123456";
-    let data = b"My test data";
+    let key = vec![0x0bu8; 20];
+    let data = b"Hi There";
+    let expected = hex_to_bytes("b617318655057264e28bc0b6fb378c8ef146be00");
 
-    let result = hmac("SHA-1", key, data).expect("HMAC-SHA-1 must succeed");
-    // Current impl: SHA-256 inner hash, 64-byte block (matches SHA-1 block).
-    // Output is 32 bytes (full SHA-256), same as HMAC-SHA-256 for short keys.
-    assert_eq!(result.len(), 32, "HMAC-SHA-1 output should be 32 bytes");
-    assert!(!result.iter().all(|&b| b == 0), "tag must not be all-zero");
+    let result = hmac("SHA-1", &key, data).expect("HMAC-SHA-1 must succeed");
+    assert_eq!(
+        result.len(),
+        20,
+        "HMAC-SHA-1 output must be 20 bytes (got {})",
+        result.len()
+    );
+    assert_eq!(
+        result,
+        expected,
+        "HMAC-SHA-1 must match RFC 2202 §3 TC1:\n  got:    {}\n  expect: {}",
+        bytes_to_hex(&result),
+        bytes_to_hex(&expected),
+    );
 
     // Determinism check.
-    let result2 = hmac("SHA-1", key, data).expect("second call must succeed");
+    let result2 = hmac("SHA-1", &key, data).expect("second call must succeed");
     assert_eq!(result, result2, "HMAC-SHA-1 must be deterministic");
 }
 
-/// HMAC-SHA-512 known-answer test.
+/// HMAC-SHA-512 known-answer test (RFC 4231 §4.2 Test Case 1).
 ///
-/// SHA-512 has a 128-byte block size (vs 64 for SHA-256/SHA-1).  The
-/// different block size means the padded key differs — the output will NOT
-/// match HMAC-SHA-256 even though the inner hash is SHA-256.  We verify
-/// API contract: returns `Ok`, 32-byte tag, deterministic.
+///   key  = 0x0b repeated 20 times
+///   data = "Hi There"
+///   tag  = 87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cde
+///          daa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854
+///
+/// Verifies that `HmacState` correctly dispatches to the SHA-512 backend
+/// (block size 128, output 64 bytes) — formerly hardcoded to SHA-256.
 #[test]
 fn test_hmac_sha512_known_vector() {
-    let key = b"123456";
-    let data = b"My test data";
+    let key = vec![0x0bu8; 20];
+    let data = b"Hi There";
+    let expected = hex_to_bytes(concat!(
+        "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cde",
+        "daa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854",
+    ));
 
-    let result = hmac("SHA-512", key, data).expect("HMAC-SHA-512 must succeed");
-    assert_eq!(result.len(), 32, "HMAC-SHA-512 output should be 32 bytes");
-    assert!(!result.iter().all(|&b| b == 0), "tag must not be all-zero");
+    let result = hmac("SHA-512", &key, data).expect("HMAC-SHA-512 must succeed");
+    assert_eq!(
+        result.len(),
+        64,
+        "HMAC-SHA-512 output must be 64 bytes (got {})",
+        result.len()
+    );
+    assert_eq!(
+        result,
+        expected,
+        "HMAC-SHA-512 must match RFC 4231 §4.2 TC1:\n  got:    {}\n  expect: {}",
+        bytes_to_hex(&result),
+        bytes_to_hex(&expected),
+    );
 
-    // SHA-512 uses block_size=128 vs SHA-256 block_size=64, so the HMAC
-    // padded key differs → result must differ from SHA-256 computation.
-    let sha256_result = hmac("SHA-256", key, data).expect("SHA-256 must succeed");
+    // Different-algorithm sanity: SHA-512 result must differ from SHA-256
+    // (different output sizes too — 64 vs 32 bytes).
+    let sha256_result = hmac("SHA-256", &key, data).expect("SHA-256 must succeed");
     assert_ne!(
         result, sha256_result,
-        "SHA-512 and SHA-256 should differ due to different block sizes"
+        "SHA-512 and SHA-256 outputs must differ"
     );
 }
 

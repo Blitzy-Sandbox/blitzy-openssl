@@ -63,10 +63,12 @@
 //! # Deterministic nonces
 //!
 //! The C source supports FIPS 186-5 / RFC 6979 deterministic-`k` signing via
-//! the `"nonce-type"` parameter. The current Rust crypto layer only supports
-//! randomised nonces; requesting deterministic signing via [`NonceType`]
-//! triggers a [`ProviderError::AlgorithmUnavailable`] error at context
-//! initialisation.
+//! the `"nonce-type"` parameter, and the Rust port now matches: setting
+//! [`NonceType::Deterministic`] (raw value `1`) on the context dispatches to
+//! [`openssl_crypto::dsa::sign_deterministic`], which derives `k` via the
+//! HMAC-DRBG construction defined in RFC 6979 §3.2 using the digest
+//! configured on the context. The default [`NonceType::Default`] preserves
+//! random-`k` signing per FIPS 186-4 §4.5.
 //!
 //! # C → Rust mapping
 //!
@@ -105,7 +107,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use openssl_common::{
@@ -114,8 +116,8 @@ use openssl_common::{
 use openssl_crypto::bn::BigNum;
 use openssl_crypto::context::LibContext;
 use openssl_crypto::dsa::{
-    sign as dsa_sign_primitive, verify as dsa_verify_primitive, DsaParams, DsaPrivateKey,
-    DsaPublicKey,
+    sign as dsa_sign_primitive, sign_deterministic as dsa_sign_deterministic_primitive,
+    verify as dsa_verify_primitive, DsaParams, DsaPrivateKey, DsaPublicKey,
 };
 use openssl_crypto::evp::md::{
     digest_one_shot, MdContext, MessageDigest, SHA1, SHA224, SHA256, SHA384, SHA3_224, SHA3_256,
@@ -139,20 +141,18 @@ use crate::traits::{AlgorithmDescriptor, SignatureContext, SignatureProvider};
 ///
 /// # Variants
 ///
-/// * [`NonceType::Default`] — FIPS 186-4 §4.5 random-`k` signing. This is
-///   the only value currently honoured by the underlying
-///   [`openssl_crypto::dsa::sign`] primitive.
+/// * [`NonceType::Default`] — FIPS 186-4 §4.5 random-`k` signing.
+///   Dispatched to [`openssl_crypto::dsa::sign`].
 /// * [`NonceType::Deterministic`] — FIPS 186-5 / RFC 6979 deterministic
-///   derivation of `k` from the message and the private key. The Rust
-///   crypto layer does not yet implement deterministic-`k`; selecting this
-///   variant causes [`DsaSignatureContext::sign_init`] to fail fast with
-///   [`ProviderError::AlgorithmUnavailable`] rather than silently producing
-///   a random-nonce signature.
+///   derivation of `k` from the message and the private key. Dispatched to
+///   [`openssl_crypto::dsa::sign_deterministic`]; requires that a digest
+///   has been configured on the context (RFC 6979 §3.2 binds the nonce
+///   derivation to a specific hash function).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NonceType {
     /// Random-`k` nonce per FIPS 186-4 §4.5 (the default).
     Default,
-    /// Deterministic-`k` nonce per RFC 6979 (not currently supported).
+    /// Deterministic-`k` nonce per RFC 6979.
     Deterministic,
 }
 
@@ -923,19 +923,36 @@ impl DsaSignatureContext {
     }
 
     /// Ensures the selected nonce strategy is supported by the Rust crypto
-    /// layer. Deterministic signing has not yet been ported — raise an
-    /// `AlgorithmUnavailable` error rather than silently falling back.
+    /// layer.
+    ///
+    /// Both nonce strategies are now supported:
+    ///
+    /// * [`NonceType::Default`] — random `k` per FIPS 186-4 §4.5, dispatched
+    ///   to [`dsa_sign_primitive`].
+    /// * [`NonceType::Deterministic`] — RFC 6979 deterministic `k`,
+    ///   dispatched to [`dsa_sign_deterministic_primitive`].
+    ///
+    /// The deterministic path additionally requires that a digest has been
+    /// configured via `set_ctx_params("digest", …)` (or a `digest_sign_init`
+    /// call), because RFC 6979 §3.2 binds `k` derivation to the hash
+    /// function. That precondition is verified at sign-time in
+    /// [`Self::sign_digest`] rather than here so this gate remains a
+    /// pure-state check.
     fn require_supported_nonce(&self, call: &'static str) -> ProviderResult<()> {
         match self.nonce_type {
-            NonceType::Default => Ok(()),
-            NonceType::Deterministic => {
-                warn!(
+            NonceType::Default => {
+                trace!(
                     call = call,
-                    "dsa: deterministic nonce (RFC 6979) requested but not supported by the Rust crypto layer"
+                    "dsa: random nonce (FIPS 186-4 §4.5) selected"
                 );
-                Err(ProviderError::AlgorithmUnavailable(format!(
-                    "DSA {call}: deterministic-nonce (RFC 6979) signing is not supported by the Rust crypto backend"
-                )))
+                Ok(())
+            }
+            NonceType::Deterministic => {
+                trace!(
+                    call = call,
+                    "dsa: deterministic nonce (RFC 6979) selected"
+                );
+                Ok(())
             }
         }
     }
@@ -1133,10 +1150,18 @@ impl DsaSignatureContext {
     ///   when fetching message digests.  The fresh query replaces any
     ///   previously-stored query verbatim.
     /// * `"nonce-type"` — unsigned 64-bit integer (`ParamValue::UInt64`).
-    ///   `0` → [`NonceType::Default`] (random), `1` → [`NonceType::Deterministic`]
-    ///   (RFC 6979).  The crypto layer currently implements only the
-    ///   random variant; selecting deterministic signing will surface
-    ///   [`ProviderError::AlgorithmUnavailable`] on the next sign call.
+    ///   `0` → [`NonceType::Default`] (random `k` per FIPS 186-4 §4.5),
+    ///   `1` → [`NonceType::Deterministic`] (RFC 6979 deterministic `k` via
+    ///   HMAC-DRBG).  Selecting [`NonceType::Deterministic`] dispatches
+    ///   subsequent `sign_digest` calls to
+    ///   [`openssl_crypto::dsa::sign_deterministic`].  RFC 6979 §3.2 binds
+    ///   the nonce derivation to a specific hash function, so the
+    ///   deterministic path additionally requires that a digest has been
+    ///   configured on the context (via `digest_sign_init` or by setting
+    ///   the `"digest"` parameter); otherwise the next `sign_digest` call
+    ///   surfaces [`ProviderError::Init`].  Values other than `0` or `1`
+    ///   are rejected with [`ProviderError::Common`] wrapping
+    ///   [`openssl_common::CommonError::InvalidArgument`].
     /// * `"signature"` — octet string.  Cached signature used by the
     ///   verify-message flow so a single context can hold both the
     ///   to-be-verified message and its signature.  Handed to
@@ -1331,11 +1356,21 @@ impl DsaSignatureContext {
     /// verify-message flow (TLS 1.3 CertificateVerify-style) can retrieve it
     /// via `get_ctx_params("signature")`.
     ///
+    /// # Nonce strategy dispatch
+    ///
+    /// The implementation honours the configured [`NonceType`]:
+    ///
+    /// * [`NonceType::Default`] — random `k` per FIPS 186-4 §4.5; calls
+    ///   [`dsa_sign_primitive`].
+    /// * [`NonceType::Deterministic`] — RFC 6979 deterministic `k`; calls
+    ///   [`dsa_sign_deterministic_primitive`] using the canonical digest
+    ///   name stored in `self.md_name`.
+    ///
     /// # Errors
     ///
-    /// * [`ProviderError::AlgorithmUnavailable`] if the configured nonce
-    ///   selector is unsupported (e.g. deterministic nonces).
-    /// * [`ProviderError::Init`] if no private key is bound.
+    /// * [`ProviderError::Init`] if no private key is bound, or if
+    ///   deterministic-nonce signing is requested without a digest having
+    ///   been configured.
     /// * [`ProviderError::Dispatch`] if the underlying crypto primitive
     ///   reports an error.
     fn sign_digest(&mut self, digest: &[u8]) -> ProviderResult<Vec<u8>> {
@@ -1347,14 +1382,47 @@ impl DsaSignatureContext {
         // before mutably touching `cached_signature`.
         let private_key_arc = Arc::clone(self.require_private_key("sign_digest")?);
 
-        trace!(
-            algorithm = self.variant.name(),
-            digest_len = digest.len(),
-            "dsa: sign_digest invoking crypto primitive"
-        );
-
-        let signature = dsa_sign_primitive(private_key_arc.as_ref(), digest)
-            .map_err(|e| map_crypto_sign_error(&e))?;
+        // Dispatch on the configured nonce strategy. R10 — both branches
+        // are reachable from public API callers through the
+        // OSSL_SIGNATURE_PARAM_NONCE_TYPE OSSL_PARAM (mapped to
+        // [`NonceType`] in `set_ctx_params`).
+        let signature = match self.nonce_type {
+            NonceType::Default => {
+                trace!(
+                    algorithm = self.variant.name(),
+                    digest_len = digest.len(),
+                    nonce_type = "random",
+                    "dsa: sign_digest invoking random-k crypto primitive"
+                );
+                dsa_sign_primitive(private_key_arc.as_ref(), digest)
+                    .map_err(|e| map_crypto_sign_error(&e))?
+            }
+            NonceType::Deterministic => {
+                // RFC 6979 §3.2 binds nonce derivation to a specific hash
+                // function. The provider stores the canonical digest name
+                // in `md_name` after a successful `digest_*_init` or
+                // `set_ctx_params("digest", …)` call. Refuse to proceed
+                // without one — silent fallback to a default hash would
+                // produce signatures that can never be verified by a
+                // counterparty using the spec-defined hash.
+                let hash_name = self.md_name.as_deref().ok_or_else(|| {
+                    ProviderError::Init(
+                        "DSA sign: deterministic-nonce (RFC 6979) signing requires a digest \
+                         to be configured (call digest_sign_init or set_ctx_params(\"digest\", …) first)"
+                            .to_string(),
+                    )
+                })?;
+                trace!(
+                    algorithm = self.variant.name(),
+                    digest_len = digest.len(),
+                    nonce_type = "deterministic",
+                    hash_name = hash_name,
+                    "dsa: sign_digest invoking RFC 6979 crypto primitive"
+                );
+                dsa_sign_deterministic_primitive(private_key_arc.as_ref(), digest, hash_name)
+                    .map_err(|e| map_crypto_sign_error(&e))?
+            }
+        };
 
         // Scrub any previously cached signature before overwriting — the
         // slot is long-lived across calls and we must not leak residues

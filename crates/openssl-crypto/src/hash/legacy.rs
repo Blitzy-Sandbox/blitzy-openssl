@@ -306,6 +306,10 @@ impl Digest for Md2Context {
         self.data.fill(0);
         self.num = 0;
     }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
+    }
 }
 
 /// One-shot MD2 digest of `data` (legacy, deprecated).
@@ -592,6 +596,10 @@ impl Digest for Md4Context {
         self.num = 0;
         self.total_len = 0;
     }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
+    }
 }
 
 /// One-shot MD4 digest of `data` (legacy, deprecated).
@@ -782,6 +790,10 @@ impl Digest for Mdc2Context {
         self.hh = MDC2_IV_HH;
         self.block.zeroize();
         self.num = 0;
+    }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
     }
 }
 
@@ -1169,6 +1181,10 @@ impl Digest for Ripemd160Context {
         self.num = 0;
         self.total_len = 0;
     }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
+    }
 }
 
 /// One-shot RIPEMD-160 digest computation.
@@ -1521,6 +1537,10 @@ impl Digest for Sm3Context {
         self.block.zeroize();
         self.num = 0;
         self.total_len = 0;
+    }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
     }
 }
 
@@ -1967,6 +1987,10 @@ impl Digest for WhirlpoolContext {
         self.block.zeroize();
         self.num = 0;
         self.bitlen = [0u64; 4];
+    }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
     }
 }
 

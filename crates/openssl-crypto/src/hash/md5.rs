@@ -746,6 +746,10 @@ impl Digest for Md5Context {
         self.num = 0;
         self.total_len = 0;
     }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
+    }
 }
 
 // =============================================================================
@@ -838,6 +842,10 @@ impl Digest for Md5Sha1Context {
     fn reset(&mut self) {
         self.md5.reset();
         self.sha1.reset();
+    }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
     }
 }
 

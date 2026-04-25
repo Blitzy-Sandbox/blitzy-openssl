@@ -43,6 +43,8 @@ use openssl_common::{CryptoError, CryptoResult, Nid, ParamSet, ParamValue};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+use crate::hash::sha::{create_sha_digest, Digest, ShaAlgorithm};
+
 // ---------------------------------------------------------------------------
 // MacType — Algorithm selection enum (replaces EVP_MAC algorithm names)
 // ---------------------------------------------------------------------------
@@ -130,248 +132,6 @@ enum MacState {
 }
 
 // ===========================================================================
-// Internal SHA-256 implementation (private, used by HMAC)
-// ===========================================================================
-
-/// SHA-256 block size in bytes.
-const SHA256_BLOCK_SIZE: usize = 64;
-/// SHA-256 output size in bytes.
-const SHA256_DIGEST_SIZE: usize = 32;
-
-/// SHA-256 initial hash values (first 32 bits of the fractional parts of
-/// the square roots of the first 8 primes).
-const SHA256_H0: [u32; 8] = [
-    0x6a09_e667,
-    0xbb67_ae85,
-    0x3c6e_f372,
-    0xa54f_f53a,
-    0x510e_527f,
-    0x9b05_688c,
-    0x1f83_d9ab,
-    0x5be0_cd19,
-];
-
-/// SHA-256 round constants (first 32 bits of the fractional parts of
-/// the cube roots of the first 64 primes).
-const SHA256_K: [u32; 64] = [
-    0x428a_2f98,
-    0x7137_4491,
-    0xb5c0_fbcf,
-    0xe9b5_dba5,
-    0x3956_c25b,
-    0x59f1_11f1,
-    0x923f_82a4,
-    0xab1c_5ed5,
-    0xd807_aa98,
-    0x1283_5b01,
-    0x2431_85be,
-    0x550c_7dc3,
-    0x72be_5d74,
-    0x80de_b1fe,
-    0x9bdc_06a7,
-    0xc19b_f174,
-    0xe49b_69c1,
-    0xefbe_4786,
-    0x0fc1_9dc6,
-    0x240c_a1cc,
-    0x2de9_2c6f,
-    0x4a74_84aa,
-    0x5cb0_a9dc,
-    0x76f9_88da,
-    0x983e_5152,
-    0xa831_c66d,
-    0xb003_27c8,
-    0xbf59_7fc7,
-    0xc6e0_0bf3,
-    0xd5a7_9147,
-    0x06ca_6351,
-    0x1429_2967,
-    0x27b7_0a85,
-    0x2e1b_2138,
-    0x4d2c_6dfc,
-    0x5338_0d13,
-    0x650a_7354,
-    0x766a_0abb,
-    0x81c2_c92e,
-    0x9272_2c85,
-    0xa2bf_e8a1,
-    0xa81a_664b,
-    0xc24b_8b70,
-    0xc76c_51a3,
-    0xd192_e819,
-    0xd699_0624,
-    0xf40e_3585,
-    0x106a_a070,
-    0x19a4_c116,
-    0x1e37_6c08,
-    0x2748_774c,
-    0x34b0_bcb5,
-    0x391c_0cb3,
-    0x4ed8_aa4a,
-    0x5b9c_ca4f,
-    0x682e_6ff3,
-    0x748f_82ee,
-    0x78a5_636f,
-    0x84c8_7814,
-    0x8cc7_0208,
-    0x90be_fffa,
-    0xa450_6ceb,
-    0xbef9_a3f7,
-    0xc671_78f2,
-];
-
-/// Minimal internal SHA-256 hash state (private to this module).
-#[derive(Clone, Zeroize)]
-struct Sha256State {
-    h: [u32; 8],
-    buffer: [u8; SHA256_BLOCK_SIZE],
-    buf_len: usize,
-    total_len: u64,
-}
-
-impl Sha256State {
-    /// Creates a new SHA-256 hash state.
-    fn new() -> Self {
-        Self {
-            h: SHA256_H0,
-            buffer: [0u8; SHA256_BLOCK_SIZE],
-            buf_len: 0,
-            total_len: 0,
-        }
-    }
-
-    /// Feeds data into the hash state.
-    fn update(&mut self, data: &[u8]) {
-        let mut offset = 0usize;
-        self.total_len = self.total_len.wrapping_add(data.len() as u64);
-
-        // Fill current buffer
-        if self.buf_len > 0 {
-            let remaining = SHA256_BLOCK_SIZE - self.buf_len;
-            let to_copy = core::cmp::min(remaining, data.len());
-            self.buffer[self.buf_len..self.buf_len + to_copy].copy_from_slice(&data[..to_copy]);
-            self.buf_len += to_copy;
-            offset = to_copy;
-
-            if self.buf_len == SHA256_BLOCK_SIZE {
-                let block = self.buffer;
-                sha256_compress(&mut self.h, &block);
-                self.buf_len = 0;
-            }
-        }
-
-        // Process full blocks
-        while offset + SHA256_BLOCK_SIZE <= data.len() {
-            let mut block = [0u8; SHA256_BLOCK_SIZE];
-            block.copy_from_slice(&data[offset..offset + SHA256_BLOCK_SIZE]);
-            sha256_compress(&mut self.h, &block);
-            offset += SHA256_BLOCK_SIZE;
-        }
-
-        // Buffer remaining bytes
-        if offset < data.len() {
-            let remaining = data.len() - offset;
-            self.buffer[..remaining].copy_from_slice(&data[offset..]);
-            self.buf_len = remaining;
-        }
-    }
-
-    /// Finalises the hash and returns the 32-byte digest.
-    fn finalize(&mut self) -> [u8; SHA256_DIGEST_SIZE] {
-        // Padding: append 0x80, then zeros, then 64-bit big-endian bit length
-        let bit_len = self.total_len.wrapping_mul(8);
-        self.buffer[self.buf_len] = 0x80;
-        self.buf_len += 1;
-
-        if self.buf_len > 56 {
-            // Not enough room for length; pad current block and compress
-            for b in &mut self.buffer[self.buf_len..SHA256_BLOCK_SIZE] {
-                *b = 0;
-            }
-            let block = self.buffer;
-            sha256_compress(&mut self.h, &block);
-            self.buf_len = 0;
-        }
-        for b in &mut self.buffer[self.buf_len..56] {
-            *b = 0;
-        }
-        self.buffer[56..64].copy_from_slice(&bit_len.to_be_bytes());
-        let block = self.buffer;
-        sha256_compress(&mut self.h, &block);
-
-        let mut out = [0u8; SHA256_DIGEST_SIZE];
-        for (i, word) in self.h.iter().enumerate() {
-            out[i * 4..(i + 1) * 4].copy_from_slice(&word.to_be_bytes());
-        }
-        out
-    }
-}
-
-/// SHA-256 block compression function.
-#[allow(clippy::many_single_char_names)] // SHA-256 spec uses a,b,c,d,e,f,g,h
-fn sha256_compress(state: &mut [u32; 8], block: &[u8; SHA256_BLOCK_SIZE]) {
-    let mut w = [0u32; 64];
-    for i in 0..16 {
-        w[i] = u32::from_be_bytes([
-            block[i * 4],
-            block[i * 4 + 1],
-            block[i * 4 + 2],
-            block[i * 4 + 3],
-        ]);
-    }
-    for i in 16..64 {
-        let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
-        let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
-        w[i] = w[i - 16]
-            .wrapping_add(s0)
-            .wrapping_add(w[i - 7])
-            .wrapping_add(s1);
-    }
-
-    let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h) = (
-        state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7],
-    );
-
-    for i in 0..64 {
-        let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-        let ch = (e & f) ^ ((!e) & g);
-        let temp1 = h
-            .wrapping_add(s1)
-            .wrapping_add(ch)
-            .wrapping_add(SHA256_K[i])
-            .wrapping_add(w[i]);
-        let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-        let maj = (a & b) ^ (a & c) ^ (b & c);
-        let temp2 = s0.wrapping_add(maj);
-
-        h = g;
-        g = f;
-        f = e;
-        e = d.wrapping_add(temp1);
-        d = c;
-        c = b;
-        b = a;
-        a = temp1.wrapping_add(temp2);
-    }
-
-    state[0] = state[0].wrapping_add(a);
-    state[1] = state[1].wrapping_add(b);
-    state[2] = state[2].wrapping_add(c);
-    state[3] = state[3].wrapping_add(d);
-    state[4] = state[4].wrapping_add(e);
-    state[5] = state[5].wrapping_add(f);
-    state[6] = state[6].wrapping_add(g);
-    state[7] = state[7].wrapping_add(h);
-}
-
-/// Computes the SHA-256 digest of the given data (convenience wrapper).
-fn sha256_digest(data: &[u8]) -> [u8; SHA256_DIGEST_SIZE] {
-    let mut state = Sha256State::new();
-    state.update(data);
-    state.finalize()
-}
-
-// ===========================================================================
 // HMAC internal state (replaces crypto/hmac/hmac.c)
 // ===========================================================================
 // HMAC(K, m) = H((K' ⊕ opad) || H((K' ⊕ ipad) || m))
@@ -382,30 +142,83 @@ fn sha256_digest(data: &[u8]) -> [u8; SHA256_DIGEST_SIZE] {
 const HMAC_MAX_BLOCK_SIZE: usize = 144;
 
 /// Internal HMAC computation state.
-#[derive(Clone, Zeroize)]
+///
+/// HMAC-K(M) = H((K' XOR opad) || H((K' XOR ipad) || M)) per RFC 2104,
+/// where K' is K hashed-then-padded (if |K| > B) or zero-padded (if |K| ≤ B),
+/// ipad = 0x36 repeated B times, opad = 0x5c repeated B times, and B is the
+/// underlying digest's block size.
+///
+/// The inner hash state is a `Box<dyn Digest>` so HMAC supports every digest
+/// the [`crate::hash::sha`] factory exposes (SHA-1, SHA-2 family, SHA-3
+/// family). `Clone` is implemented manually because trait objects cannot
+/// auto-derive `Clone`; `Zeroize` is implemented manually because trait
+/// objects cannot auto-derive `Zeroize` either — concrete digest contexts
+/// implement `ZeroizeOnDrop` themselves so the inner state is zeroed when the
+/// box is replaced or dropped.
 struct HmacState {
-    /// Inner hash state (H(ipad ⊕ K' || ...))
-    inner: Sha256State,
+    /// Inner hash state (H(ipad ⊕ K' || ...)) — boxed to allow runtime
+    /// selection of the underlying digest algorithm.
+    inner: Box<dyn Digest>,
     /// Outer padded key stored for finalization (opad ⊕ K')
     opad_key: Vec<u8>,
     /// Digest name for diagnostics and validation.
     digest_name: String,
 }
 
+// `Box<dyn Digest>` does not implement `Clone` (trait objects are not
+// `Clone`-object-safe). Each concrete digest context (Sha1Context,
+// Sha256Context, etc.) provides `clone_box` on the [`Digest`] trait that
+// returns a fresh boxed copy of the full internal state, so we forward to
+// that here.
+impl Clone for HmacState {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone_box(),
+            opad_key: self.opad_key.clone(),
+            digest_name: self.digest_name.clone(),
+        }
+    }
+}
+
+// `Box<dyn Digest>` does not implement `Zeroize` either. We zeroize the
+// auxiliary buffers explicitly and reset the inner digest context, which
+// puts it back into its initial state and overwrites any block-buffer
+// residue. Concrete digest types implement `ZeroizeOnDrop`, so the
+// destructor path also zeroes out the heap allocation when the box drops.
+impl Zeroize for HmacState {
+    fn zeroize(&mut self) {
+        self.inner.reset();
+        self.opad_key.zeroize();
+        self.digest_name.zeroize();
+    }
+}
+
 impl HmacState {
     /// Initialises an HMAC state with the given key and digest name.
     ///
-    /// Currently implements HMAC-SHA-256; other digest names are validated
-    /// but produce an error for unsupported algorithms until the provider
-    /// dispatch layer is fully wired.
+    /// Supported digests are SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, and
+    /// the SHA-3 family (224/256/384/512). Any other digest name returns
+    /// [`CryptoError::AlgorithmNotFound`].
+    ///
+    /// The key is treated per RFC 2104:
+    /// * If `key.len() > block_size`: K' = H(key) zero-padded to `block_size`.
+    /// * Otherwise: K' = key zero-padded to `block_size`.
     fn new(key: &[u8], digest_name: &str) -> CryptoResult<Self> {
         let block_size = Self::block_size_for_digest(digest_name)?;
         let hash_size = Self::hash_size_for_digest(digest_name)?;
+        let alg = Self::digest_name_to_sha_algorithm(digest_name)?;
 
         // Step 1: Derive K' — hash key if longer than block size
         let mut k_prime = vec![0u8; block_size];
         if key.len() > block_size {
-            let hashed = sha256_digest(key);
+            let mut hasher = create_sha_digest(alg)?;
+            hasher.update(key)?;
+            let hashed = hasher.finalize()?;
+            // SAFETY-OF-COPY: `hashed.len()` is exactly `digest_size` for the
+            // selected algorithm (returned by the canonical digest factory),
+            // and `digest_size == hash_size` by construction. The receiving
+            // slice has length `hash_size` and the source has at least that
+            // many bytes, so the copy is in-bounds.
             k_prime[..hash_size].copy_from_slice(&hashed[..hash_size]);
         } else {
             k_prime[..key.len()].copy_from_slice(key);
@@ -421,8 +234,8 @@ impl HmacState {
         k_prime.zeroize();
 
         // Step 3: Start inner hash with ipad key
-        let mut inner = Sha256State::new();
-        inner.update(&ipad_key);
+        let mut inner = create_sha_digest(alg)?;
+        inner.update(&ipad_key)?;
         ipad_key.zeroize();
 
         Ok(Self {
@@ -433,23 +246,43 @@ impl HmacState {
     }
 
     /// Feeds message data into the HMAC computation.
-    fn update(&mut self, data: &[u8]) {
-        self.inner.update(data);
+    fn update(&mut self, data: &[u8]) -> CryptoResult<()> {
+        self.inner.update(data)
     }
 
     /// Completes the HMAC and returns the authentication tag.
-    fn finalize(&mut self) -> Vec<u8> {
+    fn finalize(&mut self) -> CryptoResult<Vec<u8>> {
         // inner_hash = H(ipad_key || message)
-        let inner_hash = self.inner.finalize();
+        let inner_hash = self.inner.finalize()?;
 
         // outer = H(opad_key || inner_hash)
-        let mut outer = Sha256State::new();
-        outer.update(&self.opad_key);
-        outer.update(&inner_hash);
-        let result = outer.finalize();
-        outer.zeroize();
+        let alg = Self::digest_name_to_sha_algorithm(&self.digest_name)?;
+        let mut outer = create_sha_digest(alg)?;
+        outer.update(&self.opad_key)?;
+        outer.update(&inner_hash)?;
+        outer.finalize()
+    }
 
-        result.to_vec()
+    /// Maps a digest name to the canonical [`ShaAlgorithm`] variant.
+    ///
+    /// Accepts the common spellings used by OpenSSL provider parameter
+    /// strings (`"SHA-1"`, `"SHA1"`, `"SHA2-256"`, etc.). Returns
+    /// [`CryptoError::AlgorithmNotFound`] for any unrecognised name.
+    fn digest_name_to_sha_algorithm(name: &str) -> CryptoResult<ShaAlgorithm> {
+        match name.to_uppercase().as_str() {
+            "SHA1" | "SHA-1" => Ok(ShaAlgorithm::Sha1),
+            "SHA224" | "SHA-224" | "SHA2-224" => Ok(ShaAlgorithm::Sha224),
+            "SHA256" | "SHA-256" | "SHA2-256" => Ok(ShaAlgorithm::Sha256),
+            "SHA384" | "SHA-384" | "SHA2-384" => Ok(ShaAlgorithm::Sha384),
+            "SHA512" | "SHA-512" | "SHA2-512" => Ok(ShaAlgorithm::Sha512),
+            "SHA3-224" => Ok(ShaAlgorithm::Sha3_224),
+            "SHA3-256" => Ok(ShaAlgorithm::Sha3_256),
+            "SHA3-384" => Ok(ShaAlgorithm::Sha3_384),
+            "SHA3-512" => Ok(ShaAlgorithm::Sha3_512),
+            _ => Err(CryptoError::AlgorithmNotFound(format!(
+                "unsupported HMAC digest: {name}"
+            ))),
+        }
     }
 
     /// Returns the block size for the given digest algorithm name.
@@ -457,10 +290,10 @@ impl HmacState {
     /// The returned block size is guaranteed to be ≤ [`HMAC_MAX_BLOCK_SIZE`].
     fn block_size_for_digest(name: &str) -> CryptoResult<usize> {
         let bs = match name.to_uppercase().as_str() {
-            "SHA256" | "SHA-256" | "SHA2-256" | "SHA224" | "SHA-224" | "SHA1" | "SHA-1" | "MD5" => {
-                64
-            }
-            "SHA384" | "SHA-384" | "SHA512" | "SHA-512" => 128,
+            "SHA256" | "SHA-256" | "SHA2-256" | "SHA224" | "SHA-224" | "SHA2-224" | "SHA1"
+            | "SHA-1" => 64,
+            "SHA384" | "SHA-384" | "SHA2-384" | "SHA512" | "SHA-512" | "SHA2-512" => 128,
+            "SHA3-224" => 144,
             "SHA3-256" => 136,
             "SHA3-384" => 104,
             "SHA3-512" => 72,
@@ -478,11 +311,10 @@ impl HmacState {
     fn hash_size_for_digest(name: &str) -> CryptoResult<usize> {
         match name.to_uppercase().as_str() {
             "SHA256" | "SHA-256" | "SHA2-256" | "SHA3-256" => Ok(32),
-            "SHA224" | "SHA-224" => Ok(28),
-            "SHA384" | "SHA-384" | "SHA3-384" => Ok(48),
-            "SHA512" | "SHA-512" | "SHA3-512" => Ok(64),
+            "SHA224" | "SHA-224" | "SHA2-224" | "SHA3-224" => Ok(28),
+            "SHA384" | "SHA-384" | "SHA2-384" | "SHA3-384" => Ok(48),
+            "SHA512" | "SHA-512" | "SHA2-512" | "SHA3-512" => Ok(64),
             "SHA1" | "SHA-1" => Ok(20),
-            "MD5" => Ok(16),
             _ => Err(CryptoError::AlgorithmNotFound(format!(
                 "unsupported HMAC digest: {name}"
             ))),
@@ -1995,7 +1827,9 @@ impl MacContext {
             .as_mut()
             .ok_or_else(|| CryptoError::Verification("Internal: no algorithm state".into()))?;
         match st {
-            AlgorithmState::Hmac(h) => h.update(data),
+            // HMAC dispatches to a `Box<dyn Digest>` whose update is fallible;
+            // every other MAC primitive uses an infallible internal API.
+            AlgorithmState::Hmac(h) => h.update(data)?,
             AlgorithmState::Cmac(c) => c.update(data),
             AlgorithmState::Gmac(g) => g.update(data),
             AlgorithmState::Kmac(k) => k.update(data),
@@ -2040,7 +1874,9 @@ impl MacContext {
             .as_mut()
             .ok_or_else(|| CryptoError::Verification("Internal: no algorithm state".into()))?;
         let tag = match st {
-            AlgorithmState::Hmac(h) => h.finalize(),
+            // HMAC dispatches to a `Box<dyn Digest>` whose finalize is fallible;
+            // every other MAC primitive uses an infallible internal API.
+            AlgorithmState::Hmac(h) => h.finalize()?,
             AlgorithmState::Cmac(c) => c.finalize(),
             AlgorithmState::Gmac(g) => g.finalize(),
             AlgorithmState::Kmac(k) => k.finalize(),

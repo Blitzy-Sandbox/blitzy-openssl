@@ -60,6 +60,19 @@ pub trait Digest: Send + Sync {
         self.update(data)?;
         self.finalize()
     }
+
+    /// Clone this digest into a new boxed instance.
+    ///
+    /// Required to support `Clone` for types that hold a `Box<dyn Digest>`
+    /// such as the HMAC state in [`crate::mac`]. Because `Box<dyn Digest>`
+    /// cannot automatically derive `Clone` (the trait is not object-safe for
+    /// `Clone`), each concrete digest implementation must provide an
+    /// explicit `clone_box` returning a fresh boxed copy.
+    ///
+    /// Implementations are expected to clone the full internal state so the
+    /// returned digest produces identical output for any subsequent
+    /// `update` + `finalize` sequence as the original.
+    fn clone_box(&self) -> Box<dyn Digest>;
 }
 
 // =============================================================================
@@ -399,6 +412,10 @@ impl Digest for Sha1Context {
         self.num = 0;
         self.total_len = 0;
     }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
+    }
 }
 
 // =============================================================================
@@ -602,6 +619,10 @@ impl Digest for Sha256Context {
         self.block = [0u8; 64];
         self.num = 0;
         self.total_len = 0;
+    }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
     }
 }
 
@@ -841,6 +862,10 @@ impl Digest for Sha512Context {
         self.block = [0u8; 128];
         self.num = 0;
         self.total_len = 0;
+    }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
     }
 }
 
@@ -1161,6 +1186,10 @@ impl Digest for Sha3Context {
         self.buf.clear();
         self.xof_state = XofState::Absorb;
         self.squeeze_offset = 0;
+    }
+
+    fn clone_box(&self) -> Box<dyn Digest> {
+        Box::new(self.clone())
     }
 }
 
