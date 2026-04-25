@@ -201,11 +201,52 @@ hex = { workspace = true }
 #   C:    #ifndef OPENSSL_NO_EC
 #   Rust: #[cfg(feature = "ec")]
 # All major algorithms are enabled by default.
+#
+# ---------------------------------------------------------------------------
+# Side-Channel Security Notice — Cache-Timing Risk in Software Cipher Paths
+# ---------------------------------------------------------------------------
+# Several symmetric cipher implementations in this crate use S-box / T-table
+# lookups that are NOT cache-timing-resistant on commodity x86_64 / ARM CPUs.
+# This is a known, documented residual leakage that is preserved here for
+# parity with the upstream C reference and for downstream consumers who
+# require these algorithms (FIPS testing, legacy interop, regression suites).
+# See per-module documentation for the precise leakage profile:
+#
+#   * `symmetric/aes.rs`     — T-table variant (192 lookups/block); see
+#                              "Security Notice — Cache-Timing Side Channel"
+#   * `symmetric/des.rs`     — DES_SPTRANS lookups (128 reads/block DES,
+#                              384 reads/block 3DES)
+#   * `symmetric/legacy.rs`  — Per-cipher leakage table for Blowfish, CAST5,
+#                              SEED, ARIA, Camellia, SM4 (RC2/RC4 schedule)
+#
+# Threat model: co-resident untrusted process risk is HIGH; remote network
+# attacker risk is LOWER (recovery requires high-resolution timing). Compile
+# with `--no-default-features` plus an explicit allow-list to opt out of the
+# default-included `aes` and `des` features when a hardware AES-NI / dedicated
+# accelerator path is required by the deployment environment.
+#
+# Cross-reference: Group B #5 commit `e60b4ef65f` (per-module SECURITY blocks);
+# Group B #6 commit (this file's feature-flag gating documentation).
 
 [features]
+# Default feature set per AAP §0.6.1. The `default` set must remain stable
+# across the C→Rust migration to preserve API and feature parity for existing
+# FFI consumers. To opt out of any default feature, build with
+# `--no-default-features` and re-enable individual features explicitly:
+#
+#   # Build with AES disabled (e.g. to avoid software T-table cache-timing
+#   # leakage in hostile co-resident environments where AES-NI is unavailable):
+#   cargo build --no-default-features \
+#       --features "ec,rsa,dh,dsa,sha,chacha,pqc,hpke,cms,ocsp,ct,cmp,ts"
+#
+#   # Build without DES/3DES (recommended for new deployments per
+#   # NIST SP 800-131A 3DES phase-out and Sweet32 mitigation):
+#   cargo build --no-default-features \
+#       --features "ec,rsa,dh,dsa,aes,sha,chacha,pqc,hpke,cms,ocsp,ct,cmp,ts"
+#
 default = [
     "ec", "rsa", "dh", "dsa",         # Asymmetric algorithms
-    "aes", "sha", "chacha", "des",     # Symmetric algorithms
+    "aes", "sha", "chacha", "des",     # Symmetric algorithms (see SECURITY note above)
     "pqc",                              # Post-quantum
     "hpke", "cms", "ocsp", "ct",       # Protocol extensions
     "cmp", "ts",                        # Certificate/timestamp management
@@ -218,16 +259,72 @@ dh = []      # Diffie-Hellman key exchange (replaces OPENSSL_NO_DH)
 dsa = []     # DSA sign/verify (replaces OPENSSL_NO_DSA)
 
 # --- Symmetric algorithms ---
+#
+# SECURITY (cache-timing): The current AES implementation in `symmetric/aes.rs`
+# uses table-lookup substitution (T-tables) which leaks key-dependent cache
+# access patterns on processors without hardware AES support (AES-NI on x86_64
+# or ARMv8 Crypto Extensions on aarch64). Co-resident attackers can recover
+# AES keys via cache side-channels (Bernstein 2005; Tromer-Osvik-Shamir 2010).
+# This is a DOCUMENTED RESIDUAL LEAKAGE. See `symmetric/aes.rs` module-level
+# documentation for the full threat model and per-mode read counts. Bitsliced
+# / hardware-intrinsic paths are out of scope for the current checkpoint.
 aes = []     # AES block cipher: GCM/CCM/OCB/SIV/XTS/wrap (replaces OPENSSL_NO_AES)
+             # WARNING: software path leaks cache-timing — see aes.rs SECURITY block.
+
 sha = []     # SHA-1/2/3/SHAKE digests (replaces OPENSSL_NO_SHA)
+             # Pure-arithmetic — no table lookups — cache-timing safe.
+
 chacha = []  # ChaCha20-Poly1305 AEAD (replaces OPENSSL_NO_CHACHA)
+             # Pure-ARX construction — cache-timing safe by design.
+
+# SECURITY (cache-timing AND cryptographic strength): DES is documented as a
+# legacy algorithm with two known issues:
+#   1. Single DES has only 56-bit effective key strength — BROKEN since 1998.
+#   2. Triple DES (3DES) is in a NIST SP 800-131A phase-out window and is
+#      vulnerable to Sweet32 birthday collision attacks for long-lived
+#      sessions.
+#   3. The `DES_SPTRANS` and `DES_SKB` table lookups (`crypto/des/spr.h` /
+#      `set_key.c` upstream) leak key-dependent cache access patterns —
+#      same threat-class as AES T-tables above.
+# This feature is INCLUDED IN DEFAULT to preserve AAP §0.6.1 API parity for
+# existing FFI consumers that link against legacy DES code paths. New
+# deployments SHOULD explicitly opt out via `--no-default-features`.
 des = []     # DES/3DES legacy cipher (replaces OPENSSL_NO_DES)
+             # WARNING: cryptographically weak (Single DES) and cache-timing-
+             # leaky (3DES). See des.rs SECURITY block. Default-enabled per
+             # AAP §0.6.1; opt out with `--no-default-features`.
 
 # --- Post-quantum algorithms ---
 pqc = []     # ML-KEM (FIPS 203), ML-DSA (FIPS 204), SLH-DSA (FIPS 205), LMS (SP 800-208)
 
 # --- Legacy algorithms ---
-legacy = []  # Blowfish, CAST5, IDEA, SEED, RC2, RC4, RC5 (replaces OPENSSL_NO_BF etc.)
+#
+# SECURITY (cache-timing AND cryptographic strength): The `legacy` feature
+# enables a family of historic ciphers preserved for upstream interop and
+# regression-test parity. ALL except IDEA, RC4 (no S-box state independence),
+# and RC5 (no static tables) are cache-timing-leaky on commodity hardware:
+#
+#   * Blowfish — F-function: 4 × 16 = 64 reads/block (P/S boxes)
+#   * CAST5    — round function: 4 × {12, 16} = 48–64 reads/block
+#   * SEED     — G-function: 4 × 16 = 64 reads/block + key schedule
+#   * Camellia — Feistel network: 144 (Camellia-128) or 192 reads/block
+#   * ARIA     — substitution layer: 16 × {12, 14, 16} reads/block
+#   * SM4      — tau permutation: 128 reads/block
+#   * RC2      — MASH key-schedule data-dependent (Sweet32 vulnerable)
+#   * RC4      — S-box state-dependent swap (also has known biases — RFC 7465)
+#
+# Additionally, several of these ciphers have known cryptographic weaknesses:
+#   * RC4 — RFC 7465 prohibits use in TLS due to keystream biases
+#   * RC2 — 64-bit block size is Sweet32-vulnerable
+#   * IDEA — patent expired but small block size limits modern usability
+#
+# This feature is OPT-IN by design (NOT in `default`) — enable only for
+# specific interop or compliance regression scenarios, not for new
+# deployments. See `symmetric/legacy.rs` module-level documentation for the
+# full per-cipher threat-model and leakage-profile table.
+legacy = []  # Blowfish, CAST5, IDEA, SEED, RC2, RC4, RC5, Camellia, ARIA, SM4
+             # (replaces OPENSSL_NO_BF/CAST/IDEA/SEED/RC2/RC4/RC5/CAMELLIA/ARIA/SM4).
+             # WARNING: opt-in only; cache-timing leaks documented in legacy.rs.
 
 # --- Protocol extensions ---
 hpke = []    # HPKE, RFC 9180 — Hybrid Public Key Encryption (replaces OPENSSL_NO_HPKE)

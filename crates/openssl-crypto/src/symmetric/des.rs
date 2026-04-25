@@ -72,6 +72,103 @@
 //! BUT UNRESOLVED**. See `BENCHMARK_REPORT.md` and AAP §0.7.5 (Perlasm
 //! Assembly Strategy).
 //!
+//! ## Feature Flag Gating
+//!
+//! The entire `des` module is gated behind the `des` Cargo feature flag.
+//! Unlike the `legacy` module, the `des` feature **IS** enabled by default
+//! per AAP §0.6.1 to preserve API and feature parity with existing FFI
+//! consumers that link against legacy DES code paths during the C→Rust
+//! migration window. New deployments **SHOULD** opt out.
+//!
+//! ### Gating Mechanism
+//!
+//! ```toml
+//! # crates/openssl-crypto/Cargo.toml
+//! [features]
+//! default = [
+//!     "ec", "rsa", "dh", "dsa",
+//!     "aes", "sha", "chacha", "des",  # <-- des is in default per AAP §0.6.1
+//!     "pqc",
+//!     "hpke", "cms", "ocsp", "ct",
+//!     "cmp", "ts",
+//! ]
+//! des = []  # DES/3DES legacy cipher (replaces OPENSSL_NO_DES)
+//! ```
+//!
+//! ```rust,ignore
+//! // crates/openssl-crypto/src/symmetric/mod.rs
+//! #[cfg(feature = "des")]
+//! pub mod des;
+//!
+//! #[cfg(feature = "des")]
+//! pub use des::{Des, TripleDes};
+//! ```
+//!
+//! ### Recommended Opt-Out
+//!
+//! For new deployments — particularly those running in multi-tenant cloud
+//! environments where co-resident cache-timing attacks are credible, or
+//! where compliance with NIST SP 800-131A 3DES phase-out is required —
+//! disable the `des` feature explicitly:
+//!
+//! ```text
+//! # Build with everything default EXCEPT des:
+//! cargo build --no-default-features \
+//!     --features "ec,rsa,dh,dsa,aes,sha,chacha,pqc,hpke,cms,ocsp,ct,cmp,ts"
+//!
+//! # Or in a downstream Cargo.toml:
+//! [dependencies]
+//! openssl-crypto = { version = "0.1.0",
+//!                    default-features = false,
+//!                    features = ["ec", "rsa", "aes", "sha", "chacha", "pqc"] }
+//! ```
+//!
+//! When the feature is disabled, the entire `des` module — `Des`, `TripleDes`,
+//! `DesKeySchedule`, `DES_SPTRANS`, `DES_SKB`, and the round/key-schedule
+//! helpers — is excluded from the build, eliminating both the cache-timing
+//! attack surface and the binary footprint of the static tables.
+//!
+//! ### Rationale: Default-On Per AAP §0.6.1, Not "Always Available"
+//!
+//! 1. **API parity preservation** — Existing FFI consumers expect
+//!    `EVP_des_*` / `DES_*` symbols to be present on the default build.
+//!    Removing them from default would break existing C callers linking
+//!    through `openssl-ffi` and violate AAP §0.3.2 "Existing FFI consumer
+//!    breakage" preservation requirement.
+//!
+//! 2. **Migration window** — During the active C→Rust migration phase,
+//!    test suites and interop benchmarks reference DES vectors. Default-
+//!    disabling DES would cause widespread regression-test failures in
+//!    downstream consumers.
+//!
+//! 3. **Future trajectory** — A future major version (post-migration) is
+//!    expected to flip this feature OFF in default and require explicit
+//!    opt-in, mirroring the `legacy` feature posture. This is documented
+//!    in the workspace `Cargo.toml` security commentary above
+//!    `[features]`.
+//!
+//! 4. **Compile-time elimination on opt-out** — When the `des` feature is
+//!    OFF, every cache-timing-vulnerable code path in this file is
+//!    excluded from compilation. There is no runtime check; the
+//!    elimination is fully static.
+//!
+//! ### Cross-References
+//!
+//! - **`crates/openssl-crypto/Cargo.toml`** — `[features]` section,
+//!   `des = []` declaration with security commentary and opt-out
+//!   instructions.
+//! - **`crates/openssl-crypto/src/symmetric/mod.rs`** — `#[cfg]`-gated
+//!   module declaration and re-exports.
+//! - **`symmetric/aes.rs`** — Sibling module; AES is also default-on per
+//!   AAP §0.6.1 with its own cache-timing notice.
+//! - **`symmetric/legacy.rs`** — Sibling module; the `legacy` feature is
+//!   opt-in (NOT in default) — contrast with the AAP §0.6.1 design
+//!   decision documented above.
+//! - **Group B #5 commit `e60b4ef65f`** — Per-table SECURITY blocks at
+//!   `DES_SPTRANS` / `DES_SKB` declaration sites and round-function call
+//!   sites.
+//! - **Group B #6 commit (this file)** — Feature-flag gating documentation.
+//!
 //! ## Key Material Security
 //!
 //! All structures holding DES key material (`DesKeySchedule`, `Des`,

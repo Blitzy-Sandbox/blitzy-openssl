@@ -40,6 +40,46 @@
 //! - **R8 (Zero Unsafe):** Zero `unsafe` blocks in this module.
 //! - **R9 (Warning-Free):** All public items documented.
 //! - **R10 (Wiring):** All submodules declared and re-exported.
+//!
+//! ## Feature Flag Gating Overview
+//!
+//! Each cipher submodule below is gated behind a Cargo feature flag. The
+//! gating is performed in two parallel layers — Cargo `[features]` table
+//! (the toggle definition) and Rust `#[cfg(feature = "...")]` attributes
+//! (the compile-time elimination). When a feature is disabled, the entire
+//! submodule, its tables, its round functions, and its public re-exports
+//! are excluded from the build — eliminating both attack surface and
+//! binary size.
+//!
+//! | Submodule       | Feature  | Default? | Opt-Out / Opt-In                                                               |
+//! |-----------------|----------|----------|--------------------------------------------------------------------------------|
+//! | [`aes`]         | `aes`    | ✅ Yes   | `--no-default-features --features "..."` (omit `aes` from list)                |
+//! | [`chacha20`]    | `chacha` | ✅ Yes   | `--no-default-features --features "..."` (omit `chacha`)                       |
+//! | [`des`]         | `des`    | ✅ Yes   | `--no-default-features --features "..."` (omit `des`) — recommended opt-out    |
+//! | [`legacy`]      | `legacy` | ❌ No    | `--features "openssl-crypto/legacy"` — explicit opt-in                         |
+//!
+//! ### Side-Channel Security Implications
+//!
+//! Three of the four cipher submodules contain code paths that leak
+//! cache-line-resident timing information to co-resident attackers on
+//! commodity x86_64 / aarch64 hardware lacking dedicated instructions:
+//!
+//! - **`aes`** — T-table software path leaks AES key bits (known weakness;
+//!   default-on per AAP §0.6.1 for FFI parity).
+//! - **`des`** — `DES_SPTRANS` / `DES_SKB` table lookups leak DES/3DES key
+//!   bits (default-on per AAP §0.6.1 for FFI parity; cryptographic
+//!   weakness compounds the side-channel risk).
+//! - **`legacy`** — 8 of 10 ciphers leak via S-box lookups (Blowfish,
+//!   CAST5, SEED, ARIA, Camellia, SM4, RC2, RC4); IDEA and RC5 are
+//!   table-free (opt-in by default per AAP §0.6.1).
+//!
+//! `chacha20` is built from add/rotate/xor (ARX) primitives only and has
+//! **no S-box / T-table lookup** — it is cache-timing safe by design.
+//!
+//! See each submodule's "Security Notice — Cache-Timing Side Channel"
+//! header section and the workspace `Cargo.toml` for the full per-cipher
+//! threat model. Cross-reference: Group B #5 commit `e60b4ef65f` (per-
+//! cipher SECURITY blocks); Group B #6 commit (feature-flag gating).
 
 use openssl_common::{CryptoError, CryptoResult};
 use subtle::ConstantTimeEq;

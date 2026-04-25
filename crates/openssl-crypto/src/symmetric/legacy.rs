@@ -101,6 +101,87 @@
 //! for the trade-off analysis and `UNSAFE_AUDIT.md` for the broader
 //! side-channel posture of the workspace.
 //!
+//! ## Feature Flag Gating
+//!
+//! The entire `legacy` module is gated behind the `legacy` Cargo feature
+//! flag, which is **NOT** enabled by default. This is a deliberate design
+//! decision driven by the cache-timing risks documented in the previous
+//! section combined with the cryptographic weakness of several of the
+//! provided ciphers (RC4 biases per RFC 7465, RC2 / Blowfish / CAST5 / IDEA
+//! / RC5 64-bit block size vulnerable to Sweet32 per RFC 7457).
+//!
+//! ### Gating Mechanism
+//!
+//! ```toml
+//! # crates/openssl-crypto/Cargo.toml — symmetric/legacy.rs is compiled
+//! # only when the `legacy` feature is enabled:
+//! [features]
+//! legacy = []  # NOT in `default` — opt-in only
+//! ```
+//!
+//! ```rust,ignore
+//! // crates/openssl-crypto/src/symmetric/mod.rs
+//! #[cfg(feature = "legacy")]
+//! pub mod legacy;
+//!
+//! #[cfg(feature = "legacy")]
+//! pub use legacy::{Aria, Blowfish, Camellia, Cast5, Idea, Rc2, Rc4, Rc5, Seed, Sm4};
+//! ```
+//!
+//! ### Opt-In Activation
+//!
+//! Downstream callers who require these ciphers (regression test suites,
+//! interop with legacy peers, FIPS reference test vectors, locale-specific
+//! compliance scenarios) must opt in explicitly:
+//!
+//! ```text
+//! # Add to your Cargo.toml or build-flags:
+//! cargo build --features "openssl-crypto/legacy"
+//!
+//! # Or in a downstream crate's Cargo.toml:
+//! [dependencies]
+//! openssl-crypto = { version = "0.1.0", features = ["legacy"] }
+//! ```
+//!
+//! ### Rationale: Why "Opt-In" Rather Than "Always Available"
+//!
+//! 1. **Compile-time elimination** — When the feature is off, the entire
+//!    module (including its 10,000+ lines of cipher implementations and
+//!    static tables) is excluded from the build. This reduces both binary
+//!    size and the attack surface available to a hostile process probing
+//!    for known cache-timing-vulnerable code paths via ROP / speculative
+//!    side-channels.
+//!
+//! 2. **API parity preservation** — Callers building with default features
+//!    cannot accidentally invoke a legacy cipher via `CipherAlgorithm`
+//!    enum lookup. The variants exist in the enum (so the public API is
+//!    stable), but the constructor functions return [`CryptoError::Common`]
+//!    via [`CommonError::FeatureDisabled`] when the feature is off.
+//!
+//! 3. **Compliance signaling** — A build that includes the `legacy`
+//!    feature is a clear signal to downstream auditors that legacy
+//!    interop is expected. Conversely, a build WITHOUT the feature is
+//!    cryptographically clean of weak / cache-timing-leaky ciphers
+//!    (subject to the AES T-table caveat documented in `symmetric/aes.rs`).
+//!
+//! 4. **AAP §0.6.1 alignment** — The `legacy` feature is documented in
+//!    the workspace `Cargo.toml` features section with the explicit note
+//!    that it is opt-in by design. See also `Cargo.toml` for the
+//!    cross-cutting cache-timing security notice.
+//!
+//! ### Cross-References
+//!
+//! - **`crates/openssl-crypto/Cargo.toml`** — `[features]` section,
+//!   `legacy = []` declaration with security commentary.
+//! - **`crates/openssl-crypto/src/symmetric/mod.rs`** — `#[cfg]`-gated
+//!   module declaration and re-exports.
+//! - **`symmetric/aes.rs` and `symmetric/des.rs`** — Sibling modules with
+//!   their own cache-timing notices; AES/DES are default-on per AAP
+//!   §0.6.1, with their own opt-out instructions.
+//! - **Group B #5 commit `e60b4ef65f`** — Per-cipher SECURITY blocks
+//!   inside this file's round-function implementations.
+//! - **Group B #6 commit (this file)** — Feature-flag gating documentation.
+//!
 //! ## Key Material Security
 //!
 //! Every cipher struct derives [`Zeroize`] and [`ZeroizeOnDrop`] from the
