@@ -63,6 +63,16 @@ pub mod tls;
 /// `ssl/record/methods/dtls_meth.c` upstream.
 pub mod dtls;
 
+/// Lucky13 padding-oracle defense for CBC-mode TLS records.
+///
+/// Provides constant-time CBC padding removal and MAC extraction per
+/// RFC 5246 §6.2.3.2 to mitigate the Lucky Thirteen timing attack
+/// (CVE-2013-0169, AlFardan & Paterson, IEEE S&P 2013).
+///
+/// Translated from `ssl/record/methods/tls_pad.c` upstream (Apache 2.0,
+/// 1995–2025 OpenSSL Project).
+pub mod lucky13;
+
 // ---------------------------------------------------------------------------
 // Public constants
 // ---------------------------------------------------------------------------
@@ -578,6 +588,53 @@ pub trait RecordMethod: Send + Sync {
     }
 
     /// Reads a single record from the record layer.
+    ///
+    /// # Lucky13 Padding-Oracle Defense (CBC Cipher Suites)
+    ///
+    /// For CBC-mode cipher suites (TLS 1.0 / 1.1 / 1.2 with `*_CBC_SHA*`
+    /// suites and `SSLv3`) implementations **MUST** decrypt-and-verify in
+    /// constant time per RFC 5246 §6.2.3.2 to mitigate the Lucky Thirteen
+    /// timing attack (CVE-2013-0169, `AlFardan` & Paterson, IEEE S&P 2013,
+    /// "Lucky Thirteen: Breaking the TLS and DTLS Record Protocols").
+    ///
+    /// Concretely, an implementation **must**:
+    ///
+    /// 1. **Always** perform the full padding scan over the maximum 256-byte
+    ///    window, regardless of the actual padding length byte. Use
+    ///    [`crate::record::lucky13::tls1_cbc_remove_padding_and_mac`] for
+    ///    TLS 1.0 / 1.1 / 1.2, or
+    ///    [`crate::record::lucky13::ssl3_cbc_remove_padding_and_mac`] for
+    ///    `SSLv3`, to obtain a constant-time padding-validation result.
+    ///
+    /// 2. **Always** compute the HMAC over the full plaintext length (after
+    ///    padding-byte removal) — never over the post-decoded length. The
+    ///    HMAC computation must be invariant in the cipher suite's MAC size
+    ///    plus the maximum CBC padding (255 bytes). Trust no shortcut that
+    ///    short-circuits when padding is malformed.
+    ///
+    /// 3. Verify MAC equality with [`openssl_common::constant_time::memcmp`]
+    ///    (or [`openssl_common::constant_time::memcmp_choice`] for `subtle`
+    ///    interop). **Never** use `==` on `&[u8]` to compare MAC bytes.
+    ///
+    /// 4. Combine the padding-validation mask and the MAC-equality mask with
+    ///    bitwise AND, and only **then** decide whether to surface a record
+    ///    or a `bad_record_mac` alert. The decision must not be observable
+    ///    via timing.
+    ///
+    /// 5. For AEAD cipher suites (AES-GCM, ChaCha20-Poly1305) the AEAD
+    ///    primitive itself provides constant-time tag verification — the
+    ///    Lucky13 path is bypassed (see the `aead` parameter to
+    ///    [`crate::record::lucky13::tls1_cbc_remove_padding_and_mac`]).
+    ///
+    /// This contract is intentionally normative because it is observable
+    /// through black-box timing: a non-compliant implementation is a
+    /// distinguisher that reveals plaintext bytes to a network attacker.
+    ///
+    /// # Source
+    ///
+    /// The reference C implementation of the constant-time helpers lives in
+    /// `ssl/record/methods/tls_pad.c`; the policy is enforced from
+    /// `ssl/record/methods/tls_common.c::tls_default_post_process_record`.
     fn read_record(&self, rl: &mut dyn RecordLayerInstance) -> Result<TlsRecord, RlayerReturn>;
 
     /// Releases a previously-read record back to the backend.

@@ -486,6 +486,119 @@ pub fn constant_time_lt_64(a: u64, b: u64) -> u64 {
     constant_time_msb_64(a ^ ((a ^ b) | (a.wrapping_sub(b) ^ b)))
 }
 
+/// Returns `0xFFFF_FFFF_FFFF_FFFF` if `a >= b` in constant time, `0` otherwise.
+///
+/// 64-bit version of [`constant_time_ge`]. Equivalent to the bitwise complement
+/// of [`constant_time_lt_64`].
+///
+/// This is the Rust equivalent of the C `constant_time_ge_s(size_t, size_t)`
+/// when `size_t` is 64-bit (the typical case on modern platforms). Used by the
+/// Lucky13 padding-oracle defense (RFC 5246 §6.2.3.2, CVE-2013-0169).
+///
+/// # Examples
+///
+/// ```
+/// use openssl_common::constant_time::constant_time_ge_64;
+///
+/// assert_eq!(constant_time_ge_64(5, 3), u64::MAX);
+/// assert_eq!(constant_time_ge_64(5, 5), u64::MAX);
+/// assert_eq!(constant_time_ge_64(3, 5), 0);
+/// ```
+#[inline]
+pub fn constant_time_ge_64(a: u64, b: u64) -> u64 {
+    !constant_time_lt_64(a, b)
+}
+
+/// Returns `0xFFFF_FFFF_FFFF_FFFF` if `a == 0` in constant time, `0` otherwise.
+///
+/// 64-bit version of [`constant_time_is_zero`] using the same bitmask
+/// technique: `constant_time_msb_64(!a & (a - 1))`.
+///
+/// When `a` is 0: `!0u64 = u64::MAX` and `0 - 1 = u64::MAX` (wrapping), so
+/// `!a & (a-1) = u64::MAX` which has MSB set, producing all-ones.
+///
+/// For any non-zero `a`, the MSB of `!a & (a-1)` is always 0.
+///
+/// # Examples
+///
+/// ```
+/// use openssl_common::constant_time::constant_time_is_zero_64;
+///
+/// assert_eq!(constant_time_is_zero_64(0), u64::MAX);
+/// assert_eq!(constant_time_is_zero_64(1), 0);
+/// assert_eq!(constant_time_is_zero_64(u64::MAX), 0);
+/// ```
+#[inline]
+pub fn constant_time_is_zero_64(a: u64) -> u64 {
+    constant_time_msb_64(!a & a.wrapping_sub(1))
+}
+
+/// Returns `0xFFFF_FFFF_FFFF_FFFF` if `a == b` in constant time, `0` otherwise.
+///
+/// 64-bit version of [`constant_time_eq`]. Computed as
+/// `constant_time_is_zero_64(a ^ b)` — if `a` and `b` are equal, their XOR is
+/// zero.
+///
+/// This is the Rust equivalent of the C `constant_time_eq_s(size_t, size_t)`
+/// when `size_t` is 64-bit. Used by the Lucky13 padding-oracle defense.
+///
+/// # Examples
+///
+/// ```
+/// use openssl_common::constant_time::constant_time_eq_64;
+///
+/// assert_eq!(constant_time_eq_64(42, 42), u64::MAX);
+/// assert_eq!(constant_time_eq_64(42, 43), 0);
+/// assert_eq!(constant_time_eq_64(0, 0), u64::MAX);
+/// ```
+#[inline]
+pub fn constant_time_eq_64(a: u64, b: u64) -> u64 {
+    constant_time_is_zero_64(a ^ b)
+}
+
+/// Returns `0xFF` if `a >= b` in constant time, `0x00` otherwise (8-bit
+/// mask from a 64-bit comparison).
+///
+/// This is the Rust equivalent of the C `constant_time_ge_8_s(size_t, size_t)`
+/// when `size_t` is 64-bit. Used by the Lucky13 padding-oracle defense to
+/// produce per-byte masks during the fixed-iteration padding scan in
+/// `tls1_cbc_remove_padding_and_mac` (`ssl/record/methods/tls_pad.c`).
+///
+/// # Examples
+///
+/// ```
+/// use openssl_common::constant_time::constant_time_ge_8_64;
+///
+/// assert_eq!(constant_time_ge_8_64(5, 3), 0xFF);
+/// assert_eq!(constant_time_ge_8_64(5, 5), 0xFF);
+/// assert_eq!(constant_time_ge_8_64(3, 5), 0x00);
+/// ```
+#[inline]
+pub fn constant_time_ge_8_64(a: u64, b: u64) -> u8 {
+    // Source value is u64::MAX or 0; low byte is therefore 0xFF or 0x00.
+    constant_time_ge_64(a, b).to_le_bytes()[0]
+}
+
+/// Returns `0xFF` if `a == b` in constant time, `0x00` otherwise (8-bit
+/// mask from a 64-bit comparison).
+///
+/// 8-bit convenience wrapper around [`constant_time_eq_64`]. The result of the
+/// 64-bit comparison (either `u64::MAX` or `0`) is truncated to the low byte,
+/// yielding `0xFF` or `0x00`.
+///
+/// # Examples
+///
+/// ```
+/// use openssl_common::constant_time::constant_time_eq_8_64;
+///
+/// assert_eq!(constant_time_eq_8_64(42, 42), 0xFF);
+/// assert_eq!(constant_time_eq_8_64(42, 43), 0x00);
+/// ```
+#[inline]
+pub fn constant_time_eq_8_64(a: u64, b: u64) -> u8 {
+    constant_time_eq_64(a, b).to_le_bytes()[0]
+}
+
 // ===========================================================================
 // 32-bit Aliases
 // ===========================================================================
@@ -868,6 +981,70 @@ mod tests {
         assert_eq!(constant_time_lt_64(5, 3), 0);
         assert_eq!(constant_time_lt_64(5, 5), 0);
         assert_eq!(constant_time_lt_64(u64::MAX, 0), 0);
+    }
+
+    #[test]
+    fn test_ge_64_true() {
+        assert_eq!(constant_time_ge_64(5, 3), u64::MAX);
+        assert_eq!(constant_time_ge_64(5, 5), u64::MAX);
+        assert_eq!(constant_time_ge_64(u64::MAX, 0), u64::MAX);
+        assert_eq!(constant_time_ge_64(u64::MAX, u64::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn test_ge_64_false() {
+        assert_eq!(constant_time_ge_64(3, 5), 0);
+        assert_eq!(constant_time_ge_64(0, 1), 0);
+        assert_eq!(constant_time_ge_64(0, u64::MAX), 0);
+    }
+
+    #[test]
+    fn test_is_zero_64() {
+        assert_eq!(constant_time_is_zero_64(0), u64::MAX);
+        assert_eq!(constant_time_is_zero_64(1), 0);
+        assert_eq!(constant_time_is_zero_64(u64::MAX), 0);
+        assert_eq!(constant_time_is_zero_64(0x8000_0000_0000_0000), 0);
+    }
+
+    #[test]
+    fn test_eq_64_true() {
+        assert_eq!(constant_time_eq_64(0, 0), u64::MAX);
+        assert_eq!(constant_time_eq_64(42, 42), u64::MAX);
+        assert_eq!(constant_time_eq_64(u64::MAX, u64::MAX), u64::MAX);
+    }
+
+    #[test]
+    fn test_eq_64_false() {
+        assert_eq!(constant_time_eq_64(42, 43), 0);
+        assert_eq!(constant_time_eq_64(0, 1), 0);
+        assert_eq!(constant_time_eq_64(0, u64::MAX), 0);
+    }
+
+    #[test]
+    fn test_ge_8_64_true() {
+        assert_eq!(constant_time_ge_8_64(5, 3), 0xFF);
+        assert_eq!(constant_time_ge_8_64(5, 5), 0xFF);
+        assert_eq!(constant_time_ge_8_64(u64::MAX, 0), 0xFF);
+    }
+
+    #[test]
+    fn test_ge_8_64_false() {
+        assert_eq!(constant_time_ge_8_64(3, 5), 0x00);
+        assert_eq!(constant_time_ge_8_64(0, 1), 0x00);
+        assert_eq!(constant_time_ge_8_64(0, u64::MAX), 0x00);
+    }
+
+    #[test]
+    fn test_eq_8_64_true() {
+        assert_eq!(constant_time_eq_8_64(42, 42), 0xFF);
+        assert_eq!(constant_time_eq_8_64(0, 0), 0xFF);
+        assert_eq!(constant_time_eq_8_64(u64::MAX, u64::MAX), 0xFF);
+    }
+
+    #[test]
+    fn test_eq_8_64_false() {
+        assert_eq!(constant_time_eq_8_64(42, 43), 0x00);
+        assert_eq!(constant_time_eq_8_64(0, u64::MAX), 0x00);
     }
 
     // --- constant_time_is_zero_32 ---
