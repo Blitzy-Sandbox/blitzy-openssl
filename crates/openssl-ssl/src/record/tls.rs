@@ -951,20 +951,31 @@ pub fn release(
 
 /// Re-exports the parent-module message-callback wrapper. Provided so
 /// that TLS transport driver code can invoke it through this submodule's
-/// public API.
+/// public API. The `state` argument supplies the per-connection
+/// [`RecordLayerState`] holding the installed message callback (read-site
+/// of the [`RecordLayerState::msg_callback`] field per Rule R3).
 pub fn dispatch_msg_callback(
+    state: &RecordLayerState,
     write_p: bool,
     version: u16,
     content_type: u8,
     buf: &[u8],
 ) {
-    rlayer_msg_callback_wrapper(write_p, version, content_type, buf);
+    rlayer_msg_callback_wrapper(state, write_p, version, content_type, buf);
 }
 
-/// Re-exports the parent-module security callback wrapper.
+/// Re-exports the parent-module security callback wrapper. The `state`
+/// argument supplies the per-connection [`RecordLayerState`] holding the
+/// installed security callback (read-site of the
+/// [`RecordLayerState::security_callback`] field per Rule R3).
 #[must_use]
-pub fn dispatch_security_callback(op: i32, bits: i32, nid: i32) -> bool {
-    rlayer_security_wrapper(op, bits, nid)
+pub fn dispatch_security_callback(
+    state: &RecordLayerState,
+    op: i32,
+    bits: i32,
+    nid: i32,
+) -> bool {
+    rlayer_security_wrapper(state, op, bits, nid)
 }
 
 /// Re-exports the parent-module padding callback wrapper.
@@ -1527,9 +1538,12 @@ mod tests {
     fn dispatch_callback_wrappers_are_reachable() {
         // These are thin re-exports; their bodies live in the parent
         // module. Exercising them here proves R10 wiring.
-        dispatch_msg_callback(false, 0x0303, SSL3_RT_APPLICATION_DATA, b"abc");
-        assert!(dispatch_security_callback(0, 0, 0));
         let state = RecordLayerState::new();
+        dispatch_msg_callback(&state, false, 0x0303, SSL3_RT_APPLICATION_DATA, b"abc");
+        // No msg_callback installed -> wrapper is a no-op.
+        assert!(!state.has_msg_callback());
+        // No security_callback installed -> default-permit semantics.
+        assert!(dispatch_security_callback(&state, 0, 0, 0));
         assert_eq!(dispatch_padding_callback(&state, SSL3_RT_APPLICATION_DATA, 100), 0);
     }
 

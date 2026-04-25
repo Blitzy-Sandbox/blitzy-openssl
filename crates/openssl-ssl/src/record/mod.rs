@@ -397,6 +397,54 @@ impl TlsRecord {
 pub type RecordPaddingCallback = Box<dyn Fn(u8, usize) -> usize + Send + Sync>;
 
 // ---------------------------------------------------------------------------
+// MsgCallback
+// ---------------------------------------------------------------------------
+
+/// SSL message callback installed via the `SSL_CTX_set_msg_callback` /
+/// `SSL_set_msg_callback` family of APIs.
+///
+/// Invoked by the record layer for every protocol message sent or received
+/// (handshake, alert, application-data, change-cipher-spec, heartbeat).
+/// Arguments:
+/// * `write_p` — `true` if the record is being sent, `false` if received.
+/// * `version` — wire-format protocol version (e.g. `0x0303` for TLS 1.2).
+/// * `content_type` — TLS content type (`SSL3_RT_HANDSHAKE`,
+///   `SSL3_RT_ALERT`, `SSL3_RT_APPLICATION_DATA`, etc.).
+/// * `buf` — full message payload bytes.
+///
+/// Replaces C's
+/// `void (*msg_callback)(int write_p, int version, int content_type,
+///                       const void *buf, size_t len, SSL *ssl, void *arg)`
+/// pattern from `ssl/record/rec_layer_s3.c` line 1130–1141 (where the
+/// upstream wrapper additionally threads the `SSL *` and `void *arg`
+/// through to the user closure — both are captured in the `Fn` closure
+/// in this Rust translation).
+pub type MsgCallback = Box<dyn Fn(bool, u16, u8, &[u8]) + Send + Sync>;
+
+// ---------------------------------------------------------------------------
+// SecurityCallback
+// ---------------------------------------------------------------------------
+
+/// SSL security callback consulted before performing a security-sensitive
+/// operation.
+///
+/// Invoked by the record layer (and other subsystems via the same
+/// dispatch table) to ask "is this operation permitted under the current
+/// security policy?". Returning `false` rejects the operation.
+///
+/// Arguments:
+/// * `op` — the security check operation code (`SSL_SECOP_*` constants).
+/// * `bits` — security strength in bits relevant to the operation (e.g.
+///   key length).
+/// * `nid` — algorithm NID relevant to the operation.
+///
+/// Replaces C's `int (*ssl_security)(SSL *s, int op, int bits, int nid,
+/// void *other)` pattern from `ssl/record/rec_layer_s3.c` line 1143–1150.
+/// The C implementation defaults to "permit" when no callback is installed;
+/// this behaviour is preserved in [`rlayer_security_wrapper`].
+pub type SecurityCallback = Box<dyn Fn(i32, i32, i32) -> bool + Send + Sync>;
+
+// ---------------------------------------------------------------------------
 // RecordLayerInstance trait
 // ---------------------------------------------------------------------------
 
@@ -760,6 +808,35 @@ pub struct RecordLayerState {
     /// Write-site: `SSL_set_record_padding_callback_arg` equivalent.
     /// Read-site: [`rlayer_padding_wrapper`] dispatch.
     pub record_padding_arg: Option<Box<dyn core::any::Any + Send>>,
+
+    /// SSL message callback invoked for every record handled by the record
+    /// layer (handshake / alert / app-data / change-cipher-spec).
+    ///
+    /// Write-site: [`RecordLayerState::set_msg_callback`] (translates
+    /// `SSL_CTX_set_msg_callback` / `SSL_set_msg_callback`).
+    /// Read-site: [`rlayer_msg_callback_wrapper`] dispatch.
+    ///
+    /// `None` matches upstream C behaviour (no-op, see
+    /// `ssl/record/rec_layer_s3.c` line 1138 — `if (s->msg_callback != NULL)`).
+    /// The closure persists across [`RecordLayerState::clear`] — the SSL
+    /// connection's message-tracing handler is configured per-`SSL_CTX` /
+    /// per-`SSL` and survives connection resets, mirroring the upstream
+    /// model where `clear()` does not touch `msg_callback`.
+    pub msg_callback: Option<MsgCallback>,
+
+    /// SSL security callback consulted before security-sensitive operations
+    /// (cipher selection, version negotiation, key sizes).
+    ///
+    /// Write-site: [`RecordLayerState::set_security_callback`] (translates
+    /// `SSL_CTX_set_security_callback` / `SSL_set_security_callback`).
+    /// Read-site: [`rlayer_security_wrapper`] dispatch.
+    ///
+    /// `None` matches upstream C default-permit semantics — see
+    /// `ssl/record/rec_layer_s3.c` line 1148 (`return ssl_security(s, …)`),
+    /// where `ssl_security` returns `1` when no callback is installed.
+    /// The closure persists across [`RecordLayerState::clear`] for the
+    /// same reason as `msg_callback`.
+    pub security_callback: Option<SecurityCallback>,
 }
 
 impl core::fmt::Debug for RecordLayerState {
@@ -786,6 +863,8 @@ impl core::fmt::Debug for RecordLayerState {
             .field("block_padding", &self.block_padding)
             .field("hs_padding", &self.hs_padding)
             .field("has_padding_cb", &self.record_padding_cb.is_some())
+            .field("has_msg_callback", &self.msg_callback.is_some())
+            .field("has_security_callback", &self.security_callback.is_some())
             // Fields intentionally omitted from Debug output to avoid
             // leaking opaque handles (`rlarg`, `record_padding_arg`) and
             // to keep diagnostic output readable (`handshake_fragment`
@@ -845,6 +924,8 @@ impl RecordLayerState {
             hs_padding: 0,
             record_padding_cb: None,
             record_padding_arg: None,
+            msg_callback: None,
+            security_callback: None,
         }
     }
 
@@ -922,7 +1003,12 @@ impl RecordLayerState {
 
         // Note: custom_rlmethod and rlarg persist across clear() —
         // they represent a user-installed handler that should survive
-        // connection resets.
+        // connection resets. The same applies to msg_callback,
+        // security_callback, record_padding_cb, and record_padding_arg —
+        // these are configured per-SSL_CTX/per-SSL and must outlive
+        // connection-level state resets, mirroring upstream behaviour
+        // where `RECORD_LAYER_clear` does not touch the SSL-level
+        // `msg_callback`, `security_callback`, or padding handlers.
 
         match first_error {
             Some(err) => Err(err),
@@ -1046,6 +1132,87 @@ impl RecordLayerState {
     #[must_use]
     pub const fn get_read_ahead(&self) -> bool {
         self.read_ahead
+    }
+
+    /// Installs (or clears) the SSL message callback.
+    ///
+    /// Translates `SSL_CTX_set_msg_callback` /
+    /// `SSL_set_msg_callback` from `ssl/ssl_lib.c` (the upstream API
+    /// stores the closure on the `SSL` /`SSL_CTX` and the record-layer
+    /// dispatch wrapper consults it). In the Rust translation the
+    /// callback is held directly on the per-connection
+    /// [`RecordLayerState`], where the read-site is
+    /// [`rlayer_msg_callback_wrapper`].
+    ///
+    /// Pass `Some(Box::new(closure))` to install a handler;
+    /// pass `None` to clear a previously-installed handler. The
+    /// callback persists across [`RecordLayerState::clear`] calls,
+    /// matching the upstream behaviour where `RECORD_LAYER_clear`
+    /// does not touch the SSL-level message callback.
+    ///
+    /// Rule R3 — write-site for `msg_callback`. Rule R4 — pair with
+    /// [`rlayer_msg_callback_wrapper`] via the
+    /// `record_layer_msg_callback_register_trigger_assert` integration
+    /// test. Rule R10 — wires the callback through to actual record
+    /// handling rather than leaving it as a no-op stub.
+    pub fn set_msg_callback(&mut self, cb: Option<MsgCallback>) {
+        trace!(
+            target: "openssl_ssl::record",
+            installing = cb.is_some(),
+            "RecordLayerState::set_msg_callback",
+        );
+        self.msg_callback = cb;
+    }
+
+    /// Returns `true` if a message callback is currently installed.
+    ///
+    /// Diagnostic helper — provides a side-effect-free read-site for
+    /// the [`msg_callback`](Self::msg_callback) field that does not
+    /// require dispatching through the wrapper. The wrapper itself is
+    /// the production read-site under Rule R3.
+    #[must_use]
+    pub const fn has_msg_callback(&self) -> bool {
+        self.msg_callback.is_some()
+    }
+
+    /// Installs (or clears) the SSL security callback.
+    ///
+    /// Translates `SSL_CTX_set_security_callback` /
+    /// `SSL_set_security_callback` from `ssl/ssl_lib.c`. The upstream
+    /// callback is consulted by `ssl_security`, which the record-layer
+    /// dispatch wrapper invokes; the Rust translation stores the
+    /// callback directly on the per-connection [`RecordLayerState`]
+    /// and consults it in [`rlayer_security_wrapper`].
+    ///
+    /// Pass `Some(Box::new(closure))` to install a handler;
+    /// pass `None` to clear a previously-installed handler (the
+    /// wrapper then defaults to `true` / permit, matching the C
+    /// default-permit semantics of `ssl_security` when no callback is
+    /// installed).
+    ///
+    /// Rule R3 — write-site for `security_callback`. Rule R4 — pair with
+    /// [`rlayer_security_wrapper`] via the
+    /// `record_layer_security_callback_register_trigger_assert`
+    /// integration test. Rule R10 — wires the callback through to
+    /// security-policy enforcement rather than leaving it as a
+    /// hard-coded `true`.
+    pub fn set_security_callback(&mut self, cb: Option<SecurityCallback>) {
+        trace!(
+            target: "openssl_ssl::record",
+            installing = cb.is_some(),
+            "RecordLayerState::set_security_callback",
+        );
+        self.security_callback = cb;
+    }
+
+    /// Returns `true` if a security callback is currently installed.
+    ///
+    /// Diagnostic helper — provides a side-effect-free read-site for
+    /// the [`security_callback`](Self::security_callback) field. The
+    /// wrapper itself is the production read-site under Rule R3.
+    #[must_use]
+    pub const fn has_security_callback(&self) -> bool {
+        self.security_callback.is_some()
     }
 
     /// Returns the number of application-data bytes immediately available.
@@ -1917,36 +2084,112 @@ pub fn release_record(
 /// the SSL connection's installed message callback.
 ///
 /// Translates C `rlayer_msg_callback_wrapper` (`rec_layer_s3.c`
-/// lines 1130–1141).
+/// lines 1130–1141):
+/// ```c
+/// static void rlayer_msg_callback_wrapper(int write_p, int version,
+///         int content_type, const void *buf, size_t len, void *cbarg) {
+///     SSL_CONNECTION *s = cbarg;
+///     SSL *ssl = SSL_CONNECTION_GET_USER_SSL(s);
+///     if (s->msg_callback != NULL)
+///         s->msg_callback(write_p, version, content_type, buf, len, ssl,
+///                         s->msg_callback_arg);
+/// }
+/// ```
 ///
-/// The mod.rs layer does not own the connection; instead it provides a
-/// callback-taking closure. Concrete connection types (`SslConnection`) wrap
-/// this function with a closure that invokes the user callback.
-pub fn rlayer_msg_callback_wrapper(write_p: bool, version: u16, content_type: u8, buf: &[u8]) {
-    trace!(
-        target: "openssl_ssl::record",
-        write_p,
-        version = format!("{version:#06x}"),
-        content_type,
-        length = buf.len(),
-        "msg_callback invoked by backend",
-    );
+/// In the Rust translation the per-connection `SSL *` and the user
+/// `msg_callback_arg` are captured by the registered closure rather than
+/// threaded as separate parameters. The `state` argument supplies the
+/// per-`RecordLayerState` callback slot populated by
+/// [`RecordLayerState::set_msg_callback`].
+///
+/// When no callback has been installed the function is a structured-trace
+/// no-op, matching the C `if (s->msg_callback != NULL)` guard. This is the
+/// production read-site of the [`RecordLayerState::msg_callback`] field
+/// (Rule R3 — config field propagation; Rule R4 — registration / invocation
+/// pairing; Rule R10 — wiring before done).
+pub fn rlayer_msg_callback_wrapper(
+    state: &RecordLayerState,
+    write_p: bool,
+    version: u16,
+    content_type: u8,
+    buf: &[u8],
+) {
+    if let Some(cb) = state.msg_callback.as_ref() {
+        cb(write_p, version, content_type, buf);
+        trace!(
+            target: "openssl_ssl::record",
+            write_p,
+            version = format!("{version:#06x}"),
+            content_type,
+            length = buf.len(),
+            "msg_callback dispatched to installed handler",
+        );
+    } else {
+        trace!(
+            target: "openssl_ssl::record",
+            write_p,
+            version = format!("{version:#06x}"),
+            content_type,
+            length = buf.len(),
+            "msg_callback: no handler installed (no-op)",
+        );
+    }
 }
 
 /// Dispatches a `security_callback` invocation from the backend.
 ///
 /// Translates C `rlayer_security_wrapper` (`rec_layer_s3.c`
-/// lines 1143–1150). Returns `true` if the operation is permitted under
-/// the current security policy; defaults to `true` when no callback is
-/// installed.
+/// lines 1143–1150):
+/// ```c
+/// static int rlayer_security_wrapper(void *cbarg, int op, int bits,
+///         int nid, void *other) {
+///     SSL_CONNECTION *s = cbarg;
+///     return ssl_security(s, op, bits, nid, other);
+/// }
+/// ```
 ///
-/// The real implementation in the connection layer consults the
-/// per-connection security callback; this helper is a no-op stub that
-/// backends invoke via the dispatch table. Concrete `SslConnection`
-/// wiring overrides the default behaviour.
+/// `ssl_security` consults the per-`SSL_CTX` / per-`SSL`
+/// `security_callback`, defaulting to "permit" (return `1`) when none is
+/// installed. The Rust translation preserves this:
+///   * If [`RecordLayerState::security_callback`] is `Some`, invoke it and
+///     return its boolean verdict.
+///   * If `None`, default to `true` (permit) — matching the C default.
+///
+/// This is the production read-site of the
+/// [`RecordLayerState::security_callback`] field (Rule R3 / R4 / R10).
+/// Note that, unlike the previous stub, this function is no longer
+/// `const fn` — it must dispatch through a `Box<dyn Fn>` slot.
 #[must_use]
-pub const fn rlayer_security_wrapper(_op: i32, _bits: i32, _nid: i32) -> bool {
-    true
+pub fn rlayer_security_wrapper(
+    state: &RecordLayerState,
+    op: i32,
+    bits: i32,
+    nid: i32,
+) -> bool {
+    state.security_callback.as_ref().map_or_else(
+        || {
+            trace!(
+                target: "openssl_ssl::record",
+                op,
+                bits,
+                nid,
+                "security_callback: no handler installed, defaulting to permit",
+            );
+            true
+        },
+        |cb| {
+            let permitted = cb(op, bits, nid);
+            trace!(
+                target: "openssl_ssl::record",
+                op,
+                bits,
+                nid,
+                permitted,
+                "security_callback dispatched to installed handler",
+            );
+            permitted
+        },
+    )
 }
 
 /// Dispatches a record-padding callback invocation from the backend.
@@ -2636,16 +2879,167 @@ mod tests {
     }
 
     #[test]
-    fn rlayer_msg_callback_wrapper_is_infallible() {
-        // Should never panic, no observable side-effect from this layer.
-        rlayer_msg_callback_wrapper(false, 0x0303, SSL3_RT_HANDSHAKE, &[1, 2, 3]);
-        rlayer_msg_callback_wrapper(true, 0x0303, SSL3_RT_ALERT, &[]);
+    fn rlayer_msg_callback_wrapper_is_infallible_when_unset() {
+        // With no callback installed the wrapper is a no-op (matches C
+        // `if (s->msg_callback != NULL)` guard at rec_layer_s3.c:1138).
+        let state = RecordLayerState::new();
+        rlayer_msg_callback_wrapper(&state, false, 0x0303, SSL3_RT_HANDSHAKE, &[1, 2, 3]);
+        rlayer_msg_callback_wrapper(&state, true, 0x0303, SSL3_RT_ALERT, &[]);
+        assert!(!state.has_msg_callback());
     }
 
     #[test]
-    fn rlayer_security_wrapper_defaults_to_true() {
-        assert!(rlayer_security_wrapper(0, 128, 0));
-        assert!(rlayer_security_wrapper(1, 256, 42));
+    fn rlayer_security_wrapper_defaults_to_true_when_unset() {
+        // Default-permit semantics — translates the C `ssl_security`
+        // behaviour at rec_layer_s3.c:1148 when no callback is installed.
+        let state = RecordLayerState::new();
+        assert!(rlayer_security_wrapper(&state, 0, 128, 0));
+        assert!(rlayer_security_wrapper(&state, 1, 256, 42));
+        assert!(!state.has_security_callback());
+    }
+
+    #[test]
+    fn record_layer_msg_callback_register_trigger_assert() {
+        // Rule R4 — registration / invocation pairing.
+        // 1. Register a closure on the record layer state via the
+        //    `set_msg_callback` setter.
+        // 2. Trigger by invoking `rlayer_msg_callback_wrapper` (the
+        //    same function the backend dispatch table targets).
+        // 3. Assert the closure observed every parameter unmodified.
+        use std::sync::{Arc, Mutex};
+
+        let captured: Arc<Mutex<Vec<(bool, u16, u8, Vec<u8>)>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = Arc::clone(&captured);
+
+        let mut state = RecordLayerState::new();
+        assert!(!state.has_msg_callback());
+        state.set_msg_callback(Some(Box::new(move |write_p, version, content_type, buf| {
+            // LOCK-SCOPE: short test-only mutation of the captured
+            // record list — no .await held under this lock.
+            let mut guard = captured_clone.lock().expect("test mutex poisoned");
+            guard.push((write_p, version, content_type, buf.to_vec()));
+        })));
+        assert!(state.has_msg_callback());
+
+        // First trigger: incoming handshake record.
+        rlayer_msg_callback_wrapper(&state, false, 0x0303, SSL3_RT_HANDSHAKE, &[1, 2, 3]);
+        // Second trigger: outgoing alert record (empty payload).
+        rlayer_msg_callback_wrapper(&state, true, 0x0304, SSL3_RT_ALERT, &[]);
+        // Third trigger: outgoing application data.
+        rlayer_msg_callback_wrapper(
+            &state,
+            true,
+            0x0303,
+            SSL3_RT_APPLICATION_DATA,
+            b"hello",
+        );
+
+        let guard = captured.lock().expect("test mutex poisoned");
+        assert_eq!(guard.len(), 3, "callback fired exactly three times");
+        assert_eq!(guard[0], (false, 0x0303, SSL3_RT_HANDSHAKE, vec![1, 2, 3]));
+        assert_eq!(guard[1], (true, 0x0304, SSL3_RT_ALERT, vec![]));
+        assert_eq!(
+            guard[2],
+            (true, 0x0303, SSL3_RT_APPLICATION_DATA, b"hello".to_vec()),
+        );
+    }
+
+    #[test]
+    fn record_layer_msg_callback_clearing_restores_noop() {
+        // Verifies set_msg_callback(None) clears a previously installed
+        // handler without panicking on subsequent dispatch.
+        use std::sync::{Arc, Mutex};
+
+        let counter: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
+        let counter_clone = Arc::clone(&counter);
+
+        let mut state = RecordLayerState::new();
+        state.set_msg_callback(Some(Box::new(move |_, _, _, _| {
+            let mut g = counter_clone.lock().expect("test mutex poisoned");
+            *g = g.saturating_add(1);
+        })));
+        rlayer_msg_callback_wrapper(&state, false, 0x0303, SSL3_RT_HANDSHAKE, &[]);
+        assert_eq!(*counter.lock().expect("test mutex poisoned"), 1);
+
+        state.set_msg_callback(None);
+        assert!(!state.has_msg_callback());
+        // Subsequent dispatch must not invoke the previously-installed
+        // closure — otherwise the cleared closure would be use-after-clear.
+        rlayer_msg_callback_wrapper(&state, false, 0x0303, SSL3_RT_HANDSHAKE, &[]);
+        assert_eq!(*counter.lock().expect("test mutex poisoned"), 1);
+    }
+
+    #[test]
+    fn record_layer_security_callback_register_trigger_assert() {
+        // Rule R4 — registration / invocation pairing for the security
+        // callback. Verifies the wrapper consults the installed closure
+        // and faithfully returns its boolean verdict, both for permit
+        // and reject decisions.
+        use std::sync::{Arc, Mutex};
+
+        let observed: Arc<Mutex<Vec<(i32, i32, i32)>>> = Arc::new(Mutex::new(Vec::new()));
+        let observed_clone = Arc::clone(&observed);
+
+        let mut state = RecordLayerState::new();
+        assert!(!state.has_security_callback());
+        // Policy: reject any operation requesting fewer than 128 bits of
+        // security strength; otherwise permit.
+        state.set_security_callback(Some(Box::new(move |op, bits, nid| {
+            let mut g = observed_clone.lock().expect("test mutex poisoned");
+            g.push((op, bits, nid));
+            bits >= 128
+        })));
+        assert!(state.has_security_callback());
+
+        // Trigger 1: 80 bits — should be rejected.
+        assert!(!rlayer_security_wrapper(&state, 1, 80, 0));
+        // Trigger 2: 256 bits — should be permitted.
+        assert!(rlayer_security_wrapper(&state, 2, 256, 42));
+        // Trigger 3: 128 bits — boundary, permitted.
+        assert!(rlayer_security_wrapper(&state, 3, 128, 100));
+
+        let guard = observed.lock().expect("test mutex poisoned");
+        assert_eq!(guard.as_slice(), &[(1, 80, 0), (2, 256, 42), (3, 128, 100),]);
+    }
+
+    #[test]
+    fn record_layer_security_callback_clearing_restores_default_permit() {
+        // After clearing a previously-installed handler the wrapper must
+        // resume returning the C-default "permit" verdict.
+        let mut state = RecordLayerState::new();
+        state.set_security_callback(Some(Box::new(|_, _, _| false)));
+        // While installed, our handler always rejects.
+        assert!(!rlayer_security_wrapper(&state, 0, 0, 0));
+
+        state.set_security_callback(None);
+        assert!(!state.has_security_callback());
+        // Reverts to default-permit.
+        assert!(rlayer_security_wrapper(&state, 0, 0, 0));
+    }
+
+    #[test]
+    fn record_layer_callbacks_persist_across_clear() {
+        // The callbacks are installed at the SSL_CTX / SSL level and
+        // must outlive RecordLayerState::clear() — mirroring the
+        // upstream C semantics where RECORD_LAYER_clear leaves
+        // s->msg_callback / SSL_security_callback untouched.
+        let mut state = RecordLayerState::new();
+        state.set_msg_callback(Some(Box::new(|_, _, _, _| {})));
+        state.set_security_callback(Some(Box::new(|_, _, _| true)));
+        assert!(state.has_msg_callback());
+        assert!(state.has_security_callback());
+
+        // clear() must not remove the callbacks.
+        state.clear().expect("clear must succeed on an empty state");
+        assert!(
+            state.has_msg_callback(),
+            "msg_callback must persist across clear()",
+        );
+        assert!(
+            state.has_security_callback(),
+            "security_callback must persist across clear()",
+        );
     }
 
     #[test]

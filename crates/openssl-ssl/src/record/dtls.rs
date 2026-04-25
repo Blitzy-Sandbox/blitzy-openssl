@@ -1217,14 +1217,39 @@ pub fn release(
 }
 
 /// Dispatches a message-level callback. Wraps [`rlayer_msg_callback_wrapper`].
-pub fn dispatch_msg_callback(write_p: bool, version: u16, content_type: u8, buf: &[u8]) {
-    rlayer_msg_callback_wrapper(write_p, version, content_type, buf);
+///
+/// The `state` argument supplies the per-connection [`RecordLayerState`]
+/// holding the installed message callback (read-site of the
+/// [`RecordLayerState::msg_callback`] field per Rule R3). When no
+/// callback has been registered via [`RecordLayerState::set_msg_callback`]
+/// the wrapper is a no-op, mirroring upstream OpenSSL's default behaviour.
+pub fn dispatch_msg_callback(
+    state: &RecordLayerState,
+    write_p: bool,
+    version: u16,
+    content_type: u8,
+    buf: &[u8],
+) {
+    rlayer_msg_callback_wrapper(state, write_p, version, content_type, buf);
 }
 
 /// Dispatches a security callback. Wraps [`rlayer_security_wrapper`].
+///
+/// The `state` argument supplies the per-connection [`RecordLayerState`]
+/// holding the installed security callback (read-site of the
+/// [`RecordLayerState::security_callback`] field per Rule R3). When no
+/// callback has been registered via
+/// [`RecordLayerState::set_security_callback`] the wrapper returns
+/// `true` (default-permit), mirroring upstream OpenSSL's default
+/// security-permit behaviour for unconfigured callbacks.
 #[must_use]
-pub fn dispatch_security_callback(op: i32, bits: i32, nid: i32) -> bool {
-    rlayer_security_wrapper(op, bits, nid)
+pub fn dispatch_security_callback(
+    state: &RecordLayerState,
+    op: i32,
+    bits: i32,
+    nid: i32,
+) -> bool {
+    rlayer_security_wrapper(state, op, bits, nid)
 }
 
 /// Dispatches a padding callback. Wraps [`rlayer_padding_wrapper`].
@@ -2360,12 +2385,20 @@ mod tests {
 
     #[test]
     fn dispatch_security_callback_is_reachable() {
-        // Exercise the wrapper to confirm R10 wiring.
-        let _ = dispatch_security_callback(0, 128, 42);
+        // Exercise the wrapper to confirm R10 wiring. With no callback
+        // installed on the per-connection state, default-permit semantics
+        // apply (the wrapper returns `true`).
+        let state = RecordLayerState::new();
+        assert!(dispatch_security_callback(&state, 0, 128, 42));
     }
 
     #[test]
     fn dispatch_msg_callback_is_reachable() {
-        dispatch_msg_callback(true, 0xFEFD, SSL3_RT_HANDSHAKE, &[1, 2, 3]);
+        // Exercise the wrapper to confirm R10 wiring. With no callback
+        // installed on the per-connection state, the wrapper is a no-op,
+        // so the call must complete without panicking.
+        let state = RecordLayerState::new();
+        dispatch_msg_callback(&state, true, 0xFEFD, SSL3_RT_HANDSHAKE, &[1, 2, 3]);
+        assert!(!state.has_msg_callback());
     }
 }
