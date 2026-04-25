@@ -28,6 +28,50 @@
 //!   [`subtle::ConstantTimeEq`] to prevent timing side-channel leaks during key
 //!   validation.
 //!
+//! ## Security Notice — Cache-Timing Side Channel
+//!
+//! This implementation is the pure-safe-Rust **table-driven reference path**
+//! translating `crypto/des/spr.h` (`DES_SPTRANS`) and `crypto/des/set_key.c`
+//! (`DES_SKB`). The table-driven approach is **not constant-time on cache-
+//! equipped CPUs**:
+//!
+//! | Site | Table | Lookups per block | Lookups per encryption |
+//! |------|-------|-------------------|------------------------|
+//! | [`d_encrypt_round`] (Feistel round) | `DES_SPTRANS` | 8 × 16 rounds = 128 | 128 (DES) / 384 (3DES) |
+//! | DES key schedule (`des_set_key`)    | `DES_SKB`     | up to 64 per key   | once per key load |
+//!
+//! Each indexed lookup `DES_SPTRANS[i][idx]` and `DES_SKB[i][idx]` is a
+//! *secret-derived* index — the index `idx` is a function of either the round
+//! state and round subkey (Feistel) or the raw key bytes (key schedule). On
+//! any CPU with a data cache, the cache-line access pattern reveals which
+//! 64-byte (or implementation-dependent) line was touched, leaking bits of
+//! the indexed byte to a co-resident attacker (Bernstein 2005,
+//! Tromer–Osvik–Shamir 2010).
+//!
+//! ### Threat model
+//!
+//! - **Co-resident attacker** on the same CPU package (multi-tenant cloud,
+//!   browser sandbox, hostile OS process): high — measurable through Flush+
+//!   Reload, Prime+Probe, or Evict+Reload.
+//! - **Remote network attacker**: medium — feasible when wall-clock timing
+//!   variance from cache misses leaks across the network in long-lived
+//!   sessions (Sweet32 amplifies this for 3DES specifically).
+//! - **Standalone host with no co-tenant**: low.
+//!
+//! ### Recommended remediations (none in this codebase yet)
+//!
+//! 1. Hardware DES is rare; modern CPUs do not provide DES instructions.
+//!    The recommended action for new systems is **migration off DES/3DES
+//!    entirely** — use [`crate::symmetric::aes::Aes`].
+//! 2. For codebases that cannot migrate immediately, consider bitsliced
+//!    DES (Biham 1997, Matsui 2006) — out of scope for this reference
+//!    path, which prioritizes bit-exact correspondence with upstream
+//!    OpenSSL `crypto/des/`.
+//!
+//! Until DES is fully removed, the cache-timing residual is **DOCUMENTED
+//! BUT UNRESOLVED**. See `BENCHMARK_REPORT.md` and AAP §0.7.5 (Perlasm
+//! Assembly Strategy).
+//!
 //! ## Key Material Security
 //!
 //! All structures holding DES key material (`DesKeySchedule`, `Des`,
@@ -80,8 +124,24 @@ const DES_ROUNDS: usize = 16;
 //
 // Source: `crypto/des/spr.h` (verbatim from upstream OpenSSL, unchanged
 // since 1995). 512 constants (8 × 64).
+//
+// SECURITY (cache-timing): Lookups `DES_SPTRANS[i][idx]` use a *secret-
+// derived* `idx` — the 6-bit S-box input formed from the round subkey
+// XOR with the expanded right half. The cache-line access pattern leaks
+// bits of `idx` to a co-resident attacker. With 8 lookups per Feistel
+// round × 16 rounds = 128 secret-indexed reads per DES block, and
+// 384 reads per 3DES block, the leak surface is substantial. See module-
+// level "Security Notice — Cache-Timing Side Channel" for the full
+// threat model and the lack of a hardware/bitsliced backend in this
+// reference path.
 
 /// Fused S-box + P-permutation lookup table (8 nibbles × 64 entries).
+///
+/// # Security (cache-timing)
+///
+/// Indexed by *secret-derived* round-state bytes. Cache-line access
+/// pattern leaks bits of the index. See the SECURITY block above and
+/// the module-level "Security Notice — Cache-Timing Side Channel".
 const DES_SPTRANS: [[u32; 64]; 8] = [
     // nibble 0
     [
@@ -632,11 +692,28 @@ const DES_SPTRANS: [[u32; 64]; 8] = [
 // Sub-tables 0..=3 process bits from the `c` half (upper 28 bits of PC-1 output) and sub-tables
 // 4..=7 process bits from the `d` half. The mapping matches FIPS 46-3 and the classic
 // Outerbridge/Biham-Shamir key-schedule optimisation.
+//
+// SECURITY (cache-timing): Indices into `DES_SKB[i]` are *secret-derived*
+// 6-bit slices of the raw key bytes (after PC-1). Each key load performs
+// up to 64 secret-indexed reads (8 subtables × 8 indices over 16 round
+// shifts). The cache-line access pattern leaks bits of the indexed key
+// material to a co-resident attacker. This leak is per-key-load (not
+// per-block), so its impact is bounded by key-rotation frequency, but it
+// remains a concrete vulnerability when long-lived keys are reused. See
+// the module-level "Security Notice — Cache-Timing Side Channel" for the
+// threat model and the lack of a hardware/bitsliced backend.
 // -------------------------------------------------------------------------------------------------
 
 /// Combined PC-1/PC-2 key-schedule lookup tables (8 tables × 64 entries).
 ///
 /// Translated verbatim from `des_skb` in `crypto/des/set_key.c`.
+///
+/// # Security (cache-timing)
+///
+/// Indexed by *secret-derived* 6-bit groups of the PC-1-permuted key
+/// halves. Cache-line access pattern leaks bits of the indexed key bytes.
+/// See SECURITY block above and module-level "Security Notice —
+/// Cache-Timing Side Channel".
 const DES_SKB: [[u32; 64]; 8] = [
     // DES_SKB[0] — for C bits 1, 2, 3, 4, 5, 6.
     [
@@ -1396,6 +1473,30 @@ fn des_block_core(l: &mut u32, r: &mut u32, schedule: &DesKeySchedule, encrypt: 
 /// subkey pair `[ka, kb]` encodes the 48-bit round sub-key; `ka` XORs into
 /// the "even" S-box lookups and `kb` into the "odd" ones (after a 4-bit
 /// right-rotation per `D_ENCRYPT`).
+///
+/// # Security (cache-timing)
+///
+/// This function is the **principal cache-timing-vulnerable site of DES**.
+/// It performs 8 secret-indexed `DES_SPTRANS[i][..]` lookups per call. With
+/// 16 invocations per DES block (one per Feistel round), each block
+/// induces 128 secret-indexed table reads. Triple-DES (3DES-EDE3) triples
+/// this to 384 reads/block.
+///
+/// The indices `sbox_idx(u, ..)` and `sbox_idx(t, ..)` are 6-bit slices
+/// of `r ^ subkey[0]` (and a 4-bit-rotated `r ^ subkey[1]`), where `r` is
+/// the right-half round state and `subkey` carries 48 bits of the secret
+/// round key. The cache-line access pattern of these 128 reads leaks
+/// state bits to a co-resident attacker (Bernstein 2005,
+/// Tromer–Osvik–Shamir 2010 — same threat model as AES T-tables).
+///
+/// **No constant-time backend exists in this codebase.** Modern CPUs do
+/// not provide DES instructions, so a hardware path comparable to AES-NI
+/// is unavailable. Bitsliced DES (Biham 1997, Matsui 2006) is the only
+/// known constant-time software approach but is out of scope for this
+/// reference path. The recommended action is **migration off DES/3DES**;
+/// see [`crate::symmetric::aes::Aes`].
+///
+/// See module-level "Security Notice — Cache-Timing Side Channel".
 #[inline]
 fn d_encrypt_round(l: &mut u32, r: u32, subkey: [u32; 2]) {
     let u = r ^ subkey[0];

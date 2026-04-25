@@ -45,6 +45,62 @@
 //! - Camellia, ARIA, SM4 are modern in design but included here for locale-
 //!   specific standardization compatibility. Prefer AES for interoperability.
 //!
+//! ## Security Notice — Cache-Timing Side Channel
+//!
+//! The implementations in this module are pure-safe-Rust **table-driven**
+//! translations of the upstream C reference paths. Every round function
+//! performs S-box or P-table lookups whose **indices depend on secret key
+//! material and/or secret intermediate state**. On modern CPUs these
+//! data-dependent memory accesses induce **cache-line-resident observable
+//! side channels**: an attacker co-resident on the same core (e.g., another
+//! process, VM, or hyper-thread) can measure cache-hit/miss timing and
+//! recover bits of the key or state.
+//!
+//! This class of vulnerability was first demonstrated against AES by
+//! Bernstein (2005, "Cache-timing attacks on AES") and Tromer, Osvik, and
+//! Shamir (2010, "Efficient Cache Attacks on AES, and Countermeasures",
+//! J. Cryptology). The same attack pattern applies identically to every
+//! software S-box lookup in this module.
+//!
+//! ### Per-Cipher Leakage Profile
+//!
+//! | Cipher    | Vulnerable Site(s)                         | Lookups / Block                 |
+//! |-----------|--------------------------------------------|----------------------------------|
+//! | Blowfish  | F-function (S0/S1/S2/S3 tables)            | 4 × 16 rounds = 64              |
+//! | CAST5     | Round function (CAST_S{0..3} tables)       | 4 × {12,16} rounds = 48 or 64   |
+//! | IDEA      | **No table lookup** — uses arithmetic mul  | 0 (not cache-timing vulnerable) |
+//! | SEED      | Round F-function (SEED_SS0..3 tables)      | 4 × 16 rounds = 64              |
+//! | ARIA      | `aria_sl1`/`aria_sl2` (ARIA_SB1..4)        | 16 × {12,14,16} rounds           |
+//! | Camellia  | Round function (SBOX1_1110/2_0222/...)     | 8 × {18,24} rounds = 144 or 192 |
+//! | SM4       | Round function (SM4_SBOX_T0..3)            | 4 × 32 rounds = 128             |
+//! | RC2       | Key schedule (RC2_KEY_TABLE, pi bytes)     | KEY-byte-indexed on setup       |
+//! | RC4       | PRGA state permutation (S-array)           | Data-dependent swap each byte   |
+//! | RC5       | **No table lookup** — data-dep. rotation   | 0 (but rotation amount is secret) |
+//!
+//! ### Threat Model and Mitigations
+//!
+//! - **Co-resident attacker (local / cloud multi-tenant):** HIGH risk for
+//!   all table-driven ciphers in this module. Flush+Reload and Prime+Probe
+//!   attacks recover keys in minutes to hours.
+//! - **Remote network attacker:** LOWER direct risk (network noise masks
+//!   cache-line timing), but amplified for 64-bit-block ciphers (Blowfish,
+//!   CAST5, RC2, RC5) that already suffer from Sweet32 birthday-bound
+//!   collision vulnerabilities for long sessions (RFC 7457).
+//! - **Deployment hardening:** The only effective countermeasures are
+//!   (a) **migrate off these legacy ciphers** — prefer AES-GCM or
+//!   ChaCha20-Poly1305, (b) pin the process/VM to dedicated cores to
+//!   prevent cache co-residency, and (c) for ciphers where a bitsliced or
+//!   constant-time implementation exists in literature (most notably
+//!   bitsliced DES by Biham 1997 for 64-bit ciphers), implement one.
+//!   No such implementation is provided in this crate — it is out of scope
+//!   per AAP §0.7.5 Perlasm Assembly Strategy.
+//!
+//! This residual vulnerability is **DOCUMENTED BUT UNRESOLVED**. Callers
+//! who require cache-timing resistance **MUST NOT** use the ciphers in this
+//! module with secret keys on shared hardware. See `BENCHMARK_REPORT.md`
+//! for the trade-off analysis and `UNSAFE_AUDIT.md` for the broader
+//! side-channel posture of the workspace.
+//!
 //! ## Key Material Security
 //!
 //! Every cipher struct derives [`Zeroize`] and [`ZeroizeOnDrop`] from the
@@ -1215,6 +1271,34 @@ impl Blowfish {
     /// Round function `F` from `crypto/bf/bf_local.h` (`BF_ENC` macro).
     ///
     /// Computes `((S0[B3] + S1[B2]) XOR S2[B1]) + S3[B0]` in wrapping u32.
+    ///
+    /// # Security (cache-timing)
+    ///
+    /// This is the **principal cache-timing-vulnerable site** of Blowfish
+    /// encryption and decryption. The four byte-indexed lookups into
+    /// `self.s[0..=3]` use **secret-derived indices** (`b0..b3` are bytes of
+    /// `x`, which mixes the round subkey with the opposite half of the
+    /// Feistel state). Each S-box is 256 × 32-bit = 1024 bytes — large
+    /// enough to span multiple cache lines on any modern CPU, so the
+    /// cache-line residency of each access leaks information about the
+    /// indexed byte.
+    ///
+    /// Per block: **4 lookups × 16 Feistel rounds = 64 secret-indexed S-box
+    /// reads** through both `encrypt_words` and `decrypt_words`. During the
+    /// key schedule (`Blowfish::new`), the initial S-boxes are encrypted in
+    /// place, triggering the same lookup pattern on the **expanded key
+    /// material** — leakage scope is therefore both per-block AND per-key.
+    ///
+    /// No constant-time software path is provided for Blowfish in this
+    /// crate; no hardware acceleration exists for Blowfish on any
+    /// commodity CPU. The only effective mitigation is to **migrate off
+    /// Blowfish** to AES-GCM or ChaCha20-Poly1305. Additionally, Blowfish
+    /// is a **64-bit-block cipher** and therefore vulnerable to Sweet32
+    /// birthday attacks (RFC 7457) for long-lived sessions.
+    ///
+    /// See the module-level *Security Notice — Cache-Timing Side Channel*
+    /// for the full threat model and the Bernstein 2005 /
+    /// Tromer-Osvik-Shamir 2010 references.
     #[inline]
     fn f(&self, x: u32) -> u32 {
         let b0 = (x & 0xff) as usize;
@@ -3474,6 +3558,39 @@ impl Cast5 {
     /// `c`, `d`) mirror the `E_CAST` macro notation in RFC 2144 §2.2 and
     /// `crypto/cast/cast_local.h`; keeping them short preserves the direct
     /// correspondence with the reference implementation.
+    ///
+    /// # Security (cache-timing)
+    ///
+    /// This is the **principal cache-timing-vulnerable site** of CAST5
+    /// encryption and decryption. Each round performs **4 secret-indexed
+    /// lookups** into `CAST_S0..CAST_S3` (each S-box is 256 × 32-bit =
+    /// 1024 bytes, spanning multiple cache lines). The byte indices
+    /// `(t >> 24) & 0xff`, `(t >> 16) & 0xff`, `(t >> 8) & 0xff`, and
+    /// `t & 0xff` are derived from `t = km OP r` (or a rotation thereof)
+    /// which **mixes the round subkey with the opposite half of the
+    /// Feistel state** — both secret.
+    ///
+    /// Additionally, the data-dependent rotation `t.rotate_left(kr & 0x1f)`
+    /// uses a **secret 5-bit rotation amount** drawn from the round subkey
+    /// (`data[n*2+1]`). While Rust's `u32::rotate_left` is implemented as a
+    /// constant-time instruction on all supported targets (x86_64 ROL,
+    /// aarch64 ROR/equivalent), older literature (e.g., Kocher 1996)
+    /// warns that variable-count shifts may not be constant-time on every
+    /// microarchitecture. The S-box lookup leakage dominates in practice.
+    ///
+    /// Per block: **4 lookups × 12 or 16 Feistel rounds = 48 or 64
+    /// secret-indexed CAST_S reads** via `encrypt_halves`/`decrypt_halves`.
+    /// CAST5 is additionally a **64-bit-block cipher** (Sweet32 vulnerable
+    /// for long sessions, RFC 7457).
+    ///
+    /// The key schedule (`Cast5::new`) also performs CAST_S4..CAST_S7
+    /// lookups on key bytes; see `CAST_S4..CAST_S7` declarations. No
+    /// constant-time software path is provided; no hardware acceleration
+    /// exists for CAST5. Only mitigation: **migrate off CAST5** to
+    /// AES-GCM or ChaCha20-Poly1305.
+    ///
+    /// See the module-level *Security Notice — Cache-Timing Side Channel*
+    /// for the full threat model.
     #[inline]
     #[allow(clippy::many_single_char_names)]
     fn e_cast(km: u32, kr: u32, r: u32, op: u8) -> u32 {
@@ -5235,6 +5352,36 @@ impl Seed {
     /// SEED G-function: combines four byte-indexed S-box lookups via XOR.
     ///
     /// Direct port of the `G_FUNC` macro from `seed.c`.
+    ///
+    /// # Security (cache-timing)
+    ///
+    /// This is the **principal cache-timing-vulnerable site** of SEED
+    /// encryption and decryption. The four byte-indexed lookups into
+    /// `SEED_SS[0..=3]` use **secret-derived indices** (`(v & 0xff)`,
+    /// `((v >> 8) & 0xff)`, etc., where `v = L XOR round_key` is a Feistel
+    /// intermediate). Each sub-table is 256 × 32-bit = 1024 bytes —
+    /// multiple cache lines on any modern CPU, so cache-line residency
+    /// leaks bits of each byte index.
+    ///
+    /// Per block: **4 lookups × 16 rounds (each with 2 G-function calls) =
+    /// 128 secret-indexed SEED_SS reads** (caller `F_func` invokes
+    /// `g_func` three times per round via the SEED round structure;
+    /// overall leakage scales with round count). Both encryption and
+    /// decryption pass through this path.
+    ///
+    /// The SEED **key schedule** (`Seed::new`) also invokes `g_func` on
+    /// intermediate key-derived values during KEYSCHEDULE_UPDATE0/UPDATE1,
+    /// leaking during key setup.
+    ///
+    /// SEED is a 128-bit-block cipher and therefore is NOT Sweet32
+    /// vulnerable, but no constant-time software path is provided and no
+    /// hardware acceleration exists for SEED. Only mitigation: **migrate
+    /// off SEED** to AES-GCM or ChaCha20-Poly1305. SEED remains in this
+    /// crate for Korean government standard (TTA KS X 1213:2004)
+    /// interoperability only.
+    ///
+    /// See the module-level *Security Notice — Cache-Timing Side Channel*
+    /// for the full threat model.
     #[inline]
     fn g_func(v: u32) -> u32 {
         SEED_SS[0][(v & 0xff) as usize]
@@ -5479,6 +5626,83 @@ impl Rc2 {
     ///
     /// Returns [`CryptoError::Key`] if the key length is outside the
     /// valid range 1–128 bytes.
+    ///
+    /// # Security (cache-timing)
+    ///
+    /// ⚠️ **RC2 is cache-timing-vulnerable on BOTH the key-schedule path
+    /// AND the encrypt/decrypt hot path. Additionally, RC2's 64-bit block
+    /// size makes it vulnerable to Sweet32-style birthday attacks
+    /// (CVE-2016-2183 class) — a property NOT shared with the 128-bit
+    /// legacy ciphers (SEED, Camellia, ARIA, SM4) documented elsewhere in
+    /// this module.**
+    ///
+    /// **Leakage Profile for RC2:**
+    ///
+    /// 1. **Key schedule (this function)** — three byte-indexed read sites
+    ///    into [`RC2_KEY_TABLE`] (256 bytes ≈ 4 cache lines on a typical
+    ///    64 B-line x86-64 CPU):
+    ///    - **Forward expansion (~128 reads)**:
+    ///      `RC2_KEY_TABLE[(k[j] + d) & 0xff]` iterated for `i` in
+    ///      `len..128`. The index depends on the user key `k[..len]`
+    ///      mixed with the propagating feedback byte `d`. Each access
+    ///      leaks `log2(256/64) = 2` bits of the index via L1 cache-line
+    ///      residency.
+    ///    - **Effective-bits reduction (1 read)**:
+    ///      `RC2_KEY_TABLE[k[i_red] & c]` where `c = 0xff >> ((8 - bits%8) % 8)`
+    ///      is a public mask; the remaining `(bits % 8)` bits of
+    ///      `k[i_red]` are still cache-observable.
+    ///    - **Reverse pass (~i_red reads)**:
+    ///      `RC2_KEY_TABLE[k[i+j_red] ^ d]` iterated downward; same
+    ///      access pattern as forward expansion.
+    ///
+    /// 2. **Encrypt/decrypt MASH rounds** (see
+    ///    [`Rc2::encrypt_block`](#method.encrypt_block) and
+    ///    [`Rc2::decrypt_block`](#method.decrypt_block)) — four 6-bit-indexed
+    ///    reads per block from `self.data[..64]` (64 × u16 = 128 bytes ≈
+    ///    2 cache lines). Each MASH operation
+    ///    `xi += self.data[xj & 0x3f]` indexes into the expanded key
+    ///    schedule using 6 plaintext-state-derived bits. With 16 MIX
+    ///    rounds + 2 MASH rounds per direction, the encrypt and decrypt
+    ///    paths each perform **4 secret-indexed reads per 8-byte block**
+    ///    (a total of 8 reads/block round-trip). The MASH indexing leaks
+    ///    both the plaintext state (`x_j`) and the subkey pattern.
+    ///
+    /// **Threat Model:** A co-tenant adversary running on the same physical
+    /// CPU (cloud VM, hypervisor neighbor, malicious browser tab) can mount
+    /// Bernstein–Tromer–Osvik–Shamir-style cache-timing attacks against
+    /// both key derivation and bulk encryption. Even an adversary
+    /// observing only aggregate encryption latency can statistically
+    /// recover key information given enough samples; the Sweet32 birthday
+    /// bound (≈ 2³² blocks ≈ 32 GB at 64-bit blocks) compounds this risk
+    /// for long-lived sessions.
+    ///
+    /// **Block-Size Vulnerability (Sweet32, CVE-2016-2183):** RC2's 64-bit
+    /// block size means a single key approaches collision probability
+    /// after ≈ 2³² blocks. Adler–Bhargavan–Leurent (2016) demonstrated
+    /// practical session-cookie recovery against 3DES/Blowfish under
+    /// HTTPS — both 64-bit-block ciphers. The same birthday-bound attack
+    /// class applies directly to RC2.
+    ///
+    /// **Software Mitigations:** None implemented. RC2 has no hardware
+    /// acceleration on any mainstream CPU. Bitslicing is theoretically
+    /// possible but never deployed given RC2's legacy status.
+    ///
+    /// **Standards / Interop:** RC2 is preserved exclusively for backward
+    /// compatibility with PKCS#12 password-encrypted bags (RFC 7292 §B.1)
+    /// and legacy CMS/PKCS#7 messages. RFC 2268 (1998) specified RC2 with
+    /// the explicit caveat that it is not recommended for new
+    /// applications.
+    ///
+    /// **Recommendation:** Migrate to AES-GCM (RFC 5116) or
+    /// ChaCha20-Poly1305 (RFC 8439) for new deployments. RC2 should be
+    /// confined to read-only legacy-format compatibility paths and never
+    /// used for confidentiality of long-lived secrets.
+    ///
+    /// **AAP §0.7.5:** Software cache-timing remediation is out of scope
+    /// for this milestone; the leakage is documented here pending future
+    /// hardware-accelerated or bitsliced implementations. See the
+    /// module-level `Security Notice — Cache-Timing Side Channel` block
+    /// for the per-cipher leakage table.
     #[allow(clippy::many_single_char_names)]
     pub fn new_with_effective_bits(key: &[u8], bits: usize) -> CryptoResult<Self> {
         let len = key.len();
@@ -7031,6 +7255,40 @@ static SBOX3_3033: [u32; 256] = [
 /// Translation of the `Camellia_Feistel(_s0, _s1, _s2, _s3, _key)` macro from
 /// `crypto/camellia/camellia.c`. The round function takes the four state
 /// words `(s0, s1, s2, s3)` and two round-key words, updating `s2` and `s3`.
+///
+/// # Security (cache-timing)
+///
+/// This is the **principal cache-timing-vulnerable site** of Camellia
+/// encryption and decryption. The function performs **8 byte-indexed
+/// lookups per call** into four S-box tables — `SBOX1_1110`, `SBOX2_0222`,
+/// `SBOX3_3033`, `SBOX4_4404` — using **secret-derived indices** (bytes
+/// of `t0 = s0 XOR k0` and `t1 = s1 XOR k1`, where `s0/s1` carry Feistel
+/// state and `k0/k1` are round subkeys, both secret-derived).
+///
+/// Each S-box is 256 × 32-bit = 1024 bytes, occupying multiple cache
+/// lines. Cache-line residency leaks bits of each byte index after a
+/// single round.
+///
+/// Per block leakage (camellia_feistel calls × 8 lookups/call):
+/// * **Camellia-128 (18 rounds):** 18 × 8 = **144 secret-indexed reads**
+/// * **Camellia-192/256 (24 rounds):** 24 × 8 = **192 secret-indexed reads**
+///
+/// Both `Camellia::encrypt_block` and `Camellia::decrypt_block` traverse
+/// this path. The Camellia **key schedule** (`Camellia::new`) also
+/// invokes `camellia_feistel` to derive `KA` and `KB` from `KL` and `KR`,
+/// so per-key leakage occurs during setup.
+///
+/// Camellia is a 128-bit-block cipher and therefore is NOT Sweet32
+/// vulnerable. It is a NESSIE- and CRYPTREC-recommended cipher and
+/// remains in cryptographic good standing on a *mathematical* basis.
+/// However, no constant-time software path is implemented and no
+/// hardware acceleration (analogous to AES-NI) is widely available.
+/// Recommended remediation: prefer **AES-GCM or ChaCha20-Poly1305** for
+/// new deployments. Camellia is preserved for Japanese government
+/// (CRYPTREC) interoperability.
+///
+/// See the module-level *Security Notice — Cache-Timing Side Channel*
+/// for the full threat model and references.
 #[inline]
 fn camellia_feistel(s0: u32, s1: u32, s2: &mut u32, s3: &mut u32, k0: u32, k1: u32) {
     let t0 = s0 ^ k0;
@@ -7813,6 +8071,39 @@ fn aria_rot19l(out: &mut [u8; 16], xor_val: &[u8; 16], z: &[u8; 16]) {
 /// Translates C `sl1()` from `crypto/aria/aria.c` line 914. For each group
 /// of four bytes, applies SB1 → SB2 → SB3 → SB4 after XOR with the round
 /// key byte.
+///
+/// # Security (cache-timing)
+///
+/// This is one of two **principal cache-timing-vulnerable sites** of ARIA
+/// encryption (`aria_sl1`, applied in odd-numbered substitution steps).
+/// The function performs **16 byte-indexed lookups per call** into four
+/// S-box tables — `ARIA_SB1`, `ARIA_SB2`, `ARIA_SB3`, `ARIA_SB4` —
+/// using **secret-derived indices** (`x[i] XOR y[i]`, where `x` is the
+/// state byte and `y` is the corresponding round-key byte). Each S-box
+/// is 256 bytes (so each byte-indexed lookup is one cache-line read of
+/// secret data; cache-line residency leaks the high bits of each byte).
+///
+/// Per block leakage (sl1 + sl2 calls × 16 lookups/call):
+/// * **ARIA-128 (12 rounds):** `aria_sl1` invoked in 6 odd steps → 96
+///   reads, plus `aria_sl2` adds another 96 → **192 secret-indexed
+///   reads/block** total.
+/// * **ARIA-192 (14 rounds):** **224 reads/block**.
+/// * **ARIA-256 (16 rounds):** **256 reads/block**.
+///
+/// The ARIA **key schedule** (`Aria::new`) also invokes `aria_sl1` and
+/// `aria_sl2` to derive `W1, W2, W3` from `KL, KR`, leaking during key
+/// setup.
+///
+/// ARIA is a 128-bit-block cipher (NOT Sweet32-vulnerable) and is the
+/// Korean national standard (KS X 1213-1:2009 / RFC 5794). It remains
+/// in cryptographic good standing on a *mathematical* basis. However,
+/// no constant-time software path is implemented and no hardware
+/// acceleration is widely available. Recommended remediation: prefer
+/// **AES-GCM or ChaCha20-Poly1305** for new deployments. ARIA is
+/// preserved for Korean government interoperability.
+///
+/// See the module-level *Security Notice — Cache-Timing Side Channel*
+/// for the full threat model and references.
 #[inline]
 fn aria_sl1(out: &mut [u8; 16], x: &[u8; 16], y: &[u8; 16]) {
     let mut i = 0;
@@ -7830,6 +8121,17 @@ fn aria_sl1(out: &mut [u8; 16], x: &[u8; 16], y: &[u8; 16]) {
 /// Translates C `sl2()` from `crypto/aria/aria.c` line 929. For each group
 /// of four bytes, applies SB3 → SB4 → SB1 → SB2 after XOR with the round
 /// key byte.
+///
+/// # Security (cache-timing)
+///
+/// This is the second of two **principal cache-timing-vulnerable sites**
+/// of ARIA encryption (`aria_sl2`, applied in even-numbered substitution
+/// steps). The leakage profile is **identical** to `aria_sl1` —
+/// **16 byte-indexed lookups per call** into the same four 256-byte
+/// S-box tables (`ARIA_SB1..ARIA_SB4`) using secret-derived indices.
+///
+/// Refer to the `aria_sl1` SECURITY block for the full per-cipher
+/// leakage profile, threat model, and remediation guidance.
 #[inline]
 fn aria_sl2(out: &mut [u8; 16], x: &[u8; 16], y: &[u8; 16]) {
     let mut i = 0;
@@ -9251,6 +9553,20 @@ static SM4_CK: [u32; 32] = [
 /// Apply the SM4 S-box `τ` to each byte of a 32-bit word.
 ///
 /// Mirrors `SM4_T_non_lin_sub` from `crypto/sm4/sm4.c` lines 253–262.
+///
+/// # Security (cache-timing)
+///
+/// This helper performs **4 byte-indexed lookups per call** into
+/// `SM4_S` (the 256-byte SM4 substitution box) using **secret-derived
+/// indices** (each byte of `x = state XOR round_key`). Although `SM4_S`
+/// is one cache line of 256 bytes (4 typical 64-byte cache lines on
+/// x86-64), cache-line residency still leaks the high 2 bits of each
+/// byte index per access.
+///
+/// `sm4_tau` is invoked by both `sm4_t_slow` (for the outermost rounds)
+/// and `sm4_key_sub` (during key schedule). Per-block leakage attribution
+/// is detailed in the `sm4_t_slow` and `sm4_t_fast` SECURITY blocks
+/// below.
 #[inline]
 fn sm4_tau(x: u32) -> u32 {
     let b3 = SM4_S[((x >> 24) & 0xff) as usize];
@@ -9262,9 +9578,54 @@ fn sm4_tau(x: u32) -> u32 {
 
 /// Byte-wise evaluation of the SM4 round function `T(x) = L(τ(x))`.
 ///
-/// Used for the outermost four rounds (0..=3 and 28..=31) to reduce
-/// susceptibility to cache-timing side-channel attacks. Mirrors
-/// `SM4_T_slow` from `crypto/sm4/sm4.c` lines 264–267.
+/// Used for the outermost four rounds (0..=3 and 28..=31) — the
+/// upstream OpenSSL `SM4_T_slow` from `crypto/sm4/sm4.c` lines 264–267
+/// uses this byte-wise path (rather than the table-driven `SM4_T`)
+/// **specifically to reduce — but NOT eliminate — cache-timing leakage
+/// at the boundary between attacker-controlled plaintext/ciphertext
+/// and round-key-mixed state**. The smaller 256-byte `SM4_S` table
+/// (one cache-line set on most x86-64 CPUs) leaks fewer bits per
+/// access than the four 1024-byte `SM4_SBOX_T*` tables used by
+/// `sm4_t_fast`, but the leakage is **NOT zero** and `sm4_t_slow` is
+/// **NOT a constant-time substitute** for the round function.
+///
+/// # Security (cache-timing)
+///
+/// `sm4_t_slow` invokes `sm4_tau` once, which performs **4 SM4_S
+/// byte-indexed lookups per call**. The subsequent rotation+XOR
+/// linear layer `L(t) = t ^ rotl(t,2) ^ rotl(t,10) ^ rotl(t,18) ^
+/// rotl(t,24)` uses constant-amount rotations and is constant-time on
+/// supported targets.
+///
+/// Per block leakage when `sm4_t_slow` is selected (only for rounds
+/// 0..=3 and 28..=31 in the upstream design):
+/// * 8 rounds × 4 SM4_S reads/round = **32 secret-indexed reads/block**
+///   from the 256-byte `SM4_S` table (smaller leakage surface than
+///   `sm4_t_fast`'s 1024-byte tables).
+///
+/// The full SM4 cipher uses `sm4_t_slow` for 8 of 32 rounds and
+/// `sm4_t_fast` for the remaining 24 rounds. Combined per-block
+/// leakage is documented in `sm4_t_fast`.
+///
+/// `sm4_t_slow` is **NOT a remediation path on its own** — it merely
+/// reduces (does not eliminate) the leakage surface for boundary
+/// rounds. The SM4 **key schedule** (`Sm4::new`) calls `sm4_key_sub`
+/// (which also calls `sm4_tau`) once per round-key derivation,
+/// leaking SM4_S accesses on key-derived intermediate values during
+/// setup.
+///
+/// SM4 is a 128-bit-block cipher (NOT Sweet32-vulnerable) and is the
+/// Chinese national standard (GB/T 32907-2016, GM/T 0002-2012). It
+/// remains in cryptographic good standing on a *mathematical* basis.
+/// However, no constant-time software path is implemented here and no
+/// hardware acceleration (analogous to the SM4-NI extensions present
+/// on some ARM platforms) is leveraged in this pure-Rust translation.
+/// Recommended remediation: prefer **AES-GCM or ChaCha20-Poly1305**
+/// for new deployments. SM4 is preserved for Chinese government and
+/// commercial cryptography (OSCCA) interoperability.
+///
+/// See the module-level *Security Notice — Cache-Timing Side Channel*
+/// for the full threat model and references.
 #[inline]
 fn sm4_t_slow(x: u32) -> u32 {
     let t = sm4_tau(x);
@@ -9275,6 +9636,40 @@ fn sm4_t_slow(x: u32) -> u32 {
 ///
 /// Combines the four precomputed `SM4_SBOX_T*` tables using one lookup per
 /// input byte. Mirrors `SM4_T` from `crypto/sm4/sm4.c` lines 269–272.
+///
+/// # Security (cache-timing)
+///
+/// This is the **principal cache-timing-vulnerable site** of SM4
+/// encryption and decryption for the inner 24 rounds. The function
+/// performs **4 byte-indexed lookups per call** into the four
+/// precomputed tables `SM4_SBOX_T0`, `SM4_SBOX_T1`, `SM4_SBOX_T2`,
+/// `SM4_SBOX_T3` — each 256 × 32-bit = **1024 bytes** spanning
+/// multiple cache lines. Indices are bytes of `x = state XOR round_key`
+/// (secret-derived), so cache-line residency leaks the high bits of
+/// each byte index after a single round.
+///
+/// Per block leakage with the standard SM4 (32 rounds):
+/// * Inner 24 rounds × 4 `SM4_SBOX_T*` reads/round = **96
+///   secret-indexed reads/block** from the four 1024-byte tables.
+/// * Outer 8 rounds × 4 `SM4_S` reads/round (via `sm4_t_slow` →
+///   `sm4_tau`) = **32 secret-indexed reads/block** from the 256-byte
+///   table.
+/// * **Total: 128 secret-indexed reads/block.**
+///
+/// Both `Sm4::encrypt_block` and `Sm4::decrypt_block` traverse this
+/// path; SM4 decryption uses the same round function with the
+/// round-key schedule reversed.
+///
+/// SM4 has hardware acceleration on some ARMv8 platforms (the SM4-NI
+/// crypto extension, similar in spirit to AES-NI). This pure-Rust
+/// implementation does **not** leverage such instructions; that
+/// remediation pathway is out of scope for this milestone (per AAP
+/// §0.7.5 the perlasm assembly generators are explicitly preserved
+/// only as the validation reference).
+///
+/// Refer to the `sm4_t_slow` and `sm4_tau` SECURITY blocks for
+/// per-helper leakage detail and to the module-level *Security
+/// Notice — Cache-Timing Side Channel* for the full threat model.
 #[inline]
 fn sm4_t_fast(x: u32) -> u32 {
     SM4_SBOX_T0[((x >> 24) & 0xff) as usize]

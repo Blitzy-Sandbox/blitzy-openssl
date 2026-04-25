@@ -24,20 +24,93 @@
 //!
 //! ## Design Notes
 //!
-//! - AES block primitive uses table-driven T-box implementation (Te0–Te3 /
-//!   Td0–Td3). Sibling tables are derived from Te0/Td0 by byte rotation at
-//!   runtime to reduce binary size while preserving constant-time access.
+//! - AES block primitive uses a table-driven T-box implementation
+//!   (`TE0`/`TD0` plus byte-rotation helpers `te1/te2/te3` / `td1/td2/td3`).
+//!   See the **Security Notice — Cache-Timing Side Channel** section below
+//!   for an honest disclosure of the residual side-channel risk; the table
+//!   layout is *not* a constant-time guarantee on cache-equipped CPUs.
 //! - AEAD modes (GCM, CCM, OCB, SIV) provide authentication + encryption.
 //! - GCM uses a 4-bit precomputed `GHashTable` for portable, table-free
 //!   polynomial multiplication in GF(2^128).
 //! - All key material and intermediate working buffers are zeroed on drop
 //!   via [`zeroize::ZeroizeOnDrop`] (replaces C `OPENSSL_cleanse()`).
 //! - All AEAD tag comparisons use [`subtle::ConstantTimeEq`] to defeat
-//!   timing side-channel attacks (replaces hand-rolled constant-time
-//!   comparisons from C `constant_time.h`).
+//!   timing side-channel attacks on the *tag-comparison step* (replaces
+//!   hand-rolled constant-time comparisons from C `constant_time.h`). This
+//!   protects against forgery oracles but does *not* address cache-timing
+//!   leaks on the underlying T-table block primitive — see below.
 //! - All operations return [`CryptoResult<Vec<u8>>`] per Rule R5 — no
 //!   sentinel return values.
 //! - Zero `unsafe` blocks (Rule R8).
+//!
+//! ## Security Notice — Cache-Timing Side Channel (CRITICAL)
+//!
+//! **The pure-Rust software T-table AES implementation in this module is
+//! NOT constant-time on cache-equipped CPU architectures (i.e., effectively
+//! every modern desktop, server, and embedded SoC).** Lookups into `TE0`,
+//! `TD0`, `SBOX`, and `INV_SBOX` use *secret-derived indices* on every
+//! round of every block; the data cache reveals those indices to a
+//! co-resident attacker through observable cache-line access patterns.
+//!
+//! This vulnerability has been demonstrated to recover full AES keys in
+//! practice from native-speed side channels:
+//!
+//! - Bernstein, "Cache-timing attacks on AES" (2005)
+//!   — first public demonstration; T-table software AES is **not** safe
+//!   against an attacker who can observe its execution timing.
+//! - Tromer, Osvik, Shamir, "Efficient Cache Attacks on AES, and
+//!   Countermeasures" (J. Cryptology, 2010) — demonstrates Prime+Probe and
+//!   Evict+Time attacks recovering AES keys from co-resident processes
+//!   with sub-second observation times on commodity x86 hardware.
+//! - Subsequent literature has extended these attacks to virtualised
+//!   environments (Flush+Reload across VMs), cloud co-tenant scenarios,
+//!   and other table-lookup ciphers (see [`crate::symmetric::des`],
+//!   [`crate::symmetric::legacy`]).
+//!
+//! ### Threat Model
+//!
+//! This implementation is **safe** against:
+//! - A purely *remote* attacker who cannot observe per-block timing
+//!   variations and who lacks a co-resident process / cache-observation
+//!   channel.
+//! - Forgery oracles on AEAD tag comparison (defended by
+//!   [`subtle::ConstantTimeEq`]).
+//!
+//! This implementation is **NOT safe** against:
+//! - A co-resident attacker who can observe data-cache state (Prime+Probe,
+//!   Flush+Reload, Evict+Time, Flush+Flush, etc.).
+//! - A local attacker who can run unprivileged code on the same host as
+//!   the encryption process (e.g., shared cloud VMs, multi-tenant
+//!   containers, browsers running untrusted JavaScript).
+//! - Any deployment where the encryption key may be recoverable by an
+//!   adversary co-located on the same physical CPU package.
+//!
+//! ### Recommended Remediation for Production Deployments
+//!
+//! Production callers requiring side-channel resistance MUST use one of:
+//!
+//! 1. **Hardware-accelerated AES via [`openssl-ffi`].** The C OpenSSL
+//!    library provides `aesni-x86_64.pl` (AES-NI) and `aesv8-armx.pl`
+//!    (ARMv8 Crypto Extensions) which execute AES rounds in constant time
+//!    on hardware lanes that do not touch the data cache. The
+//!    [`crate::ffi`]-mediated path delegates to that constant-time C
+//!    backend.
+//! 2. **A bitsliced constant-time software backend** (e.g., the
+//!    Käsper-Schwabe construction from CHES 2009). This module does not
+//!    yet ship a bitsliced fallback; adding one is tracked as deferred
+//!    work — see the "Remaining Work Items" entry for AES T-box gating
+//!    in the workspace's `BENCHMARK_REPORT.md` / review feedback.
+//! 3. **A hardware-AES-only deployment** that refuses to operate on hosts
+//!    lacking AES-NI / ARMv8-AES via runtime CPU detection (see
+//!    [`crate::cpu_detect`]).
+//!
+//! Until one of those backends ships, this T-table software path remains
+//! the only AES backend available in pure-safe-Rust this crate; callers
+//! deploying it MUST either accept the documented residual risk or switch
+//! to one of the alternatives above. The cache-timing residual is tracked
+//! as a known DOCUMENTED limitation per AAP §0.7.5 and is recorded in the
+//! workspace `UNSAFE_AUDIT.md` as a side-channel risk separate from
+//! memory-safety risks.
 //!
 //! ## Rules Enforced
 //!
@@ -101,6 +174,15 @@ const RCON: [u32; 10] = [
 ///
 /// Used for the final round of encryption and for key schedule byte
 /// substitution. Translates `Te4[]` from `crypto/aes/aes_core.c`.
+///
+/// # Security (cache-timing)
+///
+/// Lookups `SBOX[idx]` use *secret-derived* indices on the AES final round
+/// (16 lookups per block) and on key-byte substitution during key
+/// expansion. On any CPU with a data cache the access pattern leaks bits
+/// of the indexed byte through cache-line observability. See the module
+/// docstring section "Security Notice — Cache-Timing Side Channel" for
+/// the full disclosure and recommended remediations.
 #[rustfmt::skip]
 const SBOX: [u8; 256] = [
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5,
@@ -145,6 +227,14 @@ const SBOX: [u8; 256] = [
 ///
 /// Used for the final round of decryption. Translates `Td4[]` from
 /// `crypto/aes/aes_core.c`.
+///
+/// # Security (cache-timing)
+///
+/// Lookups `INV_SBOX[idx]` use *secret-derived* indices on the AES final
+/// decryption round (16 lookups per block). The cache-line access pattern
+/// leaks bits of the indexed byte to a co-resident attacker. See the
+/// module docstring section "Security Notice — Cache-Timing Side Channel"
+/// for the full disclosure and recommended remediations.
 #[rustfmt::skip]
 const INV_SBOX: [u8; 256] = [
     0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38,
@@ -273,8 +363,19 @@ const fn gf_mul(mut a: u8, mut b: u8) -> u8 {
 //     Te3[x] = Te0[x].rotate_right(24)
 //
 // Storing only Te0 and deriving rotations inline saves 3 KiB of rodata
-// while preserving the same constant-time access pattern (every lookup
-// remains a single indexed array read).
+// versus four separate 1-KiB tables.
+//
+// SECURITY (cache-timing): Each lookup `TE0[x]` (and the rotation helpers
+// derived from it) is a *secret-derived index*. On any CPU with a data
+// cache (i.e., effectively all production hardware), the cache reveals the
+// accessed line to a co-resident attacker and thereby leaks bits of the
+// secret state. Folding `Te1..Te3` into rotations of `TE0` does NOT
+// improve side-channel resistance — every byte of every round still hits
+// the cache via a secret index. This residual cache-timing leak is
+// documented at the module level (see "Security Notice — Cache-Timing
+// Side Channel"). Constant-time AES requires either a hardware backend
+// (AES-NI, ARMv8 Crypto Extensions) or a bitsliced software backend; both
+// are out of scope for this pure-safe-Rust T-table reference path.
 
 /// Computes the forward T-table at compile time from [`SBOX`].
 const fn compute_te0() -> [u32; 256] {
@@ -292,6 +393,14 @@ const fn compute_te0() -> [u32; 256] {
 }
 
 /// AES forward T-table (Te0).
+///
+/// # Security (cache-timing)
+///
+/// `TE0[idx]` is the principal cache-timing-vulnerable lookup of the AES
+/// forward round. On every round of every block four lookups per word ×
+/// four 32-bit words × `Nr-1` rounds = 16 × `(Nr-1)` secret-indexed reads
+/// per block (plus 16 final-round `SBOX` reads). See module-level
+/// "Security Notice — Cache-Timing Side Channel".
 const TE0: [u32; 256] = compute_te0();
 
 // =============================================================================
@@ -316,11 +425,26 @@ const fn compute_td0() -> [u32; 256] {
 }
 
 /// AES inverse T-table (Td0).
+///
+/// # Security (cache-timing)
+///
+/// `TD0[idx]` is the principal cache-timing-vulnerable lookup of the AES
+/// inverse round. Same per-block lookup count as [`TE0`]. See module-level
+/// "Security Notice — Cache-Timing Side Channel".
 const TD0: [u32; 256] = compute_td0();
 
 // =============================================================================
 // Te0/Td0 Rotation Helpers
 // =============================================================================
+//
+// SECURITY (cache-timing): Each helper performs a secret-indexed `TE0[x]`
+// or `TD0[x]` lookup before applying a fixed rotation. The rotation step
+// itself is constant-time (a register operation) but the preceding table
+// lookup is *not*, because `x` is a secret-derived byte of the AES round
+// state. See the module-level "Security Notice — Cache-Timing Side
+// Channel" for the full threat model. Removing these helpers and indexing
+// `TE0`/`TD0` directly would be equally insecure; the leak is in the
+// cache-line access pattern, not in the rotation.
 
 #[inline]
 fn te1(x: usize) -> u32 {
@@ -595,6 +719,45 @@ impl AesKey {
 ///
 /// Translates `AES_encrypt` from `crypto/aes/aes_core.c` (non-unrolled
 /// reference path). Uses the `ShiftRows` index pattern `(s0, s1, s2, s3)`.
+///
+/// # Security (cache-timing)
+///
+/// This function is the principal cache-timing-vulnerable site of AES
+/// encryption. Per call:
+///
+/// - **Rounds 1..Nr-1** (lines below) perform 4 secret-indexed `TE0[..]`
+///   reads and 12 secret-indexed `te1/te2/te3` reads (which themselves
+///   index `TE0` before applying a constant-time rotation) — totalling
+///   **16 secret-indexed table reads × `(Nr-1)` rounds**:
+///     * AES-128: 16 × 9  = 144 reads/block
+///     * AES-192: 16 × 11 = 176 reads/block
+///     * AES-256: 16 × 13 = 208 reads/block
+/// - **Final round** performs 16 secret-indexed `SBOX[..]` reads.
+///
+/// Each indexed table read produces a cache-line access pattern observable
+/// to a co-resident attacker, leaking bits of the secret-derived round
+/// state. Bernstein's 2005 result (`AES_128 timing attack` over the
+/// network) and the Tromer–Osvik–Shamir 2010 cache-timing attack on AES
+/// both target exactly this code path.
+///
+/// Mitigations available in this codebase:
+/// - **None** at present: this is the pure-safe-Rust T-table reference
+///   path, used to establish bit-exact correctness against
+///   `crypto/aes/aes_core.c`.
+///
+/// Mitigations available outside this codebase (future work):
+/// - Hardware AES via the `openssl-ffi` crate (AES-NI on `x86_64`, AES
+///   instructions on `ARMv8`, both runtime-detected via `cpu_detect`).
+/// - Bitsliced constant-time backend (Käsper–Schwabe 2009).
+/// - Deployment-level: pin AES key processing to cores that publish
+///   constant-time AES instructions, deny scheduling on cores that lack
+///   them.
+///
+/// Callers requiring side-channel resistance against a co-resident
+/// attacker MUST NOT use this software path. See the module-level
+/// "Security Notice — Cache-Timing Side Channel" for the full disclosure
+/// and the AAP §0.7.5 Perlasm Assembly Strategy for the planned hardware
+/// path.
 fn aes_encrypt_block_inner(block: &mut [u8; 16], key: &AesKey) {
     let rk = &key.round_keys;
     let nr = key.rounds;
@@ -665,6 +828,27 @@ fn aes_encrypt_block_inner(block: &mut [u8; 16], key: &AesKey) {
 ///
 /// Translates `AES_decrypt` from `crypto/aes/aes_core.c` (non-unrolled
 /// reference path). Uses the `InvShiftRows` index pattern `(s0, s3, s2, s1)`.
+///
+/// # Security (cache-timing)
+///
+/// Mirror of [`aes_encrypt_block_inner`] for the inverse direction. Per
+/// call:
+///
+/// - **Rounds 1..Nr-1** perform 16 secret-indexed reads from `TD0` /
+///   `td1` / `td2` / `td3` per round (the latter three index `TD0` before
+///   applying a constant-time rotation) — totalling
+///   **16 × (Nr-1) reads/block**, with the same per-key-size totals as
+///   the forward direction (AES-128: 144; AES-192: 176; AES-256: 208).
+/// - **Final round** performs 16 secret-indexed `INV_SBOX[..]` reads.
+///
+/// The cache-line access pattern leaks bits of the secret-derived round
+/// state. Decryption is symmetric to encryption with respect to
+/// cache-timing exposure; both directions must be considered untrusted
+/// against a co-resident attacker on shared cache lines.
+///
+/// See [`aes_encrypt_block_inner`] for the full mitigation discussion and
+/// the module-level "Security Notice — Cache-Timing Side Channel" for the
+/// threat model.
 fn aes_decrypt_block_inner(block: &mut [u8; 16], key: &AesKey) {
     let rk = &key.round_keys;
     let nr = key.rounds;
