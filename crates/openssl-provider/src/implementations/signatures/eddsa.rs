@@ -7,12 +7,13 @@
 //!
 //! * **Ed25519** — pure EdDSA over curve25519 (RFC 8032 §5.1).
 //! * **Ed25519ctx** — context-variant EdDSA over curve25519 with a
-//!   domain-separation string (RFC 8032 §5.1).  Explicitly **not**
-//!   approved under FIPS 186-5; the FIPS provider never registers this
-//!   variant.  The default provider registers it but the crypto layer
-//!   currently only supports the `Ed25519` and `Ed25519ph` flag
-//!   combinations, so runtime sign / verify operations return
-//!   [`ProviderError::AlgorithmUnavailable`].
+//!   mandatory non-empty domain-separation string (RFC 8032 §5.1).
+//!   Explicitly **not** approved under FIPS 186-5; the FIPS provider
+//!   never registers this variant.  The default provider registers
+//!   it and the crypto layer fully implements the dom2(F=0, C)
+//!   prefix per RFC 8032, so sign / verify operations succeed
+//!   provided a non-empty context string was supplied via
+//!   `set_ctx_params` before the operation began.
 //! * **Ed25519ph** — pre-hashed EdDSA over curve25519 using SHA-512
 //!   (RFC 8032 §5.1).
 //! * **Ed448** — pure EdDSA over curve448 (RFC 8032 §5.2).
@@ -654,29 +655,6 @@ impl EdDsaSignatureContext {
         Ok(())
     }
 
-    /// Validates that the active instance supports the requested
-    /// operation under FIPS and crypto-layer constraints, returning
-    /// [`ProviderError::AlgorithmUnavailable`] if not.
-    ///
-    /// Ed25519ctx is presently not supported by the crypto layer —
-    /// `ed25519_sign_internal` hard-codes the dom2 flag byte and
-    /// does not accept a caller-provided context string.  We surface
-    /// that limitation cleanly rather than silently producing a
-    /// signature with an empty context.
-    fn ensure_supported_for_runtime_op(&self, op: &'static str) -> ProviderResult<()> {
-        if matches!(self.instance, EdDsaInstance::Ed25519ctx) {
-            warn!(
-                algorithm = self.instance.name(),
-                operation = op,
-                "eddsa: Ed25519ctx runtime path not implemented in crypto layer"
-            );
-            return Err(ProviderError::AlgorithmUnavailable(
-                "Ed25519ctx sign/verify is not supported by the crypto layer".to_string(),
-            ));
-        }
-        Ok(())
-    }
-
     /// Parses raw key bytes into an [`EcxKeyPair`] appropriate for
     /// the context's variant.
     ///
@@ -882,21 +860,22 @@ impl EdDsaSignatureContext {
     ///
     /// Dispatches to the appropriate crypto-layer primitive:
     ///
-    /// * Ed25519 (pure) → [`ed25519_sign`].
-    /// * Ed25519ph → SHA-512 prehash then [`ed25519_sign_prehash`].
+    /// * Ed25519 (pure) → [`ed25519_sign`] with `None` context per
+    ///   RFC 8032 §5.1 (`PureEdDSA` omits the dom2 prefix entirely).
+    /// * Ed25519ctx → [`ed25519_sign`] with the cached non-empty
+    ///   context string under dom2(F=0, C) per RFC 8032 §5.1.  The
+    ///   context-string presence is validated at `sign_init`.
+    /// * Ed25519ph → SHA-512 prehash then [`ed25519_sign_prehash`]
+    ///   under dom2(F=1, C) where C may be empty.
     /// * Ed448 (pure) / Ed448 with context → [`ed448_sign`] with the
-    ///   cached context string.
+    ///   cached context string under dom4(F=0, C) per RFC 8032 §5.2.
     /// * Ed448ph → SHAKE256(64) prehash then [`ed448_sign_prehash`]
-    ///   with the cached context string.
-    /// * Ed25519ctx → [`ProviderError::AlgorithmUnavailable`] (see
-    ///   [`Self::ensure_supported_for_runtime_op`]).
+    ///   under dom4(F=1, C) with the cached context string.
     ///
     /// The resulting signature is also cached in
     /// [`Self::cached_signature`] for consumers that want to
     /// round-trip through the same context.
     fn sign_internal(&mut self, message: &[u8]) -> ProviderResult<Vec<u8>> {
-        self.ensure_supported_for_runtime_op("sign")?;
-
         let key = self.key.as_ref().ok_or_else(|| {
             ProviderError::Init(
                 "EdDSA sign: no key bound (call sign_init first)".to_string(),
@@ -915,10 +894,26 @@ impl EdDsaSignatureContext {
         );
 
         let signature = match self.instance {
-            EdDsaInstance::Ed25519 => ed25519_sign(private_key, message).map_err(dispatch_err)?,
+            EdDsaInstance::Ed25519 => {
+                // RFC 8032 §5.1: PureEdDSA does not include a domain
+                // separation prefix; pass `None` for the context to
+                // suppress the dom2 octets in the crypto layer.
+                ed25519_sign(private_key, message, None).map_err(dispatch_err)?
+            }
             EdDsaInstance::Ed25519ph => {
                 let prehash = self.compute_ed25519_prehash(message)?;
-                ed25519_sign_prehash(private_key, &prehash).map_err(dispatch_err)?
+                // RFC 8032 §5.1: Ed25519ph emits dom2(F=1, C) where C
+                // may be empty.  Forward the cached context (or
+                // `None` if absent) verbatim.
+                ed25519_sign_prehash(private_key, &prehash, ctx_ref).map_err(dispatch_err)?
+            }
+            EdDsaInstance::Ed25519ctx => {
+                // RFC 8032 §5.1: Ed25519ctx emits dom2(F=0, C); the
+                // context string is mandatory and non-empty (enforced
+                // by `sign_init`).  Forward it verbatim to the
+                // crypto layer.
+                let ctx = self.context_string.as_deref().unwrap_or(&[]);
+                ed25519_sign(private_key, message, Some(ctx)).map_err(dispatch_err)?
             }
             EdDsaInstance::Ed448 => {
                 ed448_sign(private_key, message, ctx_ref).map_err(dispatch_err)?
@@ -926,14 +921,6 @@ impl EdDsaSignatureContext {
             EdDsaInstance::Ed448ph => {
                 let prehash = self.compute_ed448_prehash(message)?;
                 ed448_sign_prehash(private_key, &prehash, ctx_ref).map_err(dispatch_err)?
-            }
-            EdDsaInstance::Ed25519ctx => {
-                // Already rejected by ensure_supported_for_runtime_op
-                // above; this arm is unreachable but retained so the
-                // match exhausts the enum without a fallthrough.
-                unreachable!(
-                    "Ed25519ctx sign should have been rejected by ensure_supported_for_runtime_op"
-                );
             }
         };
 
@@ -976,8 +963,6 @@ impl EdDsaSignatureContext {
     /// [`ProviderError::Dispatch`] for underlying crypto errors
     /// (e.g. malformed public key or decode failure).
     fn verify_internal(&self, message: &[u8], signature: &[u8]) -> ProviderResult<bool> {
-        self.ensure_supported_for_runtime_op("verify")?;
-
         let key = self.key.as_ref().ok_or_else(|| {
             ProviderError::Init(
                 "EdDSA verify: no key bound (call verify_init first)".to_string(),
@@ -1010,11 +995,24 @@ impl EdDsaSignatureContext {
 
         let ok = match self.instance {
             EdDsaInstance::Ed25519 => {
-                ed25519_verify(public_key, message, signature).map_err(dispatch_err)?
+                // RFC 8032 §5.1: PureEdDSA verify uses no dom2
+                // prefix; pass `None` for the context to mirror the
+                // sign path.
+                ed25519_verify(public_key, message, signature, None).map_err(dispatch_err)?
             }
             EdDsaInstance::Ed25519ph => {
                 let prehash = self.compute_ed25519_prehash(message)?;
-                ed25519_verify_prehash(public_key, &prehash, signature).map_err(dispatch_err)?
+                // RFC 8032 §5.1: Ed25519ph verify uses dom2(F=1, C)
+                // where C may be empty.  Forward the cached context.
+                ed25519_verify_prehash(public_key, &prehash, signature, ctx_ref)
+                    .map_err(dispatch_err)?
+            }
+            EdDsaInstance::Ed25519ctx => {
+                // RFC 8032 §5.1: Ed25519ctx verify uses dom2(F=0, C);
+                // the context string is mandatory and non-empty
+                // (enforced by `verify_init`).  Forward it verbatim.
+                let ctx = self.context_string.as_deref().unwrap_or(&[]);
+                ed25519_verify(public_key, message, signature, Some(ctx)).map_err(dispatch_err)?
             }
             EdDsaInstance::Ed448 => {
                 ed448_verify(public_key, message, signature, ctx_ref).map_err(dispatch_err)?
@@ -1024,9 +1022,6 @@ impl EdDsaSignatureContext {
                 ed448_verify_prehash(public_key, &prehash, signature, ctx_ref)
                     .map_err(dispatch_err)?
             }
-            EdDsaInstance::Ed25519ctx => unreachable!(
-                "Ed25519ctx verify should have been rejected by ensure_supported_for_runtime_op"
-            ),
         };
 
         debug!(
@@ -1617,13 +1612,13 @@ pub fn ed25519ph_signature_descriptor() -> AlgorithmDescriptor {
 
 /// Descriptor for the context Ed25519ctx variant (RFC 8032 §5.1).
 ///
-/// Note: the active crypto backend does not currently implement
-/// the non-zero dom2 `x` flag required by Ed25519ctx, so runtime
-/// sign/verify calls on this variant return
-/// [`ProviderError::AlgorithmUnavailable`].  The descriptor is
-/// still registered because consumers must be able to discover
-/// and query the variant via `OSSL_PROVIDER_query()` even when
-/// the operation itself is gated.
+/// The crypto backend fully implements the dom2(F=0, C) prefix
+/// required by Ed25519ctx, so runtime sign/verify calls succeed
+/// when a non-empty context string was supplied via
+/// `set_ctx_params` before the operation began.  Calling
+/// `sign_init` / `verify_init` without a context string returns
+/// [`ProviderError::Init`].  The variant is **not** FIPS-approved
+/// and is therefore registered only by the default provider.
 #[must_use]
 pub fn ed25519ctx_signature_descriptor() -> AlgorithmDescriptor {
     algorithm(
@@ -1947,39 +1942,93 @@ mod tests {
     }
 
     #[test]
-    fn ed25519ctx_sign_rejected_even_after_init() {
-        // Ed25519ctx is gated at ensure_supported_for_runtime_op.
-        // We stage a minimum-valid context (32-byte private key)
-        // plus a non-empty context string, then attempt to sign.
-        let mut ctx = EdDsaSignatureContext::new(
+    fn ed25519ctx_sign_verify_round_trip() {
+        // Group C #4 fix: Ed25519ctx is now fully supported per
+        // RFC 8032 §5.1 with conditional dom2 prefixing — the prior
+        // accept-at-init/fail-at-operation anti-pattern has been
+        // eliminated.  This test exercises a complete sign→verify
+        // round-trip with a real Ed25519 keypair generated via the
+        // crypto layer's RFC 8032 §5.1.5 procedure (SHA-512 hash,
+        // clamp, scalar-multiply base point) and a non-empty context
+        // string, mirroring the ed448 variant's contract.
+        use openssl_crypto::ec::curve25519::{generate_keypair, EcxKeyType};
+
+        let kp = generate_keypair(EcxKeyType::Ed25519)
+            .expect("Ed25519 keypair generation must succeed");
+        let mut pair_bytes = Vec::with_capacity(ED25519_KEY_LEN * 2);
+        pair_bytes.extend_from_slice(kp.private_key().as_bytes());
+        pair_bytes.extend_from_slice(kp.public_key().as_bytes());
+        let public_bytes = kp.public_key().as_bytes().to_vec();
+
+        // Build the param set carrying the Ed25519ctx context
+        // string.  RFC 8032 §5.1 mandates a non-empty context for
+        // Ed25519ctx; sign_init enforces this via
+        // requires_context_string().
+        let mut params = ParamSet::new();
+        params.set(
+            "context-string",
+            ParamValue::OctetString(b"test-ctx-rfc8032".to_vec()),
+        );
+
+        // Sign with Ed25519ctx + non-empty context.
+        let mut sctx = EdDsaSignatureContext::new(
             EdDsaInstance::Ed25519ctx,
             LibContext::get_default(),
             None,
         );
-        let private = vec![0x42u8; ED25519_KEY_LEN];
-        let public = vec![0x00u8; ED25519_KEY_LEN];
-        let mut pair_bytes = Vec::with_capacity(ED25519_KEY_LEN * 2);
-        pair_bytes.extend_from_slice(&private);
-        pair_bytes.extend_from_slice(&public);
-
-        // Feed the context string *before* sign_init so the init
-        // check passes — use set_ctx_params via the params API.
-        let mut params = ParamSet::new();
-        params.set(
-            "context-string",
-            ParamValue::OctetString(b"ctx".to_vec()),
+        SignatureContext::sign_init(&mut sctx, &pair_bytes, Some(&params))
+            .expect("sign_init must succeed with full keypair and non-empty context");
+        let signature = SignatureContext::sign(&mut sctx, b"hello, ed25519ctx!")
+            .expect("Ed25519ctx sign must succeed end-to-end");
+        assert_eq!(
+            signature.len(),
+            ED25519_SIGNATURE_LEN,
+            "Ed25519ctx signature must be {ED25519_SIGNATURE_LEN} bytes"
         );
-        // sign_init may legitimately fail due to key validation in
-        // the crypto layer; we only care that, if it succeeds, the
-        // subsequent sign() is rejected as AlgorithmUnavailable.
-        if SignatureContext::sign_init(&mut ctx, &pair_bytes, Some(&params)).is_ok() {
-            let err = SignatureContext::sign(&mut ctx, b"hello")
-                .expect_err("Ed25519ctx sign must be unavailable");
-            assert!(
-                matches!(err, ProviderError::AlgorithmUnavailable(_)),
-                "expected AlgorithmUnavailable, got {err:?}"
-            );
-        }
+
+        // Verify the signature with a fresh verify context bound to
+        // the same Ed25519ctx instance and identical context string.
+        // This validates that the dom2 prefix is consistently
+        // applied on both sign and verify paths.
+        let mut vctx = EdDsaSignatureContext::new(
+            EdDsaInstance::Ed25519ctx,
+            LibContext::get_default(),
+            None,
+        );
+        SignatureContext::verify_init(&mut vctx, &public_bytes, Some(&params))
+            .expect("verify_init must succeed for Ed25519ctx");
+        let valid = SignatureContext::verify(&mut vctx, b"hello, ed25519ctx!", &signature)
+            .expect("Ed25519ctx verify dispatch must succeed");
+        assert!(
+            valid,
+            "Ed25519ctx round-trip verification must yield a valid signature"
+        );
+
+        // Negative cross-check: verifying the same signature under a
+        // different context string must fail.  This confirms the
+        // dom2 binding actually incorporates the context bytes.
+        let mut wrong_params = ParamSet::new();
+        wrong_params.set(
+            "context-string",
+            ParamValue::OctetString(b"different-ctx".to_vec()),
+        );
+        let mut vctx_wrong = EdDsaSignatureContext::new(
+            EdDsaInstance::Ed25519ctx,
+            LibContext::get_default(),
+            None,
+        );
+        SignatureContext::verify_init(&mut vctx_wrong, &public_bytes, Some(&wrong_params))
+            .expect("verify_init must succeed even with mismatched ctx");
+        let invalid = SignatureContext::verify(
+            &mut vctx_wrong,
+            b"hello, ed25519ctx!",
+            &signature,
+        )
+        .expect("verify dispatch must succeed for a wrong-context attempt");
+        assert!(
+            !invalid,
+            "Ed25519ctx verify must reject signatures bound to a different context"
+        );
     }
 
     #[test]

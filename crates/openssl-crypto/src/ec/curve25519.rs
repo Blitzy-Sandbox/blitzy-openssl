@@ -3010,12 +3010,26 @@ pub fn x448_public_from_private(private_key: &EcxPrivateKey) -> CryptoResult<Ecx
 
 /// Ed25519 signature (RFC 8032 §5.1.6).
 ///
-/// Signs `message` with the given Ed25519 private key.
+/// Signs `message` with the given Ed25519 private key.  The optional
+/// `context` parameter provides domain separation per RFC 8032 §5.1:
+///
+/// * `context == None` (or `Some(&[])`) selects the **PureEdDSA**
+///   variant — no dom2 prefix is emitted (compatible with X.509
+///   certificate signatures).
+/// * `context == Some(c)` with `!c.is_empty()` selects the
+///   **Ed25519ctx** variant — a `dom2(F=0, C=context)` prefix is
+///   emitted before the nonce-prefix and msg.
+///
 /// Returns a 64-byte signature.
 ///
 /// # Errors
-/// Returns `CryptoError::Key` if the key type is not Ed25519.
-pub fn ed25519_sign(private_key: &EcxPrivateKey, message: &[u8]) -> CryptoResult<Vec<u8>> {
+/// * `CryptoError::Key` if the key type is not Ed25519, the private key
+///   length is not 32, or the context is longer than 255 bytes.
+pub fn ed25519_sign(
+    private_key: &EcxPrivateKey,
+    message: &[u8],
+    context: Option<&[u8]>,
+) -> CryptoResult<Vec<u8>> {
     trace!("ed25519 sign");
 
     if private_key.key_type != EcxKeyType::Ed25519 {
@@ -3026,19 +3040,33 @@ pub fn ed25519_sign(private_key: &EcxPrivateKey, message: &[u8]) -> CryptoResult
             "invalid Ed25519 private key length".into(),
         ));
     }
+    let ctx = context.unwrap_or(&[]);
+    if ctx.len() > 255 {
+        return Err(CryptoError::Key(
+            "Ed25519 context too long (max 255 bytes)".into(),
+        ));
+    }
 
-    ed25519_sign_internal(&private_key.bytes, message, false, &[])
+    ed25519_sign_internal(&private_key.bytes, message, false, ctx)
 }
 
 /// Ed25519ph signature (pre-hashed message variant, RFC 8032 §5.1.6).
 ///
 /// Signs a pre-hashed message digest with the given Ed25519 private key.
-/// The `prehash` should be SHA-512(message).
+/// The `prehash` should be SHA-512(message).  The optional `context`
+/// parameter is the domain-separation string carried in the `dom2`
+/// prefix; per RFC 8032 §5.1 the prefix is *always* emitted for the
+/// pre-hash variant (with `F=1`), and the context may be empty.
 /// Returns a 64-byte signature.
 ///
 /// # Errors
-/// Returns `CryptoError::Key` if the key type is not Ed25519.
-pub fn ed25519_sign_prehash(private_key: &EcxPrivateKey, prehash: &[u8]) -> CryptoResult<Vec<u8>> {
+/// * `CryptoError::Key` if the key type is not Ed25519, the private key
+///   length is not 32, or the context is longer than 255 bytes.
+pub fn ed25519_sign_prehash(
+    private_key: &EcxPrivateKey,
+    prehash: &[u8],
+    context: Option<&[u8]>,
+) -> CryptoResult<Vec<u8>> {
     trace!("ed25519ph sign (prehash)");
 
     if private_key.key_type != EcxKeyType::Ed25519 {
@@ -3049,8 +3077,14 @@ pub fn ed25519_sign_prehash(private_key: &EcxPrivateKey, prehash: &[u8]) -> Cryp
             "invalid Ed25519 private key length".into(),
         ));
     }
+    let ctx = context.unwrap_or(&[]);
+    if ctx.len() > 255 {
+        return Err(CryptoError::Key(
+            "Ed25519 context too long (max 255 bytes)".into(),
+        ));
+    }
 
-    ed25519_sign_internal(&private_key.bytes, prehash, true, &[])
+    ed25519_sign_internal(&private_key.bytes, prehash, true, ctx)
 }
 
 /// Internal Ed25519 signing (handles both PureEdDSA and Ed25519ph).
@@ -3058,7 +3092,7 @@ fn ed25519_sign_internal(
     privkey: &[u8],
     msg: &[u8],
     prehash: bool,
-    _context: &[u8],
+    context: &[u8],
 ) -> CryptoResult<Vec<u8>> {
     // Step 1: SHA-512(private_key)
     let h = sha512_internal::sha512(privkey);
@@ -3073,13 +3107,27 @@ fn ed25519_sign_internal(
     let a_point = edwards25519::scalarmult_base(&a);
     let pk = a_point.to_bytes();
 
+    // Per RFC 8032 §5.1, the dom2 prefix is emitted iff this is the
+    // pre-hash variant (Ed25519ph, F=1) OR a non-empty context string
+    // is supplied (Ed25519ctx, F=0).  Pure Ed25519 with empty context
+    // emits NO prefix — matching the historical behavior of the
+    // PureEdDSA path.  The flag byte F is 1 for prehash, 0 otherwise.
+    //
+    // dom2(F, C) = "SigEd25519 no Ed25519 collisions" || F || OCTET(len(C)) || C
+    //
+    // Length validation (≤255) is enforced by the public API wrappers
+    // before reaching this internal helper.
+    let emit_dom2 = prehash || !context.is_empty();
+    let flag_byte: u8 = u8::from(prehash);
+    let ctx_len_byte: u8 = context.len() as u8;
+
     // Step 3: Compute nonce r = SHA-512(dom2 || h[32..64] || msg) mod l
     let nonce_prefix = &h[32..64];
     let mut hasher = sha512_internal::Sha512::new();
-    if prehash {
-        // dom2(1, context) = "SigEd25519 no Ed25519 collisions" || 0x01 || len(ctx) || ctx
+    if emit_dom2 {
         hasher.update(b"SigEd25519 no Ed25519 collisions");
-        hasher.update(&[0x01, 0x00]); // flag=1, context length=0
+        hasher.update(&[flag_byte, ctx_len_byte]);
+        hasher.update(context);
     }
     hasher.update(nonce_prefix);
     hasher.update(msg);
@@ -3092,9 +3140,10 @@ fn ed25519_sign_internal(
 
     // Step 5: S = r + SHA-512(dom2 || R || A || msg) * a mod l
     let mut h2 = sha512_internal::Sha512::new();
-    if prehash {
+    if emit_dom2 {
         h2.update(b"SigEd25519 no Ed25519 collisions");
-        h2.update(&[0x01, 0x00]);
+        h2.update(&[flag_byte, ctx_len_byte]);
+        h2.update(context);
     }
     h2.update(&r_bytes);
     h2.update(&pk);
@@ -3112,16 +3161,23 @@ fn ed25519_sign_internal(
 
 /// Ed25519 verification (RFC 8032 §5.1.7).
 ///
-/// Verifies `signature` over `message` against the given Ed25519 public key.
+/// Verifies `signature` over `message` against the given Ed25519 public
+/// key.  The optional `context` parameter selects between PureEdDSA
+/// (`None` or `Some(&[])`) and Ed25519ctx (`Some(c)` with `!c.is_empty()`)
+/// per RFC 8032 §5.1.  The selected dom2 prefix must match the one used
+/// at sign-time or verification will fail.
+///
 /// Returns `true` if the signature is valid. Uses constant-time comparison.
 ///
 /// # Errors
-/// - `CryptoError::Key` if the key type is not Ed25519.
-/// - `CryptoError::Verification` if the signature format is invalid.
+/// * `CryptoError::Key` if the key type is not Ed25519, the public key
+///   length is not 32, or the context is longer than 255 bytes.
+/// * `CryptoError::Verification` if the signature format is invalid.
 pub fn ed25519_verify(
     public_key: &EcxPublicKey,
     message: &[u8],
     signature: &[u8],
+    context: Option<&[u8]>,
 ) -> CryptoResult<bool> {
     trace!("ed25519 verify");
 
@@ -3136,21 +3192,32 @@ pub fn ed25519_verify(
     if public_key.bytes.len() != ED25519_KEY_LEN {
         return Err(CryptoError::Key("invalid Ed25519 public key length".into()));
     }
+    let ctx = context.unwrap_or(&[]);
+    if ctx.len() > 255 {
+        return Err(CryptoError::Key(
+            "Ed25519 context too long (max 255 bytes)".into(),
+        ));
+    }
 
-    ed25519_verify_internal(&public_key.bytes, message, signature, false, &[])
+    ed25519_verify_internal(&public_key.bytes, message, signature, false, ctx)
 }
 
 /// Ed25519ph verification (pre-hashed message variant).
 ///
-/// Verifies `signature` over a pre-hashed message `prehash`.
+/// Verifies `signature` over a pre-hashed message `prehash`.  Per
+/// RFC 8032 §5.1 the dom2 prefix is always emitted for Ed25519ph (with
+/// `F=1`), and the optional `context` parameter is the
+/// domain-separation string carried in that prefix; it may be empty.
 ///
 /// # Errors
-/// - `CryptoError::Key` if the key type is not Ed25519.
-/// - `CryptoError::Verification` if the signature format is invalid.
+/// * `CryptoError::Key` if the key type is not Ed25519, the public key
+///   length is not 32, or the context is longer than 255 bytes.
+/// * `CryptoError::Verification` if the signature format is invalid.
 pub fn ed25519_verify_prehash(
     public_key: &EcxPublicKey,
     prehash: &[u8],
     signature: &[u8],
+    context: Option<&[u8]>,
 ) -> CryptoResult<bool> {
     trace!("ed25519ph verify (prehash)");
 
@@ -3165,17 +3232,29 @@ pub fn ed25519_verify_prehash(
     if public_key.bytes.len() != ED25519_KEY_LEN {
         return Err(CryptoError::Key("invalid Ed25519 public key length".into()));
     }
+    let ctx = context.unwrap_or(&[]);
+    if ctx.len() > 255 {
+        return Err(CryptoError::Key(
+            "Ed25519 context too long (max 255 bytes)".into(),
+        ));
+    }
 
-    ed25519_verify_internal(&public_key.bytes, prehash, signature, true, &[])
+    ed25519_verify_internal(&public_key.bytes, prehash, signature, true, ctx)
 }
 
-/// Internal Ed25519 verification (handles PureEdDSA and Ed25519ph).
+/// Internal Ed25519 verification (handles PureEdDSA, Ed25519ctx, and Ed25519ph).
+///
+/// The `prehash` flag selects between Ed25519 / Ed25519ctx (false) and
+/// Ed25519ph (true).  The `context` parameter carries the
+/// domain-separation string for Ed25519ctx and Ed25519ph; it must be ≤
+/// 255 bytes (validated by the public API).  Pure Ed25519 (no context,
+/// not pre-hashed) emits no dom2 prefix per RFC 8032 §5.1.
 fn ed25519_verify_internal(
     pubkey: &[u8],
     msg: &[u8],
     sig: &[u8],
     prehash: bool,
-    _context: &[u8],
+    context: &[u8],
 ) -> CryptoResult<bool> {
     // Parse R and S from signature
     let mut r_bytes = [0u8; 32];
@@ -3196,12 +3275,21 @@ fn ed25519_verify_internal(
         None => return Ok(false),
     };
 
+    // Per RFC 8032 §5.1, the dom2 prefix is emitted iff this is the
+    // pre-hash variant (F=1) OR a non-empty context string is supplied
+    // (F=0).  This matches `ed25519_sign_internal` exactly so that
+    // ctx-carrying signatures verify correctly.
+    let emit_dom2 = prehash || !context.is_empty();
+    let flag_byte: u8 = u8::from(prehash);
+    let ctx_len_byte: u8 = context.len() as u8;
+
     // Compute h = SHA-512(dom2 || R || A || msg) using one-shot concatenation
     // to ensure identical behavior to sign's hram computation.
     let mut h_data = Vec::with_capacity(sig.len() + pubkey.len() + msg.len() + 64);
-    if prehash {
+    if emit_dom2 {
         h_data.extend_from_slice(b"SigEd25519 no Ed25519 collisions");
-        h_data.extend_from_slice(&[0x01, 0x00]);
+        h_data.extend_from_slice(&[flag_byte, ctx_len_byte]);
+        h_data.extend_from_slice(context);
     }
     h_data.extend_from_slice(&r_bytes);
     h_data.extend_from_slice(pubkey);

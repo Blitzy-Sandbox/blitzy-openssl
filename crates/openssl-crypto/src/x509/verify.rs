@@ -1139,7 +1139,9 @@ fn verify_eddsa(
         OID_ED25519 => {
             let pk = EcxPublicKey::new(EcxKeyType::Ed25519, spki.public_key_bytes.clone())
                 .map_err(|e| VerificationError::DecodingError(e.to_string()))?;
-            match ed25519_verify(&pk, tbs, sig) {
+            // X.509 certificate signatures use Pure Ed25519 (RFC 8410 + RFC 8032 §5.1)
+            // — no context string is permitted, so pass None.
+            match ed25519_verify(&pk, tbs, sig, None) {
                 Ok(true) => Ok(()),
                 Ok(false) => Err(VerificationError::SignatureFailure { depth: 0 }),
                 Err(e) => Err(VerificationError::InternalError(e.to_string())),
