@@ -12,9 +12,17 @@
 //!
 //! ## Named Curves
 //!
-//! The module supports named curves including NIST P-256, P-384,
-//! P-521, secp256k1, brainpool curves, and SM2. Curves are identified by
-//! the [`NamedCurve`] enum.
+//! The short-Weierstrass curve catalog ([`NamedCurve`]) enumerates only
+//! curves with built-in parameter implementations: NIST P-256, P-384,
+//! P-521, and secp256k1. The enum is `#[non_exhaustive]` so additional
+//! curves can be added without breaking changes once their parameter
+//! sets and arithmetic are implemented.
+//!
+//! Curve25519-family primitives (X25519, X448, Ed25519, Ed448) are
+//! deliberately **not** members of [`NamedCurve`]: they are handled by
+//! the [`curve25519`] submodule using a separate [`EcxKeyType`] enum,
+//! because they are Montgomery / Edwards curves rather than short-
+//! Weierstrass and use a distinct arithmetic stack.
 //!
 //! ## Design Choices
 //!
@@ -45,11 +53,45 @@ pub use ecdsa::{EcdsaSignature, NonceType};
 // NamedCurve — enumeration of supported elliptic curves
 // ===========================================================================
 
-/// Enumeration of supported named elliptic curves.
+/// Enumeration of supported short-Weierstrass named elliptic curves.
 ///
 /// Replaces C curve NIDs from `crypto/ec/ec_curve.c`. Each variant maps
 /// to a set of built-in curve parameters (field prime, coefficients a/b,
-/// generator coordinates, order, and cofactor).
+/// generator coordinates, order, and cofactor) loaded by
+/// [`load_curve_params`].
+///
+/// # Catalog membership rule (AAP §0.7.x, AAP rule R5)
+///
+/// This enum lists **only** curves that have full parameter
+/// implementations and arithmetic support in this crate. Curves whose
+/// parameter sets are not yet built in are intentionally **absent** from
+/// the enum so that compile-time matching is exhaustive at the call sites
+/// of [`load_curve_params`]. This honors AAP rule R5 ("no placeholders"):
+/// the absence of an `_ =>` Err arm at the enumerator level reflects the
+/// absence of placeholder code paths.
+///
+/// Earlier checkpoints declared 22 variants of which 18 had no parameter
+/// implementation (`load_curve_params` returned `Err` via a `_ =>` arm).
+/// The unimplemented variants — `Secp224r1`, `BrainpoolP{256,384,512}{r,t}1`,
+/// `Sm2`, `Secp{160,192,224}{r1,r2,k1}`, and the four Curve25519-family
+/// duplicates `X25519`/`X448`/`Ed25519`/`Ed448` — were removed in the
+/// reduction tracked under Group C #1 of the Code Review remediation plan.
+///
+/// # Curve25519-family routing
+///
+/// X25519, X448, Ed25519, and Ed448 are **not** members of `NamedCurve`.
+/// They use Montgomery / Edwards arithmetic (not short-Weierstrass) and
+/// have a separate type system in [`crate::ec::curve25519`]: see
+/// [`EcxKeyType`]. Mixing them into the short-Weierstrass catalog created
+/// a vestigial duplicate code path with no callers; removing them
+/// eliminates that ambiguity at the type-system level.
+///
+/// # Future additions
+///
+/// `#[non_exhaustive]` is retained so that adding a new curve variant
+/// (after its parameters and arithmetic are implemented) is a backwards-
+/// compatible change for downstream callers — they cannot rely on
+/// matches over `NamedCurve` being exhaustive.
 ///
 /// # Rule R5
 ///
@@ -57,7 +99,7 @@ pub use ecdsa::{EcdsaSignature, NonceType};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum NamedCurve {
-    // NIST curves (most commonly used)
+    // NIST prime curves (FIPS 186-4 approved short-Weierstrass)
     /// P-256, secp256r1, prime256v1 — NIST 256-bit prime curve
     Prime256v1,
     /// P-384, secp384r1 — NIST 384-bit prime curve
@@ -65,53 +107,9 @@ pub enum NamedCurve {
     /// P-521, secp521r1 — NIST 521-bit prime curve
     Secp521r1,
 
-    // Other common curves
+    // Koblitz curves (SEC 2)
     /// secp256k1 — Koblitz 256-bit curve (used in Bitcoin)
     Secp256k1,
-    /// P-224, secp224r1 — NIST 224-bit prime curve
-    Secp224r1,
-
-    // Brainpool curves (RFC 5639)
-    /// brainpoolP256r1 — RFC 5639 256-bit random curve
-    BrainpoolP256r1,
-    /// brainpoolP384r1 — RFC 5639 384-bit random curve
-    BrainpoolP384r1,
-    /// brainpoolP512r1 — RFC 5639 512-bit random curve
-    BrainpoolP512r1,
-    /// brainpoolP256t1 — RFC 5639 256-bit twisted curve
-    BrainpoolP256t1,
-    /// brainpoolP384t1 — RFC 5639 384-bit twisted curve
-    BrainpoolP384t1,
-    /// brainpoolP512t1 — RFC 5639 512-bit twisted curve
-    BrainpoolP512t1,
-
-    // SM2 (Chinese national standard)
-    /// SM2 — Chinese national standard elliptic curve
-    Sm2,
-
-    // Older / legacy curves
-    /// P-192, secp192r1 — NIST 192-bit prime curve
-    Secp192r1,
-    /// secp160r1 — 160-bit prime curve
-    Secp160r1,
-    /// secp160r2 — 160-bit prime curve (variant)
-    Secp160r2,
-    /// secp160k1 — 160-bit Koblitz curve
-    Secp160k1,
-    /// secp192k1 — 192-bit Koblitz curve
-    Secp192k1,
-    /// secp224k1 — 224-bit Koblitz curve
-    Secp224k1,
-
-    // Montgomery / Edwards curves (handled by curve25519 submodule)
-    /// X25519 — Curve25519 for Diffie-Hellman key exchange (RFC 7748)
-    X25519,
-    /// X448 — Curve448 for Diffie-Hellman key exchange (RFC 7748)
-    X448,
-    /// Ed25519 — Edwards25519 for `EdDSA` signatures (RFC 8032)
-    Ed25519,
-    /// Ed448 — Edwards448 for `EdDSA` signatures (RFC 8032)
-    Ed448,
 }
 
 impl NamedCurve {
@@ -120,19 +118,8 @@ impl NamedCurve {
     /// For example, P-256 returns 256, P-384 returns 384, P-521 returns 521.
     pub fn key_size_bits(&self) -> u32 {
         match self {
-            Self::Secp160r1 | Self::Secp160r2 | Self::Secp160k1 => 160,
-            Self::Secp192r1 | Self::Secp192k1 => 192,
-            Self::Secp224r1 | Self::Secp224k1 => 224,
-            Self::Prime256v1
-            | Self::Secp256k1
-            | Self::BrainpoolP256r1
-            | Self::BrainpoolP256t1
-            | Self::Sm2
-            | Self::X25519
-            | Self::Ed25519 => 256,
-            Self::Secp384r1 | Self::BrainpoolP384r1 | Self::BrainpoolP384t1 => 384,
-            Self::X448 | Self::Ed448 => 448,
-            Self::BrainpoolP512r1 | Self::BrainpoolP512t1 => 512,
+            Self::Prime256v1 | Self::Secp256k1 => 256,
+            Self::Secp384r1 => 384,
             Self::Secp521r1 => 521,
         }
     }
@@ -145,15 +132,15 @@ impl NamedCurve {
         (bits + 7) / 8
     }
 
-    /// Returns `true` if this is a NIST prime curve (P-192, P-224, P-256, P-384, P-521).
+    /// Returns `true` if this is a NIST prime curve (P-256, P-384, P-521).
+    ///
+    /// `Secp256k1` is a Koblitz curve (SEC 2) rather than a NIST-standardized
+    /// prime curve, so it returns `false` here even though its key size
+    /// matches `P-256`.
     pub fn is_nist_curve(&self) -> bool {
         matches!(
             self,
-            Self::Secp192r1
-                | Self::Secp224r1
-                | Self::Prime256v1
-                | Self::Secp384r1
-                | Self::Secp521r1
+            Self::Prime256v1 | Self::Secp384r1 | Self::Secp521r1
         )
     }
 
@@ -162,33 +149,19 @@ impl NamedCurve {
     /// Accepts canonical OpenSSL names (e.g., `"prime256v1"`), NIST names
     /// (e.g., `"P-256"`), and SEC names (e.g., `"secp256r1"`).
     ///
+    /// Only the four curves that have built-in parameter sets and
+    /// arithmetic support are recognized here (see [`NamedCurve`] catalog
+    /// membership rule).
+    ///
     /// # Returns
     ///
-    /// `None` if the curve name is not recognized.
+    /// `None` if the curve name is not recognized or not yet implemented.
     pub fn from_name(name: &str) -> Option<NamedCurve> {
         match name {
             "prime256v1" | "P-256" | "secp256r1" => Some(Self::Prime256v1),
             "secp384r1" | "P-384" => Some(Self::Secp384r1),
             "secp521r1" | "P-521" => Some(Self::Secp521r1),
             "secp256k1" => Some(Self::Secp256k1),
-            "secp224r1" | "P-224" => Some(Self::Secp224r1),
-            "brainpoolP256r1" => Some(Self::BrainpoolP256r1),
-            "brainpoolP384r1" => Some(Self::BrainpoolP384r1),
-            "brainpoolP512r1" => Some(Self::BrainpoolP512r1),
-            "brainpoolP256t1" => Some(Self::BrainpoolP256t1),
-            "brainpoolP384t1" => Some(Self::BrainpoolP384t1),
-            "brainpoolP512t1" => Some(Self::BrainpoolP512t1),
-            "SM2" | "sm2" => Some(Self::Sm2),
-            "secp192r1" | "P-192" => Some(Self::Secp192r1),
-            "secp160r1" => Some(Self::Secp160r1),
-            "secp160r2" => Some(Self::Secp160r2),
-            "secp160k1" => Some(Self::Secp160k1),
-            "secp192k1" => Some(Self::Secp192k1),
-            "secp224k1" => Some(Self::Secp224k1),
-            "X25519" | "x25519" => Some(Self::X25519),
-            "X448" | "x448" => Some(Self::X448),
-            "Ed25519" | "ed25519" => Some(Self::Ed25519),
-            "Ed448" | "ed448" => Some(Self::Ed448),
             _ => None,
         }
     }
@@ -200,24 +173,6 @@ impl NamedCurve {
             Self::Secp384r1 => "secp384r1",
             Self::Secp521r1 => "secp521r1",
             Self::Secp256k1 => "secp256k1",
-            Self::Secp224r1 => "secp224r1",
-            Self::BrainpoolP256r1 => "brainpoolP256r1",
-            Self::BrainpoolP384r1 => "brainpoolP384r1",
-            Self::BrainpoolP512r1 => "brainpoolP512r1",
-            Self::BrainpoolP256t1 => "brainpoolP256t1",
-            Self::BrainpoolP384t1 => "brainpoolP384t1",
-            Self::BrainpoolP512t1 => "brainpoolP512t1",
-            Self::Sm2 => "SM2",
-            Self::Secp192r1 => "secp192r1",
-            Self::Secp160r1 => "secp160r1",
-            Self::Secp160r2 => "secp160r2",
-            Self::Secp160k1 => "secp160k1",
-            Self::Secp192k1 => "secp192k1",
-            Self::Secp224k1 => "secp224k1",
-            Self::X25519 => "X25519",
-            Self::X448 => "X448",
-            Self::Ed25519 => "Ed25519",
-            Self::Ed448 => "Ed448",
         }
     }
 }
@@ -1421,29 +1376,30 @@ fn generate_random_scalar(order: &BigNum) -> CryptoResult<BigNum> {
 /// Loads built-in curve parameters for a named curve.
 ///
 /// Replaces the curve parameter catalog in `crypto/ec/ec_curve.c`.
-/// Contains hard-coded parameters for the most commonly used curves:
-/// NIST P-256 / P-384 / P-521 and secp256k1.
+/// Contains hard-coded parameters for all four [`NamedCurve`] variants:
+/// NIST P-256 / P-384 / P-521 and the Koblitz curve secp256k1.
 ///
-/// # Errors
+/// # Exhaustiveness
 ///
-/// Returns [`CryptoError::Key`] wrapping a `UnsupportedCurve` message for
-/// curves that are not yet included in the built-in catalog. This keeps
-/// the error path explicit rather than silently constructing an invalid
-/// group — a principle enforced by AAP rule R5 (no placeholders).
+/// The match is exhaustive because [`NamedCurve`] enumerates only curves
+/// with full parameter implementations (see the catalog membership rule on
+/// [`NamedCurve`]). Earlier revisions of this catalog declared additional
+/// variants (Brainpool, SM2, SEC 160/192/224, and the Curve25519-family
+/// duplicates) that reached an `_ =>` Err arm at runtime. Those variants
+/// were removed from the enum itself so the unreachable error path no
+/// longer exists — aligning with AAP rule R5 (no placeholders).
 ///
-/// Curves that are explicitly handled elsewhere (X25519/Ed25519/X448/Ed448)
-/// live in the [`curve25519`](crate::ec::curve25519) submodule and will
-/// be rejected here because they do not use short-Weierstrass parameters.
+/// Curve25519-family primitives (X25519, X448, Ed25519, Ed448) use
+/// Montgomery / Edwards arithmetic and live in the
+/// [`curve25519`](crate::ec::curve25519) submodule with their own
+/// [`EcxKeyType`] enum. They are intentionally not members of
+/// [`NamedCurve`].
 fn load_curve_params(curve: NamedCurve) -> CryptoResult<EcGroup> {
     match curve {
         NamedCurve::Prime256v1 => load_p256(),
         NamedCurve::Secp384r1 => load_p384(),
         NamedCurve::Secp521r1 => load_p521(),
         NamedCurve::Secp256k1 => load_secp256k1(),
-        _ => Err(CryptoError::Key(format!(
-            "EC: curve '{}' parameters not yet implemented in the built-in catalog",
-            curve.name()
-        ))),
     }
 }
 
