@@ -226,6 +226,61 @@ const SHA256_BLOCK_SIZE: usize = 64;
 /// SHA-256 output digest size in bytes.
 const SHA256_DIGEST_SIZE: usize = 32;
 
+/// Returns the digest output length in bytes for a given digest name.
+///
+/// Supports the standard SHA family digest names used across HKDF backends
+/// per RFC 5869 §2 (variable-digest HKDF) and RFC 9180 §4 (DHKEM HPKE).
+/// The naming convention follows OpenSSL's canonical digest names —
+/// `SHA-256`, `SHA-512`, etc. — and is also tolerant of names without
+/// hyphens (`SHA256`) and the `SHA2-*` prefix variant accepted by
+/// [`crate::mac::hmac`].
+///
+/// The accepted name set is intentionally aligned with the underlying
+/// HMAC backend ([`crate::mac::hmac`] in `crypto/mac.rs`): every name
+/// accepted by this function is also accepted by `crate::mac::hmac`,
+/// preventing the "accept-at-init, fail-at-operation" anti-pattern
+/// flagged in the AAP review for HKDF backends.
+///
+/// # Supported digests
+///
+/// | Digest name                                      | Output length (bytes) |
+/// |--------------------------------------------------|----------------------:|
+/// | `SHA-1` / `SHA1`                                 | 20                    |
+/// | `SHA-224` / `SHA224` / `SHA2-224`                | 28                    |
+/// | `SHA-256` / `SHA256` / `SHA2-256`                | 32                    |
+/// | `SHA-384` / `SHA384` / `SHA2-384`                | 48                    |
+/// | `SHA-512` / `SHA512` / `SHA2-512`                | 64                    |
+/// | `SHA3-224`                                       | 28                    |
+/// | `SHA3-256`                                       | 32                    |
+/// | `SHA3-384`                                       | 48                    |
+/// | `SHA3-512`                                       | 64                    |
+///
+/// # Errors
+///
+/// Returns [`CryptoError::AlgorithmNotFound`] if the digest name does not
+/// map to a known SHA-family algorithm. This is the same error the
+/// underlying [`crate::mac::hmac`] backend would surface, ensuring
+/// consistent diagnostics across the HKDF stack.
+fn digest_output_len(name: &str) -> CryptoResult<usize> {
+    // Case-insensitive comparison preserves ergonomics for callers that
+    // produce mixed-case digest names from configuration files or wire
+    // protocol identifiers.
+    let upper = name.to_ascii_uppercase();
+    // SHA-2 and SHA-3 arms are merged where their output lengths coincide
+    // (224/256/384/512 bits) to satisfy clippy::match_same_arms while
+    // retaining the table layout in the doc comment above for readability.
+    match upper.as_str() {
+        "SHA-1" | "SHA1" => Ok(20),
+        "SHA-224" | "SHA224" | "SHA2-224" | "SHA3-224" => Ok(28),
+        "SHA-256" | "SHA256" | "SHA2-256" | "SHA3-256" => Ok(32),
+        "SHA-384" | "SHA384" | "SHA2-384" | "SHA3-384" => Ok(48),
+        "SHA-512" | "SHA512" | "SHA2-512" | "SHA3-512" => Ok(64),
+        _ => Err(CryptoError::AlgorithmNotFound(format!(
+            "unknown HKDF digest algorithm: {name}"
+        ))),
+    }
+}
+
 // ===========================================================================
 // PBKDF2 constants (from providers/implementations/kdfs/pbkdf2.c)
 // ===========================================================================
@@ -563,24 +618,48 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256_DIGEST_SIZE] {
 
 /// HKDF-Extract (RFC 5869 §2.2): PRK = HMAC-Hash(salt, IKM)
 ///
-/// If `salt` is empty, a zero-filled buffer of hash length is used per spec.
-fn hkdf_extract(salt: &[u8], ikm: &[u8]) -> [u8; SHA256_DIGEST_SIZE] {
-    let effective_salt = if salt.is_empty() {
-        &[0u8; SHA256_DIGEST_SIZE] as &[u8]
+/// If `salt` is empty, a zero-filled buffer of hash length is used per spec
+/// (RFC 5869 §2.2 second paragraph: "if not provided, it is set to a string
+/// of `HashLen` zeros").
+///
+/// `digest_name` selects the HMAC variant — `"SHA-256"`, `"SHA-512"`, etc.
+/// The accepted name set is documented on [`digest_output_len`] and matches
+/// the underlying [`crate::mac::hmac`] backend.
+///
+/// # Errors
+///
+/// Returns [`CryptoError::AlgorithmNotFound`] if `digest_name` is not a
+/// supported SHA-family algorithm.
+fn hkdf_extract(salt: &[u8], ikm: &[u8], digest_name: &str) -> CryptoResult<Vec<u8>> {
+    let digest_size = digest_output_len(digest_name)?;
+    if salt.is_empty() {
+        let zero_salt = vec![0u8; digest_size];
+        crate::mac::hmac(digest_name, &zero_salt, ikm)
     } else {
-        salt
-    };
-    hmac_sha256(effective_salt, ikm)
+        crate::mac::hmac(digest_name, salt, ikm)
+    }
 }
 
 /// HKDF-Expand (RFC 5869 §2.3): OKM = T(1) || T(2) || ... || T(N)
 ///
 /// T(i) = HMAC-Hash(PRK, T(i-1) || info || i)
 ///
-/// Returns an error if `length` exceeds 255 × `HashLen`.
-fn hkdf_expand(prk: &[u8], info: &[u8], length: usize) -> CryptoResult<Vec<u8>> {
+/// `digest_name` selects the HMAC variant, which determines `HashLen` and
+/// thus the maximum permitted output length (255 × `HashLen`).
+///
+/// # Errors
+///
+/// Returns an error if `length` is zero or exceeds 255 × `HashLen`, or if
+/// `digest_name` is not a supported SHA-family algorithm.
+fn hkdf_expand(
+    prk: &[u8],
+    info: &[u8],
+    length: usize,
+    digest_name: &str,
+) -> CryptoResult<Vec<u8>> {
+    let digest_size = digest_output_len(digest_name)?;
     let max_len = HKDF_MAX_OUTPUT_MULTIPLIER
-        .checked_mul(SHA256_DIGEST_SIZE)
+        .checked_mul(digest_size)
         .ok_or_else(|| {
             CryptoError::Common(openssl_common::CommonError::ArithmeticOverflow {
                 operation: "HKDF max length calculation",
@@ -602,9 +681,9 @@ fn hkdf_expand(prk: &[u8], info: &[u8], length: usize) -> CryptoResult<Vec<u8>> 
         ));
     }
 
-    let n = (length + SHA256_DIGEST_SIZE - 1) / SHA256_DIGEST_SIZE;
+    let n = length.div_ceil(digest_size);
     let mut okm = Vec::with_capacity(length);
-    let mut t_prev = Vec::new();
+    let mut t_prev: Vec<u8> = Vec::new();
 
     for i in 1..=n {
         let mut input = Vec::with_capacity(t_prev.len() + info.len() + 1);
@@ -615,13 +694,16 @@ fn hkdf_expand(prk: &[u8], info: &[u8], length: usize) -> CryptoResult<Vec<u8>> 
             .map_err(|e| CryptoError::Common(openssl_common::CommonError::CastOverflow(e)))?;
         input.push(counter);
 
-        let t = hmac_sha256(prk, &input);
+        let mut t = crate::mac::hmac(digest_name, prk, &input)?;
         input.zeroize();
 
         let remaining = length - okm.len();
-        let to_copy = core::cmp::min(remaining, SHA256_DIGEST_SIZE);
+        let to_copy = core::cmp::min(remaining, digest_size);
         okm.extend_from_slice(&t[..to_copy]);
-        t_prev = t.to_vec();
+        // Zeroize the previous T block before reassignment to avoid leaving
+        // intermediate HKDF block material in heap pages.
+        t_prev.zeroize();
+        t_prev = core::mem::take(&mut t);
     }
     t_prev.zeroize();
 
@@ -1337,8 +1419,15 @@ impl KdfContext {
 
     /// Sets the digest algorithm name for HMAC-based KDFs.
     ///
-    /// Currently supports `"SHA256"` (default). Future provider integration
-    /// will support all digest algorithms registered in the provider store.
+    /// Defaults to `"SHA256"`. The full SHA-1, SHA-2 and SHA-3 family is
+    /// accepted for HKDF dispatch — `"SHA-256"`, `"SHA-512"`,
+    /// `"SHA3-256"`, etc. — backed by the workspace HMAC implementation in
+    /// [`crate::mac::hmac`]. The accepted name set is documented on
+    /// [`digest_output_len`]; both hyphenated and non-hyphenated forms are
+    /// recognised.
+    ///
+    /// PBKDF2 currently remains hard-bound to HMAC-SHA-256 by design;
+    /// callers should not rely on this setter to vary the PBKDF2 digest.
     ///
     /// # Errors
     ///
@@ -1437,21 +1526,22 @@ impl KdfContext {
 
         let result = match self.kdf_type {
             KdfType::Hkdf => {
-                let prk = hkdf_extract(&self.salt, &self.key);
-                hkdf_expand(&prk, &self.info, length)
+                let prk = hkdf_extract(&self.salt, &self.key, &self.digest_name)?;
+                hkdf_expand(&prk, &self.info, length, &self.digest_name)
             }
             KdfType::HkdfExtract => {
-                let prk = hkdf_extract(&self.salt, &self.key);
-                if length > SHA256_DIGEST_SIZE {
+                let prk = hkdf_extract(&self.salt, &self.key, &self.digest_name)?;
+                let hash_size = digest_output_len(&self.digest_name)?;
+                if length > hash_size {
                     return Err(CryptoError::Common(
                         openssl_common::CommonError::InvalidArgument(format!(
-                            "HKDF-Extract output length {length} exceeds hash length {SHA256_DIGEST_SIZE}"
+                            "HKDF-Extract output length {length} exceeds hash length {hash_size}"
                         )),
                     ));
                 }
                 Ok(prk[..length].to_vec())
             }
-            KdfType::HkdfExpand => hkdf_expand(&self.key, &self.info, length),
+            KdfType::HkdfExpand => hkdf_expand(&self.key, &self.info, length, &self.digest_name),
             KdfType::Pbkdf2 => {
                 let iterations = self.get_param_u32("iterations").unwrap_or(10000);
                 pbkdf2_derive_internal(&self.key, &self.salt, iterations, length)
@@ -1718,20 +1808,24 @@ impl core::fmt::Debug for KdfContext {
 /// Derives key material using HKDF (RFC 5869) with HMAC-SHA-256.
 ///
 /// Performs the full HKDF extract-and-expand workflow in a single call.
-/// For separate extract/expand steps, use [`KdfContext`] with
-/// [`KdfType::HkdfExtract`] or [`KdfType::HkdfExpand`].
+/// For separate extract/expand steps, or to use a different SHA variant
+/// (e.g. SHA-512 for X448 DHKEM per RFC 9180), use [`KdfContext`] with
+/// [`KdfType::HkdfExtract`] / [`KdfType::HkdfExpand`] / [`KdfType::Hkdf`]
+/// and call [`KdfContext::set_digest`] with the desired algorithm name.
 ///
 /// # Arguments
 ///
 /// * `key` — Input keying material (IKM). Must not be empty.
-/// * `salt` — Optional salt value. Can be empty (defaults to zero-filled).
+/// * `salt` — Optional salt value. Can be empty (defaults to a zero-filled
+///   buffer of `HashLen` bytes per RFC 5869 §2.2).
 /// * `info` — Application-specific context information. Can be empty.
-/// * `length` — Number of derived bytes to produce (max 255 × 32 = 8160).
+/// * `length` — Number of derived bytes to produce (max 255 × 32 = 8160
+///   bytes for the SHA-256 default).
 ///
 /// # Errors
 ///
 /// Returns [`CryptoError`] if the key is empty or the output length exceeds
-/// the HKDF maximum (255 × hash length).
+/// the HKDF maximum (255 × `HashLen`).
 ///
 /// # Example
 ///
@@ -1748,8 +1842,11 @@ pub fn hkdf_derive(key: &[u8], salt: &[u8], info: &[u8], length: usize) -> Crypt
             ),
         ));
     }
-    let prk = hkdf_extract(salt, key);
-    hkdf_expand(&prk, info, length)
+    // Default to SHA-256 to preserve historical RFC 5869 test-vector
+    // behaviour. Callers requiring a different digest should construct a
+    // KdfContext directly and configure it via set_digest().
+    let prk = hkdf_extract(salt, key, "SHA-256")?;
+    hkdf_expand(&prk, info, length, "SHA-256")
 }
 
 /// Derives key material using PBKDF2-HMAC-SHA-256 (RFC 8018).
@@ -2328,8 +2425,9 @@ mod tests {
 
     #[test]
     fn test_context_hkdf_expand() {
-        // First extract a PRK
-        let prk = hkdf_extract(b"salt", b"input-key-material");
+        // First extract a PRK using the SHA-256 default to match the
+        // KdfContext::HkdfExpand behaviour below.
+        let prk = hkdf_extract(b"salt", b"input-key-material", "SHA-256").unwrap();
         let mut ctx = KdfContext::new(KdfType::HkdfExpand);
         ctx.set_key(&prk).unwrap();
         ctx.set_info(b"info").unwrap();

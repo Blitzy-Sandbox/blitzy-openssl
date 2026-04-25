@@ -1604,16 +1604,12 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "kdf.rs HKDF backend is hardcoded to SHA-256; X448 HPKE suite \
-                per RFC 9180 requires SHA-512. Re-enable when the HKDF backend \
-                supports variable digest sizes."]
     fn ecx_kem_x448_base_roundtrip() {
-        // Full end-to-end RFC 9180 X448 round-trip. The API surface accepts
-        // X448 keys (init validates lengths Npk/Nsk/Nenc = 56) and context
-        // construction succeeds, but the extract_and_expand path currently
-        // requests a 64-byte PRK from the HKDF backend which hardcodes SHA-256
-        // (max PRK = 32 bytes). Once the HKDF backend gains SHA-512 support,
-        // this test should pass with ss_sender.len() == 64.
+        // Full end-to-end RFC 9180 X448 round-trip. The HKDF backend in
+        // `crypto/kdf.rs` now supports the full SHA-1/SHA-2/SHA-3 family
+        // through `crate::mac::hmac`, so the X448 DHKEM (KEM ID 0x0021)
+        // extract/expand path correctly threads `KDF_HASH_X448 = "SHA-512"`
+        // and produces the 64-byte shared secret mandated by RFC 9180 §7.1.
         let kp = generate_keypair(EcxKeyType::X448).expect("X448 keygen");
         let pk_r_bytes = kp.public_key().as_bytes().to_vec();
         let sk_r_bytes = kp.private_key().as_bytes().to_vec();
