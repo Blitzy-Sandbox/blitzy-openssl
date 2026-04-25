@@ -319,423 +319,134 @@ impl std::fmt::Debug for EcxKeyPair {
 }
 
 // ===========================================================================
-// Internal SHA-512 implementation (FIPS 180-4)
-// Used by Ed25519 sign/verify. Implemented inline because the hash module
-// does not yet exist and no sha2 crate is available in the workspace.
+// Internal SHA-512 wrapper (Ed25519)
 // ===========================================================================
+// Group D code-deduplication: this module previously contained a full inline
+// FIPS 180-4 SHA-512 implementation (~233 lines including K[80] round
+// constants, H0[8] initial-hash values, the `Sha512` struct, the 80-round
+// compression function, and the one-shot helper). All SHA-512 computation
+// now delegates to the canonical [`crate::hash::sha::Sha512Context`] and
+// [`crate::hash::sha::sha512`] one-shot helper, eliminating ~200 lines of
+// duplicated cryptographic code.
+//
+// The pre-existing `Sha512` struct and `sha512` one-shot API surface is
+// preserved as a thin wrapper so that the Ed25519 sign/verify paths in this
+// file (and the public `test_internals` exposures) compile without any
+// change at the call sites.
+// ===========================================================================
+// RATIONALE for `#[allow(clippy::expect_used)]` below:
+//
+// The wrappers in this module bridge the canonical
+// `Sha512Context::{update, finalize}` API — which returns
+// `CryptoResult<_>` per Rule R5 — to the legacy `Sha512::update(&[u8])`
+// and `Sha512::finalize() -> [u8; 64]` signatures used by the in-tree
+// Ed25519 sign/verify paths. The only documented failure modes of the
+// canonical SHA-512 are:
+//
+//   1. Bit-length overflow at the SHA-512 limit (2^128 bits) — unreachable
+//      for any input that fits in addressable memory.
+//   2. `try_from(&[u8]) -> [u8; 64]` length mismatch — unreachable because
+//      `Sha512Context::finalize` is contractually required to return
+//      exactly 64 bytes (`md_len = 64`).
+//
+// Converting these unreachable failures into propagated `Result`s would
+// require changing 8+ call sites (all in `ed25519_*` paths) to handle an
+// error that cannot occur, polluting the API for no safety benefit. The
+// established pattern in this crate (see `bio/mem.rs:988`,
+// `bn/arithmetic.rs:769`, `pqc/ml_kem.rs:1663`) is to allow `expect()`
+// with a documented invariant when the failure is unreachable.
+#[allow(clippy::expect_used)]
 mod sha512_internal {
-    /// SHA-512 round constants (FIPS 180-4 section 4.2.3).
-    const K: [u64; 80] = [
-        0x428a2f98d728ae22,
-        0x7137449123ef65cd,
-        0xb5c0fbcfec4d3b2f,
-        0xe9b5dba58189dbbc,
-        0x3956c25bf348b538,
-        0x59f111f1b605d019,
-        0x923f82a4af194f9b,
-        0xab1c5ed5da6d8118,
-        0xd807aa98a3030242,
-        0x12835b0145706fbe,
-        0x243185be4ee4b28c,
-        0x550c7dc3d5ffb4e2,
-        0x72be5d74f27b896f,
-        0x80deb1fe3b1696b1,
-        0x9bdc06a725c71235,
-        0xc19bf174cf692694,
-        0xe49b69c19ef14ad2,
-        0xefbe4786384f25e3,
-        0x0fc19dc68b8cd5b5,
-        0x240ca1cc77ac9c65,
-        0x2de92c6f592b0275,
-        0x4a7484aa6ea6e483,
-        0x5cb0a9dcbd41fbd4,
-        0x76f988da831153b5,
-        0x983e5152ee66dfab,
-        0xa831c66d2db43210,
-        0xb00327c898fb213f,
-        0xbf597fc7beef0ee4,
-        0xc6e00bf33da88fc2,
-        0xd5a79147930aa725,
-        0x06ca6351e003826f,
-        0x142929670a0e6e70,
-        0x27b70a8546d22ffc,
-        0x2e1b21385c26c926,
-        0x4d2c6dfc5ac42aed,
-        0x53380d139d95b3df,
-        0x650a73548baf63de,
-        0x766a0abb3c77b2a8,
-        0x81c2c92e47edaee6,
-        0x92722c851482353b,
-        0xa2bfe8a14cf10364,
-        0xa81a664bbc423001,
-        0xc24b8b70d0f89791,
-        0xc76c51a30654be30,
-        0xd192e819d6ef5218,
-        0xd69906245565a910,
-        0xf40e35855771202a,
-        0x106aa07032bbd1b8,
-        0x19a4c116b8d2d0c8,
-        0x1e376c085141ab53,
-        0x2748774cdf8eeb99,
-        0x34b0bcb5e19b48a8,
-        0x391c0cb3c5c95a63,
-        0x4ed8aa4ae3418acb,
-        0x5b9cca4f7763e373,
-        0x682e6ff3d6b2b8a3,
-        0x748f82ee5defb2fc,
-        0x78a5636f43172f60,
-        0x84c87814a1f0ab72,
-        0x8cc702081a6439ec,
-        0x90befffa23631e28,
-        0xa4506cebde82bde9,
-        0xbef9a3f7b2c67915,
-        0xc67178f2e372532b,
-        0xca273eceea26619c,
-        0xd186b8c721c0c207,
-        0xeada7dd6cde0eb1e,
-        0xf57d4f7fee6ed178,
-        0x06f067aa72176fba,
-        0x0a637dc5a2c898a6,
-        0x113f9804bef90dae,
-        0x1b710b35131c471b,
-        0x28db77f523047d84,
-        0x32caab7b40c72493,
-        0x3c9ebe0a15c9bebc,
-        0x431d67c49c100d4c,
-        0x4cc5d4becb3e42b6,
-        0x597f299cfc657e2a,
-        0x5fcb6fab3ad6faec,
-        0x6c44198c4a475817,
-    ];
+    use crate::hash::sha::{Digest, Sha512Context};
 
-    /// SHA-512 initial hash values (FIPS 180-4 section 5.3.5).
-    const H0: [u64; 8] = [
-        0x6a09e667f3bcc908,
-        0xbb67ae8584caa73b,
-        0x3c6ef372fe94f82b,
-        0xa54ff53a5f1d36f1,
-        0x510e527fade682d1,
-        0x9b05688c2b3e6c1f,
-        0x1f83d9abfb41bd6b,
-        0x5be0cd19137e2179,
-    ];
-
-    /// Incremental SHA-512 hasher.
+    /// Incremental SHA-512 hasher used by Ed25519 sign/verify.
+    ///
+    /// Thin wrapper around [`Sha512Context`] preserving the
+    /// `new` / `update(&mut self, &[u8])` / `finalize(self) -> [u8; 64]`
+    /// API of the original inline implementation so call sites need not
+    /// change. The canonical context's `update` and `finalize` return
+    /// `CryptoResult<_>`; the only documented failure mode is bit-length
+    /// overflow at the SHA-512 limit (2^128 bits), which is unreachable
+    /// for any practical input size, so we unwrap with `expect`.
     pub(super) struct Sha512 {
-        state: [u64; 8],
-        buf: [u8; 128],
-        buf_len: usize,
-        total_len: u128,
+        ctx: Sha512Context,
     }
 
     impl Sha512 {
         /// Creates a new SHA-512 hasher.
         pub(super) fn new() -> Self {
             Self {
-                state: H0,
-                buf: [0u8; 128],
-                buf_len: 0,
-                total_len: 0,
+                ctx: Sha512Context::sha512(),
             }
         }
 
         /// Absorbs input data.
         pub(super) fn update(&mut self, data: &[u8]) {
-            self.total_len += data.len() as u128;
-            let mut offset = 0usize;
-            if self.buf_len > 0 {
-                let need = 128 - self.buf_len;
-                let take = need.min(data.len());
-                self.buf[self.buf_len..self.buf_len + take].copy_from_slice(&data[..take]);
-                self.buf_len += take;
-                offset = take;
-                if self.buf_len == 128 {
-                    let block = self.buf;
-                    compress(&mut self.state, &block);
-                    self.buf_len = 0;
-                }
-            }
-            while offset + 128 <= data.len() {
-                let mut block = [0u8; 128];
-                block.copy_from_slice(&data[offset..offset + 128]);
-                compress(&mut self.state, &block);
-                offset += 128;
-            }
-            if offset < data.len() {
-                let remaining = data.len() - offset;
-                self.buf[..remaining].copy_from_slice(&data[offset..]);
-                self.buf_len = remaining;
-            }
+            self.ctx
+                .update(data)
+                .expect("SHA-512 update is infallible for practical input sizes");
         }
 
         /// Finalizes and returns the 64-byte digest.
         pub(super) fn finalize(mut self) -> [u8; 64] {
-            let bit_len = self.total_len * 8;
-            self.buf[self.buf_len] = 0x80;
-            self.buf_len += 1;
-            if self.buf_len > 112 {
-                for i in self.buf_len..128 {
-                    self.buf[i] = 0;
-                }
-                let block = self.buf;
-                compress(&mut self.state, &block);
-                self.buf_len = 0;
-            }
-            for i in self.buf_len..112 {
-                self.buf[i] = 0;
-            }
-            self.buf[112..128].copy_from_slice(&bit_len.to_be_bytes());
-            let block = self.buf;
-            compress(&mut self.state, &block);
-            let mut out = [0u8; 64];
-            for (i, h) in self.state.iter().enumerate() {
-                out[i * 8..(i + 1) * 8].copy_from_slice(&h.to_be_bytes());
-            }
-            out
+            let digest = self
+                .ctx
+                .finalize()
+                .expect("SHA-512 finalize is infallible for practical input sizes");
+            <[u8; 64]>::try_from(digest.as_slice())
+                .expect("SHA-512 always produces exactly 64 output bytes")
         }
-    }
-
-    /// SHA-512 compression function.
-    fn compress(state: &mut [u64; 8], block: &[u8; 128]) {
-        let mut w = [0u64; 80];
-        for i in 0..16 {
-            let off = i * 8;
-            w[i] = u64::from_be_bytes([
-                block[off],
-                block[off + 1],
-                block[off + 2],
-                block[off + 3],
-                block[off + 4],
-                block[off + 5],
-                block[off + 6],
-                block[off + 7],
-            ]);
-        }
-        for i in 16..80 {
-            let s0 = w[i - 15].rotate_right(1) ^ w[i - 15].rotate_right(8) ^ (w[i - 15] >> 7);
-            let s1 = w[i - 2].rotate_right(19) ^ w[i - 2].rotate_right(61) ^ (w[i - 2] >> 6);
-            w[i] = w[i - 16]
-                .wrapping_add(s0)
-                .wrapping_add(w[i - 7])
-                .wrapping_add(s1);
-        }
-        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *state;
-        for i in 0..80 {
-            let s1 = e.rotate_right(14) ^ e.rotate_right(18) ^ e.rotate_right(41);
-            let ch = (e & f) ^ ((!e) & g);
-            let t1 = h
-                .wrapping_add(s1)
-                .wrapping_add(ch)
-                .wrapping_add(K[i])
-                .wrapping_add(w[i]);
-            let s0 = a.rotate_right(28) ^ a.rotate_right(34) ^ a.rotate_right(39);
-            let maj = (a & b) ^ (a & c) ^ (b & c);
-            let t2 = s0.wrapping_add(maj);
-            h = g;
-            g = f;
-            f = e;
-            e = d.wrapping_add(t1);
-            d = c;
-            c = b;
-            b = a;
-            a = t1.wrapping_add(t2);
-        }
-        state[0] = state[0].wrapping_add(a);
-        state[1] = state[1].wrapping_add(b);
-        state[2] = state[2].wrapping_add(c);
-        state[3] = state[3].wrapping_add(d);
-        state[4] = state[4].wrapping_add(e);
-        state[5] = state[5].wrapping_add(f);
-        state[6] = state[6].wrapping_add(g);
-        state[7] = state[7].wrapping_add(h);
     }
 
     /// Convenience: compute SHA-512 of a single message.
     pub(super) fn sha512(data: &[u8]) -> [u8; 64] {
-        let mut hasher = Sha512::new();
-        hasher.update(data);
-        hasher.finalize()
+        let digest = crate::hash::sha::sha512(data)
+            .expect("SHA-512 is infallible for practical input sizes");
+        <[u8; 64]>::try_from(digest.as_slice())
+            .expect("SHA-512 always produces exactly 64 output bytes")
     }
 }
 
 // ===========================================================================
-// Internal Keccak / SHAKE-256 implementation
-// Used by Ed448 sign/verify. Keccak-f[1600] with SHAKE-256 parameters.
+// Internal SHAKE-256 wrapper (Ed448)
 // ===========================================================================
+// Group D code-deduplication: this module previously contained a full inline
+// Keccak-f[1600] permutation plus SHAKE-256 absorb/squeeze state machine
+// (~175 lines including RC[24], RHO[24], and PI[24] tables, the `Shake256`
+// struct, and absorb_block/finalize_xof routines). All SHAKE-256 computation
+// now delegates to the canonical [`crate::hash::sha::shake256`] one-shot
+// helper, eliminating ~170 lines of duplicated cryptographic code.
+//
+// Only the `shake256` one-shot API is preserved as a thin wrapper because no
+// call site in this file constructs a `Shake256` directly — every Ed448
+// digest is produced via the one-shot path. The pre-existing
+// `pub(super) fn shake256` signature is retained so the six Ed448 call sites
+// (and the public `test_internals::shake256` exposure) compile without any
+// change.
+// ===========================================================================
+// RATIONALE for `#[allow(clippy::expect_used)]` below:
+//
+// The wrapper bridges the canonical `crate::hash::sha::shake256` API —
+// which returns `CryptoResult<Vec<u8>>` per Rule R5 — to the legacy
+// `shake256(data, out_len) -> Vec<u8>` signature expected by the Ed448
+// sign/verify paths. The only documented failure mode of the canonical
+// SHAKE-256 is internal allocation failure for the output buffer, which
+// is unreachable for any practical `out_len` (Ed448 always requests 114
+// bytes). The same allowance pattern is used in `sha512_internal` above
+// and is precedented by `bio/mem.rs:988`, `bn/arithmetic.rs:769`, and
+// `pqc/ml_kem.rs:1663`.
+#[allow(clippy::expect_used)]
 mod keccak_internal {
-    /// Keccak-f[1600] round constants.
-    const RC: [u64; 24] = [
-        0x0000000000000001,
-        0x0000000000008082,
-        0x800000000000808a,
-        0x8000000080008000,
-        0x000000000000808b,
-        0x0000000080000001,
-        0x8000000080008081,
-        0x8000000000008009,
-        0x000000000000008a,
-        0x0000000000000088,
-        0x0000000080008009,
-        0x000000008000000a,
-        0x000000008000808b,
-        0x800000000000008b,
-        0x8000000000008089,
-        0x8000000000008003,
-        0x8000000000008002,
-        0x8000000000000080,
-        0x000000000000800a,
-        0x800000008000000a,
-        0x8000000080008081,
-        0x8000000000008080,
-        0x0000000080000001,
-        0x8000000080008008,
-    ];
-
-    /// Rotation offsets for Keccak rho step.
-    const RHO: [u32; 24] = [
-        1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
-    ];
-
-    /// Lane permutation indices for Keccak pi step.
-    const PI: [usize; 24] = [
-        10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
-    ];
-
-    /// Keccak-f[1600] permutation on 25 lanes.
-    fn keccak_f(state: &mut [u64; 25]) {
-        for round in 0..24 {
-            // Theta step
-            let mut c = [0u64; 5];
-            for x in 0..5 {
-                c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
-            }
-            let mut d = [0u64; 5];
-            for x in 0..5 {
-                d[x] = c[(x + 4) % 5] ^ c[(x + 1) % 5].rotate_left(1);
-            }
-            for x in 0..5 {
-                for y in 0..5 {
-                    state[x + 5 * y] ^= d[x];
-                }
-            }
-            // Rho and Pi steps
-            let mut last = state[1];
-            for i in 0..24 {
-                let j = PI[i];
-                let temp = state[j];
-                state[j] = last.rotate_left(RHO[i]);
-                last = temp;
-            }
-            // Chi step
-            for y in 0..5 {
-                let base = 5 * y;
-                let t = [
-                    state[base],
-                    state[base + 1],
-                    state[base + 2],
-                    state[base + 3],
-                    state[base + 4],
-                ];
-                for x in 0..5 {
-                    state[base + x] = t[x] ^ ((!t[(x + 1) % 5]) & t[(x + 2) % 5]);
-                }
-            }
-            // Iota step
-            state[0] ^= RC[round];
-        }
-    }
-
-    /// SHAKE-256 extendable-output function.
-    /// Rate = 1088 bits = 136 bytes, capacity = 512 bits.
-    pub(super) struct Shake256 {
-        state: [u64; 25],
-        buf: [u8; 136],
-        buf_len: usize,
-        squeezed: bool,
-    }
-
-    impl Shake256 {
-        /// Creates a new SHAKE-256 instance.
-        pub(super) fn new() -> Self {
-            Self {
-                state: [0u64; 25],
-                buf: [0u8; 136],
-                buf_len: 0,
-                squeezed: false,
-            }
-        }
-
-        /// Absorbs input data.
-        pub(super) fn update(&mut self, data: &[u8]) {
-            let rate = 136;
-            let mut offset = 0;
-            while offset < data.len() {
-                let take = (rate - self.buf_len).min(data.len() - offset);
-                self.buf[self.buf_len..self.buf_len + take]
-                    .copy_from_slice(&data[offset..offset + take]);
-                self.buf_len += take;
-                offset += take;
-                if self.buf_len == rate {
-                    self.absorb_block();
-                    self.buf_len = 0;
-                }
-            }
-        }
-
-        fn absorb_block(&mut self) {
-            for i in 0..17 {
-                let off = i * 8;
-                let lane = u64::from_le_bytes([
-                    self.buf[off],
-                    self.buf[off + 1],
-                    self.buf[off + 2],
-                    self.buf[off + 3],
-                    self.buf[off + 4],
-                    self.buf[off + 5],
-                    self.buf[off + 6],
-                    self.buf[off + 7],
-                ]);
-                self.state[i] ^= lane;
-            }
-            keccak_f(&mut self.state);
-        }
-
-        /// Pads and transitions to squeeze phase, then extracts `out_len` bytes.
-        pub(super) fn finalize_xof(mut self, out_len: usize) -> Vec<u8> {
-            let rate = 136;
-            // Pad: SHAKE uses domain separation 0x1F, then 0x80 at end of rate block
-            self.buf[self.buf_len] = 0x1f;
-            for i in (self.buf_len + 1)..rate {
-                self.buf[i] = 0;
-            }
-            self.buf[rate - 1] |= 0x80;
-            self.absorb_block();
-            self.squeezed = true;
-
-            // Squeeze
-            let mut out = vec![0u8; out_len];
-            let mut offset = 0;
-            while offset < out_len {
-                let available = rate.min(out_len - offset);
-                for i in 0..available {
-                    let lane_idx = i / 8;
-                    let byte_idx = i % 8;
-                    out[offset + i] = (self.state[lane_idx] >> (byte_idx * 8)) as u8;
-                }
-                offset += available;
-                if offset < out_len {
-                    keccak_f(&mut self.state);
-                }
-            }
-            out
-        }
-    }
-
     /// Convenience: compute SHAKE-256 with the specified output length.
+    ///
+    /// Delegates to [`crate::hash::sha::shake256`]. The canonical helper
+    /// returns `CryptoResult<Vec<u8>>` — the only documented failure mode is
+    /// internal allocation failure, which is unreachable for any practical
+    /// `out_len` produced by the Ed448 sign/verify paths (typically 114
+    /// bytes). We therefore unwrap with `expect` and document the invariant.
     pub(super) fn shake256(data: &[u8], out_len: usize) -> Vec<u8> {
-        let mut h = Shake256::new();
-        h.update(data);
-        h.finalize_xof(out_len)
+        crate::hash::sha::shake256(data, out_len)
+            .expect("SHAKE-256 is infallible for practical output lengths")
     }
 }
 
@@ -3840,16 +3551,16 @@ pub mod test_internals {
         Some(neg_p.to_bytes())
     }
 
-    /// Incremental SHA-512: takes multiple chunks and processes them via
-    /// Sha512::new() → .update(chunk1) → .update(chunk2) → ... → .finalize().
-    /// Used to compare incremental vs one-shot hashing.
-    pub fn sha512_incremental(chunks: &[&[u8]]) -> [u8; 64] {
-        let mut hasher = super::sha512_internal::Sha512::new();
-        for chunk in chunks {
-            hasher.update(chunk);
-        }
-        hasher.finalize()
-    }
+    // Group D code-deduplication note: the previous `sha512_incremental`
+    // helper (incremental SHA-512 producing a 64-byte digest from a slice of
+    // chunks) was a diagnostic comparison hook for the *inline* SHA-512
+    // implementation that previously lived in the `sha512_internal` module.
+    // Since the inline implementation has been replaced with a thin wrapper
+    // around the canonical `crate::hash::sha::Sha512Context`, the helper
+    // had zero external callers and no longer served a meaningful
+    // diagnostic purpose. It has been removed as dead code; the
+    // `test_internals::sha512` one-shot pass-through above is retained for
+    // any future diagnostic needs.
 
     /// scalar_to_radix16 for debugging — reimplemented locally.
     pub fn scalar_to_radix16(scalar: &[u8; 32]) -> [i8; 64] {
