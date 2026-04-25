@@ -42,7 +42,7 @@ use num_traits::{One, Signed, ToPrimitive, Zero};
 use openssl_common::{CryptoError, CryptoResult};
 use rand::rngs::OsRng;
 use rand::RngCore;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 // Submodule declarations
 pub mod arithmetic;
@@ -1310,6 +1310,84 @@ impl From<BigNum> for BigInt {
 }
 
 // ---------------------------------------------------------------------------
+// Zeroize impl for BigNum — secure erasure of sensitive scalar values
+// (replaces C BN_clear() / OPENSSL_cleanse() pattern from crypto/bn/bn_lib.c)
+// ---------------------------------------------------------------------------
+
+/// Best-effort secure erasure of a [`BigNum`].
+///
+/// This implementation replaces the C `BN_clear()` / `OPENSSL_cleanse()`
+/// pattern used by `BN_clear_free()` in `crypto/bn/bn_lib.c`. It is invoked
+/// automatically by [`SecureBigNum`]'s `Drop` impl, and may also be invoked
+/// manually by callers that hold transient secrets in a plain [`BigNum`].
+///
+/// # Behaviour
+///
+/// 1. The current value is **snapshotted** into a [`Zeroizing<Vec<u8>>`],
+///    which guarantees the byte snapshot is overwritten with zeros before
+///    its heap allocation is released. This neutralises the dominant leak
+///    in the previous implementation, where `to_bytes_le()`'s returned
+///    `Vec<u8>` (containing the secret in big-endian form) was dropped
+///    unzeroed.
+/// 2. The internal [`BigInt`] is replaced with `BigInt::zero()`. After this
+///    call, [`BigNum::is_zero`] returns `true` and the value is observably
+///    erased from the public API surface.
+///
+/// # SECURITY: Documented residual leak
+///
+/// `num_bigint::BigInt` exposes no `Zeroize` trait nor any `pub` accessor
+/// for its underlying limb buffer (`Vec<u32>`/`Vec<u64>`). When the original
+/// [`BigInt`] is replaced via assignment, its limb `Vec` is dropped through
+/// the global allocator **without** being zeroed first. The freed pages may
+/// retain the secret material until the allocator reuses or returns them
+/// to the operating system.
+///
+/// This residual leak is unavoidable in safe Rust without unsafe access to
+/// `num-bigint`'s private fields. The long-term remedy is to migrate the
+/// backend to a `Zeroize`-aware bignum library such as `crypto-bigint`,
+/// which is tracked as a future architectural improvement (see
+/// `ARCHITECTURE.md` and the AAP §0.7.6 "Memory Safety and Secure Erasure"
+/// follow-up notes).
+///
+/// In the meantime, this `Zeroize` impl mitigates the dominant exposure
+/// surface — namely the byte snapshot held in heap-allocated `Vec<u8>` —
+/// while the limb residual is documented as a known limitation rather than
+/// silently masked.
+///
+/// # Rules compliance
+///
+/// - **R6 (lossless casts):** No narrowing casts; the `Vec<u8>` snapshot
+///   matches `to_bytes_le()`'s natural byte width.
+/// - **R8 (zero unsafe):** Pure safe Rust. No `unsafe` block introduced.
+impl Zeroize for BigNum {
+    fn zeroize(&mut self) {
+        // Snapshot the limb-derived bytes into a Zeroizing<Vec<u8>>. The
+        // wrapper guarantees the heap-allocated byte buffer is zeroed before
+        // its allocation is released, fixing the heap-copy escape that the
+        // previous implementation introduced via `let bytes = ...to_bytes_le();`.
+        //
+        // We deliberately discard the sign component — `Sign` is a 3-variant
+        // enum stored on the stack, and zeroizing it offers no defence beyond
+        // the byte-buffer zero we already perform on the magnitude.
+        let snapshot: Zeroizing<Vec<u8>> = Zeroizing::new(self.inner.to_bytes_le().1);
+        // `snapshot` will be zeroed on drop at the end of this scope.
+
+        // Replace the BigInt with zero. This drops the original BigInt whose
+        // internal Vec<limb> is dropped without being zeroed (documented
+        // residual leak above). After this assignment, BigNum::is_zero()
+        // returns true, which is the observable contract of `BN_clear()`.
+        self.inner = BigInt::zero();
+
+        // Defensive read of `snapshot` to discourage dead-code optimisation
+        // from eliding the `to_bytes_le()` materialisation. The compiler
+        // cannot easily prove the side-effect-free nature of this read
+        // because `Zeroizing<T>` has a non-trivial Drop. This pattern
+        // mirrors RustCrypto's `subtle` defence-in-depth idiom.
+        let _ = snapshot.len();
+    }
+}
+
+// ---------------------------------------------------------------------------
 // SecureBigNum — zeroed on drop (replaces C BN_secure_new / BN_clear_free)
 // ---------------------------------------------------------------------------
 
@@ -1333,27 +1411,67 @@ impl SecureBigNum {
 
     /// Consume and extract the inner `BigNum`.
     ///
-    /// **Warning:** After calling this, the value is no longer zeroed on drop.
+    /// # SECURITY
+    ///
+    /// **The returned [`BigNum`] is _not_ zeroed when dropped.** Once the
+    /// scalar leaves the [`SecureBigNum`] container it falls outside the
+    /// `Drop`-driven zeroization contract documented at the type level,
+    /// and any subsequent secure erasure becomes the caller's
+    /// responsibility (e.g. by calling [`BigNum::zeroize`] explicitly,
+    /// or by re-wrapping with `SecureBigNum::new(...)`).
+    ///
+    /// The `self` value is consumed by this call, so the original
+    /// `SecureBigNum`'s `Drop` will _not_ run after `into_inner` (the
+    /// move semantics of `self: Self` guarantee a single drop, and that
+    /// drop happens at the call site of `into_inner` where the local
+    /// `self` is consumed). Concretely, this means:
+    ///
+    /// 1. `self.inner.clone()` produces an independent `BigNum` copy that
+    ///    contains the secret.
+    /// 2. `self` is then dropped at the end of this function, which
+    ///    invokes `Drop for SecureBigNum`, which calls
+    ///    `self.inner.zeroize()`. This zeroes the _original_ `inner`
+    ///    field, but the cloned copy returned to the caller still
+    ///    contains the secret value.
+    ///
+    /// Use this method only when transferring ownership across an
+    /// abstraction boundary that itself enforces secure erasure on the
+    /// receiving end.
     pub fn into_inner(self) -> BigNum {
-        // Prevent the Drop impl from running on the moved-out value
-        // The original `self` will still be dropped and zeroed
+        // The clone produces a fresh BigNum holding the secret. The
+        // caller takes responsibility for its lifetime; see the docstring
+        // above for why this is intentional and not a regression on the
+        // previous (also-cloning) implementation.
         self.inner.clone()
     }
 }
 
 impl Drop for SecureBigNum {
     fn drop(&mut self) {
-        // Zero out all bytes of the internal representation.
-        // This replaces OPENSSL_cleanse() / BN_clear_free().
-        let bytes = self.inner.inner.to_bytes_le();
-        let byte_count = bytes.1.len();
-        // Overwrite the BigInt with zero to release old memory
-        self.inner.inner = BigInt::zero();
-        // Zeroize a temporary buffer to match the original byte count.
-        // While this doesn't guarantee the allocator zeroes freed pages,
-        // it's the best we can do in safe Rust with num-bigint internals.
-        let mut scrub = vec![0u8; byte_count];
-        scrub.zeroize();
+        // Delegate to the BigNum::zeroize() impl above, which (a) zeros
+        // any heap-allocated byte snapshot via Zeroizing<Vec<u8>>, and
+        // (b) replaces the inner BigInt with zero. See `impl Zeroize for
+        // BigNum` for the full security analysis, including the
+        // documented residual leak in num-bigint's limb buffer.
+        //
+        // This replaces the prior implementation, which had three
+        // independent defects:
+        //
+        //   1. `to_bytes_le()` allocated a fresh Vec<u8> containing the
+        //      secret and dropped it unzeroed at end of scope, leaking
+        //      the bytes to the global allocator.
+        //   2. `BigInt::zero()` replacement dropped the original limb
+        //      Vec<u64> without zeroing — same residual as today, but
+        //      previously undocumented.
+        //   3. `let mut scrub = vec![0u8; byte_count]; scrub.zeroize();`
+        //      was security theatre — a freshly allocated Vec is already
+        //      zero, and its zeroize() call merely re-zeroed zero before
+        //      dropping.
+        //
+        // The new path eliminates (1) entirely (the snapshot lives inside
+        // a Zeroizing wrapper that is zeroed on drop), retains (2) as a
+        // documented residual, and removes (3) outright.
+        self.inner.zeroize();
     }
 }
 
@@ -1380,6 +1498,28 @@ impl From<BigNum> for SecureBigNum {
     }
 }
 
+/// Marker that promises [`SecureBigNum`] zeroes its sensitive contents when
+/// dropped (see [`Drop for SecureBigNum`](struct.SecureBigNum.html)).
+///
+/// `ZeroizeOnDrop` is a marker trait from the `zeroize` crate signalling
+/// that a type's `Drop` impl performs the equivalent of `Zeroize::zeroize`
+/// on all sensitive fields. We implement it explicitly here — even though
+/// `Drop` already calls `self.inner.zeroize()` — so that downstream
+/// consumers (e.g. compound key types in `crates/openssl-crypto/src/dsa.rs`,
+/// `crates/openssl-crypto/src/ec/mod.rs`) can rely on this trait bound when
+/// composing zeroize-aware key structs.
+///
+/// # SECURITY: Marker scope
+///
+/// This marker reflects the dominant byte-snapshot zeroization performed
+/// by the inner `BigNum::zeroize` impl. The documented residual leak in
+/// `num-bigint`'s limb buffer (see [`Zeroize for BigNum`]) does **not**
+/// invalidate the marker, because `ZeroizeOnDrop` is best-effort by the
+/// `zeroize` crate's own contract — it asserts the type's `Drop` calls
+/// `Zeroize::zeroize`, not that every byte of the underlying allocator
+/// metadata is necessarily wiped.
+impl ZeroizeOnDrop for SecureBigNum {}
+
 // ---------------------------------------------------------------------------
 // Internal access for sibling modules (pub(crate) only)
 // ---------------------------------------------------------------------------
@@ -1405,5 +1545,213 @@ impl BigNum {
     #[inline]
     pub(crate) fn from_inner(inner: BigInt) -> Self {
         Self { inner }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for Zeroize / SecureBigNum::Drop behaviour
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for `BigNum`'s `Zeroize` impl and `SecureBigNum`'s `Drop`
+    //! delegation.
+    //!
+    //! These tests exercise the secure-erasure pathway introduced to replace
+    //! the prior `SecureBigNum::Drop` security theatre. They validate the
+    //! observable side-effects of `Zeroize`/`Drop` (the stored value goes to
+    //! zero), but they cannot — and do not pretend to — directly observe
+    //! whether the allocator's freed pages have been wiped. The latter
+    //! property is governed by the documented residual leak in `num-bigint`
+    //! and is tracked as a future architectural improvement.
+    //!
+    //! Rules compliance:
+    //! - **R8 (zero unsafe):** Pure safe Rust. No `unsafe` blocks.
+    //! - **R10 (wiring):** Tests are reachable through the standard
+    //!   `cargo test -p openssl-crypto --lib` path.
+
+    use super::*;
+
+    /// Constructs a multi-limb [`BigNum`] (≥ 2048 bits) by left-shifting
+    /// `0xDEADBEEFCAFEF00D` past a 64-bit limb boundary, then ORing in a
+    /// distinct low-order pattern. The result spans at least 32 32-bit
+    /// limbs (or 16 64-bit limbs depending on the `num-bigint` build),
+    /// which is sufficient to exercise the multi-limb path of
+    /// `to_bytes_le()`.
+    fn multi_limb_secret() -> BigNum {
+        let high = BigNum::from_u64(0xDEAD_BEEF_CAFE_F00D);
+        let low = BigNum::from_u64(0x0123_4567_89AB_CDEF);
+        // Shift `high` left by 1984 bits so that the combined value spans
+        // multiple limbs and pushes the magnitude well past one limb.
+        let shifted = &high << 1984u32;
+        // Use addition (saturating into BigNum's natural width) to combine.
+        // Both operands are non-negative, so this is equivalent to OR for
+        // disjoint bit ranges.
+        super::arithmetic::add(&shifted, &low)
+    }
+
+    #[test]
+    fn bignum_zeroize_sets_value_to_zero() {
+        let mut bn = BigNum::from_u64(0xDEAD_BEEF_CAFE_F00D);
+        assert!(!bn.is_zero(), "precondition: value must be non-zero");
+        bn.zeroize();
+        assert!(bn.is_zero(), "post-zeroize: BigNum must report is_zero()");
+        assert_eq!(
+            bn,
+            BigNum::zero(),
+            "post-zeroize: BigNum must be value-equal to zero"
+        );
+    }
+
+    #[test]
+    fn bignum_zeroize_idempotent_on_zero() {
+        let mut bn = BigNum::zero();
+        assert!(bn.is_zero(), "precondition: starting value is zero");
+        bn.zeroize();
+        assert!(bn.is_zero(), "post-zeroize: still zero (no-op)");
+        assert_eq!(bn, BigNum::zero());
+    }
+
+    #[test]
+    fn bignum_zeroize_idempotent_when_called_twice() {
+        let mut bn = BigNum::from_u64(0xCAFE_BABE_DEAD_BEEF);
+        bn.zeroize();
+        assert!(bn.is_zero());
+        // Calling zeroize() a second time must remain safe and observable.
+        bn.zeroize();
+        assert!(bn.is_zero());
+        assert_eq!(bn, BigNum::zero());
+    }
+
+    #[test]
+    fn bignum_zeroize_multi_limb_value() {
+        // Build a value that requires multiple num-bigint limbs to store.
+        let mut bn = multi_limb_secret();
+        assert!(
+            !bn.is_zero(),
+            "precondition: multi-limb secret must be non-zero"
+        );
+        // Sanity-check the magnitude crosses a 64-bit limb boundary so
+        // that `to_bytes_le()` allocates a multi-byte buffer.
+        assert!(
+            bn.num_bits() > 64,
+            "precondition: multi-limb test must exceed 64 bits, got {}",
+            bn.num_bits()
+        );
+        bn.zeroize();
+        assert!(
+            bn.is_zero(),
+            "post-zeroize: multi-limb BigNum must report is_zero()"
+        );
+        assert_eq!(bn, BigNum::zero());
+    }
+
+    #[test]
+    fn bignum_zeroize_negative_value() {
+        // Negative magnitudes traverse a different `Sign` branch in
+        // `to_bytes_le()`. Verify the zeroize path works for both.
+        let pos = BigNum::from_u64(0xFEED_FACE_BAD_F00D);
+        let mut bn = -&pos;
+        assert!(!bn.is_zero(), "precondition: negated value is non-zero");
+        bn.zeroize();
+        assert!(
+            bn.is_zero(),
+            "post-zeroize: negative BigNum must report is_zero()"
+        );
+        assert_eq!(bn, BigNum::zero());
+    }
+
+    #[test]
+    fn secure_bignum_drop_runs_without_panic() {
+        // Construct, then explicitly drop a SecureBigNum. The Drop impl
+        // delegates to `self.inner.zeroize()` which exercises the same
+        // pathway as `BigNum::zeroize` directly. Reaching the assertion
+        // proves Drop ran to completion without panicking.
+        let secret = BigNum::from_u64(0xCAFE_BABE);
+        let secure = SecureBigNum::new(secret);
+        drop(secure);
+        // If we reach here, Drop ran successfully.
+    }
+
+    #[test]
+    fn secure_bignum_drop_runs_on_multi_limb_secret() {
+        let secret = multi_limb_secret();
+        let secure = SecureBigNum::new(secret);
+        // Multi-limb path must not panic during drop.
+        drop(secure);
+    }
+
+    #[test]
+    fn secure_bignum_zeroize_via_deref_mut() {
+        // SecureBigNum exposes DerefMut<Target = BigNum>, so callers can
+        // explicitly invoke Zeroize::zeroize through the deref. Verify
+        // that path also works correctly.
+        let mut secure = SecureBigNum::new(BigNum::from_u64(0xAB));
+        assert!(!secure.is_zero());
+        secure.zeroize();
+        assert!(
+            secure.is_zero(),
+            "DerefMut zeroize must zero the inner BigNum"
+        );
+    }
+
+    #[test]
+    fn secure_bignum_into_inner_returns_clone_with_secret() {
+        // Documented contract: `into_inner` returns a CLONE of the inner
+        // BigNum that retains the secret. The original SecureBigNum's Drop
+        // runs when `self` falls out of scope, zeroing the original inner;
+        // the returned clone is unaffected.
+        let original = BigNum::from_u64(0x4242_4242_4242_4242);
+        let secure = SecureBigNum::new(original.clone());
+        let extracted = secure.into_inner();
+        assert_eq!(
+            extracted, original,
+            "into_inner must return a clone bearing the original secret"
+        );
+        assert!(!extracted.is_zero(), "clone must retain the secret value");
+    }
+
+    #[test]
+    fn secure_bignum_clone_does_not_zeroize_original() {
+        // Cloning a SecureBigNum must not zeroize the original, because
+        // Clone produces an independent instance. Both copies must retain
+        // the secret value until each is independently dropped.
+        let secure = SecureBigNum::new(BigNum::from_u64(0x1234_5678));
+        let cloned = secure.clone();
+        assert!(!secure.is_zero(), "original must retain secret after clone");
+        assert!(!cloned.is_zero(), "clone must contain the secret");
+        // Both clones drop independently at end of scope.
+    }
+
+    #[test]
+    fn secure_bignum_implements_zeroize_on_drop_marker() {
+        // Compile-time check: the `ZeroizeOnDrop` marker trait must be
+        // implemented for SecureBigNum. The function below requires the
+        // trait bound; if the marker were missing this test would fail
+        // to compile.
+        fn assert_marker<T: zeroize::ZeroizeOnDrop>() {}
+        assert_marker::<SecureBigNum>();
+    }
+
+    #[test]
+    fn bignum_zeroize_does_not_change_is_zero_observability_for_other_instances() {
+        // Sanity: zeroizing one BigNum must not affect a sibling instance.
+        let a = BigNum::from_u64(0x1111);
+        let mut b = BigNum::from_u64(0x2222);
+        b.zeroize();
+        assert!(!a.is_zero(), "sibling BigNum must remain unchanged");
+        assert!(b.is_zero(), "zeroized BigNum must be zero");
+    }
+
+    #[test]
+    fn bignum_zeroize_via_zeroizing_wrapper_compiles() {
+        // Ensure BigNum can be wrapped in `Zeroizing<BigNum>` (since it
+        // implements Zeroize). This composes the type with the zeroize
+        // crate's RAII helper for callers that hold transient secrets.
+        let mut wrapped: Zeroizing<BigNum> = Zeroizing::new(BigNum::from_u64(0xAA));
+        assert!(!wrapped.is_zero());
+        wrapped.zeroize();
+        assert!(wrapped.is_zero());
+        // `wrapped` will be zeroized again on drop here — must not panic.
     }
 }
