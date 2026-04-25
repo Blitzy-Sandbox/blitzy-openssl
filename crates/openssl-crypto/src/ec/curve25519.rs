@@ -3008,6 +3008,108 @@ pub fn x448_public_from_private(private_key: &EcxPrivateKey) -> CryptoResult<Ecx
     })
 }
 
+/// Derive the Ed25519 public key from a private key (RFC 8032 §5.1.5).
+///
+/// Computes the public key encoding `A = [s]B`, where the secret scalar
+/// `s` is derived from the 32-byte Ed25519 private key by:
+///
+/// 1. Hashing the private key with SHA-512.
+/// 2. Taking the first 32 bytes of the digest.
+/// 3. Applying RFC 8032 §5.1.5 clamping: `s[0] &= 248`, `s[31] &= 127`,
+///    `s[31] |= 64`.
+///
+/// The clamped scalar is then multiplied by the Ed25519 base point and
+/// the resulting Edwards25519 point is encoded to its 32-byte
+/// little-endian compressed form.
+///
+/// This function exposes the public-key derivation step that is also
+/// performed inside [`ed25519_sign`], allowing callers — most notably
+/// the provider keymgmt layer — to perform a cryptographic pairwise
+/// consistency check without invoking a full sign/verify round trip.
+///
+/// # Errors
+/// Returns [`CryptoError::Key`] if `private_key.key_type()` is not
+/// [`EcxKeyType::Ed25519`] or if the private key byte length is not
+/// [`ED25519_KEY_LEN`].
+pub fn ed25519_public_from_private(private_key: &EcxPrivateKey) -> CryptoResult<EcxPublicKey> {
+    trace!("ed25519 public key derivation");
+
+    if private_key.key_type != EcxKeyType::Ed25519 {
+        return Err(CryptoError::Key("private key is not Ed25519".into()));
+    }
+    if private_key.bytes.len() != ED25519_KEY_LEN {
+        return Err(CryptoError::Key(
+            "invalid Ed25519 private key length".into(),
+        ));
+    }
+
+    // Step 1: SHA-512(private_key) → take first 32 bytes.
+    let hash = sha512_internal::sha512(&private_key.bytes);
+    let mut scalar = [0u8; 32];
+    scalar.copy_from_slice(&hash[..32]);
+    // Step 2: Clamp scalar per RFC 8032 §5.1.5.
+    scalar[0] &= 248;
+    scalar[31] &= 127;
+    scalar[31] |= 64;
+    // Step 3: Derive public key A = [scalar]B.
+    let point = edwards25519::scalarmult_base(&scalar);
+
+    Ok(EcxPublicKey {
+        key_type: EcxKeyType::Ed25519,
+        bytes: point.to_bytes().to_vec(),
+    })
+}
+
+/// Derive the Ed448 public key from a private key (RFC 8032 §5.2.5).
+///
+/// Computes the public key encoding `A = [s]B`, where the secret scalar
+/// `s` is derived from the 57-byte Ed448 private key by:
+///
+/// 1. Hashing the private key with `SHAKE256(privkey, 114)`.
+/// 2. Taking the first 57 bytes of the digest.
+/// 3. Applying RFC 8032 §5.2.5 clamping: `s[0] &= 252`, `s[55] |= 128`,
+///    `s[56] = 0`.
+///
+/// The clamped scalar is multiplied by the Ed448 base point and the
+/// resulting Edwards448 point is encoded to its 57-byte compressed
+/// form.
+///
+/// This function exposes the public-key derivation step that is also
+/// performed inside [`ed448_sign`], allowing callers — most notably the
+/// provider keymgmt layer — to perform a cryptographic pairwise
+/// consistency check without invoking a full sign/verify round trip.
+///
+/// # Errors
+/// Returns [`CryptoError::Key`] if `private_key.key_type()` is not
+/// [`EcxKeyType::Ed448`] or if the private key byte length is not
+/// [`ED448_KEY_LEN`].
+pub fn ed448_public_from_private(private_key: &EcxPrivateKey) -> CryptoResult<EcxPublicKey> {
+    trace!("ed448 public key derivation");
+
+    if private_key.key_type != EcxKeyType::Ed448 {
+        return Err(CryptoError::Key("private key is not Ed448".into()));
+    }
+    if private_key.bytes.len() != ED448_KEY_LEN {
+        return Err(CryptoError::Key("invalid Ed448 private key length".into()));
+    }
+
+    // Step 1: SHAKE256(private_key, 114) → take first 57 bytes.
+    let hash = keccak_internal::shake256(&private_key.bytes, 114);
+    let mut scalar = [0u8; 57];
+    scalar.copy_from_slice(&hash[..57]);
+    // Step 2: Clamp scalar per RFC 8032 §5.2.5.
+    scalar[0] &= 252;
+    scalar[55] |= 128;
+    scalar[56] = 0;
+    // Step 3: Derive public key A = [scalar]B.
+    let point = edwards448::scalarmult_base(&scalar);
+
+    Ok(EcxPublicKey {
+        key_type: EcxKeyType::Ed448,
+        bytes: point.to_bytes().to_vec(),
+    })
+}
+
 /// Ed25519 signature (RFC 8032 §5.1.6).
 ///
 /// Signs `message` with the given Ed25519 private key.  The optional
@@ -3766,3 +3868,230 @@ pub mod test_internals {
         digits
     }
 }
+
+// ===========================================================================
+// Unit tests
+// ===========================================================================
+
+#[cfg(test)]
+// RATIONALE: `.expect()` / `.unwrap()` / `panic!` are idiomatic failure modes
+// in unit tests — the workspace clippy lints mark them as `deny` with an
+// explicit allowance that tests may opt-in via `#[allow]`.
+#[allow(clippy::expect_used)]
+#[allow(clippy::unwrap_used)]
+#[allow(clippy::panic)]
+#[allow(clippy::indexing_slicing)]
+#[allow(clippy::missing_docs_in_private_items)]
+#[allow(clippy::doc_markdown)]
+#[allow(clippy::unreadable_literal)]
+#[allow(clippy::many_single_char_names)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // ed25519_public_from_private — RFC 8032 §5.1.5 derivation
+    // -------------------------------------------------------------------------
+
+    /// Roundtrip: `generate_keypair(Ed25519)` must produce a public key
+    /// equal to `ed25519_public_from_private(private)`. This exercises
+    /// the same SHA-512 + clamp + scalarmult-base derivation path that
+    /// `ed25519_sign_internal` uses, asserting that the standalone
+    /// public-key derivation helper agrees with the internal signing
+    /// path.
+    #[test]
+    fn ed25519_public_from_private_matches_generated_pair() {
+        // Generate ten distinct keypairs and verify the helper produces
+        // bit-identical public-key bytes for each.
+        for _ in 0..10 {
+            let pair = generate_keypair(EcxKeyType::Ed25519).expect("keygen");
+            let derived =
+                ed25519_public_from_private(pair.private_key()).expect("public derivation");
+
+            assert_eq!(derived.key_type(), EcxKeyType::Ed25519);
+            assert_eq!(derived.as_bytes().len(), ED25519_KEY_LEN);
+            assert_eq!(derived.as_bytes(), pair.public_key().as_bytes());
+        }
+    }
+
+    /// RFC 8032 §7.1 test vector 1.
+    /// Private key:
+    ///   9d61b19deffd5a60ba844af492ec2cc4 4449c5697b326919703bac031cae7f60
+    /// Public key:
+    ///   d75a980182b10ab7d54bfed3c964073a 0ee172f3daa62325af021a68f707511a
+    #[test]
+    fn ed25519_public_from_private_rfc8032_vector_1() {
+        let priv_bytes = [
+            0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec,
+            0x2c, 0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19, 0x70, 0x3b, 0xac, 0x03,
+            0x1c, 0xae, 0x7f, 0x60,
+        ];
+        let expected_pub = [
+            0xd7, 0x5a, 0x98, 0x01, 0x82, 0xb1, 0x0a, 0xb7, 0xd5, 0x4b, 0xfe, 0xd3, 0xc9, 0x64,
+            0x07, 0x3a, 0x0e, 0xe1, 0x72, 0xf3, 0xda, 0xa6, 0x23, 0x25, 0xaf, 0x02, 0x1a, 0x68,
+            0xf7, 0x07, 0x51, 0x1a,
+        ];
+
+        let pk = EcxPrivateKey::new(EcxKeyType::Ed25519, priv_bytes.to_vec()).expect("priv-key");
+        let pub_key = ed25519_public_from_private(&pk).expect("derivation");
+        assert_eq!(pub_key.as_bytes(), &expected_pub);
+    }
+
+    /// Mismatched key type must yield `CryptoError::Key`.
+    #[test]
+    fn ed25519_public_from_private_rejects_wrong_key_type() {
+        // An Ed448 private key (57 bytes) is not a valid input.
+        let bytes = vec![0u8; ED448_KEY_LEN];
+        let pk = EcxPrivateKey::new(EcxKeyType::Ed448, bytes).expect("priv-key");
+        let result = ed25519_public_from_private(&pk);
+        assert!(matches!(result, Err(CryptoError::Key(_))));
+    }
+
+    /// Two distinct Ed25519 private keys must produce different public keys.
+    #[test]
+    fn ed25519_public_from_private_is_deterministic_and_unique() {
+        let pair_a = generate_keypair(EcxKeyType::Ed25519).expect("keygen a");
+        let pair_b = generate_keypair(EcxKeyType::Ed25519).expect("keygen b");
+
+        let derived_a =
+            ed25519_public_from_private(pair_a.private_key()).expect("derivation a");
+        let derived_a_again =
+            ed25519_public_from_private(pair_a.private_key()).expect("derivation a again");
+        let derived_b =
+            ed25519_public_from_private(pair_b.private_key()).expect("derivation b");
+
+        // Determinism: deriving twice from the same private key yields
+        // the same public key.
+        assert_eq!(derived_a.as_bytes(), derived_a_again.as_bytes());
+        // Uniqueness: distinct private keys produce distinct public keys
+        // (probability of collision over a fresh OS-RNG draw is
+        // ~2^{-256}, far below any practical flake threshold).
+        assert_ne!(derived_a.as_bytes(), derived_b.as_bytes());
+    }
+
+    // -------------------------------------------------------------------------
+    // ed448_public_from_private — RFC 8032 §5.2.5 derivation
+    // -------------------------------------------------------------------------
+
+    /// Roundtrip: `generate_keypair(Ed448)` must produce a public key
+    /// equal to `ed448_public_from_private(private)`. This exercises
+    /// the same SHAKE256(_, 114) + clamp + scalarmult-base derivation
+    /// path that `ed448_sign_internal` uses, asserting that the
+    /// standalone public-key derivation helper agrees with the
+    /// internal signing path.
+    #[test]
+    fn ed448_public_from_private_matches_generated_pair() {
+        for _ in 0..10 {
+            let pair = generate_keypair(EcxKeyType::Ed448).expect("keygen");
+            let derived =
+                ed448_public_from_private(pair.private_key()).expect("public derivation");
+
+            assert_eq!(derived.key_type(), EcxKeyType::Ed448);
+            assert_eq!(derived.as_bytes().len(), ED448_KEY_LEN);
+            assert_eq!(derived.as_bytes(), pair.public_key().as_bytes());
+        }
+    }
+
+    /// RFC 8032 §7.4 test vector 1.
+    /// Private key (57 bytes):
+    ///   6c82a562cb808d10d632be89c8513ebf 6c929f34ddfa8c9f63c9960ef6e348a3
+    ///   528c8a3fcc2f044e39a3fc5b94492f8f 032e7549a20098f95b
+    /// Public key (57 bytes):
+    ///   5fd7449b59b461fd2ce787ec616ad46a 1da1342485a70e1f8a0ea75d80e96778
+    ///   edf124769b46c7061bd6783df1e50f6c d1fa1abeafe8256180
+    #[test]
+    fn ed448_public_from_private_rfc8032_vector_1() {
+        let priv_bytes = [
+            0x6c, 0x82, 0xa5, 0x62, 0xcb, 0x80, 0x8d, 0x10, 0xd6, 0x32, 0xbe, 0x89, 0xc8, 0x51,
+            0x3e, 0xbf, 0x6c, 0x92, 0x9f, 0x34, 0xdd, 0xfa, 0x8c, 0x9f, 0x63, 0xc9, 0x96, 0x0e,
+            0xf6, 0xe3, 0x48, 0xa3, 0x52, 0x8c, 0x8a, 0x3f, 0xcc, 0x2f, 0x04, 0x4e, 0x39, 0xa3,
+            0xfc, 0x5b, 0x94, 0x49, 0x2f, 0x8f, 0x03, 0x2e, 0x75, 0x49, 0xa2, 0x00, 0x98, 0xf9,
+            0x5b,
+        ];
+        let expected_pub = [
+            0x5f, 0xd7, 0x44, 0x9b, 0x59, 0xb4, 0x61, 0xfd, 0x2c, 0xe7, 0x87, 0xec, 0x61, 0x6a,
+            0xd4, 0x6a, 0x1d, 0xa1, 0x34, 0x24, 0x85, 0xa7, 0x0e, 0x1f, 0x8a, 0x0e, 0xa7, 0x5d,
+            0x80, 0xe9, 0x67, 0x78, 0xed, 0xf1, 0x24, 0x76, 0x9b, 0x46, 0xc7, 0x06, 0x1b, 0xd6,
+            0x78, 0x3d, 0xf1, 0xe5, 0x0f, 0x6c, 0xd1, 0xfa, 0x1a, 0xbe, 0xaf, 0xe8, 0x25, 0x61,
+            0x80,
+        ];
+
+        let pk = EcxPrivateKey::new(EcxKeyType::Ed448, priv_bytes.to_vec()).expect("priv-key");
+        let pub_key = ed448_public_from_private(&pk).expect("derivation");
+        assert_eq!(pub_key.as_bytes(), &expected_pub);
+    }
+
+    /// Mismatched key type must yield `CryptoError::Key`.
+    #[test]
+    fn ed448_public_from_private_rejects_wrong_key_type() {
+        // An Ed25519 private key (32 bytes) is not a valid input.
+        let bytes = vec![0u8; ED25519_KEY_LEN];
+        let pk = EcxPrivateKey::new(EcxKeyType::Ed25519, bytes).expect("priv-key");
+        let result = ed448_public_from_private(&pk);
+        assert!(matches!(result, Err(CryptoError::Key(_))));
+    }
+
+    /// Two distinct Ed448 private keys must produce different public keys.
+    #[test]
+    fn ed448_public_from_private_is_deterministic_and_unique() {
+        let pair_a = generate_keypair(EcxKeyType::Ed448).expect("keygen a");
+        let pair_b = generate_keypair(EcxKeyType::Ed448).expect("keygen b");
+
+        let derived_a =
+            ed448_public_from_private(pair_a.private_key()).expect("derivation a");
+        let derived_a_again =
+            ed448_public_from_private(pair_a.private_key()).expect("derivation a again");
+        let derived_b =
+            ed448_public_from_private(pair_b.private_key()).expect("derivation b");
+
+        assert_eq!(derived_a.as_bytes(), derived_a_again.as_bytes());
+        assert_ne!(derived_a.as_bytes(), derived_b.as_bytes());
+    }
+
+    // -------------------------------------------------------------------------
+    // Sign + verify cross-validation: derived public key must verify
+    // signatures produced with the same private key. This is the
+    // strongest end-to-end check that the derivation matches the
+    // internal signing path's public-key extraction.
+    // -------------------------------------------------------------------------
+
+    /// Sign a fixed message with a freshly-generated Ed25519 private
+    /// key, then verify it with the public key derived via
+    /// `ed25519_public_from_private`. A successful verification proves
+    /// that the derivation is consistent with the signing path.
+    #[test]
+    fn ed25519_derived_public_key_verifies_signature() {
+        let pair = generate_keypair(EcxKeyType::Ed25519).expect("keygen");
+        let derived =
+            ed25519_public_from_private(pair.private_key()).expect("public derivation");
+
+        let message = b"openssl-rs Ed25519 derived-public-key cross-validation";
+        let signature = ed25519_sign(pair.private_key(), message, None).expect("sign");
+
+        // Verify with the *derived* public key, not the keypair's stored
+        // public key. If the derivation diverged from the signing path,
+        // verification would fail.
+        let valid =
+            ed25519_verify(&derived, message, &signature, None).expect("verify result");
+        assert!(valid, "derived public key must verify signature");
+    }
+
+    /// Sign a fixed message with a freshly-generated Ed448 private
+    /// key, then verify it with the public key derived via
+    /// `ed448_public_from_private`. A successful verification proves
+    /// that the derivation is consistent with the signing path.
+    #[test]
+    fn ed448_derived_public_key_verifies_signature() {
+        let pair = generate_keypair(EcxKeyType::Ed448).expect("keygen");
+        let derived =
+            ed448_public_from_private(pair.private_key()).expect("public derivation");
+
+        let message = b"openssl-rs Ed448 derived-public-key cross-validation";
+        // Ed448 pure variant: context is `None`.
+        let signature = ed448_sign(pair.private_key(), message, None).expect("sign");
+
+        let valid =
+            ed448_verify(&derived, message, &signature, None).expect("verify result");
+        assert!(valid, "derived public key must verify signature");
+    }
+}
+

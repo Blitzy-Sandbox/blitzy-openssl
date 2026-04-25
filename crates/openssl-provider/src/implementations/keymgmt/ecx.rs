@@ -399,10 +399,13 @@ impl EcxKeyData {
     /// - `PUBLIC_KEY` (Ed only): verifies the public key is a valid
     ///   curve point via crypto-layer `verify_public_key`.
     /// - `KEYPAIR`: pairwise consistency check:
-    ///   - X types: derive public from private and constant-time compare.
-    ///   - Ed types: verify stored public key is a valid curve point
-    ///     (crypto layer lacks `ed*_public_from_private`; see
-    ///     `AAP §0.7 Gap Analysis`).
+    ///   - X types: derive public from private (`x{25519,448}_basepoint`
+    ///     scalar mult) and constant-time compare with the stored
+    ///     public-key bytes.
+    ///   - Ed types: derive public from private (RFC 8032 §5.{1,2}.5
+    ///     `SHA-512`/`SHAKE256` digest, clamp, then
+    ///     `edwards{25519,448}::scalarmult_base`) and constant-time
+    ///     compare with the stored public-key bytes.
     ///
     /// Returns `Ok(false)` if validation fails, `Ok(true)` on success.
     /// Returns `Err(ProviderError)` only on internal crypto-layer errors.
@@ -463,13 +466,26 @@ impl EcxKeyData {
     /// Translates the C `ecx_pairwise_check` and `ecd_pairwise_check`
     /// routines (`ecx_kmgmt.c:~400-470`).
     ///
-    /// - X types: derive public key from private and constant-time compare
-    ///   with the stored public key bytes via
-    ///   [`subtle::ConstantTimeEq::ct_eq`].
-    /// - Ed types: verify the stored public key is a valid curve point.
-    ///   A full `ed*_public_from_private` function is not yet exposed in
-    ///   the crypto layer, so this check is a structural verification
-    ///   rather than a round-trip derivation.
+    /// For all four supported key types this performs a **cryptographic
+    /// round-trip derivation** rather than a structural-only check:
+    ///
+    /// - **X25519 / X448**: derive the public key from the private key
+    ///   via `x{25519,448}_public_from_private` (Montgomery-ladder
+    ///   scalar multiplication of the base point) and constant-time
+    ///   compare the derived public-key bytes with the stored
+    ///   public-key bytes via [`subtle::ConstantTimeEq::ct_eq`].
+    /// - **Ed25519 / Ed448**: derive the public key from the private
+    ///   key via `ed{25519,448}_public_from_private`
+    ///   (RFC 8032 §5.{1,2}.5: `SHA-512`/`SHAKE256` digest, clamp the
+    ///   first 32/57 bytes per the standard, then
+    ///   `edwards{25519,448}::scalarmult_base`) and constant-time
+    ///   compare the derived public-key encoding with the stored
+    ///   public-key bytes via [`subtle::ConstantTimeEq::ct_eq`].
+    ///
+    /// This guarantees that the stored public key is the unique public
+    /// key matching the stored private key — equivalent to performing a
+    /// sign + verify round trip but without any signature/randomness
+    /// overhead.
     fn pairwise_check(&self) -> ProviderResult<bool> {
         use subtle::ConstantTimeEq;
 
@@ -480,43 +496,25 @@ impl EcxKeyData {
 
         let key_type = self.key_type.as_key_type();
 
-        match self.key_type {
-            EcxAlgorithm::X25519 | EcxAlgorithm::X448 => {
-                let priv_key = EcxPrivateKey::new(key_type, priv_bytes.to_vec()).map_err(|e| {
-                    ProviderError::Dispatch(format!("invalid private key for pairwise check: {e}"))
-                })?;
+        let priv_key = EcxPrivateKey::new(key_type, priv_bytes.to_vec()).map_err(|e| {
+            ProviderError::Dispatch(format!("invalid private key for pairwise check: {e}"))
+        })?;
 
-                let derived = match self.key_type {
-                    EcxAlgorithm::X25519 => curve25519::x25519_public_from_private(&priv_key),
-                    EcxAlgorithm::X448 => curve25519::x448_public_from_private(&priv_key),
-                    // Unreachable: outer match already excluded Ed variants.
-                    EcxAlgorithm::Ed25519 | EcxAlgorithm::Ed448 => {
-                        return Err(ProviderError::Dispatch(
-                            "unreachable: Ed variants handled separately".into(),
-                        ));
-                    }
-                }
-                .map_err(|e| {
-                    ProviderError::Dispatch(format!(
-                        "public key derivation failed during pairwise check: {e}"
-                    ))
-                })?;
-
-                // Constant-time comparison (Rule R8: subtle, not CRYPTO_memcmp).
-                let matches: bool = derived.as_bytes().ct_eq(pub_bytes).into();
-                Ok(matches)
-            }
-            EcxAlgorithm::Ed25519 | EcxAlgorithm::Ed448 => {
-                // Ed*_public_from_private is not yet available in the crypto
-                // layer. Fall back to public-key point-validity check.
-                let pub_key = EcxPublicKey::new(key_type, pub_bytes.to_vec()).map_err(|e| {
-                    ProviderError::Dispatch(format!("invalid public key for pairwise check: {e}"))
-                })?;
-                curve25519::verify_public_key(&pub_key).map_err(|e| {
-                    ProviderError::Dispatch(format!("public key verification failed: {e}"))
-                })
-            }
+        let derived = match self.key_type {
+            EcxAlgorithm::X25519 => curve25519::x25519_public_from_private(&priv_key),
+            EcxAlgorithm::X448 => curve25519::x448_public_from_private(&priv_key),
+            EcxAlgorithm::Ed25519 => curve25519::ed25519_public_from_private(&priv_key),
+            EcxAlgorithm::Ed448 => curve25519::ed448_public_from_private(&priv_key),
         }
+        .map_err(|e| {
+            ProviderError::Dispatch(format!(
+                "public key derivation failed during pairwise check: {e}"
+            ))
+        })?;
+
+        // Constant-time comparison (Rule R8: subtle, not CRYPTO_memcmp).
+        let matches: bool = derived.as_bytes().ct_eq(pub_bytes).into();
+        Ok(matches)
     }
 
     /// Exports public and/or private key bytes to a [`ParamSet`].
@@ -2148,8 +2146,76 @@ mod tests {
             lib_ctx: None,
             prop_query: None,
         };
-        // Ed types fall back to structural point-validity check.
+        // Ed25519 pairwise check derives the public key from the private key
+        // via RFC 8032 §5.1.5 (SHA-512 + clamp + scalarmult_base) and does
+        // a constant-time comparison with the stored public key.
         assert!(key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate returns Ok"));
+    }
+
+    #[test]
+    fn pairwise_check_detects_mismatched_ed25519_keys() {
+        // Generate a valid Ed25519 keypair, then tamper with the public bytes
+        // so they no longer correspond to the derived public key.
+        let keypair = curve25519::generate_keypair(EcxKeyType::Ed25519).expect("keygen");
+        let mut tampered_pub = keypair.public_key().as_bytes().to_vec();
+        tampered_pub[0] ^= 0x01;
+
+        let key = EcxKeyData {
+            key_type: EcxAlgorithm::Ed25519,
+            pub_key: Some(tampered_pub),
+            priv_key: Some(Zeroizing::new(keypair.private_key().as_bytes().to_vec())),
+            lib_ctx: None,
+            prop_query: None,
+        };
+
+        // The cryptographic round-trip derivation must catch a tampered
+        // public key. A purely structural point-validity check would have
+        // accepted this (the tampered point is still valid).
+        assert!(!key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate returns Ok"));
+    }
+
+    #[test]
+    fn pairwise_check_accepts_genuine_ed448_keypair() {
+        let keypair = curve25519::generate_keypair(EcxKeyType::Ed448).expect("keygen");
+        let key = EcxKeyData {
+            key_type: EcxAlgorithm::Ed448,
+            pub_key: Some(keypair.public_key().as_bytes().to_vec()),
+            priv_key: Some(Zeroizing::new(keypair.private_key().as_bytes().to_vec())),
+            lib_ctx: None,
+            prop_query: None,
+        };
+        // Ed448 pairwise check derives the public key from the private key
+        // via RFC 8032 §5.2.5 (SHAKE256(_, 114) + clamp + scalarmult_base)
+        // and does a constant-time comparison with the stored public key.
+        assert!(key
+            .validate_selection(KeySelection::KEYPAIR)
+            .expect("validate returns Ok"));
+    }
+
+    #[test]
+    fn pairwise_check_detects_mismatched_ed448_keys() {
+        // Generate a valid Ed448 keypair, then tamper with the public bytes
+        // so they no longer correspond to the derived public key.
+        let keypair = curve25519::generate_keypair(EcxKeyType::Ed448).expect("keygen");
+        let mut tampered_pub = keypair.public_key().as_bytes().to_vec();
+        tampered_pub[0] ^= 0x01;
+
+        let key = EcxKeyData {
+            key_type: EcxAlgorithm::Ed448,
+            pub_key: Some(tampered_pub),
+            priv_key: Some(Zeroizing::new(keypair.private_key().as_bytes().to_vec())),
+            lib_ctx: None,
+            prop_query: None,
+        };
+
+        // The cryptographic round-trip derivation must catch a tampered
+        // public key. A purely structural point-validity check would have
+        // accepted this (the tampered point is still valid).
+        assert!(!key
             .validate_selection(KeySelection::KEYPAIR)
             .expect("validate returns Ok"));
     }
