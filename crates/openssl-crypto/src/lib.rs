@@ -406,6 +406,30 @@ pub mod ts;
 #[cfg(feature = "cmp")]
 pub mod cmp;
 
+/// Certificate Transparency per RFC 6962.
+///
+/// Translates the foundational types from `crypto/ct/*.c` (10 files):
+/// [`LogEntryType`](ct::LogEntryType), [`SctVersion`](ct::SctVersion),
+/// [`SctSource`](ct::SctSource), [`SctValidationStatus`](ct::SctValidationStatus),
+/// [`SignedCertificateTimestamp`](ct::SignedCertificateTimestamp), and
+/// [`SignedCertificateTimestampBuilder`](ct::SignedCertificateTimestampBuilder).
+/// Higher-level SCT validation against CT log Merkle trees, BIO printing,
+/// CT_POLICY_EVAL_CTX state machine, and base64 log fetching are deferred
+/// to a follow-up checkpoint; the types delivered here form the foundation
+/// on which they are built.
+///
+/// # Scope at this checkpoint
+///
+/// * **In scope:** Log entry type / SCT version / SCT source / validation
+///   status enums, `SCT_MIN_RSA_BITS` / `CT_V1_HASHLEN` constants,
+///   [`SignedCertificateTimestamp`](ct::SignedCertificateTimestamp) type with
+///   builder, RFC 6962 length validations, helper accessors.
+/// * **Out of scope:** Full SCT validation against CT log Merkle tree, BIO
+///   printing, `CT_POLICY_EVAL_CTX` state machine, log fetching from URL,
+///   base64 log decoding.
+#[cfg(feature = "ct")]
+pub mod ct;
+
 // =============================================================================
 // Test Module Declaration
 // =============================================================================

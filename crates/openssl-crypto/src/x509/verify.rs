@@ -449,7 +449,7 @@ impl From<CryptoError> for VerificationError {
 /// let root = Certificate::from_der(root_der)?;
 ///
 /// let mut store = X509Store::new();
-/// store.add_trust_anchor(root)?;
+/// store.add_anchor(root)?;
 ///
 /// let verifier = Verifier::new(&store);
 /// let options = VerificationOptions::default();
