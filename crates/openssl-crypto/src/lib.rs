@@ -381,6 +381,31 @@ pub mod ocsp;
 #[cfg(feature = "ts")]
 pub mod ts;
 
+/// Certificate Management Protocol per RFC 4210 / RFC 9480.
+///
+/// Translates the foundational types from `crypto/cmp/*.c` (13 files):
+/// [`PkiVersion`](cmp::PkiVersion), [`PkiStatus`](cmp::PkiStatus),
+/// [`PkiFailureInfo`](cmp::PkiFailureInfo),
+/// [`FailureInfoBits`](cmp::FailureInfoBits),
+/// [`PkiStatusInfo`](cmp::PkiStatusInfo),
+/// [`PkiHeader`](cmp::PkiHeader), and
+/// [`PkiHeaderBuilder`](cmp::PkiHeaderBuilder).  Higher-level message
+/// dispatch and CRMF integration are deferred to a follow-up checkpoint;
+/// the types delivered here form the foundation on which they are built.
+///
+/// # Scope at this checkpoint
+///
+/// * **In scope:** Protocol-version enum, PKI status / failure-info enums,
+///   bitmap of failure-info bits, status-info container, PKIHeader subset
+///   (pvno, sender, recipient, messageTime, transactionID, senderNonce,
+///   recipNonce), RFC 4210 §5.1.1 transaction-ID and nonce length checks,
+///   builder API, helper accessors.
+/// * **Out of scope:** Full PKIMessage encode/decode, CertReqMsg /
+///   CertReqMessages, certificate-confirm flows, polling, protection
+///   algorithms, freeText, generalInfo, HTTP transport, CRMF detail.
+#[cfg(feature = "cmp")]
+pub mod cmp;
+
 // =============================================================================
 // Test Module Declaration
 // =============================================================================
