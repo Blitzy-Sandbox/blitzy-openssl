@@ -2330,5 +2330,185 @@ mod tests {
             other => panic!("expected Dispatch, got {other:?}"),
         }
     }
+
+    #[test]
+    fn ed25519_pure_sign_verify_round_trip() {
+        // Group F provider-layer test-coverage gap closure:
+        // RFC 8032 §5.1 PureEdDSA (Ed25519) does NOT include a
+        // domain-separation prefix and FORBIDS a context string.
+        // This test exercises a complete sign→verify round-trip
+        // with a real Ed25519 keypair generated via the crypto
+        // layer's RFC 8032 §5.1.5 procedure (SHA-512 hash, clamp,
+        // scalar-multiply base point) and asserts that:
+        //
+        //   * sign_init succeeds when called with `None` for params
+        //     (Ed25519 forbids a context string),
+        //   * sign over the raw message produces a 64-byte signature,
+        //   * verify with the matching public key returns `Ok(true)`,
+        //   * verify under an unrelated public key returns
+        //     `Ok(false)` (well-formed but invalid signature).
+        //
+        // This test complements `ed25519ctx_sign_verify_round_trip`
+        // (which exercises the dom2(F=0, C) path with a mandatory
+        // non-empty context) by covering the no-domain pure
+        // variant — the canonical Ed25519 contract per RFC 8032.
+        use openssl_crypto::ec::curve25519::{generate_keypair, EcxKeyType};
+
+        let kp = generate_keypair(EcxKeyType::Ed25519)
+            .expect("Ed25519 keypair generation must succeed");
+        let mut pair_bytes = Vec::with_capacity(ED25519_KEY_LEN * 2);
+        pair_bytes.extend_from_slice(kp.private_key().as_bytes());
+        pair_bytes.extend_from_slice(kp.public_key().as_bytes());
+        let public_bytes = kp.public_key().as_bytes().to_vec();
+
+        // Pure Ed25519 forbids any context string, so we pass
+        // `None` for params on both sign_init and verify_init.
+        let mut sctx = EdDsaSignatureContext::new(
+            EdDsaInstance::Ed25519,
+            LibContext::get_default(),
+            None,
+        );
+        SignatureContext::sign_init(&mut sctx, &pair_bytes, None)
+            .expect("sign_init must succeed for pure Ed25519 with full keypair and no params");
+        let signature = SignatureContext::sign(&mut sctx, b"pure Ed25519 message")
+            .expect("Ed25519 (pure) sign must succeed end-to-end");
+        assert_eq!(
+            signature.len(),
+            ED25519_SIGNATURE_LEN,
+            "Ed25519 (pure) signature must be {ED25519_SIGNATURE_LEN} bytes"
+        );
+
+        // Positive verify with the matching keypair.
+        let mut vctx = EdDsaSignatureContext::new(
+            EdDsaInstance::Ed25519,
+            LibContext::get_default(),
+            None,
+        );
+        SignatureContext::verify_init(&mut vctx, &public_bytes, None)
+            .expect("verify_init must succeed for pure Ed25519");
+        let valid = SignatureContext::verify(&mut vctx, b"pure Ed25519 message", &signature)
+            .expect("Ed25519 (pure) verify dispatch must succeed");
+        assert!(
+            valid,
+            "Ed25519 (pure) round-trip verification must yield a valid signature"
+        );
+
+        // Negative cross-check: a fresh, unrelated keypair must
+        // fail to verify the signature, returning `Ok(false)`.
+        let kp_other = generate_keypair(EcxKeyType::Ed25519)
+            .expect("second Ed25519 keypair generation must succeed");
+        let other_public = kp_other.public_key().as_bytes().to_vec();
+        let mut vctx_wrong = EdDsaSignatureContext::new(
+            EdDsaInstance::Ed25519,
+            LibContext::get_default(),
+            None,
+        );
+        SignatureContext::verify_init(&mut vctx_wrong, &other_public, None)
+            .expect("verify_init must succeed even with a different public key");
+        let invalid = SignatureContext::verify(
+            &mut vctx_wrong,
+            b"pure Ed25519 message",
+            &signature,
+        )
+        .expect("verify dispatch must succeed for a wrong-key attempt");
+        assert!(
+            !invalid,
+            "Ed25519 (pure) verify must reject signatures bound to a different key"
+        );
+    }
+
+    #[test]
+    fn ed25519ph_sign_verify_round_trip() {
+        // Group F provider-layer test-coverage gap closure:
+        // RFC 8032 §5.1 Ed25519ph performs a SHA-512 prehash of
+        // the message and emits dom2(F=1, C) where C MAY be empty.
+        // This test exercises a full sign→verify round-trip
+        // without a context string (the most common configuration),
+        // asserting that:
+        //
+        //   * sign_init succeeds with `None` for params (Ed25519ph
+        //     accepts but does NOT require a context string),
+        //   * sign accepts the RAW message — the SHA-512 prehash
+        //     is applied internally by the provider via
+        //     `compute_ed25519_prehash`,
+        //   * the resulting signature is 64 bytes,
+        //   * verify with the matching public key returns `Ok(true)`,
+        //   * verify under an unrelated public key returns
+        //     `Ok(false)`.
+        //
+        // This test complements `ed25519ctx_sign_verify_round_trip`
+        // by covering the prehash variant — the canonical
+        // Ed25519ph contract per RFC 8032 §5.1.
+        use openssl_crypto::ec::curve25519::{generate_keypair, EcxKeyType};
+
+        let kp = generate_keypair(EcxKeyType::Ed25519)
+            .expect("Ed25519 keypair generation must succeed");
+        let mut pair_bytes = Vec::with_capacity(ED25519_KEY_LEN * 2);
+        pair_bytes.extend_from_slice(kp.private_key().as_bytes());
+        pair_bytes.extend_from_slice(kp.public_key().as_bytes());
+        let public_bytes = kp.public_key().as_bytes().to_vec();
+
+        // Ed25519ph accepts an optional context string but does
+        // not require one; we exercise the no-context path here.
+        // The dom2(F=1, C) prefix is still applied by the crypto
+        // layer with C = empty.
+        let mut sctx = EdDsaSignatureContext::new(
+            EdDsaInstance::Ed25519ph,
+            LibContext::get_default(),
+            None,
+        );
+        SignatureContext::sign_init(&mut sctx, &pair_bytes, None)
+            .expect("sign_init must succeed for Ed25519ph with full keypair and no params");
+        let signature = SignatureContext::sign(&mut sctx, b"Ed25519ph prehash test message")
+            .expect("Ed25519ph sign must succeed end-to-end");
+        assert_eq!(
+            signature.len(),
+            ED25519_SIGNATURE_LEN,
+            "Ed25519ph signature must be {ED25519_SIGNATURE_LEN} bytes"
+        );
+
+        // Positive verify with the matching keypair.
+        let mut vctx = EdDsaSignatureContext::new(
+            EdDsaInstance::Ed25519ph,
+            LibContext::get_default(),
+            None,
+        );
+        SignatureContext::verify_init(&mut vctx, &public_bytes, None)
+            .expect("verify_init must succeed for Ed25519ph");
+        let valid = SignatureContext::verify(
+            &mut vctx,
+            b"Ed25519ph prehash test message",
+            &signature,
+        )
+        .expect("Ed25519ph verify dispatch must succeed");
+        assert!(
+            valid,
+            "Ed25519ph round-trip verification must yield a valid signature"
+        );
+
+        // Negative cross-check: a fresh, unrelated keypair must
+        // fail to verify the signature, returning `Ok(false)`.
+        let kp_other = generate_keypair(EcxKeyType::Ed25519)
+            .expect("second Ed25519 keypair generation must succeed");
+        let other_public = kp_other.public_key().as_bytes().to_vec();
+        let mut vctx_wrong = EdDsaSignatureContext::new(
+            EdDsaInstance::Ed25519ph,
+            LibContext::get_default(),
+            None,
+        );
+        SignatureContext::verify_init(&mut vctx_wrong, &other_public, None)
+            .expect("verify_init must succeed even with a different public key");
+        let invalid = SignatureContext::verify(
+            &mut vctx_wrong,
+            b"Ed25519ph prehash test message",
+            &signature,
+        )
+        .expect("verify dispatch must succeed for a wrong-key attempt");
+        assert!(
+            !invalid,
+            "Ed25519ph verify must reject signatures bound to a different key"
+        );
+    }
+
 }
 

@@ -2658,4 +2658,259 @@ mod tests {
             );
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Sign → Verify roundtrip — provider layer end-to-end
+    // -------------------------------------------------------------------------
+    //
+    // These tests exercise the FULL provider-layer state machine from
+    // `sign_init` / `verify_init` through `sign` / `verify` (and the
+    // streaming `digest_*` variants), backed by the real DSA crypto-layer
+    // primitives in `openssl_crypto::dsa`. They close the **MEDIUM/
+    // TEST-COVERAGE** finding from the Checkpoint 3 review (no positive
+    // sign→verify roundtrip at the provider layer) by asserting the
+    // observable contract: a signature produced via the provider's `sign`
+    // path must verify successfully via the provider's `verify` path on
+    // the corresponding public key.
+    //
+    // Wire format note: the provider key blob is the strict TLV format
+    // produced by [`encode_dsa_key_blob`] below — see [`parse_dsa_key`]
+    // (lines 529–593) for the canonical decoder these tests must match
+    // byte-for-byte.
+
+    /// Encodes a DSA key blob in the provider's strict TLV format.
+    ///
+    /// Layout matches [`parse_dsa_key`]:
+    /// ```text
+    /// byte 0 = 0x01                      (DSA_KEY_TLV_VERSION)
+    /// byte 1 = flags                     (FLAG_HAS_PARAMS=0x01 always set,
+    ///                                     FLAG_HAS_PUBLIC=0x02 if y supplied,
+    ///                                     FLAG_HAS_PRIVATE=0x04 if x supplied)
+    /// then for each component (p, q, g, optional y, optional x):
+    ///   [4 BE bytes: u32 length][length bytes: BigNum BE magnitude]
+    /// no trailing bytes.
+    /// ```
+    ///
+    /// `expect`s panic on the `u32::try_from(usize)` step only when a
+    /// component exceeds 4 GiB, which is impossible for any DSA modulus
+    /// supported by `openssl_crypto::dsa`. The `#[allow(clippy::expect_used)]`
+    /// at the test-module attribute (lines 2265–2267) covers this.
+    fn encode_dsa_key_blob(
+        params: &DsaParams,
+        y: Option<&BigNum>,
+        x: Option<&BigNum>,
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.push(DSA_KEY_TLV_VERSION);
+
+        let mut flags = FLAG_HAS_PARAMS;
+        if y.is_some() {
+            flags |= FLAG_HAS_PUBLIC;
+        }
+        if x.is_some() {
+            flags |= FLAG_HAS_PRIVATE;
+        }
+        out.push(flags);
+
+        // Helper: append [4 BE len][bytes].
+        let mut append_bn = |bn: &BigNum| {
+            let bytes = bn.to_bytes_be();
+            let len_u32 =
+                u32::try_from(bytes.len()).expect("DSA component fits in u32 (well under 4 GiB)");
+            out.extend_from_slice(&len_u32.to_be_bytes());
+            out.extend_from_slice(&bytes);
+        };
+
+        append_bn(params.p());
+        append_bn(params.q());
+        append_bn(params.g());
+        if let Some(y) = y {
+            append_bn(y);
+        }
+        if let Some(x) = x {
+            append_bn(x);
+        }
+
+        out
+    }
+
+    /// Generates a fresh DSA-1024 keypair via the crypto-layer primitives.
+    ///
+    /// Uses `openssl_crypto::dsa::generate_params` + `generate_key`, the
+    /// same path that `EVP_PKEY_keygen` would dispatch to in the C
+    /// codebase. 1024-bit moduli are chosen for test runtime — the
+    /// 40-byte signature length (2 × 20 bytes for q ≈ 2^160) is also
+    /// asserted as a structural invariant in the roundtrip tests below.
+    fn fresh_dsa_1024_keypair() -> openssl_crypto::dsa::DsaKeyPair {
+        let params = openssl_crypto::dsa::generate_params(1024)
+            .expect("DSA 1024-bit parameter generation must succeed in tests");
+        openssl_crypto::dsa::generate_key(&params)
+            .expect("DSA keypair generation must succeed once params are valid")
+    }
+
+    #[test]
+    fn dsa_composable_sha256_one_shot_sign_verify_round_trip() {
+        // GIVEN: a fresh DSA-1024 keypair generated via the crypto layer,
+        // and SHA-256 as the digest binding for the composable variant.
+        // WHEN: the provider signs a hashed message via the standard
+        // sign_init → sign path, then a fresh provider context verifies
+        // the signature via verify_init → verify.
+        // THEN: verification must succeed (Ok(true)).
+        let kp = fresh_dsa_1024_keypair();
+        let lib_ctx = LibContext::get_default();
+        let md = MessageDigest::fetch(&lib_ctx, SHA256, None)
+            .expect("SHA-256 must be available in the default library context");
+
+        let message: &[u8] = b"hello, dsa provider roundtrip!";
+        let digest = digest_one_shot(&md, message)
+            .expect("SHA-256 hashing must succeed on a non-empty message");
+
+        let sign_blob = encode_dsa_key_blob(
+            kp.params(),
+            Some(kp.public_key().value()),
+            Some(kp.private_key().value()),
+        );
+        let verify_blob = encode_dsa_key_blob(kp.params(), Some(kp.public_key().value()), None);
+
+        let mut sparams = ParamSet::new();
+        sparams.set("digest", ParamValue::Utf8String("SHA2-256".to_string()));
+
+        let mut sctx =
+            DsaSignatureContext::new(DsaVariant::Composable, LibContext::get_default(), None);
+        SignatureContext::sign_init(&mut sctx, &sign_blob, Some(&sparams))
+            .expect("sign_init must succeed with a full keypair blob and SHA-256 digest");
+        let signature = SignatureContext::sign(&mut sctx, &digest)
+            .expect("DSA composable sign must succeed on a valid SHA-256 digest");
+
+        // Structural invariant: 1024-bit DSA → q ≈ 2^160 → r||s = 40 bytes.
+        assert_eq!(
+            signature.len(),
+            40,
+            "1024-bit DSA signature must be exactly 40 bytes (2 × 20)"
+        );
+
+        let mut vctx =
+            DsaSignatureContext::new(DsaVariant::Composable, LibContext::get_default(), None);
+        SignatureContext::verify_init(&mut vctx, &verify_blob, Some(&sparams))
+            .expect("verify_init must succeed for the matching public key blob");
+        let valid = SignatureContext::verify(&mut vctx, &digest, &signature)
+            .expect("verify dispatch must succeed for a well-formed signature");
+        assert!(
+            valid,
+            "DSA composable+SHA-256 sign→verify roundtrip must succeed"
+        );
+    }
+
+    #[test]
+    fn dsa_composable_sha256_streaming_sign_verify_round_trip() {
+        // GIVEN: a fresh DSA-1024 keypair and the streaming digest_*
+        // variants of the SignatureContext trait.
+        // WHEN: digest_sign_init → digest_sign_update (twice, exercising
+        // accumulation) → digest_sign_final on one context, then
+        // digest_verify_init → digest_verify_update (twice) →
+        // digest_verify_final on a fresh context with the matching
+        // signature.
+        // THEN: verification must succeed (Ok(true)).
+        //
+        // This validates the streaming gates documented at lines 1631+:
+        // setup_digest is called LAST in digest_sign_init (after
+        // set_ctx_params), and both `allow_update` / `allow_final` flip
+        // to `false` after `digest_*_final`.
+        let kp = fresh_dsa_1024_keypair();
+        let sign_blob = encode_dsa_key_blob(
+            kp.params(),
+            Some(kp.public_key().value()),
+            Some(kp.private_key().value()),
+        );
+        let verify_blob = encode_dsa_key_blob(kp.params(), Some(kp.public_key().value()), None);
+
+        let part_a: &[u8] = b"streaming hash test ";
+        let part_b: &[u8] = b"with two update chunks";
+
+        let mut sctx =
+            DsaSignatureContext::new(DsaVariant::Composable, LibContext::get_default(), None);
+        SignatureContext::digest_sign_init(&mut sctx, "SHA2-256", &sign_blob, None)
+            .expect("digest_sign_init must succeed for composable+SHA-256");
+        SignatureContext::digest_sign_update(&mut sctx, part_a)
+            .expect("digest_sign_update (chunk A) must succeed");
+        SignatureContext::digest_sign_update(&mut sctx, part_b)
+            .expect("digest_sign_update (chunk B) must succeed");
+        let signature = SignatureContext::digest_sign_final(&mut sctx)
+            .expect("digest_sign_final must succeed and produce a 40-byte signature");
+        assert_eq!(
+            signature.len(),
+            40,
+            "streamed 1024-bit DSA signature must still be 40 bytes"
+        );
+
+        let mut vctx =
+            DsaSignatureContext::new(DsaVariant::Composable, LibContext::get_default(), None);
+        SignatureContext::digest_verify_init(&mut vctx, "SHA2-256", &verify_blob, None)
+            .expect("digest_verify_init must succeed for the matching public key");
+        SignatureContext::digest_verify_update(&mut vctx, part_a)
+            .expect("digest_verify_update (chunk A) must succeed");
+        SignatureContext::digest_verify_update(&mut vctx, part_b)
+            .expect("digest_verify_update (chunk B) must succeed");
+        let valid = SignatureContext::digest_verify_final(&mut vctx, &signature)
+            .expect("digest_verify_final must succeed for a well-formed signature");
+        assert!(
+            valid,
+            "DSA streaming sign→verify roundtrip must succeed when message chunks match"
+        );
+    }
+
+    #[test]
+    fn dsa_composable_sha256_wrong_key_verify_returns_false() {
+        // GIVEN: two independent DSA-1024 keypairs (kp_a, kp_b).
+        // WHEN: a signature is produced under kp_a's PRIVATE key, and
+        // verification is attempted with kp_b's PUBLIC key.
+        // THEN: `verify` must return Ok(false) (well-formed signature,
+        // cryptographically invalid for the wrong public key).
+        //
+        // This asserts the negative path of the contract — the provider
+        // does NOT raise an error for a syntactically valid signature
+        // that fails the cryptographic check. Guards against regressions
+        // where verify_digest erroneously surfaces `Err` for a legitimate
+        // false-result.
+        let kp_a = fresh_dsa_1024_keypair();
+        let kp_b = fresh_dsa_1024_keypair();
+
+        let lib_ctx = LibContext::get_default();
+        let md = MessageDigest::fetch(&lib_ctx, SHA256, None)
+            .expect("SHA-256 must be available");
+        let message: &[u8] = b"wrong-key cross-verify scenario";
+        let digest = digest_one_shot(&md, message).expect("hashing must succeed");
+
+        let sign_blob_a = encode_dsa_key_blob(
+            kp_a.params(),
+            Some(kp_a.public_key().value()),
+            Some(kp_a.private_key().value()),
+        );
+        let verify_blob_b =
+            encode_dsa_key_blob(kp_b.params(), Some(kp_b.public_key().value()), None);
+
+        let mut sparams = ParamSet::new();
+        sparams.set("digest", ParamValue::Utf8String("SHA2-256".to_string()));
+
+        let mut sctx =
+            DsaSignatureContext::new(DsaVariant::Composable, LibContext::get_default(), None);
+        SignatureContext::sign_init(&mut sctx, &sign_blob_a, Some(&sparams))
+            .expect("sign_init under kp_a must succeed");
+        let signature = SignatureContext::sign(&mut sctx, &digest)
+            .expect("kp_a must sign successfully");
+
+        // Verify under kp_b — different params, different y, so the
+        // verification math will reject the signature with Ok(false).
+        let mut vctx =
+            DsaSignatureContext::new(DsaVariant::Composable, LibContext::get_default(), None);
+        SignatureContext::verify_init(&mut vctx, &verify_blob_b, Some(&sparams))
+            .expect("verify_init under kp_b must succeed (blob is well-formed)");
+        let result = SignatureContext::verify(&mut vctx, &digest, &signature)
+            .expect("verify dispatch must succeed even on a wrong-key signature");
+        assert!(
+            !result,
+            "DSA cross-key verification must return Ok(false), not Err"
+        );
+    }
+
 }

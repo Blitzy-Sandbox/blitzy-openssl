@@ -72,6 +72,7 @@
 
 use base64ct::{Base64, Encoding};
 use tracing::{debug, trace, warn};
+use zeroize::Zeroizing;
 
 use openssl_common::{ProviderError, ProviderResult};
 
@@ -445,6 +446,20 @@ pub struct PemBlock {
 ///   (e.g., user cancelled the prompt, callback not registered).
 /// * Be thread-safe (`Send + Sync`) — the provider framework may invoke
 ///   the callback from worker threads.
+///
+/// # Security Note on Cleansing
+///
+/// The trait deliberately returns a plain `Vec<u8>` rather than a
+/// `Zeroizing<Vec<u8>>` to avoid forcing every implementor to depend on
+/// the `zeroize` crate.  However, **all consumers of the returned bytes
+/// inside this crate immediately wrap them in `Zeroizing<Vec<u8>>` (or
+/// otherwise call `.zeroize()` before drop)** so that the heap-allocated
+/// passphrase material is explicitly cleansed.  Plain `Vec<u8>` does NOT
+/// zero its allocation on `Drop`; relying on default-Drop behaviour for
+/// secret material is incorrect.  Implementors who construct the returned
+/// `Vec<u8>` from a longer-lived secret store SHOULD ensure the source
+/// buffer is itself cleansed once the returned clone is no longer in
+/// flight.
 ///
 /// # Example (Constant Passphrase)
 ///
@@ -904,7 +919,18 @@ pub fn decode_with_context(
         })?;
 
         let prompt = format!("PEM pass phrase for {}:", block.label);
-        let passphrase_bytes = cb.get_passphrase(&prompt)?;
+        // SECURITY: wrap the returned Vec<u8> in `Zeroizing` so that the
+        // passphrase bytes are explicitly zeroed when this binding is
+        // dropped.  Plain `Vec<u8>` does NOT zero its heap allocation on
+        // Drop — only `Zeroizing<Vec<u8>>` (or a manual `.zeroize()`
+        // call) provides the cleanse behaviour required for sensitive
+        // material.  The previous implementation relied on a misleading
+        // "// zero via Drop impl of Vec<u8>" comment which incorrectly
+        // suggested cleansing happened automatically; this rewrite
+        // closes the LOW/SECURITY-DOC L923 finding by making the
+        // cleanse contract explicit and enforced by the type system.
+        let passphrase_bytes: Zeroizing<Vec<u8>> =
+            Zeroizing::new(cb.get_passphrase(&prompt)?);
 
         // The header text is embedded in the PEM block when RFC 1421
         // is used; pem-rfc7468 will have rejected it, so we fell
@@ -920,7 +946,7 @@ pub fn decode_with_context(
         // This matches the "defense in depth" stance: encrypted PEM
         // handling is a specialised code path and should be invoked
         // explicitly rather than through the general decode API.
-        drop(passphrase_bytes); // zero via Drop impl of Vec<u8>
+        drop(passphrase_bytes); // SECURITY: Zeroizing<Vec<u8>> zeroes heap on Drop
         return Err(ProviderError::Dispatch(
             EndecoderError::UnableToGetPassphrase.to_string(),
         ));
