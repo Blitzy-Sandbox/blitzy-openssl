@@ -156,7 +156,7 @@
 //!    cannot accidentally invoke a legacy cipher via `CipherAlgorithm`
 //!    enum lookup. The variants exist in the enum (so the public API is
 //!    stable), but the constructor functions return [`CryptoError::Common`]
-//!    via [`CommonError::FeatureDisabled`] when the feature is off.
+//!    via `CommonError::FeatureDisabled` when the feature is off.
 //!
 //! 3. **Compliance signaling** — A build that includes the `legacy`
 //!    feature is a clear signal to downstream auditors that legacy
@@ -184,7 +184,7 @@
 //!
 //! ## Key Material Security
 //!
-//! Every cipher struct derives [`Zeroize`] and [`ZeroizeOnDrop`] from the
+//! Every cipher struct derives [`Zeroize`] and `ZeroizeOnDrop` from the
 //! [`zeroize`] crate, so round keys, expanded P-arrays, S-boxes, permutation
 //! state (RC4), and round schedules are securely wiped from memory when the
 //! cipher instance is dropped. This replaces the C `OPENSSL_cleanse()` call
@@ -3654,17 +3654,17 @@ impl Cast5 {
     /// Additionally, the data-dependent rotation `t.rotate_left(kr & 0x1f)`
     /// uses a **secret 5-bit rotation amount** drawn from the round subkey
     /// (`data[n*2+1]`). While Rust's `u32::rotate_left` is implemented as a
-    /// constant-time instruction on all supported targets (x86_64 ROL,
+    /// constant-time instruction on all supported targets (`x86_64` ROL,
     /// aarch64 ROR/equivalent), older literature (e.g., Kocher 1996)
     /// warns that variable-count shifts may not be constant-time on every
     /// microarchitecture. The S-box lookup leakage dominates in practice.
     ///
     /// Per block: **4 lookups × 12 or 16 Feistel rounds = 48 or 64
-    /// secret-indexed CAST_S reads** via `encrypt_halves`/`decrypt_halves`.
+    /// secret-indexed `CAST_S` reads** via `encrypt_halves`/`decrypt_halves`.
     /// CAST5 is additionally a **64-bit-block cipher** (Sweet32 vulnerable
     /// for long sessions, RFC 7457).
     ///
-    /// The key schedule (`Cast5::new`) also performs CAST_S4..CAST_S7
+    /// The key schedule (`Cast5::new`) also performs `CAST_S4..CAST_S7`
     /// lookups on key bytes; see `CAST_S4..CAST_S7` declarations. No
     /// constant-time software path is provided; no hardware acceleration
     /// exists for CAST5. Only mitigation: **migrate off CAST5** to
@@ -3796,7 +3796,7 @@ impl Cast5 {
     /// # Errors
     ///
     /// Returns [`CryptoError::Key`] if `key` is shorter than
-    /// [`CAST_KEY_MIN`] or longer than [`CAST_KEY_MAX`].
+    /// `CAST_KEY_MIN` or longer than `CAST_KEY_MAX`.
     pub fn new(key: &[u8]) -> CryptoResult<Self> {
         // Helper: expand a 32-bit word `l` into Z[n/4] = l and z[n..n+3] (big-endian).
         // Byte extraction via `& 0xff` and a right shift produces values in [0, 255],
@@ -5445,13 +5445,13 @@ impl Seed {
     /// leaks bits of each byte index.
     ///
     /// Per block: **4 lookups × 16 rounds (each with 2 G-function calls) =
-    /// 128 secret-indexed SEED_SS reads** (caller `F_func` invokes
+    /// 128 secret-indexed `SEED_SS` reads** (caller `F_func` invokes
     /// `g_func` three times per round via the SEED round structure;
     /// overall leakage scales with round count). Both encryption and
     /// decryption pass through this path.
     ///
     /// The SEED **key schedule** (`Seed::new`) also invokes `g_func` on
-    /// intermediate key-derived values during KEYSCHEDULE_UPDATE0/UPDATE1,
+    /// intermediate key-derived values during `KEYSCHEDULE_UPDATE0/UPDATE1`,
     /// leaking during key setup.
     ///
     /// SEED is a 128-bit-block cipher and therefore is NOT Sweet32
@@ -5720,7 +5720,7 @@ impl Rc2 {
     /// **Leakage Profile for RC2:**
     ///
     /// 1. **Key schedule (this function)** — three byte-indexed read sites
-    ///    into [`RC2_KEY_TABLE`] (256 bytes ≈ 4 cache lines on a typical
+    ///    into `RC2_KEY_TABLE` (256 bytes ≈ 4 cache lines on a typical
     ///    64 B-line x86-64 CPU):
     ///    - **Forward expansion (~128 reads)**:
     ///      `RC2_KEY_TABLE[(k[j] + d) & 0xff]` iterated for `i` in
@@ -5732,7 +5732,7 @@ impl Rc2 {
     ///      `RC2_KEY_TABLE[k[i_red] & c]` where `c = 0xff >> ((8 - bits%8) % 8)`
     ///      is a public mask; the remaining `(bits % 8)` bits of
     ///      `k[i_red]` are still cache-observable.
-    ///    - **Reverse pass (~i_red reads)**:
+    ///    - **Reverse pass (~`i_red` reads)**:
     ///      `RC2_KEY_TABLE[k[i+j_red] ^ d]` iterated downward; same
     ///      access pattern as forward expansion.
     ///
@@ -7350,7 +7350,7 @@ static SBOX3_3033: [u32; 256] = [
 /// lines. Cache-line residency leaks bits of each byte index after a
 /// single round.
 ///
-/// Per block leakage (camellia_feistel calls × 8 lookups/call):
+/// Per block leakage (`camellia_feistel` calls × 8 lookups/call):
 /// * **Camellia-128 (18 rounds):** 18 × 8 = **144 secret-indexed reads**
 /// * **Camellia-192/256 (24 rounds):** 24 × 8 = **192 secret-indexed reads**
 ///
@@ -9672,7 +9672,7 @@ fn sm4_tau(x: u32) -> u32 {
 ///
 /// # Security (cache-timing)
 ///
-/// `sm4_t_slow` invokes `sm4_tau` once, which performs **4 SM4_S
+/// `sm4_t_slow` invokes `sm4_tau` once, which performs **4 `SM4_S`
 /// byte-indexed lookups per call**. The subsequent rotation+XOR
 /// linear layer `L(t) = t ^ rotl(t,2) ^ rotl(t,10) ^ rotl(t,18) ^
 /// rotl(t,24)` uses constant-amount rotations and is constant-time on
@@ -9680,7 +9680,7 @@ fn sm4_tau(x: u32) -> u32 {
 ///
 /// Per block leakage when `sm4_t_slow` is selected (only for rounds
 /// 0..=3 and 28..=31 in the upstream design):
-/// * 8 rounds × 4 SM4_S reads/round = **32 secret-indexed reads/block**
+/// * 8 rounds × 4 `SM4_S` reads/round = **32 secret-indexed reads/block**
 ///   from the 256-byte `SM4_S` table (smaller leakage surface than
 ///   `sm4_t_fast`'s 1024-byte tables).
 ///
@@ -9692,7 +9692,7 @@ fn sm4_tau(x: u32) -> u32 {
 /// reduces (does not eliminate) the leakage surface for boundary
 /// rounds. The SM4 **key schedule** (`Sm4::new`) calls `sm4_key_sub`
 /// (which also calls `sm4_tau`) once per round-key derivation,
-/// leaking SM4_S accesses on key-derived intermediate values during
+/// leaking `SM4_S` accesses on key-derived intermediate values during
 /// setup.
 ///
 /// SM4 is a 128-bit-block cipher (NOT Sweet32-vulnerable) and is the
@@ -9741,7 +9741,7 @@ fn sm4_t_slow(x: u32) -> u32 {
 /// path; SM4 decryption uses the same round function with the
 /// round-key schedule reversed.
 ///
-/// SM4 has hardware acceleration on some ARMv8 platforms (the SM4-NI
+/// SM4 has hardware acceleration on some `ARMv8` platforms (the SM4-NI
 /// crypto extension, similar in spirit to AES-NI). This pure-Rust
 /// implementation does **not** leverage such instructions; that
 /// remediation pathway is out of scope for this milestone (per AAP

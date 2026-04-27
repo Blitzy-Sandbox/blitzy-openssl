@@ -9,13 +9,13 @@
 //!
 //! This module provides **foundational CT types** sufficient to:
 //!
-//! - Express CT log-entry types ([`LogEntryType`])
-//! - Encode/decode SCT version codes ([`SctVersion`])
-//! - Track SCT acquisition source ([`SctSource`])
-//! - Track SCT validation status ([`SctValidationStatus`])
+//! - Express CT log-entry types (`LogEntryType`)
+//! - Encode/decode SCT version codes (`SctVersion`)
+//! - Track SCT acquisition source (`SctSource`)
+//! - Track SCT validation status (`SctValidationStatus`)
 //! - Construct minimal `SignedCertificateTimestamp` structures with
-//!   builder-pattern field initialisation ([`SignedCertificateTimestamp`],
-//!   [`SignedCertificateTimestampBuilder`])
+//!   builder-pattern field initialisation (`SignedCertificateTimestamp`,
+//!   `SignedCertificateTimestampBuilder`)
 //! - Validate log IDs, signatures, and timestamps against RFC 6962 length and
 //!   range requirements
 //!
@@ -31,17 +31,17 @@
 //!
 //! | C Symbol / File | Rust Equivalent |
 //! |---|---|
-//! | `ct_log_entry_type_t` (`ct.h.in`) | [`LogEntryType`] |
-//! | `sct_version_t` (`ct.h.in`) | [`SctVersion`] |
-//! | `sct_source_t` (`ct.h.in`) | [`SctSource`] |
-//! | `sct_validation_status_t` (`ct.h.in`) | [`SctValidationStatus`] |
-//! | `SCT_MIN_RSA_BITS` (`ct.h.in`) | [`SCT_MIN_RSA_BITS`] |
-//! | `CT_V1_HASHLEN` (`ct.h.in`) | [`CT_V1_HASHLEN`] |
-//! | `SCT` opaque struct (`ct_local.h`) | [`SignedCertificateTimestamp`] |
-//! | `SCT_new` / `SCT_set_*` (`crypto/ct/ct_sct.c`) | [`SignedCertificateTimestampBuilder`] |
-//! | RFC 6962 §3.2 log-id length (32 octets) | [`validate_log_id`] |
-//! | RFC 6962 §3.2 v1 extensions length (≤65535) | [`validate_sct_v1_extensions`] |
-//! | RFC 6962 §3.2 signature length (≥1, ≤65535) | [`validate_signature`] |
+//! | `ct_log_entry_type_t` (`ct.h.in`) | `LogEntryType` |
+//! | `sct_version_t` (`ct.h.in`) | `SctVersion` |
+//! | `sct_source_t` (`ct.h.in`) | `SctSource` |
+//! | `sct_validation_status_t` (`ct.h.in`) | `SctValidationStatus` |
+//! | `SCT_MIN_RSA_BITS` (`ct.h.in`) | `SCT_MIN_RSA_BITS` |
+//! | `CT_V1_HASHLEN` (`ct.h.in`) | `CT_V1_HASHLEN` |
+//! | `SCT` opaque struct (`ct_local.h`) | `SignedCertificateTimestamp` |
+//! | `SCT_new` / `SCT_set_*` (`crypto/ct/ct_sct.c`) | `SignedCertificateTimestampBuilder` |
+//! | RFC 6962 §3.2 log-id length (32 octets) | `validate_log_id` |
+//! | RFC 6962 §3.2 v1 extensions length (≤65535) | `validate_sct_v1_extensions` |
+//! | RFC 6962 §3.2 signature length (≥1, ≤65535) | `validate_signature` |
 //!
 //! # Rules Enforced
 //!

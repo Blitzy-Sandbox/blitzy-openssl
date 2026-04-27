@@ -19,13 +19,13 @@
 //! |------------------------------------|-----------------------------------------|
 //! | `key2blob_newctx()`                | Stateless — no context needed           |
 //! | `key2blob_freectx()`               | Stateless — no cleanup needed           |
-//! | `key2blob_check_selection()`       | [`check_selection()`]                   |
-//! | `key2blob_encode()`                | [`BlobEncoder::encode()`]               |
-//! | `MAKE_BLOB_ENCODER(ec, ...)`       | EC entry in [`all_blob_encoders()`]     |
-//! | `MAKE_BLOB_ENCODER(sm2, ...)`      | SM2 entry in [`all_blob_encoders()`]    |
+//! | `key2blob_check_selection()`       | `check_selection()`                   |
+//! | `key2blob_encode()`                | `BlobEncoder::encode()`               |
+//! | `MAKE_BLOB_ENCODER(ec, ...)`       | EC entry in `all_blob_encoders()`     |
+//! | `MAKE_BLOB_ENCODER(sm2, ...)`      | SM2 entry in `all_blob_encoders()`    |
 //! | `i2o_ECPublicKey()`                | Pure Rust EC point serialization        |
-//! | `EVP_PKEY_PUBLIC_KEY` selection     | [`KeySelection::PUBLIC_KEY`]            |
-//! | `ERR_raise(ERR_LIB_PROV, ...)`     | [`ProviderError::Dispatch`]             |
+//! | `EVP_PKEY_PUBLIC_KEY` selection     | `KeySelection::PUBLIC_KEY`            |
+//! | `ERR_raise(ERR_LIB_PROV, ...)`     | `ProviderError::Dispatch`             |
 //! | `key_abstract != NULL` check       | Abstract key rejection via [`EndecoderError::InvalidKey`] |
 //!
 //! # Selection Semantics
@@ -34,9 +34,9 @@
 //! interpreted as a hierarchy (C comment: "kinda sorta levels"):
 //!
 //! - `selection == 0` — "guessing": always accepted (encoder decides what to output)
-//! - [`KeySelection::PUBLIC_KEY`] — accepted (exact match)
-//! - [`KeySelection::DOMAIN_PARAMETERS`] — accepted (public implies parameters)
-//! - [`KeySelection::PRIVATE_KEY`] — rejected (blob cannot output private key)
+//! - `KeySelection::PUBLIC_KEY` — accepted (exact match)
+//! - `KeySelection::DOMAIN_PARAMETERS` — accepted (public implies parameters)
+//! - `KeySelection::PRIVATE_KEY` — rejected (blob cannot output private key)
 //!
 //! # Rules Enforced
 //!
@@ -151,7 +151,7 @@ impl EncoderProvider for BlobEncoder {
     ///
     /// # Selection Validation
     ///
-    /// The blob encoder only supports [`KeySelection::PUBLIC_KEY`].
+    /// The blob encoder only supports `KeySelection::PUBLIC_KEY`.
     /// Private-key-only requests are rejected.  Empty selection (0) is
     /// treated as "guessing" and always accepted — the encoder decides
     /// to output the public key component.
@@ -171,11 +171,11 @@ impl EncoderProvider for BlobEncoder {
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] wrapping [`EndecoderError::MissingKey`]
+    /// - `ProviderError::Dispatch` wrapping [`EndecoderError::MissingKey`]
     ///   if the selection is incompatible (e.g., private-key-only).
-    /// - [`ProviderError::Dispatch`] wrapping [`EndecoderError::InvalidKey`]
+    /// - `ProviderError::Dispatch` wrapping [`EndecoderError::InvalidKey`]
     ///   if the key is abstract (no concrete material).
-    /// - [`ProviderError::Dispatch`] wrapping [`EndecoderError::MissingKey`]
+    /// - `ProviderError::Dispatch` wrapping [`EndecoderError::MissingKey`]
     ///   if the key has no public point data.
     fn encode(
         &self,
@@ -343,10 +343,10 @@ impl EncoderProvider for BlobEncoder {
 ///
 /// - `selection` is empty (0) — "guessing" mode, always accepted.  The
 ///   encoder decides to output the public key point.
-/// - [`KeySelection::PUBLIC_KEY`] — accepted (exact match).
-/// - [`KeySelection::DOMAIN_PARAMETERS`] — accepted (public key implies
+/// - `KeySelection::PUBLIC_KEY` — accepted (exact match).
+/// - `KeySelection::DOMAIN_PARAMETERS` — accepted (public key implies
 ///   parameters in the selection hierarchy).
-/// - [`KeySelection::PRIVATE_KEY`] — rejected (blob cannot encode private
+/// - `KeySelection::PRIVATE_KEY` — rejected (blob cannot encode private
 ///   key material).
 ///
 /// # C Source Reference

@@ -29,14 +29,14 @@
 //!
 //! | C Construct                        | Rust Equivalent                     |
 //! |------------------------------------|-------------------------------------|
-//! | `struct msblob2key_ctx_st`         | [`MsBlobDecoderContext`]             |
-//! | `struct keytype_desc_st`           | [`MsBlobKeyType`] enum              |
-//! | `ossl_do_blob_header()`            | [`parse_blob_header()`]             |
-//! | `ossl_b2i_RSA_after_header()`      | [`parse_rsa_blob()`]                |
-//! | `ossl_b2i_DSA_after_header()`      | [`parse_dsa_blob()`]                |
-//! | `msblob2key_does_selection()`      | [`does_selection()`]                |
-//! | `msblob2key_decode()`              | [`MsBlobDecoder::decode()`]         |
-//! | `IMPLEMENT_MSBLOB(RSA/DSA,...)`    | [`all_msblob_decoders()`]           |
+//! | `struct msblob2key_ctx_st`         | `MsBlobDecoderContext`             |
+//! | `struct keytype_desc_st`           | `MsBlobKeyType` enum              |
+//! | `ossl_do_blob_header()`            | `parse_blob_header()`             |
+//! | `ossl_b2i_RSA_after_header()`      | `parse_rsa_blob()`                |
+//! | `ossl_b2i_DSA_after_header()`      | `parse_dsa_blob()`                |
+//! | `msblob2key_does_selection()`      | `does_selection()`                |
+//! | `msblob2key_decode()`              | `MsBlobDecoder::decode()`         |
+//! | `IMPLEMENT_MSBLOB(RSA/DSA,...)`    | `all_msblob_decoders()`           |
 //!
 //! # Rules Enforced
 //!
@@ -207,8 +207,8 @@ pub struct MsBlobDecoderContext {
     ///
     /// Determines which key components to extract:
     /// - `KeySelection::empty()` — auto-detect (try private, fall back to public)
-    /// - [`KeySelection::PRIVATE_KEY`] — extract private key only
-    /// - [`KeySelection::PUBLIC_KEY`] — extract public key only
+    /// - `KeySelection::PRIVATE_KEY` — extract private key only
+    /// - `KeySelection::PUBLIC_KEY` — extract public key only
     pub selection: KeySelection,
 
     /// Target key type for this decoder instance.
@@ -227,8 +227,21 @@ pub struct MsBlobDecoderContext {
 ///
 /// For public keys, only `modulus` and `public_exponent` are populated;
 /// private key components are `None` per Rule R5 (Option over sentinel).
+///
+/// # Dead-Code Justification
+///
+/// The fields are constructed by `parse_rsa_blob` and returned as a
+/// `Box<dyn KeyData>`, but there is no consumer in the current tree that
+/// downcasts the trait object back to `RsaKeyData` and reads the fields.
+/// Such a consumer belongs to the key-management (`keymgmt`) path that
+/// bridges MSBLOB-decoded key material into an RSA key pair — a future
+/// integration point that is out-of-scope for the encode/decode provider
+/// implementation.  The fields are retained (rather than removed) because
+/// their byte layouts are the durable contract between the parser and the
+/// future consumer.
 #[cfg(feature = "rsa")]
 #[derive(Debug)]
+#[allow(dead_code)] // see preceding doc comment
 struct RsaKeyData {
     /// RSA modulus `n` (big-endian byte representation).
     modulus: Vec<u8>,
@@ -263,7 +276,7 @@ impl KeyData for RsaKeyData {}
 ///
 /// # Dead-Code Justification
 ///
-/// The fields are constructed by [`parse_dsa_blob`] and returned as a
+/// The fields are constructed by `parse_dsa_blob` and returned as a
 /// `Box<dyn KeyData>`, but there is no consumer in the current tree that
 /// downcasts the trait object back to `DsaKeyData` and reads the fields.
 /// Such a consumer belongs to the key-management (`keymgmt`) path that
@@ -301,9 +314,9 @@ impl KeyData for DsaKeyData {}
 ///
 /// Reads the BLOBHEADER + key data from Microsoft `CryptoAPI` binary format.
 /// Each instance is configured for a specific key type (RSA or DSA) via
-/// the [`MsBlobKeyType`] discriminator.
+/// the `MsBlobKeyType` discriminator.
 ///
-/// Implements [`DecoderProvider`] with methods:
+/// Implements `DecoderProvider` with methods:
 /// - [`name()`](DecoderProvider::name) — returns `"MSBLOB"`
 /// - [`decode()`](DecoderProvider::decode) — parses blob and returns key data
 /// - [`supported_formats()`](DecoderProvider::supported_formats) — returns `["MSBLOB"]`
@@ -329,10 +342,10 @@ impl DecoderProvider for MsBlobDecoder {
     ///
     /// # Algorithm
     ///
-    /// 1. Parse the 16-byte blob header ([`parse_blob_header`])
+    /// 1. Parse the 16-byte blob header (`parse_blob_header`)
     /// 2. Validate the algorithm type matches this decoder's key type
-    /// 3. Compute expected payload length, enforce [`BLOB_MAX_LENGTH`]
-    /// 4. Dispatch to [`parse_rsa_blob`] or [`parse_dsa_blob`]
+    /// 3. Compute expected payload length, enforce `BLOB_MAX_LENGTH`
+    /// 4. Dispatch to `parse_rsa_blob` or `parse_dsa_blob`
     ///
     /// # Errors
     ///
@@ -473,9 +486,9 @@ impl DecoderProvider for MsBlobDecoder {
 ///
 /// # Errors
 ///
-/// Returns [`ProviderError::Dispatch`] (via [`EndecoderError::BadEncoding`])
+/// Returns `ProviderError::Dispatch` (via [`EndecoderError::BadEncoding`])
 /// if:
-/// - `data` is shorter than [`BLOB_HEADER_SIZE`] (16 bytes)
+/// - `data` is shorter than `BLOB_HEADER_SIZE` (16 bytes)
 /// - `bType` is not `PUBLICKEYBLOB` or `PRIVATEKEYBLOB`
 /// - `aiKeyAlg` is not a recognized RSA or DSA algorithm identifier
 /// - The magic number is unrecognized or inconsistent with `aiKeyAlg`
@@ -690,7 +703,7 @@ fn compute_blob_payload_length(bitlen: u32, is_dss: bool, is_public: bool) -> us
 ///
 /// # Errors
 ///
-/// Returns [`ProviderError::Dispatch`] (via [`EndecoderError::InvalidKey`])
+/// Returns `ProviderError::Dispatch` (via [`EndecoderError::InvalidKey`])
 /// if the payload is truncated or key components cannot be extracted.
 #[cfg(feature = "rsa")]
 pub fn parse_rsa_blob(
@@ -818,7 +831,7 @@ pub fn parse_rsa_blob(
 ///
 /// # Errors
 ///
-/// Returns [`ProviderError::Dispatch`] (via [`EndecoderError::InvalidKey`])
+/// Returns `ProviderError::Dispatch` (via [`EndecoderError::InvalidKey`])
 /// if the payload is truncated or key components cannot be extracted.
 #[cfg(feature = "dsa")]
 pub fn parse_dsa_blob(
@@ -954,8 +967,8 @@ fn strip_leading_zeros(bytes: &mut Vec<u8>) {
 ///
 /// The MSBLOB format supports:
 /// - Default selection (empty/zero — auto-detect, try both public and private)
-/// - [`KeySelection::PUBLIC_KEY`] — public key blobs
-/// - [`KeySelection::PRIVATE_KEY`] — private key blobs
+/// - `KeySelection::PUBLIC_KEY` — public key blobs
+/// - `KeySelection::PRIVATE_KEY` — private key blobs
 ///
 /// Domain parameters and other selections are not directly supported.
 ///

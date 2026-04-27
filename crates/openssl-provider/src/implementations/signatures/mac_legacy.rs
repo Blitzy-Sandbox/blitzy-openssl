@@ -4,7 +4,7 @@
 //! `providers/implementations/signature/mac_legacy_sig.c` (253 lines).
 //!
 //! Exposes the Message Authentication Code (MAC) algorithms HMAC, SipHash,
-//! Poly1305, and CMAC through the [`SignatureProvider`] / [`SignatureContext`]
+//! Poly1305, and CMAC through the `SignatureProvider` / [`SignatureContext`]
 //! interface so they can be invoked via the EVP `digest_sign_*` family of
 //! operations.
 //!
@@ -46,13 +46,13 @@
 //! ## Architecture
 //!
 //! The adapter delegates every cryptographic operation to the underlying
-//! [`MacCtx`] from `openssl_crypto::evp::mac`.  `digest_sign_init` fetches
-//! the named MAC via [`Mac::fetch`], creates a [`MacCtx`], forwards any
+//! `MacCtx` from `openssl_crypto::evp::mac`.  `digest_sign_init` fetches
+//! the named MAC via `Mac::fetch`, creates a `MacCtx`, forwards any
 //! caller-supplied parameters (digest, cipher, properties, size) through
-//! [`MacCtx::set_params`], and seeds the context with the raw key via
-//! [`MacCtx::init`].  The subsequent `digest_sign_update` /
-//! `digest_sign_final` calls are thin wrappers over [`MacCtx::update`] and
-//! [`MacCtx::finalize`].
+//! `MacCtx::set_params`, and seeds the context with the raw key via
+//! `MacCtx::init`.  The subsequent `digest_sign_update` /
+//! `digest_sign_final` calls are thin wrappers over `MacCtx::update` and
+//! `MacCtx::finalize`.
 //!
 //! The adapter is always available (no feature gate) because it delegates
 //! to MAC providers which are independently feature-gated upstream.
@@ -70,7 +70,7 @@
 //! - **R10 (Wiring before done)** — this module is exported by
 //!   `crate::implementations::signatures::mod.rs` which itself feeds
 //!   `DefaultProvider::query_operation(OperationType::Signature)`, making
-//!   each [`MacLegacySignatureProvider`] reachable from the provider entry
+//!   each `MacLegacySignatureProvider` reachable from the provider entry
 //!   point.
 
 use std::fmt;
@@ -92,7 +92,7 @@ use super::algorithm;
 // =============================================================================
 
 /// Converts a [`CryptoError`] raised by the crypto layer into a
-/// [`ProviderError::Dispatch`] suitable for the signature-provider API
+/// `ProviderError::Dispatch` suitable for the signature-provider API
 /// surface.
 ///
 /// Mirrors the canonical pattern used elsewhere in this crate (see
@@ -157,7 +157,7 @@ pub enum MacSignatureAlgorithm {
 
 impl MacSignatureAlgorithm {
     /// Returns the canonical MAC algorithm name suitable for
-    /// [`Mac::fetch`].
+    /// `Mac::fetch`.
     ///
     /// The returned values match the constants exported from
     /// `openssl_crypto::evp::mac`.  Notably the Rust port uses the
@@ -198,7 +198,7 @@ impl MacSignatureAlgorithm {
 // =============================================================================
 
 /// MAC-as-signature provider that wraps a MAC implementation in the
-/// [`SignatureProvider`] interface.
+/// `SignatureProvider` interface.
 ///
 /// Each instance is bound to a specific [`MacSignatureAlgorithm`] variant.
 /// Creating a context via
@@ -218,9 +218,9 @@ impl MacSignatureAlgorithm {
 pub struct MacLegacySignatureProvider {
     /// The underlying MAC algorithm this provider adapts.
     algorithm: MacSignatureAlgorithm,
-    /// Library context passed to [`Mac::fetch`] when creating contexts.
+    /// Library context passed to `Mac::fetch` when creating contexts.
     libctx: Arc<LibContext>,
-    /// Optional property query forwarded to [`Mac::fetch`] (e.g.
+    /// Optional property query forwarded to `Mac::fetch` (e.g.
     /// `"fips=yes"`).  Rule R5: `Option` rather than an empty-string
     /// sentinel.
     propq: Option<String>,
@@ -294,7 +294,7 @@ impl SignatureProvider for MacLegacySignatureProvider {
 ///
 /// Holds the selected MAC algorithm, the library context used for provider
 /// fetch, an optional property query, and — after `digest_sign_init` has
-/// succeeded — the live [`MacCtx`] performing the actual MAC computation.
+/// succeeded — the live `MacCtx` performing the actual MAC computation.
 ///
 /// Replaces the C `PROV_MAC_CTX` struct from `mac_legacy_sig.c` (lines
 /// 37–42):
@@ -310,12 +310,12 @@ impl SignatureProvider for MacLegacySignatureProvider {
 ///
 /// The separate `MAC_KEY` reference from the C struct is not mirrored: the
 /// `SignatureContext` trait passes the raw key bytes directly into
-/// `digest_sign_init`, and [`MacCtx::init`] stores them internally with
+/// `digest_sign_init`, and `MacCtx::init` stores them internally with
 /// zeroising drop — obviating the need for a free-standing, ref-counted
 /// key object.
 ///
 /// Note: this struct cannot derive [`std::fmt::Debug`] automatically
-/// because [`MacCtx`] intentionally omits a `Debug` implementation to
+/// because `MacCtx` intentionally omits a `Debug` implementation to
 /// avoid accidentally leaking key material through log output.  A manual
 /// [`Debug`] impl below reports only whether a MAC context has been
 /// initialised.
@@ -325,7 +325,7 @@ pub struct MacSignatureContext {
     algorithm: MacSignatureAlgorithm,
     /// Library context used when fetching the MAC algorithm.
     libctx: Arc<LibContext>,
-    /// Optional property query forwarded to [`Mac::fetch`].
+    /// Optional property query forwarded to `Mac::fetch`.
     propq: Option<String>,
     /// Active MAC computation context — `None` until `digest_sign_init`
     /// runs successfully.  Rule R5: `Option` rather than a "zero ctx"
@@ -359,7 +359,7 @@ impl MacSignatureContext {
     /// fresh `EVP_MAC` by name and forwards the call to
     /// `EVP_MAC_settable_ctx_params`.  In the Rust port we surface the
     /// same per-algorithm envelope via a static list — the crypto-layer
-    /// [`MacCtx::set_params`] accepts `"size"` for all MACs and
+    /// `MacCtx::set_params` accepts `"size"` for all MACs and
     /// additional per-algorithm entries as listed below.  The lists
     /// mirror the parameter surface expected by the upstream test suite
     /// (`test/evp_extra_test.c` MAC signature cases).
@@ -373,7 +373,7 @@ impl MacSignatureContext {
         }
     }
 
-    /// Forwards caller-supplied parameters to the active [`MacCtx`].
+    /// Forwards caller-supplied parameters to the active `MacCtx`.
     ///
     /// Translates `mac_set_ctx_params` (`mac_legacy_sig.c` lines
     /// 196–201):
@@ -391,8 +391,8 @@ impl MacSignatureContext {
     /// - [`ProviderError::Init`] if no MAC context has been initialised
     ///   yet (the C code also requires `ctx->macctx != NULL`, returning
     ///   `0` otherwise).
-    /// - [`ProviderError::Dispatch`] wrapping any [`CryptoError`] raised
-    ///   by the underlying [`MacCtx::set_params`].
+    /// - `ProviderError::Dispatch` wrapping any [`CryptoError`] raised
+    ///   by the underlying `MacCtx::set_params`.
     pub fn set_ctx_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         trace!(
             algorithm = self.algorithm.signature_name(),
@@ -409,7 +409,7 @@ impl MacSignatureContext {
     }
 
     /// Returns a deep clone of this signature context, including the
-    /// embedded [`MacCtx`] state.
+    /// embedded `MacCtx` state.
     ///
     /// Translates `mac_dupctx` (`mac_legacy_sig.c` lines 160–194):
     ///
@@ -422,14 +422,14 @@ impl MacSignatureContext {
     /// ```
     ///
     /// In Rust the [`Arc<LibContext>`] is clone-refcounted, the
-    /// [`Option<String>`] is `Clone`, and the live [`MacCtx`] is
+    /// [`Option<String>`] is `Clone`, and the live `MacCtx` is
     /// duplicated via its own `dup()` which deep-copies key material
     /// and accumulated buffered data.
     ///
     /// # Errors
     ///
-    /// [`ProviderError::Dispatch`] wrapping any [`CryptoError`] raised
-    /// by [`MacCtx::dup`].
+    /// `ProviderError::Dispatch` wrapping any [`CryptoError`] raised
+    /// by `MacCtx::dup`.
     pub fn duplicate(&self) -> ProviderResult<Self> {
         trace!(
             algorithm = self.algorithm.signature_name(),
@@ -450,7 +450,7 @@ impl MacSignatureContext {
         })
     }
 
-    /// Fetches the MAC algorithm, constructs a fresh [`MacCtx`], merges
+    /// Fetches the MAC algorithm, constructs a fresh `MacCtx`, merges
     /// parameters, and seeds the context with the supplied key.
     ///
     /// This is the Rust port of the combination of `ossl_prov_set_macctx`
@@ -552,10 +552,10 @@ impl MacSignatureContext {
 }
 
 // -----------------------------------------------------------------------------
-// Debug — manual implementation because [`MacCtx`] does not derive `Debug`.
+// Debug — manual implementation because `MacCtx` does not derive `Debug`.
 // -----------------------------------------------------------------------------
 //
-// The crypto-layer [`MacCtx`] omits `Debug` to avoid leaking key material
+// The crypto-layer `MacCtx` omits `Debug` to avoid leaking key material
 // through log output.  Our wrapper reports only whether a context is
 // present (a benign boolean), never its internal state.
 impl fmt::Debug for MacSignatureContext {
@@ -563,7 +563,7 @@ impl fmt::Debug for MacSignatureContext {
         // The `libctx` field is an internal dependency handle and is
         // intentionally omitted from the Debug representation (it holds
         // no interesting per-context state and would be noisy).  The
-        // `mac_ctx` field is redacted because [`MacCtx`] holds key
+        // `mac_ctx` field is redacted because `MacCtx` holds key
         // material.  `finish_non_exhaustive()` makes both omissions
         // explicit in the formatted output.
         f.debug_struct("MacSignatureContext")

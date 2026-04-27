@@ -39,8 +39,49 @@
 #![allow(clippy::unwrap_used)] // Tests use .unwrap() on values guaranteed to be Some/Ok.
 #![allow(clippy::panic)] // Tests use panic!() in exhaustive match arms for error variants.
 
+// The symmetric crypto symbols and the `CryptoError` / `CryptoResult`
+// re-exports are referenced by feature-gated test functions throughout
+// this module. Mirror the union of feature gates used by those tests so
+// the imports are not flagged as unused under configurations where
+// every cipher feature is disabled (e.g.
+// `cargo build -p openssl-crypto --no-default-features --tests`).
+//
+// `CryptoError` and `CryptoResult` are referenced from tests in ALL
+// four cipher feature flags — `feature = "aes"` (AES-GCM/CTR/CBC/Wrap
+// tests), `feature = "chacha"` (ChaCha20-Poly1305 tests),
+// `feature = "des"` (3DES tests), and `feature = "legacy"` (Blowfish,
+// CAST5, IDEA, RC2, RC4 tests use `CryptoError::Key`). The gate is
+// therefore the broad union `aes || chacha || des || legacy`.
+//
+// `CommonError`, by contrast, is referenced from exactly three call
+// sites — `test_chacha20_poly1305_tamper_detection` (line ~646),
+// `test_des3_cbc_encrypt_decrypt` (line ~691), and
+// `test_des3_ecb_single_block` (line ~727) — all of which match the
+// `CryptoError::Common(CommonError::InvalidArgument(_))` pattern. AES
+// and legacy-cipher tests do not reference `CommonError` at all, so
+// the gate is narrowed to `chacha || des` to avoid an unused-import
+// warning under single-cipher builds such as
+// `cargo build -p openssl-crypto --no-default-features --features aes
+// --tests`.
+//
+// The internal helpers below carry their own tighter gates that match
+// only the features whose tests actually call them.
+#[cfg(any(
+    feature = "aes",
+    feature = "chacha",
+    feature = "des",
+    feature = "legacy"
+))]
 use crate::symmetric::*;
-use openssl_common::{CommonError, CryptoError, CryptoResult};
+#[cfg(any(
+    feature = "aes",
+    feature = "chacha",
+    feature = "des",
+    feature = "legacy"
+))]
+use openssl_common::{CryptoError, CryptoResult};
+#[cfg(any(feature = "chacha", feature = "des"))]
+use openssl_common::CommonError;
 
 // =============================================================================
 // Helper utilities
@@ -50,12 +91,11 @@ use openssl_common::{CommonError, CryptoError, CryptoResult};
 ///
 /// Panics on invalid hex, which is acceptable in test code where a malformed
 /// literal is a bug in the test itself rather than a runtime error condition.
-#[cfg(any(
-    feature = "aes",
-    feature = "chacha",
-    feature = "des",
-    feature = "legacy"
-))]
+///
+/// Only referenced by AES test vectors (e.g. `test_aes_wrap_unwrap`), so the
+/// gate is narrowed to `feature = "aes"` to avoid an `unused function`
+/// warning in non-AES single-cipher builds.
+#[cfg(feature = "aes")]
 fn hex_to_bytes(hex: &str) -> Vec<u8> {
     assert!(hex.len() % 2 == 0, "hex string length must be even");
     (0..hex.len())
@@ -65,12 +105,12 @@ fn hex_to_bytes(hex: &str) -> Vec<u8> {
 }
 
 /// Encodes a byte slice as a lowercase hex string for diagnostic output.
-#[cfg(any(
-    feature = "aes",
-    feature = "chacha",
-    feature = "des",
-    feature = "legacy"
-))]
+///
+/// Only referenced by AES round-trip test diagnostics
+/// (`test_aes_256_gcm_encrypt_decrypt_roundtrip`), so the gate is narrowed
+/// to `feature = "aes"` to avoid an `unused function` warning in non-AES
+/// single-cipher builds.
+#[cfg(feature = "aes")]
 fn bytes_to_hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     let mut s = String::with_capacity(bytes.len() * 2);
@@ -85,12 +125,13 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 /// Produces `len` bytes where byte `i` = `(i & 0xff) as u8`. Used by round-trip
 /// tests that need non-trivial (non-zero, non-repeating within 256 bytes)
 /// plaintext to catch keystream off-by-one bugs.
-#[cfg(any(
-    feature = "aes",
-    feature = "chacha",
-    feature = "des",
-    feature = "legacy"
-))]
+///
+/// Referenced by AES tests (`test_aes_ctr_encrypt_decrypt`,
+/// `test_aes_xts_encrypt_decrypt`) and by the legacy RC4 stream test
+/// (`test_rc4_stream`), so the gate is narrowed to `aes || legacy` to
+/// avoid an `unused function` warning in `chacha`-only or `des`-only
+/// builds.
+#[cfg(any(feature = "aes", feature = "legacy"))]
 fn make_pattern(len: usize) -> Vec<u8> {
     // `i & 0xff` is always within `0..=255`, so `try_from` is infallible; the
     // `unwrap_or(0)` is defensive per R6 (no bare `as` narrowing).

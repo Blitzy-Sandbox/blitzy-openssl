@@ -8,19 +8,19 @@
 //!
 //! ## Architecture
 //!
-//! The [`AckManager`] is the central coordinator, responsible for:
+//! The `AckManager` is the central coordinator, responsible for:
 //! 1. **TX tracking:** Recording transmitted packets via [`on_tx_packet`](AckManager::on_tx_packet),
-//!    maintaining per-PN-space [`TxPacketHistory`] with O(1) packet-number lookup.
+//!    maintaining per-PN-space `TxPacketHistory` with O(1) packet-number lookup.
 //! 2. **ACK processing:** Processing received ACK frames via [`on_rx_ack_frame`](AckManager::on_rx_ack_frame),
 //!    detecting newly acknowledged packets, updating RTT estimates, and invoking
 //!    `on_acked`/`on_lost` callbacks.
 //! 3. **Loss detection:** Implementing RFC 9002 time-threshold and packet-threshold loss
 //!    detection, with PTO (Probe Timeout) timers and exponential backoff.
-//! 4. **ACK generation:** Tracking received packet numbers via [`UintSet`]-based
-//!    [`RxPacketHistory`], and generating ACK frame ranges via
+//! 4. **ACK generation:** Tracking received packet numbers via `UintSet`-based
+//!    `RxPacketHistory`, and generating ACK frame ranges via
 //!    [`generate_ack_ranges`](AckManager::generate_ack_ranges).
 //!
-//! The [`RttEstimator`] maintains smoothed RTT, RTT variance, minimum RTT, and latest RTT
+//! The `RttEstimator` maintains smoothed RTT, RTT variance, minimum RTT, and latest RTT
 //! per RFC 9002 §5.3, providing PTO duration computation.
 //!
 //! ## RFC Compliance
@@ -45,13 +45,13 @@
 //!
 //! | C Pattern | Rust Pattern |
 //! |-----------|-------------|
-//! | `OSSL_ACKM_TX_PKT` linked list + LHASH | [`TxPacketHistory`] (LinkedList + HashMap) |
-//! | `UINT_SET` doubly-linked sorted ranges | [`UintSet`] (BTreeMap<u64, u64>) |
-//! | `OSSL_STATM` RTT info struct | [`RttEstimator`] with `Duration` fields |
+//! | `OSSL_ACKM_TX_PKT` linked list + LHASH | `TxPacketHistory` (LinkedList + HashMap) |
+//! | `UINT_SET` doubly-linked sorted ranges | `UintSet` (BTreeMap<u64, u64>) |
+//! | `OSSL_STATM` RTT info struct | `RttEstimator` with `Duration` fields |
 //! | `OSSL_CC_METHOD` function pointers | `Box<dyn CongestionController>` trait object |
-//! | `ossl_time_*()` saturating arithmetic | [`OsslTime`] methods |
+//! | `ossl_time_*()` saturating arithmetic | `OsslTime` methods |
 //! | `on_acked/on_lost/on_discarded` fn ptrs | `Option<Box<dyn FnOnce() + Send>>` |
-//! | `QUIC_PN_SPACE_*` integer constants | [`PnSpace`] enum |
+//! | `QUIC_PN_SPACE_*` integer constants | `PnSpace` enum |
 
 // LOCK-SCOPE: AckManager — owned per-channel, accessed during RX/TX processing.
 // Each QUIC channel owns exactly one AckManager instance. No shared mutable state
@@ -349,7 +349,7 @@ impl std::fmt::Debug for TxPacketRecord {
 /// # Bounded Size
 ///
 /// When used for RX packet history, the number of ranges is bounded by
-/// [`MAX_RX_ACK_RANGES`] to prevent denial-of-service attacks where a
+/// `MAX_RX_ACK_RANGES` to prevent denial-of-service attacks where a
 /// peer sends carefully crafted packet numbers to create many small ranges.
 ///
 /// # C Equivalent
@@ -529,7 +529,7 @@ impl UintSet {
 /// History of transmitted packets awaiting acknowledgment or loss declaration.
 ///
 /// Maintains packets in send order (ascending packet number) with O(1) lookup
-/// by packet number via a [`HashSet`]. The watermark tracks the lowest
+/// by packet number via a `HashSet`. The watermark tracks the lowest
 /// packet number that has not been removed, enabling monotonic enforcement.
 ///
 /// # C Equivalent
@@ -626,7 +626,7 @@ impl TxPacketHistory {
 /// History of received packet numbers, tracking which PNs have been received
 /// but not yet provably acknowledged by the peer.
 ///
-/// Uses a [`UintSet`] for efficient range-coalesced storage with a monotonic
+/// Uses a `UintSet` for efficient range-coalesced storage with a monotonic
 /// watermark. Packet numbers below the watermark are considered "written off"
 /// — they are treated as received for duplicate detection purposes.
 ///
@@ -845,7 +845,7 @@ impl RttEstimator {
 // PnSpaceState — Per-PN-space state
 // =============================================================================
 
-/// State maintained for each QUIC packet number space within the [`AckManager`].
+/// State maintained for each QUIC packet number space within the `AckManager`.
 ///
 /// Each of the three PN spaces (Initial, Handshake, Application) has an
 /// independent copy of this state, enabling separate ACK generation, loss
@@ -978,7 +978,7 @@ pub struct ProbeInfo {
 ///   with PTO (Probe Timeout) timers and exponential backoff.
 /// - **ACK generation:** Deciding when to generate ACK frames and producing
 ///   the set of acknowledged ranges.
-/// - **Congestion control integration:** Notifying the pluggable [`CongestionController`]
+/// - **Congestion control integration:** Notifying the pluggable `CongestionController`
 ///   of sent, acknowledged, lost, and invalidated data.
 ///
 /// # Lifecycle
@@ -1641,7 +1641,7 @@ impl AckManager {
 
     /// Handles a loss detection timeout.
     ///
-    /// Called when the loss detection timer (from [`get_loss_detection_deadline`])
+    /// Called when the loss detection timer (from `get_loss_detection_deadline`)
     /// fires. Processes time-threshold losses or sends PTO probes.
     ///
     /// # C Equivalent
@@ -1909,7 +1909,7 @@ impl AckManager {
     /// state (clears `ack_desired`, resets packet counter).
     ///
     /// The returned ranges reflect the current RX history for the space. Up to
-    /// [`MAX_RX_ACK_RANGES`] ranges are returned.
+    /// `MAX_RX_ACK_RANGES` ranges are returned.
     ///
     /// # C Equivalent
     /// `ossl_ackm_get_ack_frame()` + `ackm_fill_rx_ack_ranges()` in `ssl/quic/quic_ackm.c`.

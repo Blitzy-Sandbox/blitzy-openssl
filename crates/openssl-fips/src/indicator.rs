@@ -13,7 +13,7 @@
 //! - When a FIPS compliance check fails, [`FipsIndicator::on_unapproved`]
 //!   permanently sets `approved = false`. This transition is irreversible
 //!   for the lifetime of the algorithm context.
-//! - Each indicator has up to [`SETTABLE_MAX`] (8) configurable enforcement
+//! - Each indicator has up to `SETTABLE_MAX` (8) configurable enforcement
 //!   slots, each of which can be independently set to [`SettableState::Strict`]
 //!   or [`SettableState::Tolerant`] to control whether violations cause errors
 //!   or merely warnings.
@@ -26,7 +26,7 @@
 //! 2. Otherwise, if the global configuration check returns tolerant (false),
 //!    the operation also proceeds via the callback.
 //! 3. If both the settable state and the config check indicate strict mode,
-//!    the operation is rejected with [`FipsError::NotApproved`].
+//!    the operation is rejected with `FipsError::NotApproved`.
 //!
 //! # Translation Notes
 //!
@@ -198,7 +198,7 @@ pub struct FipsIndicator {
     /// Whether the operation is currently approved. Starts `true`, may become
     /// `false`. Once false, it cannot be re-approved (monotonic transition).
     approved: bool,
-    /// Per-settable enforcement modes (up to [`SETTABLE_MAX`] configurable slots).
+    /// Per-settable enforcement modes (up to `SETTABLE_MAX` configurable slots).
     settable: [SettableState; SETTABLE_MAX],
 }
 
@@ -309,7 +309,7 @@ impl FipsIndicator {
     /// 3. Otherwise, if `config_check()` returns `false` (global config says
     ///    tolerant), the operation also proceeds via the callback.
     /// 4. If both the settable slot and the config check indicate strict mode,
-    ///    the operation is rejected with [`FipsError::NotApproved`].
+    ///    the operation is rejected with `FipsError::NotApproved`.
     ///
     /// # Parameters
     ///
@@ -381,7 +381,7 @@ impl FipsIndicator {
         self.set_settable(id, state)
     }
 
-    /// Locates a named parameter in a [`ParamSet`] and uses its i32 value to
+    /// Locates a named parameter in a `ParamSet` and uses its i32 value to
     /// set the enforcement state for the given settable slot.
     ///
     /// # Returns
@@ -425,7 +425,7 @@ impl FipsIndicator {
         i32::from(self.approved)
     }
 
-    /// Inserts the FIPS approved indicator value into a [`ParamSet`].
+    /// Inserts the FIPS approved indicator value into a `ParamSet`.
     ///
     /// Sets the `"fips-indicator"` parameter to the approved state as an i32.
     ///

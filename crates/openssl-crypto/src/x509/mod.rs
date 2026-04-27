@@ -6,18 +6,18 @@
 //!
 //! | Submodule       | Purpose                                         | C source analogue                                         |
 //! |-----------------|-------------------------------------------------|-----------------------------------------------------------|
-//! | [`certificate`] | Full RFC 5280 certificate parse + accessors     | `crypto/x509/x_x509.c`, `x509_cmp.c`, `x509_set.c`        |
-//! | [`crl`]         | Certificate Revocation List processing          | `crypto/x509/x_crl.c`, `x509cset.c`, `t_crl.c`            |
-//! | [`store`]       | Trust anchor & intermediate certificate store   | `crypto/x509/x509_lu.c`, `x509_local.h::X509_STORE`       |
-//! | [`verify`]      | RFC 5280 §6 PKIX chain validation               | `crypto/x509/x509_vfy.c`, `v3_purp.c`, `x509_vpm.c`       |
+//! | `certificate`   | Full RFC 5280 certificate parse + accessors     | `crypto/x509/x_x509.c`, `x509_cmp.c`, `x509_set.c`        |
+//! | `crl`           | Certificate Revocation List processing          | `crypto/x509/x_crl.c`, `x509cset.c`, `t_crl.c`            |
+//! | `store`         | Trust anchor & intermediate certificate store   | `crypto/x509/x509_lu.c`, `x509_local.h::X509_STORE`       |
+//! | `verify`        | RFC 5280 §6 PKIX chain validation               | `crypto/x509/x509_vfy.c`, `v3_purp.c`, `x509_vpm.c`       |
 //!
 //! ## Relationship between `certificate` and `crl`
 //!
-//! The [`crl`] module pre-dates the [`certificate`] module and contains a
+//! The `crl` module pre-dates the `certificate` module and contains a
 //! minimal internal `X509Certificate` type that carries only
 //! `{issuer, serial}` — the bare minimum needed to query a revocation
-//! list.  The richer [`certificate::Certificate`] type bridges the two
-//! via [`certificate::Certificate::to_crl_lookup_handle`] so that CRL
+//! list.  The richer `certificate::Certificate` type bridges the two
+//! via `certificate::Certificate::to_crl_lookup_handle` so that CRL
 //! lookups remain ergonomic for callers who have already parsed the full
 //! certificate.
 //!

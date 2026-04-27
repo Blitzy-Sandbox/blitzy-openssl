@@ -12,9 +12,9 @@
 //! | `RAND_bytes_ex(libctx, buf, n, 0)`  | `openssl_crypto::rand::rand_bytes(buf)`  |
 //! | `BIO_f_base64()` filter chain       | `base64ct::Base64::encode_string()`      |
 //! | `BIO_printf(out, "%02x", buf[i])`   | `hex::encode(chunk)`                     |
-//! | `buflen = (1 << 16)`                | [`CHUNK_SIZE`] = 65 536                  |
-//! | `UINT64_MAX >> 3` max guard         | [`MAX_OUTPUT_BYTES`] = 2^61              |
-//! | K/M/G/T suffix bit-shifts           | [`parse_byte_count()`]                   |
+//! | `buflen = (1 << 16)`                | `CHUNK_SIZE` = 65 536                  |
+//! | `UINT64_MAX >> 3` max guard         | `MAX_OUTPUT_BYTES` = 2^61              |
+//! | K/M/G/T suffix bit-shifts           | `parse_byte_count()`                   |
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
@@ -92,7 +92,7 @@ enum OutputFormat {
 /// | `-base64`                     | `--base64`                               |
 /// | `-hex`                        | `--hex`                                  |
 /// | positional `num[K\|M\|G\|T]` | positional `num` with suffix parse       |
-/// | `buflen = (1 << 16)`          | [`CHUNK_SIZE`] = 65 536                  |
+/// | `buflen = (1 << 16)`          | `CHUNK_SIZE` = 65 536                  |
 /// | `FORMAT_BINARY/BASE64/TEXT`   | [`OutputFormat`] enum                    |
 #[derive(Args, Debug)]
 pub struct RandArgs {
@@ -262,10 +262,10 @@ impl RandArgs {
 
 /// Computes the number of bytes to generate in the current iteration.
 ///
-/// Returns the smaller of `remaining` and [`CHUNK_SIZE`], converting the
+/// Returns the smaller of `remaining` and `CHUNK_SIZE`, converting the
 /// u64 `remaining` to usize safely via `try_from`.  When `remaining`
 /// exceeds `usize::MAX` (only possible on 32-bit platforms), the result
-/// is clamped to [`CHUNK_SIZE`].
+/// is clamped to `CHUNK_SIZE`.
 #[inline]
 fn compute_chunk_len(remaining: u64) -> usize {
     // On 64-bit targets usize::try_from(remaining) always succeeds.
@@ -335,7 +335,7 @@ fn write_base64_lines(writer: &mut dyn Write, encoded: &str) -> Result<(), Crypt
 /// | `2M`       | 2 × 2^20 = 2 097 152                          |
 /// | `1G`       | 1 × 2^30 = 1 073 741 824                      |
 /// | `1T`       | 1 × 2^40 = 1 099 511 627 776                   |
-/// | `max`      | [`MAX_OUTPUT_BYTES`] = 2^61                    |
+/// | `max`      | `MAX_OUTPUT_BYTES` = 2^61                    |
 ///
 /// # Errors
 ///
@@ -343,7 +343,7 @@ fn write_base64_lines(writer: &mut dyn Write, encoded: &str) -> Result<(), Crypt
 /// - The input is empty.
 /// - The numeric part is not a valid positive integer.
 /// - The suffix is unrecognised or placed incorrectly.
-/// - The scaled value overflows `u64` or exceeds [`MAX_OUTPUT_BYTES`].
+/// - The scaled value overflows `u64` or exceeds `MAX_OUTPUT_BYTES`.
 ///
 /// # C Mapping
 ///

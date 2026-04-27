@@ -9,24 +9,24 @@
 //!
 //! | Module | C Source | Algorithm | Standards |
 //! |--------|----------|-----------|-----------|
-//! | [`rsa`] | `rsa_sig.c` (2,087 lines) | RSA PKCS#1 v1.5, PSS | PKCS#1, RFC 8017 |
-//! | [`dsa`] | `dsa_sig.c` (1,069 lines) | DSA | FIPS 186-4 |
-//! | [`ecdsa`] | `ecdsa_sig.c` (1,083 lines) | ECDSA | FIPS 186-4, ANSI X9.62 |
-//! | [`eddsa`] | `eddsa_sig.c` (1,187 lines) | Ed25519, Ed448 | RFC 8032 |
-//! | [`sm2`] | `sm2_sig.c` (593 lines) | SM2 | GB/T 32918.2-2016 |
-//! | [`ml_dsa`] | `ml_dsa_sig.c` (510 lines) | ML-DSA-44/65/87 | FIPS 204 |
-//! | [`slh_dsa`] | `slh_dsa_sig.c` (390 lines) | SLH-DSA (12 variants) | FIPS 205 |
-//! | [`lms`] | `lms_signature.c` (168 lines) | LMS (verify only) | SP 800-208 |
-//! | [`mac_legacy`] | `mac_legacy_sig.c` (253 lines) | MAC-as-signature adapter | — |
+//! | `rsa` | `rsa_sig.c` (2,087 lines) | RSA PKCS#1 v1.5, PSS | PKCS#1, RFC 8017 |
+//! | `dsa` | `dsa_sig.c` (1,069 lines) | DSA | FIPS 186-4 |
+//! | `ecdsa` | `ecdsa_sig.c` (1,083 lines) | ECDSA | FIPS 186-4, ANSI X9.62 |
+//! | `eddsa` | `eddsa_sig.c` (1,187 lines) | Ed25519, Ed448 | RFC 8032 |
+//! | `sm2` | `sm2_sig.c` (593 lines) | SM2 | GB/T 32918.2-2016 |
+//! | `ml_dsa` | `ml_dsa_sig.c` (510 lines) | ML-DSA-44/65/87 | FIPS 204 |
+//! | `slh_dsa` | `slh_dsa_sig.c` (390 lines) | SLH-DSA (12 variants) | FIPS 205 |
+//! | `lms` | `lms_signature.c` (168 lines) | LMS (verify only) | SP 800-208 |
+//! | `mac_legacy` | `mac_legacy_sig.c` (253 lines) | MAC-as-signature adapter | — |
 //!
 //! ## Architecture
 //!
-//! Each algorithm struct implements [`SignatureProvider`] from `crate::traits` and
-//! creates [`SignatureContext`] instances for per-operation state. The pattern
+//! Each algorithm struct implements `SignatureProvider` from `crate::traits` and
+//! creates `SignatureContext` instances for per-operation state. The pattern
 //! matches the C `OSSL_FUNC_signature_*` dispatch interface:
 //!
-//! - `newctx()` → [`SignatureProvider::new_ctx()`] → owns [`SignatureContext`]
-//! - `sign_init()`/`verify_init()` → [`SignatureContext::sign_init()`]/[`SignatureContext::verify_init()`]
+//! - `newctx()` → `SignatureProvider::new_ctx()` → owns `SignatureContext`
+//! - `sign_init()`/`verify_init()` → `SignatureContext::sign_init()`/`SignatureContext::verify_init()`
 //! - `sign()`/`verify()` → one-shot operations
 //! - `digest_sign_init/update/final()` → streaming digest-sign
 //! - `digest_verify_init/update/final()` → streaming digest-verify

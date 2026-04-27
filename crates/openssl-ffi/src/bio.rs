@@ -79,7 +79,7 @@ use openssl_crypto::bio::{
 
 /// Opaque BIO handle exposed to C consumers.
 ///
-/// The real data is stored on the heap in a [`BioInner`] instance; the
+/// The real data is stored on the heap in a `BioInner` instance; the
 /// `*mut BIO` value returned to C is `Box::into_raw(Box::new(inner))
 /// as *mut BIO`.  C code only treats this pointer as an opaque handle
 /// and never dereferences it directly — all access goes through the
@@ -94,7 +94,7 @@ pub struct BIO {
 ///
 /// For built-in BIO method types (memory, file, socket, …) the
 /// `*const BIO_METHOD` value returned by the `BIO_s_*` factories
-/// points at a `'static` [`BioMethodInner`] singleton.  For custom
+/// points at a `'static` `BioMethodInner` singleton.  For custom
 /// methods allocated via [`BIO_meth_new`] the pointer is a
 /// `Box::into_raw` of a heap-allocated `BioMethodInner`.
 #[repr(C)]
@@ -2121,7 +2121,7 @@ pub unsafe extern "C" fn BIO_callback_ctrl(
 /// allocation, copying, or lifetime tracking on it.  Pairs with
 /// [`BIO_get_callback_arg`].
 ///
-/// This function is the C-ABI mirror of the [`BioInner::callback_arg`]
+/// This function is the C-ABI mirror of the `BioInner::callback_arg`
 /// field and is the *only* public entry point that mutates it, so the
 /// dead-code analyser will now see a write-site satisfying Rule R9.
 #[no_mangle]

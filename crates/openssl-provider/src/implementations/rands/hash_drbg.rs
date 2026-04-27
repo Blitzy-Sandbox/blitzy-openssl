@@ -106,7 +106,7 @@ fn strength_for_digest(name: &str) -> ProviderResult<u32> {
 ///
 /// # Memory Safety
 ///
-/// Implements [`Zeroize`] and [`Drop`] to ensure all key material
+/// Implements `Zeroize` and [`Drop`] to ensure all key material
 /// (V, C, vtmp) is securely wiped from memory on drop and uninstantiate.
 /// Replaces C `OPENSSL_cleanse()` calls in `drbg_hash_uninstantiate()`.
 #[derive(Debug)]
@@ -584,7 +584,7 @@ impl DrbgMechanism for HashDrbg {
 
 /// Provider factory for Hash-DRBG instances.
 ///
-/// Implements [`RandProvider`] to register Hash-DRBG as a RAND algorithm
+/// Implements `RandProvider` to register Hash-DRBG as a RAND algorithm
 /// in the provider dispatch system. Creates [`Drbg`]-wrapped [`HashDrbg`]
 /// instances that implement [`RandContext`].
 ///

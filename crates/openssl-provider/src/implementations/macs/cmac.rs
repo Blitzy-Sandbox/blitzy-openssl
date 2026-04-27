@@ -27,7 +27,7 @@
 //!
 //! ## CBC-Only Restriction
 //!
-//! CMAC is defined exclusively for CBC-mode ciphers. The [`validate_cbc_mode`]
+//! CMAC is defined exclusively for CBC-mode ciphers. The `validate_cbc_mode`
 //! function enforces this by checking the cipher name for the "CBC" mode
 //! indicator. Non-CBC ciphers are rejected with
 //! [`ProviderError::Common(CommonError::InvalidArgument)`].
@@ -60,7 +60,7 @@ const AES_BLOCK_SIZE: usize = 16;
 const DES_BLOCK_SIZE: usize = 8;
 
 /// Default output tag size — AES block size (16 bytes / 128 bits).
-/// Overridden to [`DES_BLOCK_SIZE`] when a DES-based cipher is selected.
+/// Overridden to `DES_BLOCK_SIZE` when a DES-based cipher is selected.
 const DEFAULT_TAG_SIZE: usize = AES_BLOCK_SIZE;
 
 /// Constant for the left-shift + XOR derivation of CMAC subkeys (128-bit block).
@@ -264,7 +264,7 @@ enum CmacState {
 ///
 /// # Security
 ///
-/// Key material is wrapped in [`Zeroizing`] for automatic secure erasure on
+/// Key material is wrapped in `Zeroizing` for automatic secure erasure on
 /// drop or reinitialization (replacing C `OPENSSL_cleanse`).
 pub struct CmacContext {
     /// Selected cipher algorithm name (must be CBC mode per SP 800-38B).
@@ -293,7 +293,7 @@ impl CmacContext {
         }
     }
 
-    /// Applies parameters from a [`ParamSet`] to internal configuration.
+    /// Applies parameters from a `ParamSet` to internal configuration.
     ///
     /// Shared between `init()` and `set_params()` to avoid duplication.
     /// Replaces the parameter-handling section of C `cmac_set_ctx_params`
@@ -643,7 +643,7 @@ fn infer_key_length(cipher_name: &str) -> Option<usize> {
 ///
 /// All AES variants and Camellia use 128-bit (16-byte) blocks.
 /// DES/3DES uses 64-bit (8-byte) blocks.
-/// Returns [`AES_BLOCK_SIZE`] by default for unrecognized ciphers.
+/// Returns `AES_BLOCK_SIZE` by default for unrecognized ciphers.
 fn infer_block_size(cipher_name: &str) -> usize {
     let upper = cipher_name.to_uppercase();
     if upper.contains("DES") {
@@ -667,13 +667,13 @@ fn infer_block_size(cipher_name: &str) -> usize {
 /// 2. CBC-MAC message processing
 /// 3. Final block completion with K1/K2 XOR
 ///
-/// This engine holds all sensitive material and implements [`Clone`] for
+/// This engine holds all sensitive material and implements `Clone` for
 /// context duplication (replacing C `CMAC_CTX_copy`).
 ///
 /// # Security
 ///
 /// All subkey and state buffers implement zeroing on drop via explicit
-/// overwrite in the [`Drop`] implementation.
+/// overwrite in the `Drop` implementation.
 #[derive(Clone)]
 struct CmacEngine {
     /// AES round keys expanded from the user-provided key.

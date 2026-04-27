@@ -1,12 +1,12 @@
 //! Constant-time comparison and selection primitives for cryptographic operations.
 //!
-//! Wraps the [`subtle`] crate to provide API-compatible replacements for the C
+//! Wraps the `subtle` crate to provide API-compatible replacements for the C
 //! `constant_time_*` functions from `include/internal/constant_time.h`.
 //!
 //! # Design
 //!
-//! The boolean methods return a bitmask of all ones (`0xFFFF_FFFF` for [`u32`],
-//! `0xFFFF_FFFF_FFFF_FFFF` for [`u64`], `0xFF` for [`u8`]) for **true** and `0`
+//! The boolean methods return a bitmask of all ones (`0xFFFF_FFFF` for `u32`,
+//! `0xFFFF_FFFF_FFFF_FFFF` for `u64`, `0xFF` for `u8`) for **true** and `0`
 //! for **false**. This is useful for choosing a value based on the result of a
 //! conditional in constant time. For example:
 //!
@@ -31,7 +31,7 @@
 //! # Safety
 //!
 //! This module contains zero `unsafe` code (Rule R8). All constant-time operations
-//! are implemented using the [`subtle`] crate's safe abstractions or through
+//! are implemented using the `subtle` crate's safe abstractions or through
 //! wrapping arithmetic that Rust performs safely.
 //!
 //! # Source Reference
@@ -63,7 +63,7 @@ fn value_barrier_u32(a: u32) -> u32 {
 
 /// Prevents compiler optimizations on the given `u64` value.
 ///
-/// 64-bit equivalent of [`value_barrier_u32`].
+/// 64-bit equivalent of `value_barrier_u32`.
 #[inline]
 fn value_barrier_u64(a: u64) -> u64 {
     core::hint::black_box(a)
@@ -128,7 +128,7 @@ pub fn constant_time_lt(a: u32, b: u32) -> u32 {
 
 /// Returns `0xFFFF_FFFF` if `a >= b` in constant time, `0` otherwise.
 ///
-/// Equivalent to the bitwise complement of [`constant_time_lt`].
+/// Equivalent to the bitwise complement of `constant_time_lt`.
 ///
 /// # Examples
 ///
@@ -189,7 +189,7 @@ pub fn constant_time_eq(a: u32, b: u32) -> u32 {
 /// `0` otherwise.
 ///
 /// Performs bitwise reinterpretation to unsigned and delegates to
-/// [`constant_time_eq`]. This matches the C behavior of
+/// `constant_time_eq`. This matches the C behavior of
 /// `constant_time_eq_int(int a, int b)` which casts both operands to
 /// `unsigned int`.
 ///
@@ -242,9 +242,9 @@ pub fn constant_time_select(mask: u32, a: u32, b: u32) -> u32 {
     (value_barrier_u32(mask) & a) | (value_barrier_u32(!mask) & b)
 }
 
-/// 8-bit version of [`constant_time_select`].
+/// 8-bit version of `constant_time_select`.
 ///
-/// Widens inputs to [`u32`], performs the selection, and extracts the low byte
+/// Widens inputs to `u32`, performs the selection, and extracts the low byte
 /// from the result. This matches the C implementation which casts through
 /// `unsigned int`.
 ///
@@ -271,7 +271,7 @@ pub fn constant_time_select_8(mask: u8, a: u8, b: u8) -> u8 {
     result.to_le_bytes()[0]
 }
 
-/// 64-bit version of [`constant_time_select`].
+/// 64-bit version of `constant_time_select`.
 ///
 /// Returns `a` if `mask` is all ones (`0xFFFF_FFFF_FFFF_FFFF`), `b` if all
 /// zeros.
@@ -293,10 +293,10 @@ pub fn constant_time_select_64(mask: u64, a: u64, b: u64) -> u64 {
     (value_barrier_u64(mask) & a) | (value_barrier_u64(!mask) & b)
 }
 
-/// Signed integer version of [`constant_time_select`].
+/// Signed integer version of `constant_time_select`.
 ///
-/// Reinterprets [`i32`] values as [`u32`] for the selection operation, then
-/// reinterprets the result back to [`i32`]. This matches the C implementation:
+/// Reinterprets `i32` values as `u32` for the selection operation, then
+/// reinterprets the result back to `i32`. This matches the C implementation:
 /// ```c
 /// return (int)constant_time_select(mask, (unsigned)(a), (unsigned)(b));
 /// ```
@@ -360,10 +360,10 @@ pub fn memcmp(a: &[u8], b: &[u8]) -> bool {
     bool::from(a.ct_eq(b))
 }
 
-/// Constant-time memory comparison returning a [`Choice`].
+/// Constant-time memory comparison returning a `Choice`.
 ///
 /// Returns `Choice::from(1)` if slices are equal in both length and content,
-/// `Choice::from(0)` otherwise. The [`Choice`] type can be used directly in
+/// `Choice::from(0)` otherwise. The `Choice` type can be used directly in
 /// conditional selection chains without converting to `bool`.
 ///
 /// # Examples
@@ -393,7 +393,7 @@ pub fn memcmp_choice(a: &[u8], b: &[u8]) -> Choice {
 
 /// Returns `0xFF` if `a < b`, `0x00` otherwise.
 ///
-/// 8-bit convenience wrapper around [`constant_time_lt`]. The result of the
+/// 8-bit convenience wrapper around `constant_time_lt`. The result of the
 /// 32-bit comparison (either `0xFFFF_FFFF` or `0x0000_0000`) is truncated
 /// to the low byte, yielding `0xFF` or `0x00`.
 ///
@@ -415,7 +415,7 @@ pub fn constant_time_lt_8(a: u32, b: u32) -> u8 {
 
 /// Returns `0xFF` if `a >= b`, `0x00` otherwise.
 ///
-/// 8-bit convenience wrapper around [`constant_time_ge`].
+/// 8-bit convenience wrapper around `constant_time_ge`.
 #[inline]
 pub fn constant_time_ge_8(a: u32, b: u32) -> u8 {
     constant_time_ge(a, b).to_le_bytes()[0]
@@ -423,7 +423,7 @@ pub fn constant_time_ge_8(a: u32, b: u32) -> u8 {
 
 /// Returns `0xFF` if `a == 0`, `0x00` otherwise.
 ///
-/// 8-bit convenience wrapper around [`constant_time_is_zero`].
+/// 8-bit convenience wrapper around `constant_time_is_zero`.
 #[inline]
 pub fn constant_time_is_zero_8(a: u32) -> u8 {
     constant_time_is_zero(a).to_le_bytes()[0]
@@ -431,7 +431,7 @@ pub fn constant_time_is_zero_8(a: u32) -> u8 {
 
 /// Returns `0xFF` if `a == b`, `0x00` otherwise.
 ///
-/// 8-bit convenience wrapper around [`constant_time_eq`].
+/// 8-bit convenience wrapper around `constant_time_eq`.
 #[inline]
 pub fn constant_time_eq_8(a: u32, b: u32) -> u8 {
     constant_time_eq(a, b).to_le_bytes()[0]
@@ -439,7 +439,7 @@ pub fn constant_time_eq_8(a: u32, b: u32) -> u8 {
 
 /// Returns `0xFF` if `a == b`, `0x00` otherwise (signed variant).
 ///
-/// 8-bit convenience wrapper around [`constant_time_eq_int`].
+/// 8-bit convenience wrapper around `constant_time_eq_int`.
 #[inline]
 pub fn constant_time_eq_int_8(a: i32, b: i32) -> u8 {
     constant_time_eq_int(a, b).to_le_bytes()[0]
@@ -470,7 +470,7 @@ pub fn constant_time_msb_64(a: u64) -> u64 {
 
 /// Returns `0xFFFF_FFFF_FFFF_FFFF` if `a < b` in constant time, `0` otherwise.
 ///
-/// 64-bit version of [`constant_time_lt`] using the same bitmask technique.
+/// 64-bit version of `constant_time_lt` using the same bitmask technique.
 ///
 /// # Examples
 ///
@@ -488,8 +488,8 @@ pub fn constant_time_lt_64(a: u64, b: u64) -> u64 {
 
 /// Returns `0xFFFF_FFFF_FFFF_FFFF` if `a >= b` in constant time, `0` otherwise.
 ///
-/// 64-bit version of [`constant_time_ge`]. Equivalent to the bitwise complement
-/// of [`constant_time_lt_64`].
+/// 64-bit version of `constant_time_ge`. Equivalent to the bitwise complement
+/// of `constant_time_lt_64`.
 ///
 /// This is the Rust equivalent of the C `constant_time_ge_s(size_t, size_t)`
 /// when `size_t` is 64-bit (the typical case on modern platforms). Used by the
@@ -511,7 +511,7 @@ pub fn constant_time_ge_64(a: u64, b: u64) -> u64 {
 
 /// Returns `0xFFFF_FFFF_FFFF_FFFF` if `a == 0` in constant time, `0` otherwise.
 ///
-/// 64-bit version of [`constant_time_is_zero`] using the same bitmask
+/// 64-bit version of `constant_time_is_zero` using the same bitmask
 /// technique: `constant_time_msb_64(!a & (a - 1))`.
 ///
 /// When `a` is 0: `!0u64 = u64::MAX` and `0 - 1 = u64::MAX` (wrapping), so
@@ -535,7 +535,7 @@ pub fn constant_time_is_zero_64(a: u64) -> u64 {
 
 /// Returns `0xFFFF_FFFF_FFFF_FFFF` if `a == b` in constant time, `0` otherwise.
 ///
-/// 64-bit version of [`constant_time_eq`]. Computed as
+/// 64-bit version of `constant_time_eq`. Computed as
 /// `constant_time_is_zero_64(a ^ b)` — if `a` and `b` are equal, their XOR is
 /// zero.
 ///
@@ -582,7 +582,7 @@ pub fn constant_time_ge_8_64(a: u64, b: u64) -> u8 {
 /// Returns `0xFF` if `a == b` in constant time, `0x00` otherwise (8-bit
 /// mask from a 64-bit comparison).
 ///
-/// 8-bit convenience wrapper around [`constant_time_eq_64`]. The result of the
+/// 8-bit convenience wrapper around `constant_time_eq_64`. The result of the
 /// 64-bit comparison (either `u64::MAX` or `0`) is truncated to the low byte,
 /// yielding `0xFF` or `0x00`.
 ///
@@ -605,7 +605,7 @@ pub fn constant_time_eq_8_64(a: u64, b: u64) -> u8 {
 
 /// Returns `0xFFFF_FFFF` if `a == 0`, `0` otherwise.
 ///
-/// This is an explicit 32-bit alias for [`constant_time_is_zero`], matching
+/// This is an explicit 32-bit alias for `constant_time_is_zero`, matching
 /// the C function `constant_time_is_zero_32(uint32_t a)`.
 ///
 /// # Examples

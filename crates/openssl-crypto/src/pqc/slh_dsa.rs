@@ -64,7 +64,6 @@
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
-#![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
@@ -268,7 +267,7 @@ impl TryFrom<&str> for SlhDsaVariant {
 pub struct SlhDsaParams {
     /// Canonical FIPS 205 algorithm identifier, e.g. `"SLH-DSA-SHA2-128s"`.
     pub alg: &'static str,
-    /// Structured variant discriminant paralleling [`alg`].
+    /// Structured variant discriminant paralleling `alg`.
     pub variant: SlhDsaVariant,
     /// `true` for SHAKE-family parameter sets; `false` for SHA-2-family sets.
     pub is_shake: bool,
@@ -697,12 +696,12 @@ impl Adrs {
         self.data[28..32].copy_from_slice(&hash.to_be_bytes());
     }
 
-    /// Sets the `tree_height` field — an alias for [`set_chain`] used by XMSS / FORS.
+    /// Sets the `tree_height` field — an alias for `set_chain` used by XMSS / FORS.
     pub fn set_tree_height(&mut self, height: u32) {
         self.set_chain(height);
     }
 
-    /// Sets the `tree_index` field — an alias for [`set_hash`] used by XMSS / FORS.
+    /// Sets the `tree_index` field — an alias for `set_hash` used by XMSS / FORS.
     pub fn set_tree_index(&mut self, index: u32) {
         self.set_hash(index);
     }
@@ -1991,9 +1990,18 @@ fn compute_checksum_nibbles(nibbles: &mut [u8], two_n: usize) {
         csum += u32::from(NIBBLE_MASK) - u32::from(nibble);
     }
     // Encode csum as 12 bits (3 nibbles): MSB first.
-    nibbles[two_n] = ((csum >> 8) & u32::from(NIBBLE_MASK)) as u8;
-    nibbles[two_n + 1] = ((csum >> 4) & u32::from(NIBBLE_MASK)) as u8;
-    nibbles[two_n + 2] = (csum & u32::from(NIBBLE_MASK)) as u8;
+    // TRUNCATION (×3): each cast extracts a 4-bit nibble via the bitwise AND
+    // `& u32::from(NIBBLE_MASK)` where `NIBBLE_MASK = 0x0f`. The mask
+    // guarantees the resulting `u32` value is in `[0, 15]`, which fits
+    // losslessly in `u8`. Per FIPS 205 Algorithm 7 (WOTS+ checksum), the
+    // 12-bit `csum` is encoded as 3 nibbles, MSB-first, into the trailing
+    // slots of the WOTS+ message expansion.
+    #[allow(clippy::cast_possible_truncation)]
+    {
+        nibbles[two_n] = ((csum >> 8) & u32::from(NIBBLE_MASK)) as u8;
+        nibbles[two_n + 1] = ((csum >> 4) & u32::from(NIBBLE_MASK)) as u8;
+        nibbles[two_n + 2] = (csum & u32::from(NIBBLE_MASK)) as u8;
+    }
 }
 
 /// WOTS+ hash chain: iterates the `F` hash function `steps` times on `inp`,

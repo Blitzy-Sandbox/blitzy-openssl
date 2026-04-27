@@ -1,7 +1,7 @@
 //! Help output snapshot tests for the OpenSSL CLI binary.
 //!
 //! Tests `--help` output of the top-level command and critical subcommands
-//! using the [`insta`] crate for snapshot-based regression detection. Ensures
+//! using the `insta` crate for snapshot-based regression detection. Ensures
 //! help text is stable, complete, and well-structured across releases.
 //!
 //! ## Compliance
@@ -44,7 +44,7 @@ use predicates::prelude::*;
 
 /// Captures stdout from running `openssl` with the given arguments.
 ///
-/// Returns the stdout output as a trimmed [`String`]. Panics if the process
+/// Returns the stdout output as a trimmed `String`. Panics if the process
 /// fails to execute or if stdout is not valid UTF-8.
 fn capture_help_stdout(args: &[&str]) -> String {
     let output = super::openssl_cmd()
@@ -57,7 +57,7 @@ fn capture_help_stdout(args: &[&str]) -> String {
 
 /// Captures stdout from running `openssl <subcommand> --help`.
 ///
-/// Convenience wrapper around [`capture_help_stdout`] for subcommand help.
+/// Convenience wrapper around `capture_help_stdout` for subcommand help.
 fn capture_subcommand_help(subcommand: &str) -> String {
     capture_help_stdout(&[subcommand, "--help"])
 }
@@ -115,7 +115,7 @@ fn test_top_level_help_contains_subcommands() {
 ///
 /// The C `help_main()` in `apps/openssl.c` groups commands by category
 /// (Standard, Message Digest, Cipher). The Rust CLI organizes subcommands
-/// in the [`CliCommand`] enum with semantic grouping. This test verifies
+/// in the `CliCommand` enum with semantic grouping. This test verifies
 /// that representative commands from each functional area are present.
 ///
 /// Categories checked:

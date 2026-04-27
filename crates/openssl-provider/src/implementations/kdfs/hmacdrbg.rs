@@ -13,9 +13,9 @@
 //! the key `K` and the value `V` — whose length is the output size of the
 //! underlying HMAC digest.  The KDF lifecycle is:
 //!
-//! 1. The caller configures the context via [`KdfContext::set_params`] with
+//! 1. The caller configures the context via `KdfContext::set_params` with
 //!    a digest name, an entropy input and a nonce.
-//! 2. On the first call to [`KdfContext::derive`] the context runs the
+//! 2. On the first call to `KdfContext::derive` the context runs the
 //!    HMAC-DRBG Instantiate procedure (SP 800-90A §10.1.2.3) to seed `K`
 //!    and `V` from the provided entropy and nonce.
 //! 3. Subsequent `derive` calls run the HMAC-DRBG Generate procedure
@@ -96,11 +96,11 @@ const PARAM_DIGEST: &str = "digest";
 
 /// `OSSL_KDF_PARAM_PROPERTIES` → `OSSL_ALG_PARAM_PROPERTIES`
 /// (`"properties"`, UTF-8).  Provider property-query string forwarded to
-/// [`MessageDigest::fetch`] and [`Mac::fetch`].
+/// `MessageDigest::fetch` and `Mac::fetch`.
 const PARAM_PROPERTIES: &str = "properties";
 
 /// `OSSL_KDF_PARAM_MAC` → `OSSL_ALG_PARAM_MAC` (`"mac"`, UTF-8).
-/// Reported via [`KdfContext::get_params`] and always equal to `"HMAC"`.
+/// Reported via `KdfContext::get_params` and always equal to `"HMAC"`.
 const PARAM_MAC: &str = "mac";
 
 // =============================================================================
@@ -108,8 +108,8 @@ const PARAM_MAC: &str = "mac";
 // =============================================================================
 
 /// Converts a [`CryptoError`] returned by
-/// [`MessageDigest::fetch`], [`Mac::fetch`], or the `MacCtx::{init,update,
-/// finalize}` chain into a [`ProviderError::Dispatch`] for the provider layer.
+/// `MessageDigest::fetch`, `Mac::fetch`, or the `MacCtx::{init,update,
+/// finalize}` chain into a `ProviderError::Dispatch` for the provider layer.
 ///
 /// Centralising this mapping keeps per-call sites concise via
 /// `.map_err(dispatch_err)?` and preserves the underlying error message
@@ -135,9 +135,9 @@ fn invalid_arg(msg: &str) -> ProviderError {
 ///
 /// Holds the HMAC-DRBG internal state (`K`, `V`) together with the digest
 /// selection and the entropy / nonce inputs supplied via
-/// [`KdfContext::set_params`].  The context follows a *lazy instantiation*
+/// `KdfContext::set_params`.  The context follows a *lazy instantiation*
 /// model — the Instantiate procedure runs on the first call to
-/// [`KdfContext::derive`], matching the `ctx->init` flag behaviour in
+/// `KdfContext::derive`, matching the `ctx->init` flag behaviour in
 /// `hmac_drbg_kdf_derive()`.
 ///
 /// All sensitive byte buffers are wrapped in `Vec<u8>` and zeroised on
@@ -150,14 +150,14 @@ fn invalid_arg(msg: &str) -> ProviderError {
 ///                     (e.g. `"SHA-256"`).  `None` until a digest is
 ///                     configured.
 /// * `properties`    — Optional provider property-query forwarded to
-///                     [`MessageDigest::fetch`] / [`Mac::fetch`].
+///                     `MessageDigest::fetch` / `Mac::fetch`.
 /// * `digest_size`   — Cached output size of the selected digest, equal to
 ///                     the length of both `K` and `V` (SP 800-90A §10.1.2
 ///                     requires `outlen == seedlen`).
-/// * `entropy`       — Entropy input supplied via [`PARAM_ENTROPY`].  When
+/// * `entropy`       — Entropy input supplied via `PARAM_ENTROPY`.  When
 ///                     any entropy bytes are set, the context is flagged as
 ///                     *not yet instantiated* so the next `derive` re-seeds.
-/// * `nonce`         — Nonce supplied via [`PARAM_NONCE`].
+/// * `nonce`         — Nonce supplied via `PARAM_NONCE`.
 /// * `key` / `value` — HMAC-DRBG internal state vectors `K` and `V`.  Both
 ///                     are exactly `digest_size` bytes long once configured.
 /// * `initialized`   — Whether the HMAC-DRBG Instantiate procedure has
@@ -198,8 +198,8 @@ impl HmacDrbgKdfContext {
     /// Creates a new, uninitialised HMAC-DRBG KDF context.
     ///
     /// The returned context has no digest selected and no entropy / nonce
-    /// configured — [`KdfContext::set_params`] must be invoked before any
-    /// productive call to [`KdfContext::derive`].
+    /// configured — `KdfContext::set_params` must be invoked before any
+    /// productive call to `KdfContext::derive`.
     #[must_use]
     fn new() -> Self {
         Self {
@@ -215,13 +215,13 @@ impl HmacDrbgKdfContext {
     }
 
     /// Returns the currently selected digest, resolving it via
-    /// [`MessageDigest::fetch`] from the default library context.
+    /// `MessageDigest::fetch` from the default library context.
     ///
     /// # Errors
     ///
     /// * [`ProviderError::Init`]            — if no digest has been
     ///                                        configured.
-    /// * [`ProviderError::Dispatch`]        — if the requested digest
+    /// * `ProviderError::Dispatch`        — if the requested digest
     ///                                        cannot be located in any
     ///                                        loaded provider.
     /// * [`ProviderError::Common`]
@@ -627,7 +627,7 @@ impl KdfContext for HmacDrbgKdfContext {
     ///                                               nonce is missing, or
     ///                                               any parameter has the
     ///                                               wrong type.
-    /// * [`ProviderError::Dispatch`]               — propagated from the
+    /// * `ProviderError::Dispatch`               — propagated from the
     ///                                               underlying digest /
     ///                                               MAC fetch.
     fn derive(&mut self, key: &mut [u8], params: &ParamSet) -> ProviderResult<usize> {
@@ -655,8 +655,8 @@ impl KdfContext for HmacDrbgKdfContext {
     ///
     /// After `reset()` the context is equivalent to a freshly-constructed
     /// one: no digest is selected, the entropy / nonce are empty, and the
-    /// next call to [`KdfContext::derive`] will fail unless
-    /// [`KdfContext::set_params`] is called first.  This is the direct
+    /// next call to `KdfContext::derive` will fail unless
+    /// `KdfContext::set_params` is called first.  This is the direct
     /// analogue of `hmac_drbg_kdf_reset()` in the C source (which calls
     /// `OPENSSL_clear_free()` on all secret buffers).
     fn reset(&mut self) -> ProviderResult<()> {
@@ -690,7 +690,7 @@ impl KdfContext for HmacDrbgKdfContext {
         Ok(builder.build())
     }
 
-    /// Forwards to [`HmacDrbgKdfContext::apply_set_params`].
+    /// Forwards to `HmacDrbgKdfContext::apply_set_params`.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         self.apply_set_params(params)
     }

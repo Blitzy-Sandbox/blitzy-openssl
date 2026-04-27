@@ -1,6 +1,6 @@
 //! DTLS-specific implementation of [`RecordMethod`].
 //!
-//! This module provides [`DtlsRecordMethod`] — the production implementation
+//! This module provides `DtlsRecordMethod` — the production implementation
 //! of the record-layer backend for DTLS 1.0 / 1.2 (and DTLS 1.3 when
 //! feature-gated) connections. It is a direct translation of the
 //! datagram-record path in `ssl/record/rec_layer_d1.c` and the DTLS-specific
@@ -10,9 +10,9 @@
 //!
 //! # Architecture
 //!
-//! [`DtlsRecordMethod`] is a zero-sized singleton implementing the
+//! `DtlsRecordMethod` is a zero-sized singleton implementing the
 //! [`RecordMethod`] trait. Per-connection state is carried by
-//! [`DtlsRecordInstance`], which owns:
+//! `DtlsRecordInstance`, which owns:
 //!
 //! * cryptographic material (encryption key, IV, MAC key, cipher name);
 //! * **per-epoch sequencing** — each epoch carries its own 48-bit sequence
@@ -49,7 +49,7 @@
 //!   `#![forbid(unsafe_code)]`.
 //! * **R9 — Warning-free:** documented public API, no warnings.
 //! * **R10 — Wiring:** every public item is reachable from
-//!   [`DtlsRecordMethod::new_record_layer`] and exercised in the test module.
+//!   `DtlsRecordMethod::new_record_layer` and exercised in the test module.
 //!
 //! # Security
 //!
@@ -59,7 +59,7 @@
 //! * **Constant-time MAC/padding:** AEAD is constant-time by construction.
 //!   The legacy CBC-HMAC path is documented in the trait contract.
 //! * **Alert amplification:** warn-alert accounting enforces
-//!   [`super::MAX_WARN_ALERT_COUNT`] to prevent DoS from adversarial peers.
+//!   `super::MAX_WARN_ALERT_COUNT` to prevent DoS from adversarial peers.
 
 use core::any::Any;
 use std::collections::{BTreeMap, VecDeque};
@@ -184,7 +184,7 @@ impl ReplayWindow {
     }
 
     /// Records acceptance of sequence number `seq`. This must only be
-    /// called after [`is_replay`] has returned `false` for the same `seq`.
+    /// called after `is_replay` has returned `false` for the same `seq`.
     pub fn mark_accepted(&mut self, seq: u64) {
         match self.max_seen {
             None => {
@@ -227,7 +227,7 @@ impl ReplayWindow {
 /// This is the DTLS counterpart to `super::tls::TlsRecordMethod`. A single
 /// instance of this type can serve every DTLS connection in the process;
 /// all per-connection state lives in the returned
-/// [`DtlsRecordInstance`] via [`DtlsRecordMethod::new_record_layer`].
+/// `DtlsRecordInstance` via `DtlsRecordMethod::new_record_layer`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DtlsRecordMethod;
 
@@ -380,7 +380,7 @@ pub struct HandshakeReassembly {
     /// Full length of the handshake message (from the first-seen fragment
     /// header), or `None` until the first fragment is received.
     pub total_len: Option<u32>,
-    /// Accumulated bytes; gaps are represented by holes in [`seen`].
+    /// Accumulated bytes; gaps are represented by holes in `seen`.
     pub buffer: Vec<u8>,
     /// Byte-ranges already received. Each entry is `(offset, length)`.
     pub seen: Vec<(u32, u32)>,
@@ -847,7 +847,7 @@ impl DtlsRecordInstance {
     }
 
     /// Marks an inbound record as accepted on the replay window for
-    /// its epoch. Must be called only after [`is_replay`] returned
+    /// its epoch. Must be called only after `is_replay` returned
     /// `false` for the same `(epoch, seq)`.
     pub fn mark_accepted(&mut self, epoch: u16, seq: u64) {
         self.replay_by_epoch
@@ -899,10 +899,10 @@ impl Drop for DtlsRecordInstance {
 // Helper functions
 // ---------------------------------------------------------------------------
 
-/// Reads a boolean parameter out of a [`ParamSet`], treating absence and
+/// Reads a boolean parameter out of a `ParamSet`, treating absence and
 /// `false` uniformly.
 ///
-/// The [`ParamValue`] enum has no native `Bool` variant: per the canonical
+/// The `ParamValue` enum has no native `Bool` variant: per the canonical
 /// parameter contract in `openssl_common::param`, booleans are encoded as
 /// [`ParamValue::UInt32`] with non-zero meaning `true`. This delegates to
 /// [`super::param_get_bool`] so the dispatch lives in exactly one place.
@@ -910,7 +910,7 @@ fn param_bool(set: &ParamSet, key: &str) -> bool {
     super::param_get_bool(set, key)
 }
 
-/// Reads a `u32` parameter out of a [`ParamSet`]. Returns `None` when the
+/// Reads a `u32` parameter out of a `ParamSet`. Returns `None` when the
 /// key is absent or holds the wrong variant.
 ///
 /// Accepts `UInt32` directly, lifts non-negative `Int32`, and narrows

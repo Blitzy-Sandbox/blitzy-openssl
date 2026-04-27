@@ -11,12 +11,12 @@
 //!
 //! 1. **Module-level state** ([`FipsState`]): Tracks the overall FIPS module
 //!    lifecycle from initialization through self-testing to operational or
-//!    error states. Stored in [`FIPS_MODULE_STATE`] as an [`AtomicU8`] for
+//!    error states. Stored in `FIPS_MODULE_STATE` as an `AtomicU8` for
 //!    lock-free thread-safe access.
 //!
 //! 2. **Per-test state** ([`TestState`]): Tracks the execution state of each
 //!    individual Known Answer Test (KAT) in the FIPS test catalog. Stored in
-//!    the [`TEST_STATES`] array with a [`parking_lot::Mutex`] guard for writes.
+//!    the `TEST_STATES` array with a [`parking_lot::Mutex`] guard for writes.
 //!
 //! # C Source Mapping
 //!
@@ -361,7 +361,7 @@ pub const ERROR_REPORT_LIMIT: u32 = 10;
 // Global Module State (self_test.c line 187)
 // ---------------------------------------------------------------------------
 
-/// Global FIPS module state. Uses [`AtomicU8`] for lock-free thread-safe access.
+/// Global FIPS module state. Uses `AtomicU8` for lock-free thread-safe access.
 ///
 /// Replaces the C `TSAN_QUALIFIER int FIPS_state` with Rust atomics.
 ///
@@ -375,11 +375,11 @@ pub static FIPS_MODULE_STATE: AtomicU8 = AtomicU8::new(FipsState::Init as u8);
 // Per-Test State Array (replaces st_all_tests[].state)
 // ---------------------------------------------------------------------------
 
-/// Per-test state tracking array. Each element is an [`AtomicU8`] encoding
+/// Per-test state tracking array. Each element is an `AtomicU8` encoding
 /// a [`TestState`].
 ///
 /// Uses atomic operations for lock-free concurrent state reads with locked
-/// writes (via [`TEST_STATES_LOCK`]). The array is indexed by test ID
+/// writes (via `TEST_STATES_LOCK`). The array is indexed by test ID
 /// (0..`MAX_TEST_COUNT`).
 ///
 /// # Concurrency Model
@@ -387,7 +387,7 @@ pub static FIPS_MODULE_STATE: AtomicU8 = AtomicU8::new(FipsState::Init as u8);
 /// - **Reads** use [`Ordering::Relaxed`] for performance. Benign races on
 ///   reads are acceptable — the worst case is a redundant test execution,
 ///   not incorrect results.
-/// - **Writes** require holding [`TEST_STATES_LOCK`] to prevent concurrent
+/// - **Writes** require holding `TEST_STATES_LOCK` to prevent concurrent
 ///   state corruption when multiple threads attempt to update the same test.
 pub static TEST_STATES: [AtomicU8; MAX_TEST_COUNT] = {
     // Justification: This const is used solely to initialize a static array
@@ -483,7 +483,7 @@ pub fn reset_fips_state() {
 /// or if the stored value is not a valid [`TestState`] variant.
 /// Rule R5: Uses `Option` for out-of-bounds IDs instead of sentinel values.
 ///
-/// Uses [`Ordering::Relaxed`] for reads — see [`TEST_STATES`] documentation
+/// Uses [`Ordering::Relaxed`] for reads — see `TEST_STATES` documentation
 /// for the concurrency model rationale.
 ///
 /// # C Equivalence
@@ -503,7 +503,7 @@ pub fn get_test_state(id: usize) -> Option<TestState> {
 
 /// Sets the execution state of a specific test by ID.
 ///
-/// Acquires [`TEST_STATES_LOCK`] to prevent concurrent state corruption.
+/// Acquires `TEST_STATES_LOCK` to prevent concurrent state corruption.
 /// Returns `false` if the test ID is out of bounds (>= [`MAX_TEST_COUNT`]).
 ///
 /// Uses [`Ordering::SeqCst`] for writes to ensure all threads observe
@@ -544,7 +544,7 @@ pub fn set_test_state(id: usize, state: TestState) -> bool {
 /// parameter is set. In deferred mode, tests are not executed during POST but
 /// instead run lazily on first algorithm use.
 ///
-/// Acquires [`TEST_STATES_LOCK`] for the duration of the bulk update.
+/// Acquires `TEST_STATES_LOCK` for the duration of the bulk update.
 ///
 /// # C Equivalence
 ///
@@ -568,7 +568,7 @@ pub fn mark_all_deferred() {
 /// After calling this, all tests must be re-executed before the module can
 /// be considered operational.
 ///
-/// Acquires [`TEST_STATES_LOCK`] for the duration of the bulk update.
+/// Acquires `TEST_STATES_LOCK` for the duration of the bulk update.
 pub fn reset_all_states() {
     let _lock = TEST_STATES_LOCK.lock();
     for state in &TEST_STATES {
@@ -607,7 +607,7 @@ pub fn all_tests_passed(count: usize) -> bool {
 
 /// Rate limiter for FIPS error state reporting.
 ///
-/// After [`limit`](ErrorRateLimiter::limit) errors are reported, subsequent
+/// After `limit` errors are reported, subsequent
 /// errors are silently counted. This prevents log flooding when the FIPS
 /// module enters the error state and many concurrent operations attempt
 /// to report the failure.

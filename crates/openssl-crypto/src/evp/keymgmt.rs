@@ -75,7 +75,7 @@
 //!
 //! [`KeyMgmt`] and [`SymKeyMgmt`] are cheaply cloneable and `Send + Sync`.
 //! [`KeyData`] carries an `Arc<KeyMgmt>` back-reference; it is `Send + Sync`.
-//! [`SymKey`] zeroes key material on drop via [`ZeroizeOnDrop`].
+//! [`SymKey`] zeroes key material on drop via [`zeroize::ZeroizeOnDrop`].
 
 use std::sync::Arc;
 
@@ -163,7 +163,7 @@ impl KeyMgmt {
     ///
     /// # Errors
     ///
-    /// Returns [`CryptoError::Unsupported`] if no provider supplies the
+    /// Returns `CryptoError::Unsupported` if no provider supplies the
     /// requested algorithm.
     ///
     /// # Examples
@@ -478,7 +478,7 @@ pub fn import(
 ///
 /// # Errors
 ///
-/// Returns [`CryptoError::Unsupported`] if the provider does not support
+/// Returns `CryptoError::Unsupported` if the provider does not support
 /// exporting the requested selection.
 ///
 /// # Examples
@@ -610,7 +610,7 @@ pub fn has(keymgmt: &KeyMgmt, keydata: &KeyData, selection: KeySelection) -> boo
 ///
 /// # Errors
 ///
-/// Returns [`CryptoError::Unsupported`] if the provider does not support
+/// Returns `CryptoError::Unsupported` if the provider does not support
 /// validation for the given selection.
 pub fn validate(
     keymgmt: &KeyMgmt,
@@ -673,7 +673,7 @@ pub fn validate(
 ///
 /// # Errors
 ///
-/// Returns [`CryptoError::Unsupported`] if the provider does not support
+/// Returns `CryptoError::Unsupported` if the provider does not support
 /// key comparison.
 pub fn match_keys(
     keymgmt: &KeyMgmt,
@@ -777,7 +777,7 @@ pub fn match_keys(
 ///
 /// # Errors
 ///
-/// Returns [`CryptoError::Unsupported`] if the source provider cannot
+/// Returns `CryptoError::Unsupported` if the source provider cannot
 /// export or the target provider cannot import the key components.
 ///
 /// # Examples
@@ -927,7 +927,7 @@ impl SymKeyMgmt {
     ///
     /// # Errors
     ///
-    /// Returns [`CryptoError::Unsupported`] if no provider supplies the
+    /// Returns `CryptoError::Unsupported` if no provider supplies the
     /// requested symmetric key management algorithm.
     pub fn fetch(
         ctx: &Arc<LibContext>,
@@ -989,7 +989,7 @@ impl SymKeyMgmt {
 /// Opaque symmetric key handle — replaces C `EVP_SKEY`.
 ///
 /// Wraps symmetric key material with automatic secure zeroing on drop
-/// via [`ZeroizeOnDrop`].  This replaces `OPENSSL_cleanse()` in the C
+/// via [`zeroize::ZeroizeOnDrop`].  This replaces `OPENSSL_cleanse()` in the C
 /// `EVP_SKEY_free()` function (`s_lib.c` lines 155–186) per AAP §0.7.6.
 ///
 /// # C Translation
@@ -1136,7 +1136,7 @@ impl SymKey {
     ///
     /// # Errors
     ///
-    /// Returns [`CryptoError::Unsupported`] if the provider does not
+    /// Returns `CryptoError::Unsupported` if the provider does not
     /// support symmetric key export.
     pub fn export(&self) -> CryptoResult<ParamSet> {
         trace!(

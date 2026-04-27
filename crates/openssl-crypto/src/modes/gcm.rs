@@ -6,7 +6,7 @@
 //! AES cipher suites.
 //!
 //! This module re-exports the cipher-specific construction
-//! [`AesGcm`](super::super::symmetric::aes::AesGcm) on the stable
+//! [`AesGcm`] on the stable
 //! `openssl_crypto::modes::gcm::` path mandated by the AAP §0.4.1
 //! layout.  Additional AEAD variants (ChaCha20-Poly1305, AES-GCM-SIV)
 //! are available under [`super`].

@@ -11,11 +11,11 @@
 //! |-----------|----------|
 //! | [`DigestFlags`] | `PROV_DIGEST_FLAG_*` macros from `prov/digestcommon.h` |
 //! | [`DigestParams`] | `OSSL_PARAM` bags in `ossl_digest_default_get_params()` |
-//! | [`default_get_params()`] | `ossl_digest_default_get_params()` (digestcommon.c:18-44) |
-//! | [`default_gettable_params()`] | `ossl_digest_default_gettable_params()` (digestcommon.c:46-51) |
-//! | [`is_fips_approved_digest()`] | `ossl_digest_get_approved_nid()` (digest_to_nid.c) |
-//! | [`digest_name_to_nid()`] | `ossl_digest_md_to_nid()` (digest_to_nid.c) |
-//! | [`DigestContextOps`] | Common context lifecycle helpers from `provider_util.c` |
+//! | `default_get_params()` | `ossl_digest_default_get_params()` (digestcommon.c:18-44) |
+//! | `default_gettable_params()` | `ossl_digest_default_gettable_params()` (digestcommon.c:46-51) |
+//! | `is_fips_approved_digest()` | `ossl_digest_get_approved_nid()` (digest_to_nid.c) |
+//! | `digest_name_to_nid()` | `ossl_digest_md_to_nid()` (digest_to_nid.c) |
+//! | `DigestContextOps` | Common context lifecycle helpers from `provider_util.c` |
 //!
 //! ## Zero Unsafe
 //!
@@ -172,7 +172,7 @@ impl DigestParams {
         }
     }
 
-    /// Converts these parameters into a [`ParamSet`] for provider dispatch.
+    /// Converts these parameters into a `ParamSet` for provider dispatch.
     ///
     /// The resulting `ParamSet` uses the standard OpenSSL parameter key names:
     ///
@@ -236,7 +236,7 @@ pub trait DigestContextOps: DigestContext {
 // Utility Functions — Parameter Helpers
 // =============================================================================
 
-/// Returns the default digest parameters as a [`ParamSet`].
+/// Returns the default digest parameters as a `ParamSet`.
 ///
 /// This is the primary entry point for providers responding to
 /// `get_params()` queries. It constructs a `ParamSet` containing the four

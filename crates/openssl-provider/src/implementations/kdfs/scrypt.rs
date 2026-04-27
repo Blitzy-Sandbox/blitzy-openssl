@@ -44,11 +44,11 @@
 //! # C Source Reference
 //!
 //! - `providers/implementations/kdfs/scrypt.c` — main implementation
-//! - `ossl_kdf_scrypt_functions` dispatch table → [`KdfProvider`]/[`KdfContext`] traits
-//! - `scrypt_alg()` → [`scrypt_derive()`]
-//! - `salsa208_word_specification()` → [`salsa20_8()`]
-//! - `scryptBlockMix()` → [`scrypt_block_mix()`]
-//! - `scryptROMix()` → [`scrypt_romix()`]
+//! - `ossl_kdf_scrypt_functions` dispatch table → `KdfProvider`/`KdfContext` traits
+//! - `scrypt_alg()` → `scrypt_derive()`
+//! - `salsa208_word_specification()` → `salsa20_8()`
+//! - `scryptBlockMix()` → `scrypt_block_mix()`
+//! - `scryptROMix()` → `scrypt_romix()`
 
 use crate::implementations::algorithm;
 use crate::traits::{AlgorithmDescriptor, KdfContext, KdfProvider};
@@ -548,7 +548,7 @@ fn scrypt_block_mix(output: &mut [u32], input: &[u32], r: usize) {
 /// Corresponds to `scryptROMix()` in the C source. The C version converts
 /// between byte arrays and u32 word arrays (little-endian); our version
 /// works directly with u32 words throughout and performs the byte
-/// conversion at the caller boundary in [`scrypt_derive()`].
+/// conversion at the caller boundary in `scrypt_derive()`.
 ///
 /// # Parameters
 ///
@@ -817,7 +817,7 @@ fn scrypt_derive(
 
 /// scrypt KDF context holding the current parameter state.
 ///
-/// Implements [`KdfContext`] to provide `derive()`, `reset()`, `get_params()`,
+/// Implements `KdfContext` to provide `derive()`, `reset()`, `get_params()`,
 /// and `set_params()` operations. The password field is securely zeroed on
 /// drop via the `Zeroize` derive macro, matching `kdf_scrypt_free()` in the
 /// C source which calls `OPENSSL_clear_free(ctx->pass, ctx->pass_len)`.
@@ -866,7 +866,7 @@ impl ScryptContext {
         }
     }
 
-    /// Applies parameters from a [`ParamSet`] to this context.
+    /// Applies parameters from a `ParamSet` to this context.
     ///
     /// Extracts scrypt-specific parameters by name. Parameters not present
     /// in the set are left unchanged (allows incremental configuration).
@@ -940,7 +940,7 @@ impl KdfContext for ScryptContext {
     /// Derives key material using the scrypt algorithm.
     ///
     /// Before derivation, applies any parameters from the provided
-    /// [`ParamSet`], then validates the complete parameter set and
+    /// `ParamSet`, then validates the complete parameter set and
     /// executes the scrypt pipeline.
     ///
     /// # Parameters
@@ -1021,7 +1021,7 @@ impl KdfContext for ScryptContext {
         Ok(())
     }
 
-    /// Returns the current parameter state as a [`ParamSet`].
+    /// Returns the current parameter state as a `ParamSet`.
     ///
     /// Includes all configurable parameters and the context's default
     /// output size. Note: password is NOT returned for security.
@@ -1043,7 +1043,7 @@ impl KdfContext for ScryptContext {
         Ok(builder.build())
     }
 
-    /// Sets parameters on the context from a [`ParamSet`].
+    /// Sets parameters on the context from a `ParamSet`.
     ///
     /// Parameters not present in the set are left unchanged, allowing
     /// incremental configuration across multiple calls.
@@ -1058,7 +1058,7 @@ impl KdfContext for ScryptContext {
 
 /// scrypt KDF provider that creates [`ScryptContext`] instances.
 ///
-/// Implements [`KdfProvider`] to register the scrypt algorithm with the
+/// Implements `KdfProvider` to register the scrypt algorithm with the
 /// provider framework. This replaces the C `ossl_kdf_scrypt_functions`
 /// dispatch table with type-safe Rust trait dispatch.
 pub struct ScryptProvider;

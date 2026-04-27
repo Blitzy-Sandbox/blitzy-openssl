@@ -9,7 +9,7 @@
 //!
 //! ## C→Rust Transformations
 //!
-//! - `KEM_MODE_NAME` struct array → [`KEM_MODES`] const array of `(&str, KemMode)` tuples
+//! - `KEM_MODE_NAME` struct array → `KEM_MODES` const array of `(&str, KemMode)` tuples
 //! - `ossl_eckem_modename2id()` → [`kem_modename_to_id()`] returning `Option<KemMode>`
 //! - `OPENSSL_strcasecmp` → `str::eq_ignore_ascii_case`
 //! - Sentinel return `KEM_MODE_UNDEFINED` → `None` (Rule R5)

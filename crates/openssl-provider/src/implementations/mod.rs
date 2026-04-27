@@ -54,7 +54,7 @@
 //! C codebase, which declared all `ossl_*_functions` dispatch table symbols used by
 //! `providers/defltprov.c`, `providers/legacyprov.c`, `providers/baseprov.c`, and
 //! `providers/fips/fipsprov.c`. The C `ALG()` / `ALGC()` macros from `defltprov.c`
-//! are replaced by the [`algorithm()`] helper function.
+//! are replaced by the `algorithm()` helper function.
 
 use crate::traits::AlgorithmDescriptor;
 use openssl_common::ProviderResult;

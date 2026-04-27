@@ -5,7 +5,7 @@
 //!
 //! This module replaces the C include-template pattern used in OpenSSL where
 //! `blake2_mac_impl.c` was included by `blake2b_mac.c` and `blake2s_mac.c`
-//! with preprocessor aliases. In Rust, the [`Blake2Variant`] enum eliminates
+//! with preprocessor aliases. In Rust, the `Blake2Variant` enum eliminates
 //! the preprocessor gymnastics while preserving a single, unified code path.
 //!
 //! # Algorithms
@@ -546,12 +546,12 @@ enum Blake2MacState {
 /// Streaming BLAKE2 MAC computation context.
 ///
 /// Replaces the C `blake2_mac_data_st` struct from `blake2_mac_impl.c`.
-/// Key material is wrapped in [`Zeroizing`] to ensure automatic secure
+/// Key material is wrapped in `Zeroizing` to ensure automatic secure
 /// erasure on drop, replacing the C `OPENSSL_cleanse(macctx->key, ...)`.
 pub struct Blake2MacContext {
     /// Selected variant (`BLAKE2b` or `BLAKE2s`).
     variant: Blake2Variant,
-    /// MAC key buffer — zeroed on drop via [`Zeroizing`].
+    /// MAC key buffer — zeroed on drop via `Zeroizing`.
     key: Zeroizing<Vec<u8>>,
     /// Whether a key has been set (from `init`, `set_params`, or prior call).
     key_set: bool,
@@ -631,7 +631,7 @@ impl Blake2MacContext {
         Ok(())
     }
 
-    /// Applies parameters from a [`ParamSet`] to the context.
+    /// Applies parameters from a `ParamSet` to the context.
     ///
     /// Handles `size`, `key`, `salt`, and `custom` (personalization).
     fn apply_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
@@ -814,7 +814,7 @@ impl Clone for Blake2MacContext {
 
 /// BLAKE2 MAC provider implementation.
 ///
-/// Implements [`MacProvider`] to produce [`Blake2MacContext`] instances for
+/// Implements `MacProvider` to produce [`Blake2MacContext`] instances for
 /// the selected variant.  Two providers are registered — one for `BLAKE2b`-MAC
 /// and one for `BLAKE2s`-MAC — each producing contexts with variant-appropriate
 /// defaults.

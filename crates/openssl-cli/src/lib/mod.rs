@@ -8,9 +8,9 @@
 //!
 //! | Module | Purpose | C Source |
 //! |--------|---------|----------|
-//! | [`opts`] | Format enums, verify params, column layout, name printing, param display | opt.c, columns.c, fmt.c, names.c, app\_params.c, apps\_opt\_printf.c |
-//! | [`password`] | Secure passphrase prompting and verification | apps\_ui.c |
-//! | [`http`] | Basic HTTP/1.x server for OCSP/CMP responders | http\_server.c |
+//! | `opts` | Format enums, verify params, column layout, name printing, param display | opt.c, columns.c, fmt.c, names.c, app\_params.c, apps\_opt\_printf.c |
+//! | `password` | Secure passphrase prompting and verification | apps\_ui.c |
+//! | `http` | Basic HTTP/1.x server for OCSP/CMP responders | http\_server.c |
 //!
 //! ## Design Decisions
 //!

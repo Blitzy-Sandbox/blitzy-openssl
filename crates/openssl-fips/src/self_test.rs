@@ -15,8 +15,8 @@
 //!
 //! # Thread Safety
 //!
-//! POST execution is serialized via [`SELF_TEST_LOCK`]. Multiple threads
-//! calling [`run`] simultaneously will serialize through this write lock.
+//! POST execution is serialized via `SELF_TEST_LOCK`. Multiple threads
+//! calling `run` simultaneously will serialize through this write lock.
 //! The double-check pattern (check state before AND after lock acquisition)
 //! ensures only one POST execution occurs.
 //!
@@ -302,7 +302,7 @@ fn sha256_compress(state: &mut [u32; 8], block: &[u8; SHA256_BLOCK_SIZE]) {
 // HMAC(K, m) = H((K' ⊕ opad) ‖ H((K' ⊕ ipad) ‖ m))
 // where K' = H(K) if len(K) > block_size, else K zero-padded to block_size.
 
-/// Computes HMAC-SHA-256 over file contents read in [`INTEGRITY_BUF_SIZE`]-byte
+/// Computes HMAC-SHA-256 over file contents read in `INTEGRITY_BUF_SIZE`-byte
 /// chunks.
 ///
 /// Reads the file at `path` in 4096-byte chunks and computes HMAC-SHA-256
@@ -382,7 +382,7 @@ fn hmac_sha256_file(key: &[u8], path: &str) -> FipsResult<[u8; SHA256_DIGEST_SIZ
 // initialization, smaller overhead, and no poisoning (per Rule R7).
 /// Global write lock serializing FIPS Power-On Self-Test execution.
 ///
-/// Acquired exclusively during [`run`] to ensure only one POST proceeds at
+/// Acquired exclusively during `run` to ensure only one POST proceeds at
 /// a time. Uses `parking_lot::RwLock` for deterministic initialization and
 /// non-poisoning semantics.
 pub static SELF_TEST_LOCK: Lazy<RwLock<()>> = Lazy::new(|| RwLock::new(()));
@@ -400,7 +400,7 @@ pub struct SelfTestPost {
     /// Tracks the number of error-state reports emitted.
     ///
     /// Used for rate-limited error reporting: after
-    /// [`FIPS_ERROR_REPORTING_RATE_LIMIT`] reports, further error messages
+    /// `FIPS_ERROR_REPORTING_RATE_LIMIT` reports, further error messages
     /// are suppressed to prevent log flooding.
     pub error_count: AtomicU32,
 }
@@ -428,7 +428,7 @@ impl SelfTestPost {
 ///
 /// When `false`, conditional error checks (PCT failures on non-critical
 /// operations) do NOT transition the module to the Error state. Set to
-/// `false` by [`disable_conditional_error_state`] when the FIPS config
+/// `false` by `disable_conditional_error_state` when the FIPS config
 /// contains `conditional-error-check = "0"`.
 ///
 /// Defaults to `true` (conditional errors DO trigger Error state).
@@ -442,7 +442,7 @@ static CONDITIONAL_ERROR_ENABLED: AtomicBool = AtomicBool::new(true);
 ///
 /// This is the primary guard called before every FIPS-approved operation to
 /// verify the module is operational. Implements rate-limited error reporting:
-/// the first [`FIPS_ERROR_REPORTING_RATE_LIMIT`] error-state encounters
+/// the first `FIPS_ERROR_REPORTING_RATE_LIMIT` error-state encounters
 /// produce `tracing::error!` messages; subsequent reports are silenced.
 ///
 /// Translates C `ossl_prov_is_running()` from `self_test.c`.
@@ -487,7 +487,7 @@ pub fn is_self_testing() -> bool {
 /// Verifies the FIPS module's integrity via HMAC-SHA-256.
 ///
 /// Opens the module file specified in `params.module_filename`, computes
-/// HMAC-SHA-256 over its contents using [`FIXED_KEY`], and compares the
+/// HMAC-SHA-256 over its contents using `FIXED_KEY`, and compares the
 /// result against the expected checksum in `params.module_checksum_data`
 /// using constant-time comparison.
 ///
@@ -575,11 +575,11 @@ pub fn verify_integrity(params: &SelfTestPostParams) -> FipsResult<()> {
 ///
 /// This is the core POST orchestration function. It:
 ///
-/// 1. Acquires the [`SELF_TEST_LOCK`] write lock
+/// 1. Acquires the `SELF_TEST_LOCK` write lock
 /// 2. Uses a double-check pattern: verifies state before AND after lock
 /// 3. Transitions state to [`FipsState::SelfTesting`]
 /// 4. Handles deferred test mode (if `params.is_deferred_test` is `true`)
-/// 5. Runs integrity verification via [`verify_integrity`]
+/// 5. Runs integrity verification via `verify_integrity`
 /// 6. Runs all Known Answer Tests via [`crate::kats::run_all_kats`]
 /// 7. Sets state to [`FipsState::Running`] on success or [`FipsState::Error`]
 ///    on failure
@@ -599,7 +599,7 @@ pub fn verify_integrity(params: &SelfTestPostParams) -> FipsResult<()> {
 ///
 /// # Thread Safety
 ///
-/// Serialized via [`SELF_TEST_LOCK`]. Multiple concurrent callers will
+/// Serialized via `SELF_TEST_LOCK`. Multiple concurrent callers will
 /// serialize through the write lock. The first successful caller transitions
 /// state to `Running`; subsequent callers find `Running` state and return
 /// `Ok(())` immediately.
@@ -676,7 +676,7 @@ pub fn run(params: &SelfTestPostParams, on_demand: bool) -> FipsResult<()> {
 
 /// Executes the individual POST phases: integrity verification and KATs.
 ///
-/// Separated from [`run`] to allow clean error propagation while keeping
+/// Separated from `run` to allow clean error propagation while keeping
 /// the state-transition logic centralized in `run`.
 fn execute_post_phases(params: &SelfTestPostParams) -> FipsResult<()> {
     // Phase 1: Module integrity verification (self_test.c lines 340-360)
@@ -735,7 +735,7 @@ pub fn disable_conditional_error_state() {
 
 /// Re-enables conditional error state checking.
 ///
-/// This is the inverse of [`disable_conditional_error_state`] and is
+/// This is the inverse of `disable_conditional_error_state` and is
 /// intended for test isolation — resetting the module to its default
 /// behaviour between test runs. Production code should not need to call
 /// this because the conditional-error flag is only ever *disabled* (never
@@ -753,7 +753,7 @@ pub(crate) fn enable_conditional_error_state() {
 /// - **Import-PCT errors**: Transient — logged but do NOT change module state
 /// - **Conditional errors** (all others): Set module to [`FipsState::Error`]
 ///   only if conditional error checking is enabled
-///   (see [`disable_conditional_error_state`])
+///   (see `disable_conditional_error_state`)
 ///
 /// # Parameters
 ///

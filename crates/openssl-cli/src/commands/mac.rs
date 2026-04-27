@@ -177,11 +177,11 @@ impl MacArgs {
     /// 1. Parse the algorithm name to a [`MacType`] enum variant.
     /// 2. Collect all `-macopt` entries plus `-cipher`/`-digest` shortcuts.
     /// 3. Extract the MAC key from `key:` / `hexkey:` entries.
-    /// 4. Build a [`ParamSet`] from remaining parameters.
-    /// 5. Create a [`MacContext`], initialise with key and params.
+    /// 4. Build a `ParamSet` from remaining parameters.
+    /// 5. Create a `MacContext`, initialise with key and params.
     /// 6. Stream input data through `MacContext::update()` in `BUFSIZE` chunks.
     /// 7. Finalise and write the MAC tag (hex or binary).
-    /// 8. Securely zero all buffers on drop via [`Zeroizing`].
+    /// 8. Securely zero all buffers on drop via `Zeroizing`.
     ///
     /// # Errors
     ///
@@ -341,14 +341,14 @@ fn parse_algorithm_name(name: &str) -> Result<MacType, CryptoError> {
 // MAC Option Parsing
 // =============================================================================
 
-/// Parses the collected macopt entries into a MAC key and a [`ParamSet`].
+/// Parses the collected macopt entries into a MAC key and a `ParamSet`.
 ///
 /// Each macopt entry is in `key:value` format. Special handling:
 /// - `key:VALUE` — treated as raw UTF-8 key bytes.
 /// - `hexkey:HEX` — hex-decoded to produce key bytes.
-/// - All other entries are added to the [`ParamSet`] via [`ParamBuilder`].
+/// - All other entries are added to the `ParamSet` via [`ParamBuilder`].
 ///
-/// Uses [`from_text`] for automatic type detection of parameter values
+/// Uses `from_text` for automatic type detection of parameter values
 /// (hex strings, integers, floats, and UTF-8 fallback).
 ///
 /// Replaces C `app_params_new_from_opts(opts, EVP_MAC_settable_ctx_params(mac))`
@@ -539,7 +539,7 @@ fn decode_hex_key(hex_str: &str) -> Result<Vec<u8>, CryptoError> {
 /// }
 /// ```
 ///
-/// The I/O buffer is wrapped in [`Zeroizing`] for secure cleanup on drop.
+/// The I/O buffer is wrapped in `Zeroizing` for secure cleanup on drop.
 ///
 /// # Errors
 ///

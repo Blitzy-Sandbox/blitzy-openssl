@@ -24,19 +24,19 @@
 //!
 //! The provider consists of three public types:
 //!
-//! * [`EdDsaInstance`] — a type-safe enum replacing the C
+//! * `EdDsaInstance` — a type-safe enum replacing the C
 //!   `ID_EdDSA_INSTANCE` integer (`eddsa_sig.c` lines 53–60).  The
 //!   enum carries helper methods to expose per-variant properties
 //!   (key type, prehash flag, context-string policy, FIPS approval
 //!   status) without resorting to scattered `match` blocks.
-//! * [`EdDsaSignatureProvider`] — the algorithm-level handle
+//! * `EdDsaSignatureProvider` — the algorithm-level handle
 //!   registered by the default / FIPS providers.  A single instance
 //!   represents one variant; five are constructed at registration
 //!   time to cover the full matrix.  Implements the
 //!   [`SignatureProvider`](crate::traits::SignatureProvider) trait
-//!   by returning a fresh [`EdDsaSignatureContext`] per call to
+//!   by returning a fresh `EdDsaSignatureContext` per call to
 //!   [`new_ctx`](crate::traits::SignatureProvider::new_ctx).
-//! * [`EdDsaSignatureContext`] — the per-operation mutable state
+//! * `EdDsaSignatureContext` — the per-operation mutable state
 //!   holding the key, instance, optional context string, cached
 //!   `AlgorithmIdentifier` DER, and a cached signature for the
 //!   verify-message flow.  Implements
@@ -47,17 +47,17 @@
 //! # Implementation rules
 //!
 //! * **Rule R5 — nullability over sentinels**: the EdDSA variant is
-//!   an [`EdDsaInstance`] enum, never an integer; the context string
+//!   an `EdDsaInstance` enum, never an integer; the context string
 //!   is an [`Option<Vec<u8>>`], never an empty slice with a length
 //!   sentinel; the operation mode is [`Option<OperationMode>`],
 //!   never `0` to mean "uninitialised".
 //! * **Rule R6 — lossless numeric casts**: no bare `as` casts; all
 //!   length-bounded conversions use `u8::try_from` or the
 //!   crypto-layer constants.
-//! * **Rule R7 — per-operation context**: [`EdDsaSignatureContext`]
+//! * **Rule R7 — per-operation context**: `EdDsaSignatureContext`
 //!   carries no shared mutable state; concurrent signers must
 //!   construct independent contexts via
-//!   [`EdDsaSignatureProvider::new_ctx`].
+//!   `EdDsaSignatureProvider::new_ctx`.
 //! * **Rule R8 — zero unsafe outside FFI**: this module contains
 //!   *zero* `unsafe` blocks.  All cryptographic work is delegated
 //!   to the safe Rust primitives in
@@ -72,7 +72,7 @@
 //! upstream 4.0 tag.  The C file defines one dispatch table per
 //! variant via the `IMPLEMENT_ED_SIGNATURE_FUNCTIONS` macro family
 //! (lines 1028–1074); each macro expansion becomes one
-//! [`EdDsaSignatureProvider`] instance in the Rust port.
+//! `EdDsaSignatureProvider` instance in the Rust port.
 
 use std::fmt;
 use std::sync::Arc;
@@ -117,8 +117,8 @@ pub const EDDSA_PREHASH_OUTPUT_LEN: usize = 64;
 // Error helpers
 // =============================================================================
 
-/// Wraps a crypto-layer error as a [`ProviderError::Dispatch`] so it can
-/// be returned from the [`SignatureContext`] trait methods.
+/// Wraps a crypto-layer error as a `ProviderError::Dispatch` so it can
+/// be returned from the `SignatureContext` trait methods.
 ///
 /// Mirrors the `dispatch_err` helper in
 /// [`super::mac_legacy`].  Kept private to this module; cross-module
@@ -134,12 +134,12 @@ fn dispatch_err(e: CryptoError) -> ProviderError {
 // =============================================================================
 
 /// Identifies which of the five `EdDSA` variants an
-/// [`EdDsaSignatureProvider`] / [`EdDsaSignatureContext`] is bound to.
+/// `EdDsaSignatureProvider` / `EdDsaSignatureContext` is bound to.
 ///
 /// The variants mirror the C `ID_EdDSA_INSTANCE` enum at `eddsa_sig.c`
 /// lines 53–60 but omit the `ID_NOT_SET` sentinel per Rule R5 — an
 /// unbound context is represented by `operation: None` on
-/// [`EdDsaSignatureContext`] instead of a zero-valued instance tag.
+/// `EdDsaSignatureContext` instead of a zero-valued instance tag.
 ///
 /// The name comparisons produced by [`Self::name`] are what the
 /// provider registration system advertises to applications (see
@@ -177,7 +177,7 @@ impl EdDsaInstance {
     /// Returns the canonical provider name for this variant.
     ///
     /// The strings returned here are the ones advertised through the
-    /// algorithm-name machinery (see [`descriptors`]) and are what
+    /// algorithm-name machinery (see `descriptors`) and are what
     /// callers pass to `EVP_SIGNATURE_fetch`-equivalent lookups.
     #[must_use]
     pub fn name(&self) -> &'static str {
@@ -307,19 +307,19 @@ impl fmt::Display for EdDsaInstance {
 /// Algorithm-level handle representing one `EdDSA` variant.
 ///
 /// A single provider instance represents exactly one
-/// [`EdDsaInstance`].  Registering all five variants with the default
+/// `EdDsaInstance`.  Registering all five variants with the default
 /// provider therefore requires five
-/// [`EdDsaSignatureProvider`] instances — each with its own
+/// `EdDsaSignatureProvider` instances — each with its own
 /// [`name`](SignatureProvider::name) — mirroring the five
 /// `ossl_ed25519*_signature_functions` / `ossl_ed448*_signature_functions`
 /// dispatch tables at the tail of `eddsa_sig.c` (lines 1028–1074).
 ///
 /// The provider is cheap to clone (all heavy state lives behind
-/// [`Arc`]s) and thread-safe: multiple concurrent callers can share a
-/// single [`EdDsaSignatureProvider`] and invoke
+/// `Arc`s) and thread-safe: multiple concurrent callers can share a
+/// single `EdDsaSignatureProvider` and invoke
 /// [`new_ctx`](SignatureProvider::new_ctx) in parallel.  The
 /// per-operation mutable state is confined to the returned
-/// [`EdDsaSignatureContext`], honouring Rule R7.
+/// `EdDsaSignatureContext`, honouring Rule R7.
 ///
 /// # Example
 ///
@@ -369,7 +369,7 @@ impl EdDsaSignatureProvider {
     /// explicit library context and property query.
     ///
     /// Used by the provider-registration layer when a caller has
-    /// instantiated a non-default [`LibContext`], and by tests that
+    /// instantiated a non-default `LibContext`, and by tests that
     /// want to exercise context-propagation (Rule R3 config
     /// propagation audit).  Equivalent to a full-arity `eddsa_newctx`
     /// call in the C source.
@@ -386,7 +386,7 @@ impl EdDsaSignatureProvider {
         }
     }
 
-    /// Returns the [`EdDsaInstance`] bound to this provider.
+    /// Returns the `EdDsaInstance` bound to this provider.
     ///
     /// Exposed for callers that hold the provider as
     /// `Box<dyn SignatureProvider>` and need to introspect the
@@ -434,7 +434,7 @@ impl SignatureProvider for EdDsaSignatureProvider {
 ///   semantics of the C `ossl_ecx_key_up_ref` / `ossl_ecx_key_free`
 ///   helpers).
 /// * `context_string` — the RFC 8032 `ctx` parameter.  Up to 255
-///   bytes and optional; secure-erased on drop via [`ZeroizeOnDrop`].
+///   bytes and optional; secure-erased on drop via `ZeroizeOnDrop`.
 /// * `aid_cache` — a cached DER-encoded `AlgorithmIdentifier` used by
 ///   protocol layers that serialise `EdDSA` signatures (e.g. X.509,
 ///   CMS).  Populated lazily on first read through
@@ -457,13 +457,13 @@ impl SignatureProvider for EdDsaSignatureProvider {
 ///
 /// # Memory hygiene
 ///
-/// The struct derives [`ZeroizeOnDrop`] so that the context string and
+/// The struct derives `ZeroizeOnDrop` so that the context string and
 /// cached signature are scrubbed from memory when the context is
 /// dropped.  This matches the `eddsa_freectx` behaviour at
 /// `eddsa_sig.c` lines ~230–245 where `OPENSSL_free` is paired with
 /// explicit `OPENSSL_cleanse` on sensitive fields.  The key material
-/// is owned by the inner [`EcxKeyPair`], which already implements
-/// [`ZeroizeOnDrop`] itself.
+/// is owned by the inner `EcxKeyPair`, which already implements
+/// `ZeroizeOnDrop` itself.
 pub struct EdDsaSignatureContext {
     /// Library context forwarded from the parent provider.
     ///
@@ -474,7 +474,7 @@ pub struct EdDsaSignatureContext {
     lib_ctx: Arc<LibContext>,
     /// Property query string forwarded from the parent provider.
     ///
-    /// Forwarded to every [`MessageDigest::fetch`] call in the
+    /// Forwarded to every `MessageDigest::fetch` call in the
     /// prehash code paths so that those nested fetches honour the
     /// same provider selection as the outer `EdDSA` signature fetch.
     propq: Option<String>,
@@ -485,7 +485,7 @@ pub struct EdDsaSignatureContext {
     key: Option<Arc<EcxKeyPair>>,
     /// Optional application-specific context string (RFC 8032 `ctx`).
     ///
-    /// Bounded to [`EDDSA_MAX_CONTEXT_STRING_LEN`] bytes by
+    /// Bounded to `EDDSA_MAX_CONTEXT_STRING_LEN` bytes by
     /// [`Self::set_context_string`].  Stored as [`Option<Vec<u8>>`]
     /// per Rule R5 — `None` means "no context string supplied"; an
     /// empty `Vec` means "explicitly empty context string" (distinct
@@ -524,12 +524,12 @@ pub struct EdDsaSignatureContext {
 
 // Manual ZeroizeOnDrop + Zeroize implementations — we cannot derive
 // them because [`Arc<LibContext>`], [`Arc<EcxKeyPair>`], and
-// [`EdDsaInstance`] (which holds a plain enum) do not implement
-// [`Zeroize`].  We hand-roll the drop logic to scrub the fields that
+// `EdDsaInstance` (which holds a plain enum) do not implement
+// `Zeroize`.  We hand-roll the drop logic to scrub the fields that
 // *do* matter: `context_string`, `aid_cache`, `cached_signature`,
 // and the `streaming_buffer`.  The key bytes are owned by the
-// [`EcxKeyPair`], which applies its own [`ZeroizeOnDrop`] when the
-// last [`Arc`] to it is dropped.
+// `EcxKeyPair`, which applies its own `ZeroizeOnDrop` when the
+// last `Arc` to it is dropped.
 impl Zeroize for EdDsaSignatureContext {
     fn zeroize(&mut self) {
         if let Some(ctx) = self.context_string.as_mut() {
@@ -574,7 +574,7 @@ impl EdDsaSignatureContext {
     /// signing or verifying.
     ///
     /// Kept `pub(crate)` because callers outside the provider module
-    /// should go through [`EdDsaSignatureProvider::new_ctx`], which
+    /// should go through `EdDsaSignatureProvider::new_ctx`, which
     /// returns a boxed trait object and honours the dispatch-table
     /// registration.  The direct constructor exists for the in-crate
     /// tests at the bottom of this module.
@@ -655,7 +655,7 @@ impl EdDsaSignatureContext {
         Ok(())
     }
 
-    /// Parses raw key bytes into an [`EcxKeyPair`] appropriate for
+    /// Parses raw key bytes into an `EcxKeyPair` appropriate for
     /// the context's variant.
     ///
     /// The provider API hands us opaque key bytes (matching the C
@@ -749,7 +749,7 @@ impl EdDsaSignatureContext {
     /// variant (32 bytes for Ed25519 family, 57 bytes for Ed448
     /// family).  Any other length is rejected as
     /// [`ProviderError::Init`].  Validates that the decoded point is
-    /// on the curve via [`verify_public_key`] — this is a cheap
+    /// on the curve via `verify_public_key` — this is a cheap
     /// check (single scalar decode) and guards against malformed
     /// wire inputs that would otherwise fail verification with a
     /// confusing dispatch error.
@@ -798,7 +798,7 @@ impl EdDsaSignatureContext {
     }
 
     /// Creates a duplicate of this context sharing the same key
-    /// material (via [`Arc`]) and copying the other state.
+    /// material (via `Arc`) and copying the other state.
     ///
     /// Equivalent to the C `eddsa_dupctx` entry point
     /// (`eddsa_sig.c` lines 240–270) which uses `ossl_ecx_key_up_ref`
@@ -860,16 +860,16 @@ impl EdDsaSignatureContext {
     ///
     /// Dispatches to the appropriate crypto-layer primitive:
     ///
-    /// * Ed25519 (pure) → [`ed25519_sign`] with `None` context per
+    /// * Ed25519 (pure) → `ed25519_sign` with `None` context per
     ///   RFC 8032 §5.1 (`PureEdDSA` omits the dom2 prefix entirely).
-    /// * Ed25519ctx → [`ed25519_sign`] with the cached non-empty
+    /// * Ed25519ctx → `ed25519_sign` with the cached non-empty
     ///   context string under dom2(F=0, C) per RFC 8032 §5.1.  The
     ///   context-string presence is validated at `sign_init`.
-    /// * Ed25519ph → SHA-512 prehash then [`ed25519_sign_prehash`]
+    /// * Ed25519ph → SHA-512 prehash then `ed25519_sign_prehash`
     ///   under dom2(F=1, C) where C may be empty.
-    /// * Ed448 (pure) / Ed448 with context → [`ed448_sign`] with the
+    /// * Ed448 (pure) / Ed448 with context → `ed448_sign` with the
     ///   cached context string under dom4(F=0, C) per RFC 8032 §5.2.
-    /// * Ed448ph → SHAKE256(64) prehash then [`ed448_sign_prehash`]
+    /// * Ed448ph → SHAKE256(64) prehash then `ed448_sign_prehash`
     ///   under dom4(F=1, C) with the cached context string.
     ///
     /// The resulting signature is also cached in
@@ -960,7 +960,7 @@ impl EdDsaSignatureContext {
     ///
     /// Returns `Ok(true)` on a successful signature, `Ok(false)` on
     /// a well-formed but invalid signature, and
-    /// [`ProviderError::Dispatch`] for underlying crypto errors
+    /// `ProviderError::Dispatch` for underlying crypto errors
     /// (e.g. malformed public key or decode failure).
     fn verify_internal(&self, message: &[u8], signature: &[u8]) -> ProviderResult<bool> {
         let key = self.key.as_ref().ok_or_else(|| {
@@ -1171,7 +1171,7 @@ impl EdDsaSignatureContext {
     ///
     /// * `"algorithm-id"` — DER-encoded `AlgorithmIdentifier` for
     ///   the active variant.  Built lazily and cached in
-    ///   [`Self::aid_cache`].
+    ///   `Self::aid_cache`.
     /// * `"instance"` — the canonical variant name.
     pub fn get_ctx_params(&mut self) -> ProviderResult<ParamSet> {
         let mut out = ParamSet::new();
@@ -1197,7 +1197,7 @@ impl EdDsaSignatureContext {
 }
 
 // Helper — parse a caller-supplied instance name back into an
-// [`EdDsaInstance`].  Supports both the canonical provider names and
+// `EdDsaInstance`.  Supports both the canonical provider names and
 // their OID variants.
 fn parse_instance_name(name: &str) -> ProviderResult<EdDsaInstance> {
     match name {

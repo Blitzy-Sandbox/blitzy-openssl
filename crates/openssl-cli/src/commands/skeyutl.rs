@@ -23,13 +23,13 @@
 //!
 //! | C Source (`apps/skeyutl.c`)            | Rust Equivalent                               |
 //! |----------------------------------------|-----------------------------------------------|
-//! | `skeyutl_main()`                       | [`SkeyutlArgs::execute()`]                    |
-//! | `OPTION_CHOICE` enum                   | clap `#[derive(Args)]` on [`SkeyutlArgs`]     |
+//! | `skeyutl_main()`                       | `SkeyutlArgs::execute()`                    |
+//! | `OPTION_CHOICE` enum                   | clap `#[derive(Args)]` on `SkeyutlArgs`     |
 //! | `skeyutl_options[]` array              | clap field annotations                        |
 //! | `opt_cipher_any()`                     | [`openssl_crypto::evp::cipher::Cipher::fetch`]|
 //! | `EVP_CIPHER_get0_name()`               | `Cipher::name()`                              |
 //! | `EVP_SKEYMGMT_fetch()`                 | `SymKeyMgmt::fetch()`                         |
-//! | `app_params_new_from_opts()`           | [`SkeyutlArgs::build_gen_params()`]           |
+//! | `app_params_new_from_opts()`           | `SkeyutlArgs::build_gen_params()`           |
 //! | `EVP_SKEY_generate()`                  | `SymKey::generate()`                          |
 //! | `EVP_SKEY_get0_key_id()`               | `SymKey::key_id()`                            |
 //! | `EVP_SKEY_get0_provider_name()`        | `SymKeyMgmt::provider_name()` (retained ref)  |
@@ -325,7 +325,7 @@ impl SkeyutlArgs {
     ///
     /// 1. Warn if an import-only option (`--hexkey` or `--keyfile`) was set.
     /// 2. Fetch the [`SymKeyMgmt`] for the resolved algorithm name.
-    /// 3. Build a [`ParamSet`] from `--skeyopt` entries and the `--keylen`
+    /// 3. Build a `ParamSet` from `--skeyopt` entries and the `--keylen`
     ///    shorthand.
     /// 4. Invoke [`SymKey::generate()`] to produce the opaque key.
     /// 5. Emit the standard "opaque key created" report via `println!` and
@@ -387,7 +387,7 @@ impl SkeyutlArgs {
         Ok(())
     }
 
-    /// Builds the generation [`ParamSet`] from the `--skeyopt` vector and
+    /// Builds the generation `ParamSet` from the `--skeyopt` vector and
     /// the `--keylen` shorthand.
     ///
     /// Replaces `app_params_new_from_opts()` at `apps/skeyutl.c:104`.
@@ -768,7 +768,7 @@ mod tests {
     // SkeyutlArgs::build_gen_params
     // ─────────────────────────────────────────────────────────────────
 
-    /// Constructs a [`SkeyutlArgs`] with all optional fields defaulted.
+    /// Constructs a `SkeyutlArgs` with all optional fields defaulted.
     fn default_args() -> SkeyutlArgs {
         SkeyutlArgs {
             skeyopt: vec![],

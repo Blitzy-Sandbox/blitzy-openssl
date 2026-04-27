@@ -30,12 +30,12 @@
 //!
 //! Verification proceeds in two stages:
 //!
-//! 1. **LM-OTS verification** ([`lm_ots_compute_pubkey`]) — Using the message,
+//! 1. **LM-OTS verification** (`lm_ots_compute_pubkey`) — Using the message,
 //!    randomiser `C`, and chain elements `y[0..p]`, reconstruct the candidate
 //!    LM-OTS public key `Kc = H(I || q || D_PBLC || y_0 || ... || y_{p-1})`.
 //!    This implements RFC 8554 §4.5 Algorithm 4b.
 //!
-//! 2. **Merkle path recomputation** ([`lms_sig_compute_tc_from_path`]) — Starting
+//! 2. **Merkle path recomputation** (`lms_sig_compute_tc_from_path`) — Starting
 //!    from the leaf hash `Tc = H(I || (q + 2^h) || D_LEAF || Kc)`, iteratively
 //!    hash the authentication path up to the root using the parity of the
 //!    current node index to decide left vs. right sibling order. This
@@ -1141,8 +1141,8 @@ fn lms_sig_compute_tc_from_path(
 ///    sig = u32(q) || u32(ots_type) || C[n] || y[p*n] || u32(lms_type) || path[h*n]
 ///    ```
 /// 2. Reject mismatched `ots_type` / `lms_type` tags or wrong total length.
-/// 3. Recompute `Kc` via [`lm_ots_compute_pubkey`].
-/// 4. Recompute `Tc` via [`lms_sig_compute_tc_from_path`].
+/// 3. Recompute `Kc` via `lm_ots_compute_pubkey`.
+/// 4. Recompute `Tc` via `lms_sig_compute_tc_from_path`.
 /// 5. Return `Ok(true)` iff `Tc` equals the public-key root `K` in constant time.
 ///
 /// # Arguments

@@ -40,8 +40,8 @@
 //! # Dispatch table replacement
 //!
 //! This module replaces the C `ossl_poly1305_functions[]` dispatch table
-//! from `poly1305_prov.c` with Rust trait-based dispatch via [`MacProvider`]
-//! and [`MacContext`].
+//! from `poly1305_prov.c` with Rust trait-based dispatch via `MacProvider`
+//! and `MacContext`.
 
 use crate::traits::{AlgorithmDescriptor, MacContext, MacProvider};
 use openssl_common::error::{CommonError, ProviderError};
@@ -302,7 +302,7 @@ impl Poly1305State {
     ///
     /// Consumes `self` because the internal state is modified during
     /// finalization (matching C `Poly1305_Final` followed by `OPENSSL_cleanse`).
-    /// The [`Zeroize`] derive on [`Poly1305State`] ensures all key material
+    /// The `Zeroize` derive on `Poly1305State` ensures all key material
     /// is securely erased when the state is dropped.
     ///
     /// Translates `Poly1305_Final()` and `poly1305_emit()` from
@@ -492,8 +492,8 @@ impl MacProvider for Poly1305Provider {
 /// an `updated` flag tracking whether `update()` has been called
 /// (constraining reinit semantics per the C implementation).
 ///
-/// All key material is securely zeroed on drop via the [`Zeroize`]
-/// implementation on [`Poly1305State`], replacing the C pattern of
+/// All key material is securely zeroed on drop via the `Zeroize`
+/// implementation on `Poly1305State`, replacing the C pattern of
 /// `OPENSSL_cleanse(ctx, sizeof(*ctx))` in `Poly1305_Final()`.
 ///
 /// Replaces `struct poly1305_data_st` from `poly1305_prov.c`.
@@ -521,7 +521,7 @@ impl Poly1305Context {
         }
     }
 
-    /// Apply parameters from a [`ParamSet`] to this context.
+    /// Apply parameters from a `ParamSet` to this context.
     ///
     /// Handles the `key` parameter (the only configurable parameter for
     /// Poly1305). If a key is provided via params, initializes the internal
@@ -550,7 +550,7 @@ impl Poly1305Context {
 
     /// Initialize the internal Poly1305 state with the given 32-byte key.
     ///
-    /// Creates a new [`Poly1305State`], saves a snapshot for subsequent
+    /// Creates a new `Poly1305State`, saves a snapshot for subsequent
     /// keyless re-initialization, and resets the `updated` flag.
     fn init_with_key(&mut self, key: &[u8]) -> ProviderResult<()> {
         let key_array: &[u8; POLY1305_KEY_SIZE] = key.try_into().map_err(|_| {
@@ -688,7 +688,7 @@ impl MacContext for Poly1305Context {
 
     /// Retrieve current context parameters.
     ///
-    /// Returns the output `size` (always 16 for Poly1305) as a [`ParamSet`].
+    /// Returns the output `size` (always 16 for Poly1305) as a `ParamSet`.
     ///
     /// Translates `poly1305_get_params()` / `poly1305_get_ctx_params()` from
     /// `poly1305_prov.c`.
@@ -701,7 +701,7 @@ impl MacContext for Poly1305Context {
 
     /// Apply parameter changes to this context.
     ///
-    /// Delegates to [`apply_params`](Poly1305Context::apply_params).
+    /// Delegates to `apply_params`.
     /// Only the `key` parameter is supported for Poly1305.
     ///
     /// Translates standalone `poly1305_set_ctx_params()` invocation from

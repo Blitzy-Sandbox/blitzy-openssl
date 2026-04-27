@@ -24,11 +24,11 @@
 //!
 //! | C Function                  | Rust Equivalent                     |
 //! |-----------------------------|-------------------------------------|
-//! | `PEM_write_bio()`           | [`encode()`], [`encode_to_writer()`]|
-//! | `PEM_read_bio()`            | [`decode()`]                        |
-//! | `PEM_read_bio()` (multi)    | [`decode_all()`]                    |
-//! | `PEM_read_bio_ex()` (enc)   | [`decode_encrypted()`]              |
-//! | `PEM_ASN1_write_bio()` (enc)| [`encode_encrypted()`]              |
+//! | `PEM_write_bio()`           | `encode()`, `encode_to_writer()`    |
+//! | `PEM_read_bio()`            | `decode()`                          |
+//! | `PEM_read_bio()` (multi)    | `decode_all()`                      |
+//! | `PEM_read_bio_ex()` (enc)   | `decode_encrypted()`                |
+//! | `PEM_ASN1_write_bio()` (enc)| `encode_encrypted()`                |
 //!
 //! # Rules Enforced
 //!
@@ -471,7 +471,7 @@ pub fn decode_all(pem_data: &str) -> CryptoResult<Vec<PemObject>> {
 ///
 /// Reads the entire content from `reader` into memory, then delegates to
 /// [`decode_all()`] to parse all PEM blocks. This enables processing PEM
-/// content from files, network streams, or any other [`BufRead`] source.
+/// content from files, network streams, or any other [`std::io::BufRead`] source.
 ///
 /// # Errors
 ///

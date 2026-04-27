@@ -15,9 +15,9 @@
 //! # Design
 //!
 //! The C API pattern `result = safe_op(a, b, &err)` where `err` is OR'd
-//! with `1` on overflow is replaced by [`SafeResult<T>`], a value-and-flag
+//! with `1` on overflow is replaced by `SafeResult<T>`, a value-and-flag
 //! pair that can be converted to `Result<T, CommonError>` via
-//! [`SafeResult::into_result`].
+//! `SafeResult::into_result`.
 //!
 //! # Macro Families Translated
 //!
@@ -33,9 +33,9 @@
 //!
 //! # Rules Enforced
 //!
-//! - **R5 (Nullability):** [`SafeResult`] carries an explicit overflow
+//! - **R5 (Nullability):** `SafeResult` carries an explicit overflow
 //!   flag; no sentinel integers.
-//! - **R6 (Lossless Casts):** [`checked_cast`] and `saturating_cast_*`
+//! - **R6 (Lossless Casts):** `checked_cast` and `saturating_cast_*`
 //!   functions replace all bare `as` narrowing conversions.
 //! - **R8 (Zero Unsafe):** No `unsafe` code — uses only Rust's native
 //!   checked arithmetic.
@@ -302,7 +302,7 @@ pub fn safe_mod_u64(a: u64, b: u64) -> SafeResult<u64> {
 /// Checked addition of two `u32` values.
 ///
 /// On overflow, returns the wrapping sum with the overflow flag set.
-/// See [`safe_add_u64`] for detailed semantics.
+/// See `safe_add_u64` for detailed semantics.
 #[inline]
 pub fn safe_add_u32(a: u32, b: u32) -> SafeResult<u32> {
     match a.checked_add(b) {
@@ -314,7 +314,7 @@ pub fn safe_add_u32(a: u32, b: u32) -> SafeResult<u32> {
 /// Checked subtraction of two `u32` values.
 ///
 /// On underflow, returns `0` with the overflow flag set.
-/// See [`safe_sub_u64`] for detailed semantics.
+/// See `safe_sub_u64` for detailed semantics.
 #[inline]
 pub fn safe_sub_u32(a: u32, b: u32) -> SafeResult<u32> {
     match a.checked_sub(b) {
@@ -326,7 +326,7 @@ pub fn safe_sub_u32(a: u32, b: u32) -> SafeResult<u32> {
 /// Checked multiplication of two `u32` values.
 ///
 /// On overflow, returns the wrapping product with the overflow flag set.
-/// See [`safe_mul_u64`] for detailed semantics.
+/// See `safe_mul_u64` for detailed semantics.
 #[inline]
 pub fn safe_mul_u32(a: u32, b: u32) -> SafeResult<u32> {
     match a.checked_mul(b) {
@@ -338,7 +338,7 @@ pub fn safe_mul_u32(a: u32, b: u32) -> SafeResult<u32> {
 /// Checked division of two `u32` values.
 ///
 /// Division by zero returns `SafeResult::overflow(0)`.
-/// See [`safe_div_u64`] for detailed semantics.
+/// See `safe_div_u64` for detailed semantics.
 #[inline]
 pub fn safe_div_u32(a: u32, b: u32) -> SafeResult<u32> {
     match a.checked_div(b) {
@@ -350,7 +350,7 @@ pub fn safe_div_u32(a: u32, b: u32) -> SafeResult<u32> {
 /// Checked modulus of two `u32` values.
 ///
 /// Modulus by zero returns `SafeResult::overflow(0)`.
-/// See [`safe_mod_u64`] for detailed semantics.
+/// See `safe_mod_u64` for detailed semantics.
 #[inline]
 pub fn safe_mod_u32(a: u32, b: u32) -> SafeResult<u32> {
     match a.checked_rem(b) {
@@ -366,7 +366,7 @@ pub fn safe_mod_u32(a: u32, b: u32) -> SafeResult<u32> {
 /// Checked addition of two `usize` values.
 ///
 /// On overflow, returns the wrapping sum with the overflow flag set.
-/// See [`safe_add_u64`] for detailed semantics.
+/// See `safe_add_u64` for detailed semantics.
 #[inline]
 pub fn safe_add_usize(a: usize, b: usize) -> SafeResult<usize> {
     match a.checked_add(b) {
@@ -378,7 +378,7 @@ pub fn safe_add_usize(a: usize, b: usize) -> SafeResult<usize> {
 /// Checked subtraction of two `usize` values.
 ///
 /// On underflow, returns `0` with the overflow flag set.
-/// See [`safe_sub_u64`] for detailed semantics.
+/// See `safe_sub_u64` for detailed semantics.
 #[inline]
 pub fn safe_sub_usize(a: usize, b: usize) -> SafeResult<usize> {
     match a.checked_sub(b) {
@@ -390,7 +390,7 @@ pub fn safe_sub_usize(a: usize, b: usize) -> SafeResult<usize> {
 /// Checked multiplication of two `usize` values.
 ///
 /// On overflow, returns the wrapping product with the overflow flag set.
-/// See [`safe_mul_u64`] for detailed semantics.
+/// See `safe_mul_u64` for detailed semantics.
 #[inline]
 pub fn safe_mul_usize(a: usize, b: usize) -> SafeResult<usize> {
     match a.checked_mul(b) {
@@ -437,7 +437,7 @@ pub fn safe_add_i64(a: i64, b: i64) -> SafeResult<i64> {
 /// Checked subtraction of two `i64` values.
 ///
 /// On overflow, returns the saturating difference with the overflow flag
-/// set. See [`safe_add_i64`] for overflow value semantics.
+/// set. See `safe_add_i64` for overflow value semantics.
 ///
 /// # Examples
 ///
@@ -601,7 +601,7 @@ pub fn safe_neg_i64(a: i64) -> SafeResult<i64> {
 /// Checked addition of two `i32` values.
 ///
 /// On overflow, returns the saturating sum with the overflow flag set.
-/// See [`safe_add_i64`] for detailed semantics.
+/// See `safe_add_i64` for detailed semantics.
 #[inline]
 pub fn safe_add_i32(a: i32, b: i32) -> SafeResult<i32> {
     match a.checked_add(b) {
@@ -613,7 +613,7 @@ pub fn safe_add_i32(a: i32, b: i32) -> SafeResult<i32> {
 /// Checked subtraction of two `i32` values.
 ///
 /// On overflow, returns the saturating difference with the overflow flag
-/// set. See [`safe_sub_i64`] for detailed semantics.
+/// set. See `safe_sub_i64` for detailed semantics.
 #[inline]
 pub fn safe_sub_i32(a: i32, b: i32) -> SafeResult<i32> {
     match a.checked_sub(b) {
@@ -625,7 +625,7 @@ pub fn safe_sub_i32(a: i32, b: i32) -> SafeResult<i32> {
 /// Checked multiplication of two `i32` values.
 ///
 /// On overflow, returns the saturating product with the overflow flag
-/// set. See [`safe_mul_i64`] for detailed semantics.
+/// set. See `safe_mul_i64` for detailed semantics.
 #[inline]
 pub fn safe_mul_i32(a: i32, b: i32) -> SafeResult<i32> {
     match a.checked_mul(b) {
@@ -637,7 +637,7 @@ pub fn safe_mul_i32(a: i32, b: i32) -> SafeResult<i32> {
 /// Checked division of two `i32` values.
 ///
 /// Handles division by zero and `i32::MIN / -1` overflow.
-/// See [`safe_div_i64`] for detailed semantics.
+/// See `safe_div_i64` for detailed semantics.
 #[inline]
 pub fn safe_div_i32(a: i32, b: i32) -> SafeResult<i32> {
     match a.checked_div(b) {
@@ -656,7 +656,7 @@ pub fn safe_div_i32(a: i32, b: i32) -> SafeResult<i32> {
 /// Checked modulus of two `i32` values.
 ///
 /// Handles modulus by zero and `i32::MIN % -1` overflow.
-/// See [`safe_mod_i64`] for detailed semantics.
+/// See `safe_mod_i64` for detailed semantics.
 #[inline]
 pub fn safe_mod_i32(a: i32, b: i32) -> SafeResult<i32> {
     match a.checked_rem(b) {
@@ -669,7 +669,7 @@ pub fn safe_mod_i32(a: i32, b: i32) -> SafeResult<i32> {
 ///
 /// The only overflow case is `i32::MIN`. Returns
 /// `SafeResult::overflow(i32::MIN)` matching C `OSSL_SAFE_MATH_NEGS`.
-/// See [`safe_neg_i64`] for detailed semantics.
+/// See `safe_neg_i64` for detailed semantics.
 #[inline]
 pub fn safe_neg_i32(a: i32) -> SafeResult<i32> {
     match a.checked_neg() {
@@ -795,7 +795,7 @@ pub fn saturating_mul_u64(a: u64, b: u64) -> u64 {
 
 /// Generic checked numeric cast.
 ///
-/// Converts `value` from type `From` to type `To` using [`TryFrom`],
+/// Converts `value` from type `From` to type `To` using `TryFrom`,
 /// returning `Err(CommonError::CastOverflow(..))` if the value does not
 /// fit in the target type. This is the **primary enforcement mechanism**
 /// for Rule R6 (lossless numeric casts) — every narrowing conversion in

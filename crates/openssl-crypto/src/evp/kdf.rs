@@ -919,7 +919,7 @@ fn require_sha256_alias(digest: &str) -> CryptoResult<()> {
 /// an informative error.
 ///
 /// Rule R6: all multiplications are checked; overflow is reported via
-/// [`CommonError::ArithmeticOverflow`] rather than silently wrapping.
+/// `CommonError::ArithmeticOverflow` rather than silently wrapping.
 fn enforce_scrypt_max_mem(n: u64, r: u32, _p: u32, max_mem: u64) -> CryptoResult<()> {
     let r_u64 = u64::from(r);
     let footprint = n
@@ -968,13 +968,13 @@ fn enforce_scrypt_max_mem(n: u64, r: u32, _p: u32, max_mem: u64) -> CryptoResult
 /// * `digest_name` — The underlying HMAC digest to use.  This wrapper
 ///   currently only supports `SHA-256` aliases (`"SHA256"`, `"SHA-256"`,
 ///   `"SHA2-256"`, case-insensitive); other digests return
-///   [`CommonError::Unsupported`].
+///   `CommonError::Unsupported`.
 /// * `length` — Number of output bytes to derive.  Must be > 0.
 ///
 /// # Errors
 ///
-/// * [`CommonError::Unsupported`] if `digest_name` is not a SHA-256 alias.
-/// * [`CommonError::InvalidArgument`] if `password` is empty, `iterations`
+/// * `CommonError::Unsupported` if `digest_name` is not a SHA-256 alias.
+/// * `CommonError::InvalidArgument` if `password` is empty, `iterations`
 ///   is 0, or `length` is 0.
 /// * Propagates any error from [`crate::kdf::pbkdf2_derive`].
 ///
@@ -1054,16 +1054,16 @@ pub fn pbkdf2_derive(
 ///
 /// # Errors
 ///
-/// * [`CommonError::InvalidArgument`] if the password is empty, any
+/// * `CommonError::InvalidArgument` if the password is empty, any
 ///   parameter is zero, or the computed memory footprint exceeds `max_mem`.
-/// * [`CommonError::ArithmeticOverflow`] if the footprint calculation
+/// * `CommonError::ArithmeticOverflow` if the footprint calculation
 ///   overflows `u64` (per rule R6).
 /// * Propagates any error from [`crate::kdf::scrypt_derive`].
 ///
 /// # Rule R6 compliance
 ///
 /// All multiplications performed during the memory-footprint check use
-/// `checked_mul` via [`enforce_scrypt_max_mem`].  No narrowing casts are
+/// `checked_mul` via `enforce_scrypt_max_mem`.  No narrowing casts are
 /// performed.
 pub fn scrypt_derive(
     password: &[u8],
@@ -1124,8 +1124,8 @@ pub fn scrypt_derive(
 ///
 /// # Errors
 ///
-/// * [`CommonError::Unsupported`] if `digest_name` is not a SHA-256 alias.
-/// * [`CommonError::InvalidArgument`] if `length` is 0.
+/// * `CommonError::Unsupported` if `digest_name` is not a SHA-256 alias.
+/// * `CommonError::InvalidArgument` if `length` is 0.
 /// * Propagates any error from [`crate::kdf::hkdf_derive`].
 ///
 /// # Example
@@ -1211,7 +1211,7 @@ pub fn hkdf_derive(
 ///
 /// * [`CryptoError::AlgorithmNotFound`] if the requested cipher cannot be
 ///   fetched from the default provider.
-/// * [`CommonError::InvalidArgument`] if any input parameter is invalid
+/// * `CommonError::InvalidArgument` if any input parameter is invalid
 ///   (empty password, zero iterations, cipher requiring an IV longer than
 ///   the derived block for PBES1, etc.).
 /// * Propagates any error from [`crate::kdf::pbkdf2_derive`] or

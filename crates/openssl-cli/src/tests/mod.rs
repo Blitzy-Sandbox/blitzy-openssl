@@ -3,13 +3,13 @@
 //! Tests exercise the compiled `openssl` binary via subprocess invocation using
 //! the following test infrastructure:
 //!
-//! - [`assert_cmd`] — Command execution and assertion framework providing
+//! - `assert_cmd` — Command execution and assertion framework providing
 //!   [`Command::cargo_bin()`][assert_cmd::Command::cargo_bin] to invoke the
 //!   compiled binary as a subprocess
-//! - [`predicates`] — Rich output matching predicates for stdout/stderr assertions
-//! - [`tempfile`] — Temporary file and directory management for test isolation
-//! - [`insta`] — Snapshot testing for stable help output verification
-//! - [`test_log`] — Tracing subscriber initialization in test context
+//! - `predicates` — Rich output matching predicates for stdout/stderr assertions
+//! - `tempfile` — Temporary file and directory management for test isolation
+//! - `insta` — Snapshot testing for stable help output verification
+//! - `test_log` — Tracing subscriber initialization in test context
 //!
 //! ## Test Organization
 //!
@@ -17,16 +17,16 @@
 //!
 //! | Module | Coverage |
 //! |--------|----------|
-//! | [`dispatch_tests`] | Subcommand dispatch and wiring (Rule R10) |
-//! | [`pki_tests`] | PKI operations (req, x509, ca, verify, crl) |
-//! | [`crypto_tests`] | Cryptographic operations (enc, dgst, cms, pkcs12) |
-//! | [`tls_tests`] | TLS diagnostic tools (s\_client, s\_server, ciphers) |
-//! | [`introspection_tests`] | Introspection commands (version, list, info, errstr) |
-//! | [`provider_tests`] | Provider loading and selection |
-//! | [`error_tests`] | Error handling and edge cases |
-//! | [`help_tests`] | Help output snapshot tests |
-//! | [`callback_tests`] | Callback registration-invocation (Rule R4) |
-//! | [`fips_tests`] | FIPS module tests (feature-gated) |
+//! | `dispatch_tests` | Subcommand dispatch and wiring (Rule R10) |
+//! | `pki_tests` | PKI operations (req, x509, ca, verify, crl) |
+//! | `crypto_tests` | Cryptographic operations (enc, dgst, cms, pkcs12) |
+//! | `tls_tests` | TLS diagnostic tools (s\_client, s\_server, ciphers) |
+//! | `introspection_tests` | Introspection commands (version, list, info, errstr) |
+//! | `provider_tests` | Provider loading and selection |
+//! | `error_tests` | Error handling and edge cases |
+//! | `help_tests` | Help output snapshot tests |
+//! | `callback_tests` | Callback registration-invocation (Rule R4) |
+//! | `fips_tests` | FIPS module tests (feature-gated) |
 //!
 //! ## Shared Helper
 //!
@@ -117,7 +117,7 @@ pub(crate) fn openssl_cmd() -> Command {
 mod mod_tests {
     use super::openssl_cmd;
 
-    /// Validates that the shared [`openssl_cmd`] helper successfully locates
+    /// Validates that the shared `openssl_cmd` helper successfully locates
     /// the compiled `openssl` binary and returns a ready-to-use
     /// [`assert_cmd::Command`].
     ///

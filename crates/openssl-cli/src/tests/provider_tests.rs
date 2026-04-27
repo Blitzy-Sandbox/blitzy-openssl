@@ -52,7 +52,7 @@
 //! isolation from global state. Temporary files and directories are managed
 //! via [`tempfile::TempDir`] for automatic cleanup.
 //!
-//! Assertions use [`predicates`] combinators — `str::contains()` for keyword
+//! Assertions use `predicates` combinators — `str::contains()` for keyword
 //! matching and `str::is_match()` for regex-based pattern validation — ensuring
 //! that error output is meaningful and actionable.
 //!

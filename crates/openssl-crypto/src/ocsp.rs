@@ -8,10 +8,10 @@
 //!
 //! | C File               | Rust Equivalent                                          |
 //! |----------------------|----------------------------------------------------------|
-//! | `ocsp_cl.c`          | [`OcspRequest`], [`OcspRequestBuilder`], response status |
-//! | `ocsp_srv.c`         | [`OcspBasicResponse`], [`OcspSingleResponse`] building   |
-//! | `ocsp_vfy.c`         | [`verify_response()`], [`check_validity()`]              |
-//! | `ocsp_lib.c`         | [`OcspCertId`], cert-to-id, id comparison                |
+//! | `ocsp_cl.c`          | `OcspRequest`, `OcspRequestBuilder`, response status     |
+//! | `ocsp_srv.c`         | `OcspBasicResponse`, `OcspSingleResponse` building       |
+//! | `ocsp_vfy.c`         | `verify_response()`, `check_validity()`                  |
+//! | `ocsp_lib.c`         | `OcspCertId`, cert-to-id, id comparison                  |
 //! | `ocsp_ht.c`          | HTTP transport (higher-level; wire-format via `to_der`)  |
 //! | `v3_ocsp.c`          | X.509v3 OCSP extension support                           |
 //! | `ocsp_ext.c`         | Request/response extension manipulation                  |
@@ -23,21 +23,21 @@
 //! The Online Certificate Status Protocol enables clients to query the
 //! revocation status of certificates in real time:
 //!
-//! 1. **Request** — A client constructs an [`OcspRequest`] containing one or
-//!    more [`OcspCertId`] entries (each identifying a certificate by its issuer
+//! 1. **Request** — A client constructs an `OcspRequest` containing one or
+//!    more `OcspCertId` entries (each identifying a certificate by its issuer
 //!    name hash, issuer key hash, and serial number) and an optional nonce.
-//! 2. **Response** — An OCSP responder returns an [`OcspResponse`] with an
-//!    [`OcspResponseStatus`] and, if successful, an [`OcspBasicResponse`]
+//! 2. **Response** — An OCSP responder returns an `OcspResponse` with an
+//!    `OcspResponseStatus` and, if successful, an `OcspBasicResponse`
 //!    containing individual certificate status entries
-//!    ([`OcspSingleResponse`]), the responder's identity, and a signature.
+//!    (`OcspSingleResponse`), the responder's identity, and a signature.
 //! 3. **Verification** — The client verifies the response signature via
-//!    [`verify_response()`] and checks temporal validity of each single
-//!    response via [`check_validity()`].
+//!    `verify_response()` and checks temporal validity of each single
+//!    response via `check_validity()`.
 //!
 //! # Rules Enforced
 //!
 //! - **R5 (Nullability):** All results use `Result<T, E>` / `Option<T>`;
-//!   no integer sentinels.  [`OcspCertStatus`] is an enum, not an integer code.
+//!   no integer sentinels.  `OcspCertStatus` is an enum, not an integer code.
 //! - **R6 (Lossless Casts):** All numeric conversions use `try_from` or
 //!   checked arithmetic.
 //! - **R8 (Zero Unsafe):** No `unsafe` code in this module.

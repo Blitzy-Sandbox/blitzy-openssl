@@ -717,7 +717,7 @@ pub fn decode_pvk(ctx: &Any2ObjContext, input: &[u8]) -> ProviderResult<Option<D
     ))
 }
 
-/// RAW decoder — reads raw binary data up to [`MAX_RAW_KEY_SIZE`] bytes.
+/// RAW decoder — reads raw binary data up to `MAX_RAW_KEY_SIZE` bytes.
 ///
 /// Replaces C `raw2obj_decode()`.
 ///

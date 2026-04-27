@@ -8,18 +8,18 @@
 //!
 //! | Rust Component           | C Source File                | Purpose                        |
 //! |--------------------------|-----------------------------|--------------------------------|
-//! | [`DsaParams`]            | `crypto/dsa/dsa_lib.c`      | DSA parameter lifecycle        |
-//! | [`DsaPrivateKey`]        | `crypto/dsa/dsa_key.c`      | Private key with zeroize       |
-//! | [`DsaPublicKey`]         | `crypto/dsa/dsa_key.c`      | Public key component           |
-//! | [`DsaKeyPair`]           | `crypto/dsa/dsa_key.c`      | Combined key pair              |
-//! | [`generate_params`]      | `crypto/dsa/dsa_gen.c`      | Parameter generation           |
-//! | [`generate_key`]         | `crypto/dsa/dsa_key.c`      | Key pair generation            |
-//! | [`sign`]                 | `crypto/dsa/dsa_ossl.c`     | DSA signing with blinding      |
-//! | [`verify`]               | `crypto/dsa/dsa_ossl.c`     | DSA signature verification     |
+//! | `DsaParams`              | `crypto/dsa/dsa_lib.c`      | DSA parameter lifecycle        |
+//! | `DsaPrivateKey`          | `crypto/dsa/dsa_key.c`      | Private key with zeroize       |
+//! | `DsaPublicKey`           | `crypto/dsa/dsa_key.c`      | Public key component           |
+//! | `DsaKeyPair`             | `crypto/dsa/dsa_key.c`      | Combined key pair              |
+//! | `generate_params`        | `crypto/dsa/dsa_gen.c`      | Parameter generation           |
+//! | `generate_key`           | `crypto/dsa/dsa_key.c`      | Key pair generation            |
+//! | `sign`                   | `crypto/dsa/dsa_ossl.c`     | DSA signing with blinding      |
+//! | `verify`                 | `crypto/dsa/dsa_ossl.c`     | DSA signature verification     |
 //!
 //! # Rules Enforced
 //!
-//! - **R5 (Nullability):** [`verify`] returns `Result<bool>`, not integer sentinel.
+//! - **R5 (Nullability):** `verify` returns `Result<bool>`, not integer sentinel.
 //!   Optional fields use `Option<T>`.
 //! - **R6 (Lossless Casts):** Bit sizes validated via checked arithmetic; no bare `as` casts.
 //! - **R8 (Zero Unsafe):** No `unsafe` code. Private key material zeroed via `zeroize`.
@@ -28,7 +28,7 @@
 //!
 //! # Security Considerations
 //!
-//! - Private key material in [`DsaPrivateKey`] is zeroed on drop via
+//! - Private key material in `DsaPrivateKey` is zeroed on drop via
 //!   [`zeroize::ZeroizeOnDrop`], replacing the C `BN_clear_free()` pattern.
 //! - The signing operation uses blinding to protect against side-channel attacks,
 //!   following the same approach as `crypto/dsa/dsa_ossl.c`.
@@ -139,8 +139,8 @@ impl DsaParams {
     /// # Validation
     ///
     /// Performs basic structural validation:
-    /// - `p` must be positive and at least [`DSA_MIN_PRIME_BITS`] bits
-    /// - `p` must not exceed [`DSA_MAX_PRIME_BITS`] bits
+    /// - `p` must be positive and at least `DSA_MIN_PRIME_BITS` bits
+    /// - `p` must not exceed `DSA_MAX_PRIME_BITS` bits
     /// - `q` must be positive and smaller than `p`
     /// - `g` must be in the range `(1, p)`
     ///
@@ -978,7 +978,7 @@ fn generate_private_key_value(q: &BigNum) -> CryptoResult<BigNum> {
 /// # Errors
 ///
 /// - [`CryptoError::Key`] if the private key parameters are invalid.
-/// - [`CryptoError::Key`] if signing fails after [`MAX_DSA_SIGN_RETRIES`]
+/// - [`CryptoError::Key`] if signing fails after `MAX_DSA_SIGN_RETRIES`
 ///   retries (r or s is repeatedly zero).
 ///
 /// # C Mapping
@@ -1449,7 +1449,7 @@ fn rfc6979_generate_k(
 ///
 /// - [`CryptoError::Key`] if the private key parameters are invalid
 /// - [`CryptoError::AlgorithmNotFound`] if `hash_name` is not recognised
-/// - [`CryptoError::Key`] if signing fails after [`MAX_DSA_SIGN_RETRIES`]
+/// - [`CryptoError::Key`] if signing fails after `MAX_DSA_SIGN_RETRIES`
 ///   retries — extremely unlikely for valid (L, N) parameter sets, since
 ///   each retry re-derives `k` via a fresh HMAC-DRBG iteration
 ///

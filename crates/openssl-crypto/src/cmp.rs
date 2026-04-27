@@ -9,11 +9,11 @@
 //!
 //! This module provides **foundational CMP types** sufficient to:
 //!
-//! - Express CMP protocol versions ([`PkiVersion`])
-//! - Encode/decode PKI status codes ([`PkiStatus`])
-//! - Represent failure information bits ([`PkiFailureInfo`], [`FailureInfoBits`])
-//! - Construct minimal `PKIHeader` and `PKIStatusInfo` structures ([`PkiHeader`],
-//!   [`PkiStatusInfo`])
+//! - Express CMP protocol versions (`PkiVersion`)
+//! - Encode/decode PKI status codes (`PkiStatus`)
+//! - Represent failure information bits (`PkiFailureInfo`, `FailureInfoBits`)
+//! - Construct minimal `PKIHeader` and `PKIStatusInfo` structures (`PkiHeader`,
+//!   `PkiStatusInfo`)
 //! - Validate transaction IDs and nonces against RFC 4210 length requirements
 //!
 //! Full CMP protocol message orchestration (IR/CR/KUR/RR transactions, multi-RTT
@@ -27,16 +27,16 @@
 //!
 //! | C Symbol / File | Rust Equivalent |
 //! |---|---|
-//! | `OSSL_CMP_PVNO_2`, `OSSL_CMP_PVNO_3` (`cmp.h.in`) | [`PkiVersion`] |
-//! | `OSSL_CMP_PKISTATUS_*` (`cmp.h.in`) | [`PkiStatus`] |
-//! | `OSSL_CMP_PKIFAILUREINFO_*` (`cmp.h.in`) | [`PkiFailureInfo`] |
-//! | `OSSL_CMP_CTX_FAILINFO_*` bitmasks (`cmp.h.in`) | [`FailureInfoBits`] |
-//! | `OSSL_CMP_PKIHEADER` (`cmp_local.h`) | [`PkiHeader`] |
-//! | `OSSL_CMP_PKISI` `PKIStatusInfo` (`cmp_local.h`) | [`PkiStatusInfo`] |
-//! | `crypto/cmp/cmp_status.c` reason-string functions | [`PkiStatus::description`] |
-//! | `crypto/cmp/cmp_msg.c` header construction | [`PkiHeaderBuilder`] |
-//! | RFC 4210 §5.1.1 transaction ID validation | [`validate_transaction_id`] |
-//! | RFC 4210 §5.1.1 nonce validation | [`validate_nonce`] |
+//! | `OSSL_CMP_PVNO_2`, `OSSL_CMP_PVNO_3` (`cmp.h.in`) | `PkiVersion` |
+//! | `OSSL_CMP_PKISTATUS_*` (`cmp.h.in`) | `PkiStatus` |
+//! | `OSSL_CMP_PKIFAILUREINFO_*` (`cmp.h.in`) | `PkiFailureInfo` |
+//! | `OSSL_CMP_CTX_FAILINFO_*` bitmasks (`cmp.h.in`) | `FailureInfoBits` |
+//! | `OSSL_CMP_PKIHEADER` (`cmp_local.h`) | `PkiHeader` |
+//! | `OSSL_CMP_PKISI` `PKIStatusInfo` (`cmp_local.h`) | `PkiStatusInfo` |
+//! | `crypto/cmp/cmp_status.c` reason-string functions | `PkiStatus::description` |
+//! | `crypto/cmp/cmp_msg.c` header construction | `PkiHeaderBuilder` |
+//! | RFC 4210 §5.1.1 transaction ID validation | `validate_transaction_id` |
+//! | RFC 4210 §5.1.1 nonce validation | `validate_nonce` |
 //!
 //! # Rules Enforced
 //!

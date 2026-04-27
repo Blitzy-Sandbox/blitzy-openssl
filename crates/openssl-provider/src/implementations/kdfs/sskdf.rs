@@ -25,14 +25,14 @@
 //!
 //! ## Parameter Contract
 //!
-//! Accepts the following parameters via [`KdfContext::set_params`]:
+//! Accepts the following parameters via `KdfContext::set_params`:
 //!
 //! | Parameter                 | Type            | Purpose                                    |
 //! |---------------------------|-----------------|--------------------------------------------|
 //! | `"digest"`                | `Utf8String`    | Digest algorithm (e.g. `"SHA2-256"`).      |
 //! | `"secret"` / `"key"`      | `OctetString`   | Shared secret `Z` (mandatory).             |
 //! | `"info"`                  | `OctetString`   | FixedInfo / SharedInfo. Segments are       |
-//! |                           |                 | concatenated, up to [`MAX_INFO_SEGMENTS`]. |
+//! |                           |                 | concatenated, up to `MAX_INFO_SEGMENTS`. |
 //! | `"salt"`                  | `OctetString`   | MAC salt. Hash-mode ignores this.          |
 //! | `"mac"`                   | `Utf8String`    | `"HMAC"`, `"KMAC128"`, or `"KMAC256"`.     |
 //! |                           |                 | SSKDF only; X9.63 rejects this.            |
@@ -50,16 +50,16 @@
 //! ## Limits
 //!
 //! - Each of `secret`, `info`, `salt`, and `derived_key_len` is capped at
-//!   [`MAX_INPUT_LEN`] (`1 << 30` = 1 GiB) to match C `SSKDF_MAX_INLEN`.
-//! - At most [`MAX_INFO_SEGMENTS`] (5) `"info"` segments are concatenated.
+//!   `MAX_INPUT_LEN` (`1 << 30` = 1 GiB) to match C `SSKDF_MAX_INLEN`.
+//! - At most `MAX_INFO_SEGMENTS` (5) `"info"` segments are concatenated.
 //! - XOF digests (e.g. SHAKE128, SHAKE256) are rejected — SP 800-56C forbids
 //!   XOF as a standalone auxiliary function.
 //!
 //! ## Memory Hygiene
 //!
-//! - [`SskdfContext`] carries `#[derive(Zeroize, ZeroizeOnDrop)]`, guaranteeing
+//! - `SskdfContext` carries `#[derive(Zeroize, ZeroizeOnDrop)]`, guaranteeing
 //!   secret/salt/info are wiped on drop *and* on manual `reset()` (via
-//!   [`Zeroize::zeroize`]).
+//!   `Zeroize::zeroize`).
 //! - Non-sensitive metadata (variant, aux function, output-length hint) is
 //!   annotated `#[zeroize(skip)]` to avoid pointless work.
 //!
@@ -72,7 +72,7 @@
 //! - **R7** (lock granularity): no shared locks — per-context `&mut self`.
 //! - **R8** (no unsafe): zero `unsafe` blocks.
 //! - **R9** (warning-free): deny-warnings-clean build.
-//! - **R10** (wiring): reachable from [`descriptors`] via
+//! - **R10** (wiring): reachable from `descriptors` via
 //!   [`crate::implementations::kdfs::descriptors`].
 
 use std::sync::Arc;
@@ -104,7 +104,7 @@ const PARAM_SECRET: &str = "secret";
 const PARAM_KEY: &str = "key";
 /// `OSSL_KDF_PARAM_INFO` — `FixedInfo` (SSKDF) / `SharedInfo` (X9.63).
 /// `OctetString`. Multiple info segments are concatenated up to
-/// [`MAX_INFO_SEGMENTS`].
+/// `MAX_INFO_SEGMENTS`.
 const PARAM_INFO: &str = "info";
 /// `OSSL_KDF_PARAM_SALT` — MAC salt. `OctetString`. SSKDF MAC modes only;
 /// ignored by hash-mode SSKDF and X9.63.
@@ -121,7 +121,7 @@ const PARAM_MAC: &str = "mac";
 /// 48, 64}`). `UInt64`. Optional.
 const PARAM_SIZE: &str = "size";
 /// `OSSL_KDF_PARAM_PROPERTIES` — property query string forwarded to
-/// [`MessageDigest::fetch`] / [`Mac::fetch`]. `Utf8String`. Optional.
+/// `MessageDigest::fetch` / `Mac::fetch`. `Utf8String`. Optional.
 const PARAM_PROPERTIES: &str = "properties";
 
 // =============================================================================
@@ -157,7 +157,7 @@ const KMAC_OUT_LEN_ALLOWED: &[usize] = &[20, 28, 32, 48, 64];
 // Helpers
 // =============================================================================
 
-/// Demotes a [`CryptoError`] to a [`ProviderError::Dispatch`].
+/// Demotes a `CryptoError` to a `ProviderError::Dispatch`.
 ///
 /// This mirrors the kbkdf helper at `kbkdf.rs:120`: we treat every call into
 /// the digest / MAC layer as a "dispatch" surface, and if the lower-layer
@@ -213,7 +213,7 @@ impl SskdfVariant {
 /// Which auxiliary function is driving the Single-Step construction.
 ///
 /// This is derived from the combination of the `"mac"` parameter and the
-/// [`SskdfVariant`]:
+/// `SskdfVariant`:
 ///
 /// | `variant`    | `"mac"` present? | `"mac"` value    | `aux_fn`              |
 /// |--------------|------------------|------------------|-----------------------|
@@ -274,14 +274,14 @@ impl SskdfAuxFunction {
 ///   library-context handle for algorithm fetch).
 /// - Nullable pointers are represented as [`Option<Vec<u8>>`] / [`Option<T>`]
 ///   rather than `NULL` sentinels (rule R5).
-/// - `is_kmac` is subsumed into the [`SskdfAuxFunction`] enum.
+/// - `is_kmac` is subsumed into the `SskdfAuxFunction` enum.
 /// - The `macctx` field holds an *initialized template* (key already set);
-///   each iteration duplicates it via [`MacCtx::dup`], matching the C
+///   each iteration duplicates it via `MacCtx::dup`, matching the C
 ///   `EVP_MAC_CTX_dup` pattern at `sskdf.c:295`.
 ///
 /// # Drop Behavior
 ///
-/// Derives [`ZeroizeOnDrop`]: every byte of `secret`, `info`, `salt` is wiped
+/// Derives `ZeroizeOnDrop`: every byte of `secret`, `info`, `salt` is wiped
 /// on drop. `mac_template` and `digest` do not hold plaintext secrets but
 /// still own heap allocations — they are freed normally.
 #[derive(ZeroizeOnDrop)]
@@ -295,7 +295,7 @@ pub struct SskdfContext {
     variant: SskdfVariant,
 
     /// Currently selected auxiliary function. Updated by
-    /// [`SskdfContext::apply_params`]. Defaults to [`SskdfAuxFunction::Hash`].
+    /// `SskdfContext::apply_params`. Defaults to [`SskdfAuxFunction::Hash`].
     #[zeroize(skip)]
     aux_fn: SskdfAuxFunction,
 
@@ -317,7 +317,7 @@ pub struct SskdfContext {
     properties: Option<String>,
 
     /// Pre-initialized MAC template (key already set). Per-iteration we
-    /// [`MacCtx::dup`] this template, mirroring `EVP_MAC_CTX_dup` at
+    /// `MacCtx::dup` this template, mirroring `EVP_MAC_CTX_dup` at
     /// `sskdf.c:295`. Not zeroized directly — the MAC context's own `Drop`
     /// zeroizes its internal key buffer.
     #[zeroize(skip)]
@@ -327,12 +327,12 @@ pub struct SskdfContext {
     secret: Option<Vec<u8>>,
 
     /// `FixedInfo` (SSKDF) / `SharedInfo` (X9.63). Accumulated across multiple
-    /// `"info"` `set_params` calls, up to [`MAX_INFO_SEGMENTS`]. Zeroized
+    /// `"info"` `set_params` calls, up to `MAX_INFO_SEGMENTS`. Zeroized
     /// opportunistically — info *may* be secret in some protocol bindings.
     info: Option<Vec<u8>>,
 
     /// Number of `"info"` segments seen so far. Used to enforce
-    /// [`MAX_INFO_SEGMENTS`] per C `ossl_param_get1_concat_octet_string`.
+    /// `MAX_INFO_SEGMENTS` per C `ossl_param_get1_concat_octet_string`.
     #[zeroize(skip)]
     info_segments: usize,
 
@@ -350,8 +350,8 @@ impl SskdfContext {
     /// Creates a fresh context for the given variant.
     ///
     /// The context starts in a minimal unconfigured state: no digest, no
-    /// MAC, no secret. Callers must populate it via [`set_params`] before
-    /// calling [`derive`].
+    /// MAC, no secret. Callers must populate it via `set_params` before
+    /// calling `derive`.
     ///
     /// [`set_params`]: KdfContext::set_params
     /// [`derive`]: KdfContext::derive
@@ -380,11 +380,11 @@ impl SskdfContext {
     ///
     /// Matches the semantics of the C `sskdf_dup` at `sskdf.c:391-420`:
     /// all secret / info / salt buffers are duplicated, the MAC context is
-    /// duplicated via [`MacCtx::dup`], and metadata is copied verbatim.
+    /// duplicated via `MacCtx::dup`, and metadata is copied verbatim.
     ///
     /// # Errors
     ///
-    /// Propagates [`MacCtx::dup`] failures as [`ProviderError::Dispatch`].
+    /// Propagates `MacCtx::dup` failures as `ProviderError::Dispatch`.
     pub fn dup(&self) -> ProviderResult<Self> {
         let mac_template = match &self.mac_template {
             Some(t) => Some(t.dup().map_err(dispatch_err)?),
@@ -434,7 +434,7 @@ impl SskdfContext {
     /// - `"secret"` / `"key"` → copied into `self.secret`. Overrides any
     ///   previous value (matches C `OPENSSL_clear_free` + `memdup`).
     /// - `"info"` → **appended** to `self.info`, enforcing
-    ///   [`MAX_INFO_SEGMENTS`] and [`MAX_INPUT_LEN`] bounds.
+    ///   `MAX_INFO_SEGMENTS` and `MAX_INPUT_LEN` bounds.
     /// - `"salt"` → copied into `self.salt`.
     /// - `"mac"` (SSKDF only) → stored + `aux_fn` classified.
     /// - `"size"` → stored as `out_len`.
@@ -444,8 +444,8 @@ impl SskdfContext {
     ///
     /// - Unsupported MAC name (anything other than HMAC / KMAC128 / KMAC256).
     /// - X9.63 + `"mac"` present → `PROV_R_NOT_SUPPORTED`.
-    /// - `secret` / `info` / `salt` exceeding [`MAX_INPUT_LEN`].
-    /// - More than [`MAX_INFO_SEGMENTS`] info segments.
+    /// - `secret` / `info` / `salt` exceeding `MAX_INPUT_LEN`.
+    /// - More than `MAX_INFO_SEGMENTS` info segments.
     /// - `"size"` = 0.
     fn apply_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         // --- secret --------------------------------------------------------
@@ -731,7 +731,7 @@ impl SskdfContext {
     /// Returns an error if:
     ///
     /// - `self.digest_name` is `None` (caller should have caught this in
-    ///   [`Self::validate`]).
+    ///   `Self::validate`).
     /// - The digest is an extendable-output function (XOF). SP 800-56C §4
     ///   forbids XOF as the auxiliary function — the C code also rejects
     ///   these (implicitly, via the fixed-size `EVP_MAX_MD_SIZE` output
@@ -1302,7 +1302,7 @@ impl KdfContext for SskdfContext {
         Ok(ParamBuilder::new().push_u64(PARAM_SIZE, size).build())
     }
 
-    /// Settable-side entry point — delegates to [`Self::apply_params`].
+    /// Settable-side entry point — delegates to `Self::apply_params`.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         self.apply_params(params)
     }
@@ -1316,17 +1316,17 @@ impl KdfContext for SskdfContext {
 ///
 /// Translates the C dispatch-table pattern (`ossl_kdf_sskdf_functions` at
 /// `sskdf.c:704-720`) into a Rust trait implementation. A single
-/// [`SskdfProvider`] instance vends as many [`SskdfContext`] instances as
+/// `SskdfProvider` instance vends as many `SskdfContext` instances as
 /// the caller requests (one per `new_ctx`), each of which implements
-/// [`KdfContext`] and carries its own mutable derivation state.
+/// `KdfContext` and carries its own mutable derivation state.
 ///
 /// The provider supports three auxiliary-function modes, selected by the
 /// `"mac"` parameter on a context:
 ///
 /// - **Hash mode** (default, no `"mac"` set): `H(counter ‖ Z ‖ info)` per
-///   [`derive_hash`](SskdfContext::derive_hash).
+///   `derive_hash`.
 /// - **HMAC mode** (`mac = "HMAC"`): `HMAC(salt, counter ‖ Z ‖ info)` per
-///   [`derive_mac`](SskdfContext::derive_mac).
+///   `derive_mac`.
 /// - **KMAC mode** (`mac = "KMAC128"` or `"KMAC256"`): KMAC with the
 ///   customization string `"KDF"`.
 ///
@@ -1362,8 +1362,8 @@ impl SskdfProvider {
          functions) — RFC-equivalent one-step key derivation function"
     }
 
-    /// Returns a [`ParamSet`] enumerating the parameters this provider
-    /// accepts via [`KdfContext::set_params`]. Values are placeholders; the
+    /// Returns a `ParamSet` enumerating the parameters this provider
+    /// accepts via `KdfContext::set_params`. Values are placeholders; the
     /// keys are the authoritative contract.
     ///
     /// Matches the C `sskdf_settable_ctx_params` table (`sskdf.c:676-683`).
@@ -1381,8 +1381,8 @@ impl SskdfProvider {
             .build()
     }
 
-    /// Returns a [`ParamSet`] enumerating the parameters readable via
-    /// [`KdfContext::get_params`]. Values are placeholders; the keys are
+    /// Returns a `ParamSet` enumerating the parameters readable via
+    /// `KdfContext::get_params`. Values are placeholders; the keys are
     /// the authoritative contract.
     ///
     /// Matches the C `sskdf_gettable_ctx_params` table (`sskdf.c:722-728`).
@@ -1402,7 +1402,7 @@ impl KdfProvider for SskdfProvider {
     ///
     /// Equivalent to C `sskdf_new` (`sskdf.c:332-352`): allocates a new
     /// `KDF_SSKDF` struct with provctx set and all other fields zero.
-    /// The returned context implements [`KdfContext`] and is boxed as a
+    /// The returned context implements `KdfContext` and is boxed as a
     /// trait object for dynamic provider dispatch.
     #[instrument(skip_all, level = "trace")]
     fn new_ctx(&self) -> ProviderResult<Box<dyn KdfContext>> {
@@ -1422,16 +1422,16 @@ impl KdfProvider for SskdfProvider {
 ///
 /// Translates the C dispatch-table pattern (`ossl_kdf_x963_kdf_functions` at
 /// `sskdf.c:780-796`) into a Rust trait implementation. A single
-/// [`X963KdfProvider`] instance vends as many [`SskdfContext`] instances as
+/// `X963KdfProvider` instance vends as many `SskdfContext` instances as
 /// the caller requests. The context's [`SskdfVariant::X963`] field selects
-/// the X9.63 counter-placement rule in [`derive_hash`](SskdfContext::derive_hash):
+/// the X9.63 counter-placement rule in `derive_hash`:
 ///
 /// `Result(i) = H(Z ‖ counter ‖ info)`
 ///
 /// (whereas SSKDF uses `H(counter ‖ Z ‖ info)`).
 ///
 /// Unlike SSKDF, X9.63 is **hash-only**: supplying a `"mac"` parameter to an
-/// X963 context is rejected by [`SskdfContext::apply_params`] (matches C
+/// X963 context is rejected by `SskdfContext::apply_params` (matches C
 /// `x963kdf_set_ctx_params` at `sskdf.c:643-645`).
 #[derive(Debug, Clone)]
 pub struct X963KdfProvider {
@@ -1460,8 +1460,8 @@ impl X963KdfProvider {
          the shared secret)"
     }
 
-    /// Returns a [`ParamSet`] enumerating the parameters this provider
-    /// accepts via [`KdfContext::set_params`]. The `"mac"` parameter is
+    /// Returns a `ParamSet` enumerating the parameters this provider
+    /// accepts via `KdfContext::set_params`. The `"mac"` parameter is
     /// listed for contract discoverability but is rejected at derive time
     /// (X9.63 is hash-only).
     ///
@@ -1478,8 +1478,8 @@ impl X963KdfProvider {
             .build()
     }
 
-    /// Returns a [`ParamSet`] enumerating the parameters readable via
-    /// [`KdfContext::get_params`].
+    /// Returns a `ParamSet` enumerating the parameters readable via
+    /// `KdfContext::get_params`.
     ///
     /// Matches the C `x963kdf_gettable_ctx_params` table
     /// (`sskdf.c:769-775`).

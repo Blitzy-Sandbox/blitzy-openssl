@@ -8,19 +8,19 @@
 //! ## Algorithm Families
 //!
 //! ### SP 800-90A DRBG Implementations
-//! - **CTR-DRBG** ([`ctr_drbg`]) — AES-based counter mode DRBG (SP 800-90A §10.2)
-//! - **Hash-DRBG** ([`hash_drbg`]) — Hash function-based DRBG (SP 800-90A §10.1.1)
-//! - **HMAC-DRBG** ([`hmac_drbg`]) — HMAC-based DRBG (SP 800-90A §10.1.2)
+//! - **CTR-DRBG** (`ctr_drbg`) — AES-based counter mode DRBG (SP 800-90A §10.2)
+//! - **Hash-DRBG** (`hash_drbg`) — Hash function-based DRBG (SP 800-90A §10.1.1)
+//! - **HMAC-DRBG** (`hmac_drbg`) — HMAC-based DRBG (SP 800-90A §10.1.2)
 //!
 //! ### Seed Sources
-//! - **Seed Source** ([`seed_src`]) — OS entropy via `getrandom`/`CryptGenRandom`
-//! - **Jitter** ([`jitter`]) — CPU timing jitter entropy (conditional on
+//! - **Seed Source** (`seed_src`) — OS entropy via `getrandom`/`CryptGenRandom`
+//! - **Jitter** (`jitter`) — CPU timing jitter entropy (conditional on
 //!   `jitter` feature flag)
 //!
 //! ### Test and Compliance
-//! - **FIPS CRNG Test** ([`fips_crng`]) — SP 800-90B continuous RNG health
+//! - **FIPS CRNG Test** (`fips_crng`) — SP 800-90B continuous RNG health
 //!   test wrapper
-//! - **Test RNG** ([`test_rng`]) — Deterministic test RNG (xorshift32) for
+//! - **Test RNG** (`test_rng`) — Deterministic test RNG (xorshift32) for
 //!   reproducible test scenarios
 //!
 //! ## Architecture
@@ -39,30 +39,30 @@
 //!   (OS entropy)  (CPU jitter)   (health wrapper)
 //! ```
 //!
-//! All DRBG implementations use the common [`Drbg`] framework which wraps
-//! mechanism-specific types via the [`DrbgMechanism`] trait. The [`Drbg`]
+//! All DRBG implementations use the common `Drbg` framework which wraps
+//! mechanism-specific types via the `DrbgMechanism` trait. The `Drbg`
 //! struct manages entropy acquisition, reseed policy enforcement, optional
 //! locking, and fork detection around the mechanism-specific core.
 //!
 //! ## Provider Registration
 //!
-//! The [`descriptors()`] function returns algorithm descriptors for all RNG
+//! The `descriptors()` function returns algorithm descriptors for all RNG
 //! algorithms, matching the C `default_rands[]` array in `defltprov.c`.
-//! The [`create_rand_context()`] factory function creates the appropriate
+//! The `create_rand_context()` factory function creates the appropriate
 //! [`RandContext`](crate::traits::RandContext) for a given algorithm name.
 //!
 //! ## Source Mapping
 //!
 //! | Rust Module | C Source File | Description |
 //! |-------------|---------------|-------------|
-//! | [`drbg`] | `drbg.c` | Core DRBG framework, state machine |
-//! | [`ctr_drbg`] | `drbg_ctr.c` | AES-CTR mechanism |
-//! | [`hash_drbg`] | `drbg_hash.c` | Hash-based mechanism |
-//! | [`hmac_drbg`] | `drbg_hmac.c` | HMAC-based mechanism |
-//! | [`seed_src`] | `seed_src.c` | OS entropy source |
-//! | [`jitter`] | `seed_src_jitter.c` | CPU jitter entropy |
-//! | [`fips_crng`] | `fips_crng_test.c` | FIPS health test wrapper |
-//! | [`test_rng`] | `test_rng.c` | Deterministic test RNG |
+//! | `drbg` | `drbg.c` | Core DRBG framework, state machine |
+//! | `ctr_drbg` | `drbg_ctr.c` | AES-CTR mechanism |
+//! | `hash_drbg` | `drbg_hash.c` | Hash-based mechanism |
+//! | `hmac_drbg` | `drbg_hmac.c` | HMAC-based mechanism |
+//! | `seed_src` | `seed_src.c` | OS entropy source |
+//! | `jitter` | `seed_src_jitter.c` | CPU jitter entropy |
+//! | `fips_crng` | `fips_crng_test.c` | FIPS health test wrapper |
+//! | `test_rng` | `test_rng.c` | Deterministic test RNG |
 
 // =============================================================================
 // Submodule Declarations
@@ -71,15 +71,15 @@
 /// Core DRBG framework: state machine, entropy acquisition, reseed policy,
 /// optional locking, and fork detection.
 ///
-/// Provides the [`Drbg`] wrapper struct that delegates to mechanism-specific
-/// implementations via the [`DrbgMechanism`] trait.
+/// Provides the `Drbg` wrapper struct that delegates to mechanism-specific
+/// implementations via the `DrbgMechanism` trait.
 ///
 /// Source: `providers/implementations/rands/drbg.c`
 pub mod drbg;
 
 /// CTR-DRBG (SP 800-90A §10.2) — AES-based counter mode DRBG.
 ///
-/// Implements the [`DrbgMechanism`] trait using AES in counter mode for the
+/// Implements the `DrbgMechanism` trait using AES in counter mode for the
 /// internal state update and output generation functions.
 ///
 /// Source: `providers/implementations/rands/drbg_ctr.c`
@@ -87,7 +87,7 @@ pub mod ctr_drbg;
 
 /// Hash-DRBG (SP 800-90A §10.1.1) — Hash function-based DRBG.
 ///
-/// Implements the [`DrbgMechanism`] trait using a hash function (e.g., SHA-256,
+/// Implements the `DrbgMechanism` trait using a hash function (e.g., SHA-256,
 /// SHA-512) for the internal state update and output generation.
 ///
 /// Source: `providers/implementations/rands/drbg_hash.c`
@@ -95,7 +95,7 @@ pub mod hash_drbg;
 
 /// HMAC-DRBG (SP 800-90A §10.1.2) — HMAC-based DRBG.
 ///
-/// Implements the [`DrbgMechanism`] trait using HMAC for the internal state
+/// Implements the `DrbgMechanism` trait using HMAC for the internal state
 /// update and output generation. Widely used due to its simplicity and
 /// proven security properties.
 ///
@@ -107,7 +107,7 @@ pub mod hmac_drbg;
 /// Provides direct access to operating system entropy for seeding DRBGs and
 /// for applications requiring true randomness. Implements
 /// [`RandContext`](crate::traits::RandContext) directly (not wrapped by
-/// [`Drbg`]).
+/// `Drbg`).
 ///
 /// Source: `providers/implementations/rands/seed_src.c`
 pub mod seed_src;
@@ -116,8 +116,8 @@ pub mod seed_src;
 ///
 /// Harvests entropy from CPU execution time variations. Requires the
 /// `jitter` feature flag to be enabled. When unavailable, the
-/// [`descriptors()`] function omits the JITTER algorithm and the
-/// [`create_rand_context()`] factory returns
+/// `descriptors()` function omits the JITTER algorithm and the
+/// `create_rand_context()` factory returns
 /// [`ProviderError::AlgorithmUnavailable`](openssl_common::error::ProviderError::AlgorithmUnavailable).
 ///
 /// Source: `providers/implementations/rands/seed_src_jitter.c`
@@ -262,23 +262,23 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
 /// This factory function dispatches to the appropriate RNG implementation
 /// based on the algorithm name, replacing the C `OSSL_FUNC_rand_newctx`
 /// dispatch table lookup. Each algorithm name is matched case-sensitively
-/// against the canonical names registered by [`descriptors()`].
+/// against the canonical names registered by `descriptors()`.
 ///
 /// # Algorithm Dispatch
 ///
 /// | Name | Context Type | Wrapped By |
 /// |------|-------------|------------|
-/// | `"CTR-DRBG"` | [`CtrDrbg`] | [`Drbg`] framework |
-/// | `"HASH-DRBG"` | [`HashDrbg`] | [`Drbg`] framework |
-/// | `"HMAC-DRBG"` | [`HmacDrbg`] | [`Drbg`] framework |
-/// | `"SEED-SRC"` | [`SeedSource`] | Direct |
-/// | `"TEST-RAND"` | [`TestRng`] | Direct |
-/// | `"CRNG-TEST"` | [`CrngTest`] | Direct |
-/// | `"JITTER"` | [`JitterSource`] | Direct (feature-gated) |
+/// | `"CTR-DRBG"` | `CtrDrbg` | `Drbg` framework |
+/// | `"HASH-DRBG"` | `HashDrbg` | `Drbg` framework |
+/// | `"HMAC-DRBG"` | `HmacDrbg` | `Drbg` framework |
+/// | `"SEED-SRC"` | `SeedSource` | Direct |
+/// | `"TEST-RAND"` | `TestRng` | Direct |
+/// | `"CRNG-TEST"` | `CrngTest` | Direct |
+/// | `"JITTER"` | `JitterSource` | Direct (feature-gated) |
 ///
 /// # Errors
 ///
-/// Returns [`ProviderError::AlgorithmUnavailable`] if the algorithm name
+/// Returns `ProviderError::AlgorithmUnavailable` if the algorithm name
 /// is not recognised or if the required feature flag is not enabled (e.g.,
 /// `"JITTER"` without the `jitter` feature).
 ///

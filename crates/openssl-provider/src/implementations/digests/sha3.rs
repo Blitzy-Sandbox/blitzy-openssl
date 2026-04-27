@@ -24,10 +24,10 @@
 //! ## XOF vs Fixed-Output Digests
 //!
 //! Fixed-output digests (SHA-3, raw Keccak) produce a predetermined number of
-//! bytes on [`finalize`](KeccakContext::finalize). Extendable-output functions
+//! bytes on `finalize`. Extendable-output functions
 //! (XOFs: SHAKE, cSHAKE, KECCAK-KMAC) can produce arbitrary-length output, set
-//! either via the `xoflen` parameter for a one-shot [`finalize`] or via
-//! multiple incremental [`squeeze`](KeccakContext::squeeze) calls.
+//! either via the `xoflen` parameter for a one-shot `finalize` or via
+//! multiple incremental `squeeze` calls.
 //!
 //! ## cSHAKE Bytepad Mechanism (SP 800-185 §3.3)
 //!
@@ -178,7 +178,7 @@ impl Zeroize for XofState {
 ///
 /// Holds 200 bytes of Keccak-f\[1600\] lane state plus a rate-sized input
 /// buffer and a small amount of XOF-state metadata. The struct derives
-/// [`Zeroize`] and [`ZeroizeOnDrop`] so that all cryptographic key material
+/// `Zeroize` and `ZeroizeOnDrop` so that all cryptographic key material
 /// and buffered plaintext are securely erased when the context is dropped.
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KeccakContext {
@@ -298,10 +298,10 @@ impl KeccakContext {
     ///
     /// Builds a context given an explicit `rate`, padding byte, and
     /// `md_size`. Pass `md_size = 0` for an XOF context; the caller is
-    /// responsible for setting `xof_len` via [`set_xof_len`] or the
+    /// responsible for setting `xof_len` via `set_xof_len` or the
     /// `xoflen` parameter before calling [`finalize`](Self::finalize).
     ///
-    /// `impl_id` defaults to [`IMPL_ID_KECCAK`] + `md_size` when built via
+    /// `impl_id` defaults to `IMPL_ID_KECCAK` + `md_size` when built via
     /// this entry point; tests and higher-level wrappers override it to match
     /// the precise C serialization tag.
     pub fn new(rate: usize, pad: u8, md_size: usize) -> Self {
@@ -339,7 +339,7 @@ impl KeccakContext {
     /// Configure the XOF output length.
     ///
     /// Succeeds for XOF contexts (`md_size == 0`); returns
-    /// [`ProviderError::Dispatch`] on fixed-output variants.
+    /// `ProviderError::Dispatch` on fixed-output variants.
     pub fn set_xof_len(&mut self, len: usize) -> ProviderResult<()> {
         if self.md_size != 0 {
             return Err(ProviderError::Dispatch(
@@ -447,7 +447,7 @@ impl KeccakContext {
 
     /// Finalize the context and return either `md_size` bytes (fixed variants)
     /// or `xof_len` bytes (XOFs). For XOFs with no user-set `xof_len`, returns
-    /// [`ProviderError::Dispatch`] — the caller is expected to set the length
+    /// `ProviderError::Dispatch` — the caller is expected to set the length
     /// via the `xoflen` parameter or call [`squeeze`](Self::squeeze).
     pub fn finalize(&mut self) -> ProviderResult<Vec<u8>> {
         let out_len = if self.md_size != 0 {
@@ -518,7 +518,7 @@ impl KeccakContext {
 
     /// Apply a `xoflen` / `size` parameter to this context.
     ///
-    /// Accepts integer types via the `FromParam` accessors on [`ParamValue`],
+    /// Accepts integer types via the `FromParam` accessors on `ParamValue`,
     /// per Rule R6 (no bare `as` casts on narrowed inputs).
     pub fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         // `xoflen` (XOF output length in bytes).
@@ -551,7 +551,7 @@ impl KeccakContext {
 impl KeccakContext {
     /// Serialize this context to the `KECCAKv1` wire format.
     ///
-    /// The returned image is always [`KECCAK_V1_SIZE`] (424) bytes:
+    /// The returned image is always `KECCAK_V1_SIZE` (424) bytes:
     ///
     /// | Offset | Size | Field |
     /// |--------|------|-------|
@@ -714,7 +714,7 @@ impl DigestContext for KeccakContext {
 // Parameter helpers
 // =============================================================================
 
-/// Decode an integer [`ParamValue`] to a non-negative `usize`.
+/// Decode an integer `ParamValue` to a non-negative `usize`.
 ///
 /// Accepts `Int32`, `UInt32`, `Int64`, `UInt64` variants. Per Rule R6 this
 /// uses checked `try_from` and never a bare `as` cast.
@@ -741,7 +741,7 @@ fn param_to_usize(value: &ParamValue) -> ProviderResult<usize> {
     }
 }
 
-/// Decode a byte-string [`ParamValue`] (`OctetString` or `Utf8String`).
+/// Decode a byte-string `ParamValue` (`OctetString` or `Utf8String`).
 fn param_to_bytes(value: &ParamValue) -> ProviderResult<Vec<u8>> {
     match value {
         ParamValue::OctetString(b) => Ok(b.clone()),
@@ -766,14 +766,14 @@ const CSHAKE256_DEFAULT_XOF_LEN: usize = 64;
 
 /// cSHAKE digest context (SP 800-185).
 ///
-/// Wraps a [`KeccakContext`] configured with [`CSHAKE_PADDING`] and, on the
+/// Wraps a `KeccakContext` configured with `CSHAKE_PADDING` and, on the
 /// first update after N or S is set, absorbs the
 ///   `bytepad(encode_string(N) || encode_string(S), rate)`
 /// prefix. When both N and S are empty, cSHAKE degenerates to SHAKE with the
-/// standard [`SHAKE_PADDING`].
+/// standard `SHAKE_PADDING`.
 ///
 /// Holds sensitive data (N, S, buffered input, Keccak state) and derives
-/// [`Zeroize`] / [`ZeroizeOnDrop`] for secure erasure.
+/// `Zeroize` / `ZeroizeOnDrop` for secure erasure.
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct CshakeContext {
     /// Underlying Keccak context (padding set according to N/S presence).
@@ -849,7 +849,7 @@ impl CshakeContext {
     }
 
     /// Assign the function-name parameter `N`. Must be called before any
-    /// [`update`](Self::update). Length is bounded by [`CSHAKE_MAX_STRING`].
+    /// [`update`](Self::update). Length is bounded by `CSHAKE_MAX_STRING`.
     pub fn set_function_name(&mut self, n: Vec<u8>) -> ProviderResult<()> {
         if n.len() > CSHAKE_MAX_STRING {
             return Err(ProviderError::Dispatch(format!(
@@ -866,7 +866,7 @@ impl CshakeContext {
     }
 
     /// Assign the customization-string parameter `S`. Must be called before
-    /// any [`update`](Self::update). Length is bounded by [`CSHAKE_MAX_STRING`].
+    /// any [`update`](Self::update). Length is bounded by `CSHAKE_MAX_STRING`.
     pub fn set_customization(&mut self, s: Vec<u8>) -> ProviderResult<()> {
         if s.len() > CSHAKE_MAX_STRING {
             return Err(ProviderError::Dispatch(format!(
@@ -1394,7 +1394,7 @@ impl DigestProvider for CshakeProvider {
 // Algorithm descriptors
 // =============================================================================
 
-/// Returns [`AlgorithmDescriptor`]s for every Keccak-based digest algorithm
+/// Returns `AlgorithmDescriptor`s for every Keccak-based digest algorithm
 /// implemented by this module.
 ///
 /// The list contains 14 entries (matching the C providers in `sha3_prov.c`

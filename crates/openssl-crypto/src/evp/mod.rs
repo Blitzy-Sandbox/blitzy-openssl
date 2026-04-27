@@ -24,16 +24,16 @@
 //!
 //! | Module | C Source | Description |
 //! |--------|---------|-------------|
-//! | [`md`] | `digest.c` + 10 legacy files | Message digests (SHA, MD5, etc.) |
-//! | [`cipher`] | `evp_enc.c` + 21 e_*.c files | Symmetric ciphers (AES, `ChaCha20`, etc.) |
-//! | [`kdf`] | `kdf_meth.c`, `kdf_lib.c`, PBE files | Key derivation (HKDF, PBKDF2, etc.) |
-//! | [`mac`] | `mac_meth.c`, `mac_lib.c` | MACs (HMAC, CMAC, etc.) |
-//! | [`pkey`] | `p_lib.c` + 18 files | Asymmetric key container |
-//! | [`rand`] | `evp_rand.c` | DRBG random generation |
-//! | [`kem`] | `kem.c` | Key encapsulation (ML-KEM, etc.) |
-//! | [`signature`] | `signature.c` + 3 files | Sign/verify/exchange/asymcipher |
-//! | [`keymgmt`] | `keymgmt_meth.c` + 3 files | Key management and import/export |
-//! | [`encode_decode`] | Provider-based | Key serialization (PEM, DER, PKCS#8) |
+//! | `md` | `digest.c` + 10 legacy files | Message digests (SHA, MD5, etc.) |
+//! | `cipher` | `evp_enc.c` + 21 e_*.c files | Symmetric ciphers (AES, `ChaCha20`, etc.) |
+//! | `kdf` | `kdf_meth.c`, `kdf_lib.c`, PBE files | Key derivation (HKDF, PBKDF2, etc.) |
+//! | `mac` | `mac_meth.c`, `mac_lib.c` | MACs (HMAC, CMAC, etc.) |
+//! | `pkey` | `p_lib.c` + 18 files | Asymmetric key container |
+//! | `rand` | `evp_rand.c` | DRBG random generation |
+//! | `kem` | `kem.c` | Key encapsulation (ML-KEM, etc.) |
+//! | `signature` | `signature.c` + 3 files | Sign/verify/exchange/asymcipher |
+//! | `keymgmt` | `keymgmt_meth.c` + 3 files | Key management and import/export |
+//! | `encode_decode` | Provider-based | Key serialization (PEM, DER, PKCS#8) |
 //!
 //! ## Provider Dispatch Pattern (AAP §0.7.1)
 //!
@@ -51,18 +51,18 @@
 //!
 //! | C Construct | Rust Equivalent |
 //! |-------------|----------------|
-//! | `EVP_MD_fetch()` | [`MessageDigest::fetch()`] |
-//! | `EVP_CIPHER_fetch()` | [`Cipher::fetch()`] |
-//! | `EVP_KDF_fetch()` | [`Kdf::fetch()`] |
-//! | `EVP_MAC_fetch()` | [`Mac::fetch()`] |
-//! | `EVP_RAND_fetch()` | [`Rand::fetch()`] |
-//! | `EVP_KEM_fetch()` | [`Kem::fetch()`] |
-//! | `EVP_SIGNATURE_fetch()` | [`Signature::fetch()`] |
-//! | `EVP_KEYEXCH_fetch()` | [`KeyExchange::fetch()`] |
-//! | `EVP_ASYM_CIPHER_fetch()` | [`AsymCipher::fetch()`] |
-//! | `EVP_KEYMGMT_fetch()` | [`KeyMgmt::fetch()`] |
-//! | `OSSL_METHOD_STORE` | [`EvpMethodStore`] |
-//! | `EVP_set_default_properties()` | [`set_default_properties()`] |
+//! | `EVP_MD_fetch()` | `MessageDigest::fetch()` |
+//! | `EVP_CIPHER_fetch()` | `Cipher::fetch()` |
+//! | `EVP_KDF_fetch()` | `Kdf::fetch()` |
+//! | `EVP_MAC_fetch()` | `Mac::fetch()` |
+//! | `EVP_RAND_fetch()` | `Rand::fetch()` |
+//! | `EVP_KEM_fetch()` | `Kem::fetch()` |
+//! | `EVP_SIGNATURE_fetch()` | `Signature::fetch()` |
+//! | `EVP_KEYEXCH_fetch()` | `KeyExchange::fetch()` |
+//! | `EVP_ASYM_CIPHER_fetch()` | `AsymCipher::fetch()` |
+//! | `EVP_KEYMGMT_fetch()` | `KeyMgmt::fetch()` |
+//! | `OSSL_METHOD_STORE` | `EvpMethodStore` |
+//! | `EVP_set_default_properties()` | `set_default_properties()` |
 //!
 //! ## Rules Enforced
 //!

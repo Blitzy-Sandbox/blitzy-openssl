@@ -12,10 +12,10 @@
 //!
 //! Both base and authenticated modes are supported (RFC 9180 §4.1):
 //!
-//! - **Base mode**: [`KemContext::encapsulate`] and
-//!   [`KemContext::decapsulate`] operate with only the recipient's key pair.
+//! - **Base mode**: `KemContext::encapsulate` and
+//!   `KemContext::decapsulate` operate with only the recipient's key pair.
 //! - **Authenticated mode (Auth)**: when a sender authentication key is
-//!   supplied via [`KemContext::set_params`] (parameter `"authkey"`), the KEM
+//!   supplied via `KemContext::set_params` (parameter `"authkey"`), the KEM
 //!   additionally binds the shared secret to the sender's identity. The KEM
 //!   context then performs `AuthEncap` / `AuthDecap` as described in RFC 9180
 //!   §4.1 (`DHKEM(G).AuthEncap` / `DHKEM(G).AuthDecap`).
@@ -33,21 +33,21 @@
 //!
 //! | C construct                                    | Rust equivalent                                   |
 //! |------------------------------------------------|---------------------------------------------------|
-//! | `PROV_ECX_CTX`                                 | [`EcxKemContext`] (typed fields + RAII)           |
-//! | `ECX_KEY`                                      | [`EcxPublicKey`] / [`EcxPrivateKey`] / [`EcxKeyPair`] |
+//! | `PROV_ECX_CTX`                                 | `EcxKemContext` (typed fields + RAII)           |
+//! | `ECX_KEY`                                      | `EcxPublicKey` / `EcxPrivateKey` / `EcxKeyPair` |
 //! | `OSSL_DISPATCH ossl_ecx_asym_kem_functions[]`  | `impl KemProvider for EcxDhKem` + `impl KemContext` |
-//! | `KEMID_X25519_HKDF_SHA256` / `KEMID_X448_HKDF_SHA512` | [`EcxCurveType`] + [`HpkeKem`]              |
+//! | `KEMID_X25519_HKDF_SHA256` / `KEMID_X448_HKDF_SHA512` | `EcxCurveType` + `HpkeKem`              |
 //! | `OPENSSL_cleanse`                              | [`zeroize::Zeroize`] / [`zeroize::ZeroizeOnDrop`] |
 //! | `ERR_raise`                                    | `Result<T, ProviderError>` (Rule R5)              |
-//! | Sentinel returns (`0`, `-1`)                   | [`ProviderResult`] / [`Option`] (Rule R5)         |
+//! | Sentinel returns (`0`, `-1`)                   | `ProviderResult` / `Option` (Rule R5)         |
 //! | `(int)len` narrowing casts                     | `u16::try_from(len)?` (Rule R6)                   |
 //!
 //! ## Cryptographic hygiene
 //!
 //! - All private-key material and input keying material (IKM) is wiped from
-//!   memory on drop via [`zeroize`] (Rule R5 / FIPS cryptographic hygiene).
+//!   memory on drop via `zeroize` (Rule R5 / FIPS cryptographic hygiene).
 //! - No `unsafe` code is used anywhere in this module (Rule R8).
-//! - Every fallible operation returns a typed [`ProviderResult`]; no sentinel
+//! - Every fallible operation returns a typed `ProviderResult`; no sentinel
 //!   values escape the API surface.
 //!
 //! ## Note on KDF digest
@@ -55,7 +55,7 @@
 //! The underlying workspace HKDF implementation currently hard-codes the
 //! hash function to SHA-256. For forward compatibility with the future
 //! variable-digest HKDF, this module still calls
-//! [`KdfContext::set_digest`] with the algorithm-specific digest name
+//! `KdfContext::set_digest` with the algorithm-specific digest name
 //! (`"SHA-256"` for X25519, `"SHA-512"` for X448). When the HKDF backend
 //! gains true variable-digest support, X448 output will become
 //! byte-for-byte compliant with RFC 9180 Test Vectors without further
@@ -120,7 +120,7 @@ const LABEL_EAE_PRK: &[u8] = b"eae_prk";
 /// RFC 9180 §4.1 label `"shared_secret"` — `LabeledExpand` in `ExtractAndExpand`.
 const LABEL_SHARED_SECRET: &[u8] = b"shared_secret";
 
-// ----- Parameter names exposed via [`KemContext::set_params`] ---------------
+// ----- Parameter names exposed via `KemContext::set_params` ---------------
 
 /// Parameter name for the KEM operation mode (UTF-8 string, e.g. `"DHKEM"`).
 ///
@@ -143,7 +143,7 @@ const PARAM_AUTHKEY: &str = "authkey";
 // EcxCurveType — public enumeration exported per schema
 // =============================================================================
 
-/// The ECX curve used by an [`EcxDhKem`] provider instance.
+/// The ECX curve used by an `EcxDhKem` provider instance.
 ///
 /// Distinguishes between the two RFC 9180 DHKEM suites that this module
 /// implements, each of which is tied to a specific curve and KDF digest.
@@ -156,7 +156,7 @@ pub enum EcxCurveType {
 }
 
 impl EcxCurveType {
-    /// Returns the corresponding [`EcxKeyType`] for this curve.
+    /// Returns the corresponding `EcxKeyType` for this curve.
     #[inline]
     const fn key_type(self) -> EcxKeyType {
         match self {
@@ -206,11 +206,11 @@ impl EcxCurveType {
 // EcxKemOperation — private operation state
 // =============================================================================
 
-/// The current operation state of an [`EcxKemContext`].
+/// The current operation state of an `EcxKemContext`.
 ///
 /// Selected by [`KemContext::encapsulate_init`] /
 /// [`KemContext::decapsulate_init`]. The authenticated variants are chosen
-/// when a sender auth key has been set via [`KemContext::set_params`] at the
+/// when a sender auth key has been set via `KemContext::set_params` at the
 /// time of `init`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EcxKemOperation {
@@ -250,9 +250,9 @@ impl EcxKemOperation {
 
 /// HPKE DHKEM provider for ECX curves (X25519 and X448).
 ///
-/// Implements the [`KemProvider`] trait and registers the corresponding
+/// Implements the `KemProvider` trait and registers the corresponding
 /// algorithm name (`"X25519"` or `"X448"`) with the provider registry.
-/// Construct one instance per curve, or use [`descriptors`] to obtain
+/// Construct one instance per curve, or use `descriptors` to obtain
 /// pre-configured descriptors for the provider dispatch table.
 ///
 /// # Example
@@ -292,9 +292,9 @@ impl EcxDhKem {
 ///
 /// Private-key material is always wiped from memory on drop:
 ///
-/// - `recipient_privkey` is an [`EcxPrivateKey`] which is `ZeroizeOnDrop`.
+/// - `recipient_privkey` is an `EcxPrivateKey` which is `ZeroizeOnDrop`.
 /// - `auth_key_bytes` and `ikm` are `Vec<u8>` wiped by an explicit
-///   [`Drop`] implementation on `EcxKemContext`.
+///   `Drop` implementation on `EcxKemContext`.
 ///
 /// # Thread safety
 ///
@@ -312,19 +312,19 @@ pub struct EcxKemContext {
     /// Recipient's private key, set by `decapsulate_init`. `None` until
     /// initialization or when operating in encapsulation mode.
     ///
-    /// The inner [`EcxPrivateKey`] is `ZeroizeOnDrop` and wipes its bytes
+    /// The inner `EcxPrivateKey` is `ZeroizeOnDrop` and wipes its bytes
     /// automatically when the context is dropped.
     recipient_privkey: Option<EcxPrivateKey>,
 
     /// Raw bytes for the sender's authentication key.
     ///
     /// In authenticated encapsulation the bytes are parsed as an
-    /// [`EcxPrivateKey`] (the sender's own private key); in authenticated
-    /// decapsulation they are parsed as an [`EcxPublicKey`] (the sender's
+    /// `EcxPrivateKey` (the sender's own private key); in authenticated
+    /// decapsulation they are parsed as an `EcxPublicKey` (the sender's
     /// public key). Interpretation is deferred to `encapsulate` and
-    /// `decapsulate` respectively, based on the current [`EcxKemOperation`].
+    /// `decapsulate` respectively, based on the current `EcxKemOperation`.
     ///
-    /// Wiped by the custom [`Drop`] impl.
+    /// Wiped by the custom `Drop` impl.
     auth_key_bytes: Option<Vec<u8>>,
 
     /// The operation mode. Only [`KemMode::DhKem`] is currently supported.
@@ -338,7 +338,7 @@ pub struct EcxKemContext {
     /// pair. When `Some`, the ephemeral key pair is derived via RFC 9180
     /// `DeriveKeyPair` instead of being generated randomly.
     ///
-    /// Wiped by the custom [`Drop`] impl.
+    /// Wiped by the custom `Drop` impl.
     ikm: Option<Vec<u8>>,
 }
 
@@ -393,10 +393,10 @@ impl Drop for EcxKemContext {
 // Private helpers — RFC 9180 Labeled HKDF, ECDH, key derivation
 // =============================================================================
 
-/// Converts a [`CryptoError`] raised by the lower crypto crate into a
-/// [`ProviderError::Dispatch`].
+/// Converts a `CryptoError` raised by the lower crypto crate into a
+/// `ProviderError::Dispatch`.
 ///
-/// The [`CryptoError`] is rendered via its [`Display`] implementation so the
+/// The `CryptoError` is rendered via its `Display` implementation so the
 /// error chain remains informative while honouring the provider-layer error
 /// taxonomy (Rule R5 / Gate 13).
 ///
@@ -571,7 +571,7 @@ const fn digest_output_len(digest_name: &str) -> usize {
 /// sk      = LabeledExpand(dkp_prk, "sk", "", Nsk)
 /// ```
 ///
-/// The returned [`EcxPrivateKey`] is `ZeroizeOnDrop`; the caller is
+/// The returned `EcxPrivateKey` is `ZeroizeOnDrop`; the caller is
 /// responsible for promptly dropping it after the public key has been
 /// computed.
 fn derive_private_key(
@@ -688,12 +688,12 @@ fn build_kem_context_auth(enc: &[u8], pk_rm: &[u8], pk_sm: &[u8]) -> Vec<u8> {
 /// Translates C `dhkem_encap` (`ecx_kem.c:539-589`):
 ///
 /// - Derives an ephemeral key pair — deterministically from `ctx.ikm` when
-///   present (per `DeriveKeyPair`), otherwise via [`generate_keypair`].
+///   present (per `DeriveKeyPair`), otherwise via `generate_keypair`.
 /// - Computes the ECDH shared secret `dh1 = DH(skE, pkR)`, and additionally
 ///   `dh2 = DH(skS, pkR)` in authenticated mode — concatenated as
 ///   `dh = dh1 || dh2`.
 /// - Builds `kem_context = enc || pkR` (base) or `enc || pkR || pkS` (auth).
-/// - Derives the output shared secret with [`extract_and_expand`].
+/// - Derives the output shared secret with `extract_and_expand`.
 ///
 /// Returns `(enc, shared_secret)`.
 fn dhkem_encap(ctx: &EcxKemContext) -> ProviderResult<(Vec<u8>, Vec<u8>)> {
@@ -788,7 +788,7 @@ fn dhkem_encap(ctx: &EcxKemContext) -> ProviderResult<(Vec<u8>, Vec<u8>)> {
 ///   authenticated mode.
 /// - Builds `kem_context = enc || pkRm` (base) or `enc || pkRm || pkSm`
 ///   (auth), where `pkRm = pk_from_sk(skR)`.
-/// - Derives the output shared secret with [`extract_and_expand`].
+/// - Derives the output shared secret with `extract_and_expand`.
 fn dhkem_decap(ctx: &EcxKemContext, enc: &[u8]) -> ProviderResult<Vec<u8>> {
     let op = ctx.op.ok_or_else(|| {
         ProviderError::Dispatch(
@@ -1011,7 +1011,7 @@ impl KemContext for EcxKemContext {
     }
 }
 
-/// Applies caller-supplied parameters to an [`EcxKemContext`].
+/// Applies caller-supplied parameters to an `EcxKemContext`.
 ///
 /// Recognised parameters:
 /// - `"operation"` (`Utf8String`): KEM operation mode. The only currently
@@ -1082,7 +1082,7 @@ fn apply_params(ctx: &mut EcxKemContext, params: &ParamSet) -> ProviderResult<()
     Ok(())
 }
 
-/// Returns the canonical string name for a [`KemMode`].
+/// Returns the canonical string name for a `KemMode`.
 #[inline]
 const fn mode_to_str(mode: KemMode) -> &'static str {
     match mode {
@@ -1090,7 +1090,7 @@ const fn mode_to_str(mode: KemMode) -> &'static str {
     }
 }
 
-/// Returns a short descriptive name for an [`EcxKemOperation`].
+/// Returns a short descriptive name for an `EcxKemOperation`.
 #[inline]
 const fn op_to_str(op: EcxKemOperation) -> &'static str {
     match op {

@@ -27,13 +27,13 @@
 //!
 //! ## Test Infrastructure
 //!
-//! - [`ServerGuard`] — RAII Drop-guard that kills a background `s_server`
+//! - `ServerGuard` — RAII Drop-guard that kills a background `s_server`
 //!   child process on scope exit (prevents test-leaked processes).
-//! - [`find_available_port`] — Ephemeral port allocation via
+//! - `find_available_port` — Ephemeral port allocation via
 //!   `TcpListener::bind("127.0.0.1:0")` to avoid port conflicts in parallel
 //!   test execution.
-//! - [`generate_self_signed_cert`] — Writes pre-generated self-signed
-//!   certificate and private key PEM files into a [`TempDir`] for TLS tests.
+//! - `generate_self_signed_cert` — Writes pre-generated self-signed
+//!   certificate and private key PEM files into a `TempDir` for TLS tests.
 //!
 //! ## Test Phases
 //!
@@ -101,7 +101,7 @@ impl Drop for ServerGuard {
 // Helper: find_available_port — Ephemeral port allocation
 // ===========================================================================
 
-/// Allocates an ephemeral port on `127.0.0.1` by binding a [`TcpListener`]
+/// Allocates an ephemeral port on `127.0.0.1` by binding a `TcpListener`
 /// to port 0 and retrieving the OS-assigned port number.
 ///
 /// The listener is dropped before returning so the port is available for
@@ -188,12 +188,12 @@ x0pXLvgCcEBM4LuR7oGKxtbZavQeiE1zaM+k2CVSL/nis1xGNjZRpEZbiTRGtzFY
 /// Writes pre-generated self-signed certificate and private key PEM files
 /// into the provided temporary directory.
 ///
-/// Returns `(cert_path, key_path)` as [`PathBuf`] values pointing to the
+/// Returns `(cert_path, key_path)` as `PathBuf` values pointing to the
 /// written files. Both files are verified non-empty after writing.
 ///
 /// # Arguments
 ///
-/// * `dir` — A [`TempDir`] whose [`TempDir::path()`] serves as the output
+/// * `dir` — A `TempDir` whose [`TempDir::path()`] serves as the output
 ///   directory. Files are cleaned up automatically when `dir` drops.
 ///
 /// # Panics
@@ -447,11 +447,11 @@ fn test_ciphers_stdname() {
 /// Verify `openssl s_server` process lifecycle: spawn, run, and cleanup.
 ///
 /// This test exercises the full server lifecycle infrastructure:
-/// 1. Allocates an ephemeral port via [`find_available_port`]
-/// 2. Generates a self-signed certificate via [`generate_self_signed_cert`]
-/// 3. Spawns an `openssl s_server` process with [`StdCommand`] and
+/// 1. Allocates an ephemeral port via `find_available_port`
+/// 2. Generates a self-signed certificate via `generate_self_signed_cert`
+/// 3. Spawns an `openssl s_server` process with `StdCommand` and
 ///    [`Stdio::piped`] for output capture
-/// 4. Wraps the child in a [`ServerGuard`] for kill-on-drop cleanup
+/// 4. Wraps the child in a `ServerGuard` for kill-on-drop cleanup
 /// 5. Allows a brief startup window via [`thread::sleep`]
 /// 6. Verifies the server process lifecycle completes
 ///

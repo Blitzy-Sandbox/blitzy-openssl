@@ -258,7 +258,7 @@ impl Provider for BaseProvider {
         }
     }
 
-    /// Returns provider parameters as a typed [`ParamSet`].
+    /// Returns provider parameters as a typed `ParamSet`.
     ///
     /// The parameter set contains:
     /// - `"name"` — provider display name (`UTF8`)

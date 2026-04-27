@@ -37,9 +37,9 @@
 //! After successful header validation and optional decryption, the
 //! concatenation of `body[0..8]` (BLOBHEADER) and the decrypted remainder
 //! forms a standard Microsoft PRIVATEKEYBLOB which is parsed by the sibling
-//! [`msblob_decoder`](super::msblob_decoder) functions
-//! [`parse_rsa_blob`](super::msblob_decoder::parse_rsa_blob) and
-//! [`parse_dsa_blob`](super::msblob_decoder::parse_dsa_blob).
+//! `msblob_decoder` functions
+//! `parse_rsa_blob`(super::msblob_decoder::parse_rsa_blob) and
+//! `parse_dsa_blob`(super::msblob_decoder::parse_dsa_blob).
 //!
 //! # Cryptographic dependencies
 //!
@@ -48,15 +48,15 @@
 //! for this module is [`tracing`](https://docs.rs/tracing); neither SHA-1
 //! nor RC4 primitives are bundled here.  Consequently this decoder fully
 //! supports **unencrypted PVK blobs** and surfaces a structured
-//! [`ProviderError::AlgorithmUnavailable`] for encrypted PVK.  This is an
+//! `ProviderError::AlgorithmUnavailable` for encrypted PVK.  This is an
 //! intentional, auditable incremental-migration boundary rather than an
 //! omission — the decryption pathway is fully modelled by
-//! [`decrypt_pvk`], which returns a clear diagnostic when invoked.
+//! `decrypt_pvk`, which returns a clear diagnostic when invoked.
 //!
 //! # Compliance matrix
 //!
 //! * **Rule R5 (nullability):** header and selection failures surface as
-//!   structured [`ProviderError`] values; `Option<T>` is used for the
+//!   structured `ProviderError` values; `Option<T>` is used for the
 //!   property query.
 //! * **Rule R6 (lossless casts):** every header field is parsed via
 //!   [`u32::from_le_bytes`] from an explicit fixed-size byte array and
@@ -64,7 +64,7 @@
 //! * **Rule R8 (unsafe-free):** this module contains zero `unsafe` blocks.
 //! * **Rule R9 (warning-free):** no `#[allow(warnings)]` suppressions; all
 //!   public items are documented.
-//! * **Rule R10 (wiring):** [`all_pvk_decoders`] is invoked by the parent
+//! * **Rule R10 (wiring):** `all_pvk_decoders` is invoked by the parent
 //!   module aggregator in
 //!   [`super::mod`](super) and exercised by the test suite below.
 //!
@@ -74,14 +74,14 @@
 //! * Format spec: `crypto/pem/pvkfmt.c` (`ossl_do_PVK_header`,
 //!   `derive_pvk_key`, `do_PVK_body_key`).
 //! * Public Microsoft key-blob documentation (BLOBHEADER / RSAPUBKEY /
-//!   DSSPUBKEY) referenced by the sibling [`msblob_decoder`].
+//!   DSSPUBKEY) referenced by the sibling `msblob_decoder`.
 
 use super::common::{selection_includes, EndecoderError, FORMAT_PVK};
 use crate::traits::{AlgorithmDescriptor, DecoderProvider, KeyData, KeySelection};
 use openssl_common::error::CommonError;
 use openssl_common::{ProviderError, ProviderResult};
-// [`DecodedObject`] and [`ObjectType`] are only referenced by the
-// feature-gated [`decoded_object_for`] helper (and its matching test
+// `DecodedObject` and `ObjectType` are only referenced by the
+// feature-gated `decoded_object_for` helper (and its matching test
 // module).  Keeping their import feature-gated prevents unused-import
 // warnings under `-D warnings` when the crate is built with the default
 // feature set (no `rsa`, no `dsa`).
@@ -156,7 +156,7 @@ pub const PVK_BLOBHEADER_CLEAR: usize = 8;
 /// The C source uses a pair of keytype descriptors — `pvk2rsa_desc` and
 /// `pvk2dsa_desc` — dispatched at decoder-factory time.  In Rust the
 /// discriminator is modelled with a zero-cost `Copy` enum that carries the
-/// same information through the [`PvkDecoder`] and [`PvkDecoderContext`]
+/// same information through the `PvkDecoder` and `PvkDecoderContext`
 /// types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PvkKeyType {
@@ -168,10 +168,10 @@ pub enum PvkKeyType {
 
 impl PvkKeyType {
     /// Maps a raw Microsoft header key-type discriminator to the internal
-    /// [`PvkKeyType`] enum.
+    /// `PvkKeyType` enum.
     ///
     /// Returns `None` for unknown values so the caller can surface a
-    /// structured [`ProviderError`] rather than silently defaulting.
+    /// structured `ProviderError` rather than silently defaulting.
     fn from_ms_key_type(ms_key_type: u32) -> Option<Self> {
         match ms_key_type {
             MS_KEYTYPE_KEYX => Some(PvkKeyType::Rsa),
@@ -192,30 +192,30 @@ impl PvkKeyType {
 /// Parsed representation of a PVK header (the fixed 24-byte prefix).
 ///
 /// All five public fields correspond 1:1 to the little-endian `u32` slots
-/// of the wire format.  Obtained via [`parse_pvk_header`].  The raw `u32`
+/// of the wire format.  Obtained via `parse_pvk_header`.  The raw `u32`
 /// keeps parity with the C header layout without imposing a translation
 /// loss — higher-level parsing (e.g. selecting between RSA/DSA) is done
-/// via [`PvkKeyType::from_ms_key_type`].
+/// via `PvkKeyType::from_ms_key_type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PvkHeader {
-    /// Magic number — must equal [`PVK_MAGIC`] (`0xB0B5_F11E`).
+    /// Magic number — must equal `PVK_MAGIC` (`0xB0B5_F11E`).
     pub magic: u32,
 
     /// Microsoft key-type discriminator (`MS_KEYTYPE_KEYX` or
     /// `MS_KEYTYPE_SIGN`).
     pub key_type: u32,
 
-    /// Encryption discriminator: [`PVK_NO_ENCRYPT`], [`PVK_WEAK_ENCRYPT`]
-    /// or [`PVK_STRONG_ENCRYPT`].
+    /// Encryption discriminator: `PVK_NO_ENCRYPT`, `PVK_WEAK_ENCRYPT`
+    /// or `PVK_STRONG_ENCRYPT`.
     pub encrypt_type: u32,
 
     /// Number of salt bytes following the header (`0` when unencrypted).
-    /// Upper-bounded at [`PVK_MAX_SALTLEN`] to prevent pathological
+    /// Upper-bounded at `PVK_MAX_SALTLEN` to prevent pathological
     /// allocations when parsing untrusted input.
     pub salt_length: u32,
 
     /// Number of inner key blob bytes following the salt.  Upper-bounded
-    /// at [`PVK_MAX_KEYLEN`].
+    /// at `PVK_MAX_KEYLEN`.
     pub key_length: u32,
 }
 
@@ -245,7 +245,7 @@ impl PvkHeader {
 /// property-query string, a key-type descriptor pointer, and the current
 /// `OSSL_DECODER` selection mask.  The Rust port omits the raw
 /// back-pointer in favour of explicit composition through the workspace's
-/// [`ProviderContext`](crate::traits::ProviderContext) hierarchy and
+/// `ProviderContext` hierarchy and
 /// retains the remaining three fields verbatim.
 ///
 /// This context is owned by the decoder invocation and is not shared
@@ -287,11 +287,11 @@ impl PvkDecoderContext {
 
 /// Microsoft PVK private-key-blob decoder.
 ///
-/// Decoders are constructed per key-type via [`all_pvk_decoders`] (returning
+/// Decoders are constructed per key-type via `all_pvk_decoders` (returning
 /// the registration descriptors) and the feature-gated helpers
-/// [`pvk_rsa_decoder`] / [`pvk_dsa_decoder`].  Each instance is a
+/// `pvk_rsa_decoder` / `pvk_dsa_decoder`.  Each instance is a
 /// lightweight metadata carrier; actual parsing state lives in a transient
-/// [`PvkDecoderContext`] created per decode call.
+/// `PvkDecoderContext` created per decode call.
 ///
 /// Replaces the C dispatch table produced by the `IMPLEMENT_MS(PVK,
 /// pvk)` macro in `decode_pvk2key.c`.
@@ -305,7 +305,7 @@ impl PvkDecoder {
     /// Construct a decoder for the given key family.
     ///
     /// Not feature-gated on its own — the feature gates are applied at
-    /// the [`all_pvk_decoders`] registration site and on the concrete
+    /// the `all_pvk_decoders` registration site and on the concrete
     /// parser helpers.  When the crate is compiled with neither the `rsa`
     /// nor the `dsa` feature (and tests are disabled) this constructor
     /// has no live callers; the `cfg_attr` below suppresses the resulting
@@ -331,7 +331,7 @@ impl PvkDecoder {
 ///   OpenSSL "guess" mode in which the decoder framework probes every
 ///   candidate.  This matches the C helper `pvk2key_does_selection` which
 ///   returns `1` when `selection == 0`.
-/// * A selection that includes [`KeySelection::PRIVATE_KEY`] is accepted
+/// * A selection that includes `KeySelection::PRIVATE_KEY` is accepted
 ///   regardless of any other bits — the decoder simply produces the
 ///   private component (which implicitly contains the public one).
 /// * A selection that contains **no** private-key bit is rejected: there
@@ -340,7 +340,7 @@ impl PvkDecoder {
 ///
 /// Returns `Ok(true)` / `Ok(false)` rather than `bool` directly so that
 /// future additions (such as FIPS indicator checks) can propagate
-/// structured errors via the [`ProviderResult`] contract.
+/// structured errors via the `ProviderResult` contract.
 ///
 /// # Example
 ///
@@ -361,23 +361,23 @@ pub fn does_selection(selection: KeySelection) -> ProviderResult<bool> {
     }
     // PVK is private-key-only — accept any mask whose PRIVATE_KEY bit is
     // set regardless of additional bits (e.g. combined with PUBLIC_KEY for
-    // a keypair request).  Routed through the shared [`selection_includes`]
+    // a keypair request).  Routed through the shared `selection_includes`
     // helper so that the encode/decode family uses a single canonical
     // flag-membership predicate.
     //
-    // Note: we deliberately do *not* use [`check_selection_hierarchy`]
+    // Note: we deliberately do *not* use `check_selection_hierarchy`
     // here.  That helper expands the supported set upward
     // (PRIVATE → PUBLIC → DOMAIN_PARAMETERS), which would cause PVK to
     // falsely accept PUBLIC_KEY-only and DOMAIN_PARAMETERS-only masks.
     // PVK is strictly a private-key format; the strict bit-membership
-    // check enforced by [`selection_includes`] is the correct semantic.
+    // check enforced by `selection_includes` is the correct semantic.
     Ok(selection_includes(selection, KeySelection::PRIVATE_KEY))
 }
 
 /// Parse and validate the fixed 24-byte PVK header from the start of the
 /// provided byte slice.
 ///
-/// The caller is responsible for passing at least [`PVK_HEADER_SIZE`]
+/// The caller is responsible for passing at least `PVK_HEADER_SIZE`
 /// bytes — this function reports a structured
 /// [`EndecoderError::BadEncoding`] error otherwise.  All narrowing casts
 /// go through [`u32::from_le_bytes`] on explicit fixed-size arrays per
@@ -385,7 +385,7 @@ pub fn does_selection(selection: KeySelection) -> ProviderResult<bool> {
 ///
 /// Semantic validations performed in-order:
 ///
-/// 1. Buffer length ≥ [`PVK_HEADER_SIZE`].
+/// 1. Buffer length ≥ `PVK_HEADER_SIZE`.
 /// 2. `magic == [PVK_MAGIC]`.
 /// 3. `key_type ∈ {[MS_KEYTYPE_KEYX], [MS_KEYTYPE_SIGN]}`.
 /// 4. `encrypt_type ∈ {[PVK_NO_ENCRYPT], [PVK_WEAK_ENCRYPT], [PVK_STRONG_ENCRYPT]}`.
@@ -478,7 +478,7 @@ pub fn parse_pvk_header(data: &[u8]) -> ProviderResult<PvkHeader> {
 ///
 /// * `encrypted` — The raw body bytes lifted from the PVK buffer starting
 ///   at `PVK_HEADER_SIZE + salt_length`.  The first
-///   [`PVK_BLOBHEADER_CLEAR`] bytes are *always* in cleartext (they hold
+///   `PVK_BLOBHEADER_CLEAR` bytes are *always* in cleartext (they hold
 ///   the standard MSBLOB BLOBHEADER) — the function still accepts and
 ///   returns the full buffer so the caller observes the final plaintext
 ///   MSBLOB contiguously.
@@ -487,25 +487,25 @@ pub fn parse_pvk_header(data: &[u8]) -> ProviderResult<PvkHeader> {
 /// * `passphrase` — Caller-supplied passphrase bytes.  Empty is permitted
 ///   and will typically yield a [`EndecoderError::UnableToGetPassphrase`]
 ///   downstream when the derived key fails to decrypt.
-/// * `encrypt_type` — One of [`PVK_WEAK_ENCRYPT`] or [`PVK_STRONG_ENCRYPT`];
-///   passing [`PVK_NO_ENCRYPT`] is a caller bug and yields
+/// * `encrypt_type` — One of `PVK_WEAK_ENCRYPT` or `PVK_STRONG_ENCRYPT`;
+///   passing `PVK_NO_ENCRYPT` is a caller bug and yields
 ///   [`EndecoderError::InvalidKey`].
 ///
 /// # Returns
 ///
 /// On success, the full decrypted MSBLOB buffer (BLOBHEADER + decrypted
-/// remainder).  On failure, a structured [`ProviderError`].
+/// remainder).  On failure, a structured `ProviderError`.
 ///
 /// # Current status
 ///
 /// Encrypted PVK blobs require the SHA-1-based "PVKKDF" key derivation
 /// and RC4 stream-cipher primitives.  Per the Agent Action Plan this
-/// module is permitted only the [`tracing`] external dependency; SHA-1
+/// module is permitted only the `tracing` external dependency; SHA-1
 /// and RC4 implementations live in the (still-under-migration)
 /// [`openssl_crypto`](https://docs.rs/openssl-crypto) symmetric and hash
 /// families and are not yet reachable from the provider crate.  Until
-/// that wiring lands, [`decrypt_pvk`] returns a clearly-typed
-/// [`ProviderError::AlgorithmUnavailable`] with a descriptive message
+/// that wiring lands, `decrypt_pvk` returns a clearly-typed
+/// `ProviderError::AlgorithmUnavailable` with a descriptive message
 /// rather than silently failing.  The complete calling convention and
 /// argument validation are retained so callers (including test suites)
 /// can depend on a stable signature.
@@ -617,7 +617,7 @@ fn read_u32_le(data: &[u8], offset: usize) -> ProviderResult<u32> {
 impl DecoderProvider for PvkDecoder {
     /// Decoder identifier surfaced to the property-query machinery and to
     /// diagnostic output.  Always `"PVK"` — the key-family disambiguation
-    /// is carried by [`PvkDecoder::key_type`], not by the decoder name.
+    /// is carried by `PvkDecoder::key_type`, not by the decoder name.
     fn name(&self) -> &'static str {
         "PVK"
     }
@@ -629,28 +629,28 @@ impl DecoderProvider for PvkDecoder {
     ///
     /// 1. Validate & parse the 24-byte PVK header.
     /// 2. Confirm the header's key-type matches this decoder's
-    ///    configured [`PvkKeyType`].
+    ///    configured `PvkKeyType`.
     /// 3. Slice out the salt and inner-body buffers.
-    /// 4. For encrypted payloads: delegate to [`decrypt_pvk`] to produce
+    /// 4. For encrypted payloads: delegate to `decrypt_pvk` to produce
     ///    the plaintext MSBLOB (currently surfaces
     ///    [`EndecoderError::UnableToGetPassphrase`] because passphrase
     ///    acquisition is not yet wired through the provider dispatch
-    ///    layer — see [`decrypt_pvk`]).
+    ///    layer — see `decrypt_pvk`).
     /// 5. Parse the resulting MSBLOB via
-    ///    [`parse_blob_header`](super::msblob_decoder::parse_blob_header)
+    ///    [`parse_blob_header`]
     ///    for sanity-checking, and then delegate to
-    ///    [`parse_rsa_blob`](super::msblob_decoder::parse_rsa_blob) /
-    ///    [`parse_dsa_blob`](super::msblob_decoder::parse_dsa_blob) for
+    ///    [`parse_rsa_blob`] /
+    ///    [`parse_dsa_blob`] for
     ///    the key-material extraction.
     ///
-    /// All four failure modes map to the structured [`ProviderError`]
+    /// All four failure modes map to the structured `ProviderError`
     /// taxonomy — no sentinel returns (Rule R5):
     ///
     /// * Malformed header / truncation → [`EndecoderError::BadEncoding`]
     /// * Key-family mismatch → [`EndecoderError::InvalidKey`]
     /// * Passphrase failure → [`EndecoderError::UnableToGetPassphrase`]
     /// * Encrypted PVK (not yet wired) →
-    ///   [`ProviderError::AlgorithmUnavailable`]
+    ///   `ProviderError::AlgorithmUnavailable`
     fn decode(&self, input: &[u8]) -> ProviderResult<Box<dyn KeyData>> {
         if input.is_empty() {
             return Err(ProviderError::Common(CommonError::InvalidArgument(
@@ -718,7 +718,7 @@ impl DecoderProvider for PvkDecoder {
             // callback registered against the provider context.  In the
             // Rust port passphrase acquisition has not yet been wired
             // through the provider dispatch layer; pass an empty slice
-            // so [`decrypt_pvk`] reports the canonical
+            // so `decrypt_pvk` reports the canonical
             // [`EndecoderError::UnableToGetPassphrase`] diagnostic —
             // mirroring the C source's `PEM_R_BAD_PASSWORD_READ`
             // outcome when no passphrase callback is registered.
@@ -731,13 +731,13 @@ impl DecoderProvider for PvkDecoder {
         // Step 5 — validate inner MSBLOB and dispatch to the concrete
         // key-family parser.  Pre-validating via `parse_blob_header`
         // provides a localized diagnostic point that matches the
-        // sibling [`super::msblob_decoder`] decoder's behaviour.
+        // sibling `super::msblob_decoder` decoder's behaviour.
         Self::parse_msblob_payload(self.key_type, &msblob)
     }
 
     /// PVK decoders advertise a single input format, `"PVK"`, registered
     /// under the property query `"provider=default,input=pvk"` by
-    /// [`all_pvk_decoders`].
+    /// `all_pvk_decoders`.
     fn supported_formats(&self) -> Vec<&'static str> {
         vec![FORMAT_PVK]
     }
@@ -753,7 +753,7 @@ impl PvkDecoder {
     /// over `#[cfg(feature = "rsa")]` / `#[cfg(feature = "dsa")]`
     /// self-contained and keeps [`DecoderProvider::decode`] readable.
     ///
-    /// Modelled as an associated function taking the [`PvkKeyType`] by
+    /// Modelled as an associated function taking the `PvkKeyType` by
     /// value rather than a method on `&self` — the dispatch only needs
     /// the key-family discriminant, and `PvkKeyType` is `Copy` so pass
     /// by value is cheaper than `&self` indirection.  This also keeps
@@ -838,7 +838,7 @@ impl PvkDecoder {
 // Decoder Constructors and Registration
 // =============================================================================
 
-/// Return a [`PvkDecoder`] configured for RSA private-key material.
+/// Return a `PvkDecoder` configured for RSA private-key material.
 ///
 /// Only compiled when the `rsa` feature is enabled.  Used by the parent
 /// aggregator when building the default provider's decoder registry; the
@@ -849,7 +849,7 @@ pub fn pvk_rsa_decoder() -> PvkDecoder {
     PvkDecoder::new(PvkKeyType::Rsa)
 }
 
-/// Return a [`PvkDecoder`] configured for DSA private-key material.
+/// Return a `PvkDecoder` configured for DSA private-key material.
 ///
 /// Only compiled when the `dsa` feature is enabled.
 #[cfg(feature = "dsa")]
@@ -866,11 +866,11 @@ pub fn pvk_dsa_decoder() -> PvkDecoder {
 /// implementation.  Matches the shape used by
 /// [`super::msblob_decoder::all_msblob_decoders`] so the parent module
 /// (`mod.rs`) can aggregate via `descriptors.extend(...)` over a
-/// homogeneous [`AlgorithmDescriptor`] stream.
+/// homogeneous `AlgorithmDescriptor` stream.
 ///
-/// The concrete [`PvkDecoder`] instances — which implement
-/// [`DecoderProvider`] and therefore provide the actual decode
-/// behaviour — are obtained via [`pvk_rsa_decoder`] / [`pvk_dsa_decoder`]
+/// The concrete `PvkDecoder` instances — which implement
+/// `DecoderProvider` and therefore provide the actual decode
+/// behaviour — are obtained via `pvk_rsa_decoder` / `pvk_dsa_decoder`
 /// when the parent module wires the method store; decoupling the
 /// registration metadata from the instantiation mirrors the layering of
 /// `OSSL_ALGORITHM` vs. `OSSL_DISPATCH` in the original C codebase.
@@ -914,7 +914,7 @@ pub fn all_pvk_decoders() -> Vec<AlgorithmDescriptor> {
 ///
 /// Exported as an internal helper (crate-visible) used by integration
 /// tests and by any future wrapper that needs to surface the decoder's
-/// result through the framework's uniform [`DecodedObject`] channel.
+/// result through the framework's uniform `DecodedObject` channel.
 ///
 /// # Dead-Code Justification
 ///
@@ -947,19 +947,19 @@ mod tests {
     //!
     //! Coverage spans three orthogonal axes:
     //!
-    //! * Header parsing — every validation branch in [`parse_pvk_header`].
+    //! * Header parsing — every validation branch in `parse_pvk_header`.
     //! * Selection semantics — the private-key-only behaviour of
-    //!   [`does_selection`].
+    //!   `does_selection`.
     //! * End-to-end decoder behaviour — via the public
     //!   [`DecoderProvider::decode`] surface on constructed
-    //!   [`PvkDecoder`] instances.  The tests exercise truncation,
+    //!   `PvkDecoder` instances.  The tests exercise truncation,
     //!   magic-mismatch, family-mismatch, encryption (unavailability),
     //!   and a conformant unencrypted round-trip when the sibling MSBLOB
-    //!   parser can yield a [`KeyData`] value.
+    //!   parser can yield a `KeyData` value.
     //!
     //! The encrypted-PVK path is specifically tested to assert that
-    //! [`ProviderError::AlgorithmUnavailable`] is returned — both for
-    //! [`PvkDecoder::decode`] and for the [`decrypt_pvk`] helper directly.
+    //! `ProviderError::AlgorithmUnavailable` is returned — both for
+    //! [`PvkDecoder::decode`] and for the `decrypt_pvk` helper directly.
     //! This contract is part of the public API surface and therefore
     //! under test.
     //!
@@ -1228,7 +1228,7 @@ mod tests {
         // callback registered" scenario from the C source
         // (`PEM_R_BAD_PASSWORD_READ`).  It must surface through the
         // structured [`EndecoderError::UnableToGetPassphrase`] channel —
-        // which converts to [`ProviderError::Dispatch`] via the From
+        // which converts to `ProviderError::Dispatch` via the From
         // impl in [`common.rs`].
         let err = decrypt_pvk(&[0u8; 16], &[0u8; 16], &[], PVK_STRONG_ENCRYPT)
             .expect_err("empty passphrase must signal UnableToGetPassphrase");
@@ -1290,12 +1290,12 @@ mod tests {
     #[test]
     fn pvk_decoder_surfaces_passphrase_error_for_encrypted_blob() {
         // The [`DecoderProvider::decode`] implementation currently calls
-        // [`decrypt_pvk`] with an empty passphrase slice because the
+        // `decrypt_pvk` with an empty passphrase slice because the
         // passphrase-acquisition callback has not yet been wired through
         // the provider dispatch layer.  The correct diagnostic for
         // that scenario is the structured
         // [`EndecoderError::UnableToGetPassphrase`], which converts to
-        // [`ProviderError::Dispatch`] — mirroring the C source's
+        // `ProviderError::Dispatch` — mirroring the C source's
         // `PEM_R_BAD_PASSWORD_READ` outcome.
         let decoder = PvkDecoder::new(PvkKeyType::Rsa);
         let mut bytes = encode_pvk_header(PVK_MAGIC, MS_KEYTYPE_KEYX, PVK_STRONG_ENCRYPT, 16, 16);

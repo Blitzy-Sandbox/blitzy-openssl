@@ -1,8 +1,8 @@
 //! Introspection command integration tests — version, list, info, errstr.
 //!
 //! These tests exercise the CLI binary's informational/introspection
-//! subcommands via subprocess invocation using [`assert_cmd`] and
-//! [`predicates`], verifying output content and exit codes.
+//! subcommands via subprocess invocation using `assert_cmd` and
+//! `predicates`, verifying output content and exit codes.
 //!
 //! ## Gate Coverage
 //!

@@ -11,18 +11,18 @@
 //!
 //! | C Pattern | Rust Pattern |
 //! |-----------|-------------|
-//! | `OPTION_CHOICE` enum + `enc_options[]` | [`EncArgs`] struct with clap `#[derive(Args)]` |
-//! | `opt_cipher(ciphername, &cipher)` | [`Cipher::fetch`] |
-//! | `opt_md(digestname, &dgst)` | [`MessageDigest::fetch`] |
-//! | `PKCS5_PBKDF2_HMAC(...)` | [`pbkdf2_derive`] |
-//! | `RAND_bytes(salt, saltlen)` | [`rand_bytes`] |
-//! | `app_passwd(passarg, ...)` | [`parse_password_source`] |
-//! | `EVP_read_pw_string(...)` | [`PasswordHandler::prompt_password`] |
-//! | `set_hex(hkey, key, key_length)` | [`parse_hex_padded`] |
-//! | `EVP_CIPHER_CTX_set_padding(ctx, 0)` | [`ParamSet`] with `"padding"` → `ParamValue::UInt32(0)` |
-//! | `EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, enc)` | [`CipherCtx::encrypt_init`] / [`CipherCtx::decrypt_init`] |
-//! | `BIO_f_base64()` filter | [`base64_encode`] / [`base64_decode`] |
-//! | `OPENSSL_cleanse(str, str_len)` | [`Zeroizing`] wrapper auto-zeroes on drop |
+//! | `OPTION_CHOICE` enum + `enc_options[]` | `EncArgs` struct with clap `#[derive(Args)]` |
+//! | `opt_cipher(ciphername, &cipher)` | `Cipher::fetch` |
+//! | `opt_md(digestname, &dgst)` | `MessageDigest::fetch` |
+//! | `PKCS5_PBKDF2_HMAC(...)` | `pbkdf2_derive` |
+//! | `RAND_bytes(salt, saltlen)` | `rand_bytes` |
+//! | `app_passwd(passarg, ...)` | `parse_password_source` |
+//! | `EVP_read_pw_string(...)` | `PasswordHandler::prompt_password` |
+//! | `set_hex(hkey, key, key_length)` | `parse_hex_padded` |
+//! | `EVP_CIPHER_CTX_set_padding(ctx, 0)` | `ParamSet` with `"padding"` → `ParamValue::UInt32(0)` |
+//! | `EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, enc)` | `CipherCtx::encrypt_init` / `CipherCtx::decrypt_init` |
+//! | `BIO_f_base64()` filter | `base64_encode` / `base64_decode` |
+//! | `OPENSSL_cleanse(str, str_len)` | `Zeroizing` wrapper auto-zeroes on drop |
 //! | `printf("%02X", ...)` key/iv output | [`hex::encode_upper`] |
 //! | `BIO_read(rbio, buff, bsize)` loop | [`std::io::Read::read`] with `BSIZE` buffer |
 //!
@@ -31,7 +31,7 @@
 //! - **Compression filters:** The C source supports `-z` (zlib), and the
 //!   program aliases `zlib`, `brotli`, `zstd`, `base64` for BIO compression /
 //!   encoding chains. The Rust rewrite keeps the `base64` filter (via
-//!   [`base64_encode`] / [`base64_decode`]) but does **not** re-implement the
+//!   `base64_encode` / `base64_decode`) but does **not** re-implement the
 //!   compression filters — these are explicitly out of scope per the AAP
 //!   (compression wrapping was deprecated and is handled externally).
 //! - **Opaque-key SKEY integration:** The C source supports `-skeyopt`,
@@ -40,7 +40,7 @@
 //!   forward-compatibility surface but rejects them with a typed
 //!   `Unsupported` error since the provider skey infrastructure is tracked
 //!   separately in the provider crate.
-//! - **Secure memory:** [`Zeroizing`] wraps all key, IV, and passphrase
+//! - **Secure memory:** `Zeroizing` wraps all key, IV, and passphrase
 //!   buffers — replacing the explicit `OPENSSL_cleanse(...)` calls after
 //!   PBKDF2 derivation and on cleanup. The passphrase source helpers return
 //!   `Zeroizing<String>` so secrets never linger in heap allocations.
@@ -48,7 +48,7 @@
 //!   rewrite uses `Result<(), CryptoError>` with `?`-propagation; the final
 //!   returned `CryptoError` variant carries a descriptive message and
 //!   preserves the I/O root cause via `CryptoError::Io(#[from] io::Error)`.
-//! - **Observability:** Structured [`tracing`] events replace the C
+//! - **Observability:** Structured `tracing` events replace the C
 //!   `BIO_debug_callback_ex` and `BIO_printf(bio_err, ...)` diagnostic
 //!   messages. The `-debug` flag sets tracing log level via `debug!` events
 //!   and the `-v` / `-verbose` flag emits `info!` events.
@@ -237,7 +237,7 @@ pub struct EncArgs {
     // Passphrase sources (mutually exclusive by C semantics; last wins)
     // ------------------------------------------------------------------
     /// Passphrase source specification (`pass:`, `env:`, `file:`, `fd:`,
-    /// `stdin`). See [`parse_password_source`] for full source syntax.
+    /// `stdin`). See `parse_password_source` for full source syntax.
     #[arg(long = "pass", value_name = "SPEC")]
     pass: Option<String>,
 
@@ -570,7 +570,7 @@ fn write_cipher_list<W: Write>(writer: &mut W) -> Result<(), CryptoError> {
 ///    `iv_len` bytes).
 ///
 /// The Rust `pbkdf2_derive` function uses SHA-256 internally; the `-md`
-/// flag is validated separately via [`MessageDigest::fetch`] but SHA-256
+/// flag is validated separately via `MessageDigest::fetch` but SHA-256
 /// is the only digest exposed by the current KDF module.
 fn derive_key_iv_pbkdf2(
     password: &[u8],
@@ -768,14 +768,14 @@ impl EncArgs {
     ///
     /// 1. Validate flag combinations (encrypt vs. decrypt, `-none`, etc.).
     /// 2. Handle `-list` with early return.
-    /// 3. Resolve the cipher via [`Cipher::fetch`].
-    /// 4. Resolve the digest via [`MessageDigest::fetch`] (default SHA-256).
+    /// 3. Resolve the cipher via `Cipher::fetch`.
+    /// 4. Resolve the digest via `MessageDigest::fetch` (default SHA-256).
     /// 5. Normalise `saltlen` and `iter` per C post-parse logic.
     /// 6. Acquire the passphrase (precedence: `-K` raw key skips this).
     /// 7. Handle salt: read / generate / consume header bytes.
     /// 8. Derive key + IV via PBKDF2 or legacy `EVP_BytesToKey`.
     /// 9. Apply `-K`, `-iv` hex overrides.
-    /// 10. Construct [`CipherCtx`] with padding control.
+    /// 10. Construct `CipherCtx` with padding control.
     /// 11. Emit `-p` / `-P` diagnostic output; early-return on `-P`.
     /// 12. Stream input through cipher (+ optional Base64 wrapping).
     /// 13. Finalise, emit verbose counters, zero all key material.

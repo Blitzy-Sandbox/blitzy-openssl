@@ -15,12 +15,12 @@
 //!
 //! This module comprehensively tests the [`crate::param`] module, verifying:
 //!
-//! - **[`ParamValue`]** variant construction and accessor extraction for all 8 variants.
-//! - **[`ParamSet`]** get/set/contains/remove/keys/len/is_empty/iter/merge/duplicate.
+//! - **`ParamValue`** variant construction and accessor extraction for all 8 variants.
+//! - **`ParamSet`** get/set/contains/remove/keys/len/is_empty/iter/merge/duplicate.
 //! - **[`ParamSet::get_typed`]** type-safe extraction with error reporting.
-//! - **[`ParamBuilder`]** fluent builder API for constructing parameter sets.
-//! - **[`FromParam`]** trait implementations for i32/u32/i64/u64/f64/String/Vec<u8>/bool.
-//! - **[`from_text`]** text-to-ParamValue parsing (integer, float, hex, string).
+//! - **`ParamBuilder`** fluent builder API for constructing parameter sets.
+//! - **`FromParam`** trait implementations for i32/u32/i64/u64/f64/String/Vec<u8>/bool.
+//! - **`from_text`** text-to-ParamValue parsing (integer, float, hex, string).
 //! - **Error types:** [`CommonError::ParamTypeMismatch`], [`CommonError::ParamNotFound`],
 //!   [`CommonError::InvalidArgument`], [`CommonError::CastOverflow`].
 //!

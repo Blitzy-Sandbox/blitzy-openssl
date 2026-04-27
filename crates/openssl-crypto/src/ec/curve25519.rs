@@ -3522,13 +3522,13 @@ pub mod test_internals {
         super::edwards448::GeP3_448::from_bytes(bytes).map(|p| p.to_bytes())
     }
 
-    /// Variable-base scalar multiplication: [scalar]*P (using scalarmult, NOT vartime).
+    /// Variable-base scalar multiplication: `[scalar]*P` (using scalarmult, NOT vartime).
     pub fn scalarmult(point_bytes: &[u8; 32], scalar: &[u8; 32]) -> Option<[u8; 32]> {
         let p = super::edwards25519::GeP3::from_bytes(point_bytes)?;
         Some(super::edwards25519::scalarmult(&p, scalar).to_bytes())
     }
 
-    /// Double scalar mult: [a]*A + [b]*B using vartime (for verify).
+    /// Double scalar mult: `[a]*A + [b]*B` using vartime (for verify).
     pub fn double_scalarmult_vartime(
         a_scalar: &[u8; 32],
         a_point_bytes: &[u8; 32],

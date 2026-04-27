@@ -253,6 +253,19 @@ pub mod bn;
 #[cfg(feature = "ec")]
 pub mod ec;
 
+/// RSA public-key cryptosystem — encryption (OAEP), signatures (PSS,
+/// PKCS#1 v1.5), and key derivation.
+///
+/// Translates `crypto/rsa/*.c` (26 files) per RFC 8017 (PKCS #1 v2.2),
+/// FIPS 186-5 §A.1 (RSA key generation), and NIST SP 800-56B Rev. 2.
+/// RSA functionality is dispersed across the EVP layer (`pkey`,
+/// `signature`, `keymgmt`, `encode_decode`, `kem`) and the BigNum
+/// prime-derivation helper ([`crate::bn::prime::rsa_fips186_5_derive_prime`]);
+/// this module re-exports the relevant types for ergonomic RSA-focused
+/// access (the AAP §0.4.1 / §0.5.1 directory pattern).
+#[cfg(feature = "rsa")]
+pub mod rsa;
+
 /// Diffie-Hellman key exchange and finite-field parameter validation.
 ///
 /// Translates `crypto/dh/*.c` (14 files) including RFC 7919 named groups

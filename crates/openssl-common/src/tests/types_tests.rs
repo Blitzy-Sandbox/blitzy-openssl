@@ -1,6 +1,6 @@
 //! Tests for shared type definitions in openssl-common.
 //!
-//! Exercises the public API for [`Nid`], [`ProtocolVersion`], [`PaddingMode`],
+//! Exercises the public API for `Nid`, [`ProtocolVersion`], [`PaddingMode`],
 //! [`KeyType`], [`CipherMode`], [`OperationType`], and the [`AlgorithmName`]
 //! trait. Validates round-trip conversions, enum exhaustiveness, trait derives
 //! (Clone, Copy, Hash, Debug, Display, Serialize, Deserialize), and correct

@@ -8,31 +8,31 @@
 //!
 //! | Rust Item              | C Source                                    |
 //! |------------------------|---------------------------------------------|
-//! | [`cleanse`]            | `crypto/mem_clr.c` — `OPENSSL_cleanse()`    |
-//! | [`secure_zero`]        | `crypto/mem_clr.c` — `OPENSSL_cleanse()`    |
-//! | [`SecureVec`]          | `crypto/mem_sec.c` — secure heap allocation |
-//! | [`SecureBox`]          | `crypto/mem_sec.c` — secure heap wrapper    |
-//! | [`constant_time_eq`]   | `crypto/mem.c` — `CRYPTO_memcmp()`          |
-//! | [`SecureHeapConfig`]   | `crypto/mem_sec.c` — heap configuration     |
-//! | [`init_secure_heap`]   | `crypto/mem_sec.c` — `CRYPTO_secure_malloc_init()` |
-//! | [`secure_heap_used`]   | `crypto/mem_sec.c` — `CRYPTO_secure_malloc_used()` |
+//! | `cleanse`            | `crypto/mem_clr.c` — `OPENSSL_cleanse()`    |
+//! | `secure_zero`        | `crypto/mem_clr.c` — `OPENSSL_cleanse()`    |
+//! | `SecureVec`          | `crypto/mem_sec.c` — secure heap allocation |
+//! | `SecureBox`          | `crypto/mem_sec.c` — secure heap wrapper    |
+//! | `constant_time_eq`   | `crypto/mem.c` — `CRYPTO_memcmp()`          |
+//! | `SecureHeapConfig`   | `crypto/mem_sec.c` — heap configuration     |
+//! | `init_secure_heap`   | `crypto/mem_sec.c` — `CRYPTO_secure_malloc_init()` |
+//! | `secure_heap_used`   | `crypto/mem_sec.c` — `CRYPTO_secure_malloc_used()` |
 //!
 //! # Design
 //!
 //! The C implementation in `crypto/mem_clr.c` uses a volatile function pointer
 //! to `memset` to prevent the compiler from optimizing away memory clearing.
-//! In Rust, the [`zeroize`] crate achieves the same guarantee through compiler
+//! In Rust, the `zeroize` crate achieves the same guarantee through compiler
 //! barriers and volatile writes.
 //!
 //! The C secure heap (`crypto/mem_sec.c`) uses `mmap(MAP_PRIVATE|MAP_ANON)` +
 //! `mlock()` to prevent paging key material to disk. In this Rust
-//! implementation, [`SecureVec`] and [`SecureBox`] provide the critical
-//! zero-on-drop guarantee via [`zeroize`], while platform-specific `mlock`
+//! implementation, `SecureVec` and `SecureBox` provide the critical
+//! zero-on-drop guarantee via `zeroize`, while platform-specific `mlock`
 //! support can be enabled via feature flags.
 //!
 //! # Rules Enforced
 //!
-//! - **R5 (Nullability):** [`init_secure_heap`] returns `Result`, not a sentinel.
+//! - **R5 (Nullability):** `init_secure_heap` returns `Result`, not a sentinel.
 //! - **R7 (Lock Granularity):** No shared mutable state; allocations are per-owner.
 //! - **R8 (Zero Unsafe):** Zero `unsafe` blocks; `zeroize` and `subtle` handle
 //!   low-level details safely.
@@ -49,7 +49,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 ///
 /// `Zeroizing<T>` wraps any `T: Zeroize` value and ensures it is
 /// securely zeroed when dropped. Use this for lightweight secure wrappers
-/// when [`SecureVec`] or [`SecureBox`] are not needed.
+/// when `SecureVec` or `SecureBox` are not needed.
 pub use zeroize::Zeroizing;
 
 use crate::error::CommonError;
@@ -63,7 +63,7 @@ use crate::error::CommonError;
 ///
 /// This is the Rust equivalent of `OPENSSL_cleanse()` from `crypto/mem_clr.c`.
 /// The C implementation uses a volatile function pointer to `memset`; the Rust
-/// implementation delegates to [`Zeroize::zeroize`], which uses
+/// implementation delegates to `Zeroize::zeroize`, which uses
 /// compiler barriers and volatile writes to guarantee the zeroing is not
 /// elided.
 ///
@@ -83,7 +83,7 @@ pub fn cleanse(data: &mut [u8]) {
 /// Securely zeroes a byte slice, ensuring the compiler cannot optimize
 /// away the write.
 ///
-/// This is a semantic alias for [`cleanse`] that may be preferred in
+/// This is a semantic alias for `cleanse` that may be preferred in
 /// contexts where the intent is explicitly "zero this memory" rather
 /// than "cleanse this buffer."
 ///
@@ -132,7 +132,7 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 /// A byte vector that is securely zeroed when dropped.
 ///
-/// `SecureVec` wraps a `Vec<u8>` and derives [`Zeroize`] + [`ZeroizeOnDrop`],
+/// `SecureVec` wraps a `Vec<u8>` and derives `Zeroize` + `ZeroizeOnDrop`,
 /// ensuring all contained bytes are overwritten with zeros before the
 /// underlying memory is freed. This replaces `OPENSSL_secure_malloc()` /
 /// `OPENSSL_secure_free()` from `crypto/mem_sec.c`.
@@ -141,10 +141,10 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 ///
 /// - **Zero on drop:** All bytes are zeroed via volatile writes before
 ///   deallocation, preventing key material from lingering in freed memory.
-/// - **Constant-time equality:** The [`PartialEq`] implementation uses
+/// - **Constant-time equality:** The `PartialEq` implementation uses
 ///   [`subtle::ConstantTimeEq`] to prevent timing side-channel attacks
 ///   when comparing key material.
-/// - **Redacted debug output:** The [`Debug`] implementation never prints
+/// - **Redacted debug output:** The `Debug` implementation never prints
 ///   the contained bytes, preventing accidental key leakage in logs.
 ///
 /// # Examples
@@ -233,7 +233,7 @@ impl SecureVec {
     /// Securely zeroes all contained bytes and sets the length to zero.
     ///
     /// The underlying allocation is retained (capacity unchanged) but all
-    /// data is wiped via [`Zeroize::zeroize`]. This is equivalent to
+    /// data is wiped via `Zeroize::zeroize`. This is equivalent to
     /// calling `OPENSSL_cleanse()` followed by resetting the buffer
     /// in the C implementation.
     pub fn clear(&mut self) {
@@ -294,9 +294,9 @@ impl Eq for SecureVec {}
 /// # Security Properties
 ///
 /// - **Zero on drop:** The contained value is zeroed via
-///   [`Zeroize::zeroize`] in the [`Drop`] implementation before the
+///   `Zeroize::zeroize` in the `Drop` implementation before the
 ///   heap allocation is freed.
-/// - **Redacted debug output:** The [`Debug`] implementation never
+/// - **Redacted debug output:** The `Debug` implementation never
 ///   prints the contained value, preventing leakage in logs.
 ///
 /// # Examples
@@ -369,7 +369,7 @@ impl<T: Zeroize> fmt::Debug for SecureBox<T> {
 /// being paged to disk.
 ///
 /// In the current Rust implementation, secure zeroing is provided by the
-/// [`zeroize`] crate on all [`SecureVec`] and [`SecureBox`] instances.
+/// `zeroize` crate on all `SecureVec` and `SecureBox` instances.
 /// Platform-specific `mlock` support can be added via feature flags.
 #[derive(Debug, Clone)]
 pub struct SecureHeapConfig {
@@ -382,10 +382,10 @@ pub struct SecureHeapConfig {
 
 /// Initializes the secure heap for memory-locked allocations.
 ///
-/// Validates the provided [`SecureHeapConfig`] and prepares the secure
+/// Validates the provided `SecureHeapConfig` and prepares the secure
 /// memory subsystem. In the current implementation, validation succeeds
-/// when `min_size > 0`; the [`SecureVec`] type provides secure zeroing
-/// guarantees via [`zeroize`] regardless of initialization. Full
+/// when `min_size > 0`; the `SecureVec` type provides secure zeroing
+/// guarantees via `zeroize` regardless of initialization. Full
 /// `mlock`-based page locking for preventing paging to disk can be
 /// enabled via platform-specific feature flags.
 ///
@@ -425,7 +425,7 @@ pub fn init_secure_heap(config: &SecureHeapConfig) -> Result<(), CommonError> {
 
 /// Returns the number of bytes currently allocated from the secure heap.
 ///
-/// In the current implementation, this returns `0` because [`SecureVec`]
+/// In the current implementation, this returns `0` because `SecureVec`
 /// uses the standard allocator with zeroing-on-drop semantics rather than
 /// a dedicated `mlock`-backed secure heap arena. When platform-specific
 /// memory locking is enabled, this will report actual secure heap usage,

@@ -127,7 +127,7 @@ impl ConfigutlArgs {
     /// Execute the `configutl` subcommand.
     ///
     /// Loads the configuration file (or the default), expands all variable
-    /// references and `.include` directives via [`ConfigParser::parse_file`],
+    /// references and `.include` directives via `ConfigParser::parse_file`,
     /// and writes the canonical output to stdout or the specified output file.
     ///
     /// # Errors

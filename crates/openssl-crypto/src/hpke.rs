@@ -9,14 +9,14 @@
 //!
 //! | Mode      | Enum Variant       | PSK Required | Auth Key Required |
 //! |-----------|--------------------|--------------|-------------------|
-//! | Base      | [`HpkeMode::Base`] | No           | No                |
-//! | PSK       | [`HpkeMode::Psk`]  | Yes          | No                |
-//! | Auth      | [`HpkeMode::Auth`] | No           | Yes               |
-//! | `AuthPSK` | [`HpkeMode::AuthPsk`] | Yes       | Yes               |
+//! | Base      | `HpkeMode::Base`   | No           | No                |
+//! | PSK       | `HpkeMode::Psk`    | Yes          | No                |
+//! | Auth      | `HpkeMode::Auth`   | No           | Yes               |
+//! | `AuthPSK` | `HpkeMode::AuthPsk`| Yes          | Yes               |
 //!
 //! # Suite Selection
 //!
-//! An HPKE suite ([`HpkeSuite`]) is a triple of (KEM, KDF, AEAD) algorithms
+//! An HPKE suite (`HpkeSuite`) is a triple of (KEM, KDF, AEAD) algorithms
 //! identified by their IANA-registered codepoints. See:
 //! <https://www.iana.org/assignments/hpke/hpke.xhtml>
 //!

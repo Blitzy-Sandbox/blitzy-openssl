@@ -231,7 +231,7 @@ impl HashAlgorithm {
     /// * **XOF digests** (SHAKE-128, SHAKE-256, cSHAKE, KMAC-XOF) yield
     ///   [`ProviderError::Init`] — HKDF requires a fixed-size MAC output
     ///   per RFC 5869 §2.2.
-    /// * **Unknown names** yield [`ProviderError::AlgorithmUnavailable`] —
+    /// * **Unknown names** yield `ProviderError::AlgorithmUnavailable` —
     ///   matching the provider dispatch behaviour when a named digest is
     ///   not found in any loaded provider.
     fn from_name(name: &str) -> ProviderResult<Self> {
@@ -317,10 +317,10 @@ impl HashAlgorithm {
 /// User-facing bundle of HKDF input parameters.
 ///
 /// This struct mirrors the schema-level HKDF input surface and provides a
-/// typed alternative to the dynamic [`ParamSet`] for programmatic callers.
+/// typed alternative to the dynamic `ParamSet` for programmatic callers.
 /// All fields are [`Option`] per rule R5 — no sentinel values.
 ///
-/// When serialised into a [`ParamSet`] via [`HkdfParams::to_param_set`], each
+/// When serialised into a `ParamSet` via [`HkdfParams::to_param_set`], each
 /// present field becomes one entry matching the `PARAM_*` names accepted by
 /// [`HkdfContext::set_params`].
 #[derive(Debug, Clone, Default)]
@@ -350,7 +350,7 @@ impl HkdfParams {
         Self::default()
     }
 
-    /// Serialises this parameter bundle into a [`ParamSet`].
+    /// Serialises this parameter bundle into a `ParamSet`.
     ///
     /// Only fields that are `Some(_)` are pushed into the resulting set.
     /// Octet-string values (salt/key/info/prefix/label/data) are cloned into
@@ -390,7 +390,7 @@ impl HkdfParams {
 // HkdfContext — unified derivation context
 // =============================================================================
 
-/// HKDF derivation context implementing [`KdfContext`].
+/// HKDF derivation context implementing `KdfContext`.
 ///
 /// This is the Rust translation of the `KDF_HKDF` C struct (`hkdf.c` lines
 /// 77-95). A single struct backs four OSSL dispatch tables:
@@ -402,7 +402,7 @@ impl HkdfParams {
 /// # Zeroisation
 ///
 /// Secret fields (`key`, `salt`, `info`, `data`) are wiped on drop and on
-/// [`reset`](Self::reset) via [`ZeroizeOnDrop`].  The `prefix` and `label`
+/// [`reset`](Self::reset) via `ZeroizeOnDrop`.  The `prefix` and `label`
 /// are not secret (they are public protocol constants such as `"tls13 "`)
 /// and are marked `#[zeroize(skip)]`.
 ///
@@ -1097,7 +1097,7 @@ impl KdfContext for HkdfContext {
     /// `hkdf.c`.
     ///
     /// If `params` is non-empty, it is first merged into the context via
-    /// [`apply_params`](HkdfContext::apply_params); this matches the
+    /// `apply_params`; this matches the
     /// behaviour of `kdf_hkdf_derive` which calls
     /// `kdf_hkdf_set_ctx_params(ctx, params)` at the top of the function
     /// (`hkdf.c` line 286).
@@ -1165,7 +1165,7 @@ impl KdfContext for HkdfContext {
         Ok(())
     }
 
-    /// Returns a [`ParamSet`] describing gettable context parameters.
+    /// Returns a `ParamSet` describing gettable context parameters.
     ///
     /// Provides:
     ///
@@ -1187,7 +1187,7 @@ impl KdfContext for HkdfContext {
     }
 
     /// Applies `params` to the context. Delegates to
-    /// [`apply_params`](HkdfContext::apply_params).
+    /// `apply_params`.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         self.apply_params(params)
     }
@@ -1208,12 +1208,12 @@ impl HkdfContext {
     }
 
     /// Runs the HKDF derivation and returns the produced OKM.  Convenience
-    /// wrapper over [`KdfContext::derive`](KdfContext::derive) for programmatic
+    /// wrapper over [`KdfContext::derive`] for programmatic
     /// callers that prefer an owned `Vec` return.
     ///
     /// # Errors
     ///
-    /// Returns any error produced by [`KdfContext::derive`](KdfContext::derive).
+    /// Returns any error produced by [`KdfContext::derive`].
     pub fn derive(&mut self, length: usize, params: &ParamSet) -> ProviderResult<Vec<u8>> {
         let mut out = vec![0u8; length];
         <Self as KdfContext>::derive(self, &mut out, params)?;
@@ -1221,31 +1221,31 @@ impl HkdfContext {
     }
 
     /// Sets parameters on the context. Convenience wrapper over
-    /// [`KdfContext::set_params`](KdfContext::set_params).
+    /// `KdfContext::set_params`.
     ///
     /// # Errors
     ///
-    /// Returns any error produced by [`KdfContext::set_params`](KdfContext::set_params).
+    /// Returns any error produced by `KdfContext::set_params`.
     pub fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         <Self as KdfContext>::set_params(self, params)
     }
 
-    /// Returns a [`ParamSet`] describing gettable parameters.  Convenience
-    /// wrapper over [`KdfContext::get_params`](KdfContext::get_params).
+    /// Returns a `ParamSet` describing gettable parameters.  Convenience
+    /// wrapper over `KdfContext::get_params`.
     ///
     /// # Errors
     ///
-    /// Returns any error produced by [`KdfContext::get_params`](KdfContext::get_params).
+    /// Returns any error produced by `KdfContext::get_params`.
     pub fn get_params(&self) -> ProviderResult<ParamSet> {
         <Self as KdfContext>::get_params(self)
     }
 
     /// Resets the context.  Convenience wrapper over
-    /// [`KdfContext::reset`](KdfContext::reset).
+    /// `KdfContext::reset`.
     ///
     /// # Errors
     ///
-    /// Returns any error produced by [`KdfContext::reset`](KdfContext::reset).
+    /// Returns any error produced by `KdfContext::reset`.
     pub fn reset(&mut self) -> ProviderResult<()> {
         <Self as KdfContext>::reset(self)
     }
@@ -1259,7 +1259,7 @@ impl HkdfContext {
 ///
 /// Translation of C `ossl_kdf_hkdf_functions` (`hkdf.c` lines 932-948).
 /// The caller must supply a `"digest"` parameter before invoking
-/// [`KdfContext::derive`](KdfContext::derive); otherwise derivation fails.
+/// [`KdfContext::derive`]; otherwise derivation fails.
 ///
 /// # Example
 ///

@@ -1,28 +1,28 @@
 //! # Message Digest Provider Implementations
 //!
 //! Contains all message digest algorithm implementations for the OpenSSL
-//! Rust provider system. Each submodule implements the [`DigestProvider`]
+//! Rust provider system. Each submodule implements the `DigestProvider`
 //! trait from [`crate::traits`] for one or more hash algorithm families.
 //!
 //! ## Algorithm Families
 //!
 //! | Module | Algorithms | C Source | Feature |
 //! |--------|-----------|---------|---------|
-//! | [`common`] | Shared infrastructure (flags, params, helpers) | `digestcommon.c` | always |
-//! | [`sha1`] | SHA-1 (with SSL3 support) | `sha2_prov.c` | always |
-//! | [`sha2`] | SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, SHA-512/256 | `sha2_prov.c` | always |
-//! | [`sha3`] | SHA3-224/256/384/512, SHAKE128/256, cSHAKE, Keccak, KECCAK-KMAC | `sha3_prov.c`, `cshake_prov.c` | `sha3` |
-//! | [`blake2`] | BLAKE2b-512, BLAKE2s-256 | `blake2_prov.c` | `blake2` |
-//! | [`sm3`] | SM3 | `sm3_prov.c` | `sm3` |
-//! | [`md5`] | MD5, MD5-SHA1 | `md5_prov.c`, `md5_sha1_prov.c` | always |
-//! | [`ripemd`] | RIPEMD-160 | `ripemd_prov.c` | always |
-//! | [`null`] | NULL (passthrough) | `null_prov.c` | always |
-//! | [`ml_dsa_mu`] | ML-DSA mu hash (SHAKE256-based) | `ml_dsa_mu_prov.c` | always |
-//! | [`legacy`] | MD2, MD4, MDC2, Whirlpool | `md2/md4/mdc2/wp_prov.c` | `legacy` |
+//! | `common` | Shared infrastructure (flags, params, helpers) | `digestcommon.c` | always |
+//! | `sha1` | SHA-1 (with SSL3 support) | `sha2_prov.c` | always |
+//! | `sha2` | SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, SHA-512/256 | `sha2_prov.c` | always |
+//! | `sha3` | SHA3-224/256/384/512, SHAKE128/256, cSHAKE, Keccak, KECCAK-KMAC | `sha3_prov.c`, `cshake_prov.c` | `sha3` |
+//! | `blake2` | BLAKE2b-512, BLAKE2s-256 | `blake2_prov.c` | `blake2` |
+//! | `sm3` | SM3 | `sm3_prov.c` | `sm3` |
+//! | `md5` | MD5, MD5-SHA1 | `md5_prov.c`, `md5_sha1_prov.c` | always |
+//! | `ripemd` | RIPEMD-160 | `ripemd_prov.c` | always |
+//! | `null` | NULL (passthrough) | `null_prov.c` | always |
+//! | `ml_dsa_mu` | ML-DSA mu hash (SHAKE256-based) | `ml_dsa_mu_prov.c` | always |
+//! | `legacy` | MD2, MD4, MDC2, Whirlpool | `md2/md4/mdc2/wp_prov.c` | `legacy` |
 //!
 //! ## Architecture
 //!
-//! Each digest struct implements [`DigestProvider`] and creates
+//! Each digest struct implements `DigestProvider` and creates
 //! [`DigestContext`](crate::traits::DigestContext) instances. Context lifecycle:
 //!
 //! ```text
@@ -68,8 +68,8 @@
 //!
 //! The C `IMPLEMENT_digest_functions()` macro pattern is replaced by Rust
 //! trait implementations. The C `ossl_*_functions[]` dispatch table symbols
-//! referenced by `defltprov.c` are replaced by the [`descriptors()`] and
-//! [`create_provider()`] functions.
+//! referenced by `defltprov.c` are replaced by the `descriptors()` and
+//! `create_provider()` functions.
 //!
 //! ## Zero Unsafe
 //!
@@ -92,10 +92,10 @@ use crate::traits::{AlgorithmDescriptor, DigestProvider};
 ///
 /// Source: `providers/implementations/digests/digestcommon.c`
 ///
-/// Provides [`DigestFlags`], [`DigestParams`], [`default_get_params()`](common::default_get_params),
-/// [`default_gettable_params()`](common::default_gettable_params),
-/// [`is_fips_approved_digest()`](common::is_fips_approved_digest), and
-/// [`digest_name_to_nid()`](common::digest_name_to_nid).
+/// Provides `DigestFlags`, `DigestParams`, `default_get_params()`(common::default_get_params),
+/// `default_gettable_params()`(common::default_gettable_params),
+/// `is_fips_approved_digest()`(common::is_fips_approved_digest), and
+/// `digest_name_to_nid()`(common::digest_name_to_nid).
 pub mod common;
 
 /// SHA-1 message digest (160-bit output, 64-byte block).
@@ -118,8 +118,8 @@ pub mod sha1;
 /// `ossl_sha512_224_functions`, `ossl_sha512_256_functions` dispatch tables.
 ///
 /// Seven total variants across two base implementations:
-/// - [`Sha256Provider`] (256-bit state): SHA-224, SHA-256, SHA-256/192
-/// - [`Sha512Provider`] (512-bit state): SHA-384, SHA-512, SHA-512/224, SHA-512/256
+/// - `Sha256Provider` (256-bit state): SHA-224, SHA-256, SHA-256/192
+/// - `Sha512Provider` (512-bit state): SHA-384, SHA-512, SHA-512/224, SHA-512/256
 pub mod sha2;
 
 /// MD5 and MD5-SHA1 composite message digests.
@@ -223,65 +223,65 @@ pub mod legacy;
 // instead of:
 //   use openssl_provider::implementations::digests::sha2::Sha256Provider;
 
-/// Digest capability flags — re-exported from [`common`].
+/// Digest capability flags — re-exported from `common`.
 pub use common::DigestFlags;
 
-/// Digest parameter configuration — re-exported from [`common`].
+/// Digest parameter configuration — re-exported from `common`.
 pub use common::DigestParams;
 
-/// SHA-1 provider — re-exported from [`sha1`].
+/// SHA-1 provider — re-exported from `sha1`.
 pub use sha1::Sha1Provider;
 
-/// SHA-2 256-bit family provider — re-exported from [`sha2`].
+/// SHA-2 256-bit family provider — re-exported from `sha2`.
 pub use sha2::Sha256Provider;
 
-/// SHA-2 512-bit family provider — re-exported from [`sha2`].
+/// SHA-2 512-bit family provider — re-exported from `sha2`.
 pub use sha2::Sha512Provider;
 
-/// MD5 provider — re-exported from [`md5`].
+/// MD5 provider — re-exported from `md5`.
 pub use md5::Md5Provider;
 
-/// MD5-SHA1 composite provider — re-exported from [`md5`].
+/// MD5-SHA1 composite provider — re-exported from `md5`.
 pub use md5::Md5Sha1Provider;
 
-/// RIPEMD-160 provider — re-exported from [`ripemd`].
+/// RIPEMD-160 provider — re-exported from `ripemd`.
 pub use ripemd::Ripemd160Provider;
 
-/// Null digest provider — re-exported from [`null`].
+/// Null digest provider — re-exported from `null`.
 pub use null::NullDigestProvider;
 
-/// ML-DSA mu hash provider — re-exported from [`ml_dsa_mu`].
+/// ML-DSA mu hash provider — re-exported from `ml_dsa_mu`.
 pub use ml_dsa_mu::MlDsaMuProvider;
 
-/// SHA-3 provider — re-exported from [`sha3`] (feature-gated).
+/// SHA-3 provider — re-exported from `sha3` (feature-gated).
 #[cfg(feature = "sha3")]
 pub use sha3::Sha3Provider;
 
-/// SHAKE XOF provider — re-exported from [`sha3`] (feature-gated).
+/// SHAKE XOF provider — re-exported from `sha3` (feature-gated).
 #[cfg(feature = "sha3")]
 pub use sha3::ShakeProvider;
 
-/// Keccak provider — re-exported from [`sha3`] (feature-gated).
+/// Keccak provider — re-exported from `sha3` (feature-gated).
 #[cfg(feature = "sha3")]
 pub use sha3::KeccakProvider;
 
-/// KECCAK-KMAC provider — re-exported from [`sha3`] (feature-gated).
+/// KECCAK-KMAC provider — re-exported from `sha3` (feature-gated).
 #[cfg(feature = "sha3")]
 pub use sha3::KeccakKmacProvider;
 
-/// cSHAKE provider — re-exported from [`sha3`] (feature-gated).
+/// cSHAKE provider — re-exported from `sha3` (feature-gated).
 #[cfg(feature = "sha3")]
 pub use sha3::CshakeProvider;
 
-/// `BLAKE2b` provider — re-exported from [`blake2`] (feature-gated).
+/// `BLAKE2b` provider — re-exported from `blake2` (feature-gated).
 #[cfg(feature = "blake2")]
 pub use blake2::Blake2bProvider;
 
-/// BLAKE2s provider — re-exported from [`blake2`] (feature-gated).
+/// BLAKE2s provider — re-exported from `blake2` (feature-gated).
 #[cfg(feature = "blake2")]
 pub use blake2::Blake2sProvider;
 
-/// SM3 provider — re-exported from [`sm3`] (feature-gated).
+/// SM3 provider — re-exported from `sm3` (feature-gated).
 #[cfg(feature = "sm3")]
 pub use sm3::Sm3Provider;
 
@@ -322,7 +322,7 @@ pub use legacy::WhirlpoolProvider;
 /// - SHA-3/SHAKE/Keccak/cSHAKE require `"sha3"` feature.
 /// - BLAKE2b/BLAKE2s require `"blake2"` feature.
 /// - SM3 requires `"sm3"` feature.
-/// - Legacy algorithms are excluded — use [`legacy_descriptors()`] instead.
+/// - Legacy algorithms are excluded — use `legacy_descriptors()` instead.
 ///
 /// # Returns
 ///
@@ -364,7 +364,7 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
 /// Returns digest algorithm descriptors for the **legacy** provider.
 ///
 /// Called by `LegacyProvider::query_operation(OperationType::Digest)`.
-/// Separate from [`descriptors()`] because legacy algorithms use property
+/// Separate from `descriptors()` because legacy algorithms use property
 /// `"provider=legacy"` instead of `"provider=default"`.
 ///
 /// Includes MD2, MD4, MDC2, and Whirlpool — algorithms that are

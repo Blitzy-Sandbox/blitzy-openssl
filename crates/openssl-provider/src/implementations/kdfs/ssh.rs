@@ -54,7 +54,7 @@
 //!
 //! # Observability
 //!
-//! All derivation events are instrumented with [`tracing`] for
+//! All derivation events are instrumented with `tracing` for
 //! correlation with the broader TLS / SSH application flow. Parameter
 //! validation failures emit `warn!` events; successful derivations and
 //! iterative rounds emit `debug!` / `trace!` events with algorithm and
@@ -107,17 +107,17 @@ const PARAM_SESSION_ID: &str = "session_id";
 /// `OSSL_KDF_PARAM_SSHKDF_TYPE` — the type selector character,
 /// exactly one ASCII byte in the range `'A'`..=`'F'`.  Determines
 /// which key material is being derived; see the
-/// [`SshKdfType`] enum for the full mapping.
+/// `SshKdfType` enum for the full mapping.
 const PARAM_TYPE: &str = "type";
 
 // =============================================================================
 // Error Conversion Helpers
 // =============================================================================
 
-/// Converts a [`CryptoError`] returned by
+/// Converts a `CryptoError` returned by
 /// [`MessageDigest::fetch`](openssl_crypto::evp::md::MessageDigest::fetch)
 /// or the `MdContext::{init,update,finalize}` chain into a
-/// [`ProviderError::Dispatch`] for the provider layer.
+/// `ProviderError::Dispatch` for the provider layer.
 ///
 /// Centralising this mapping keeps per-call sites concise via
 /// `.map_err(dispatch_err)?` and preserves the underlying error message
@@ -199,7 +199,7 @@ impl SshKdfType {
         }
     }
 
-    /// Parses an ASCII byte into a [`SshKdfType`] variant.
+    /// Parses an ASCII byte into a `SshKdfType` variant.
     ///
     /// Returns `Ok(variant)` if the byte is in the valid range
     /// `b'A'..=b'F'`, otherwise returns `Err` wrapping a descriptive
@@ -244,19 +244,19 @@ impl SshKdfType {
 /// | C field                         | Rust field                 |
 /// |---------------------------------|----------------------------|
 /// | `OSSL_LIB_CTX *libctx`          | *(implicit via `LibContext::get_default()`)* |
-/// | `PROV_DIGEST digest`            | [`Self::digest_name`] (resolved lazily via `MessageDigest::fetch`) |
-/// | `unsigned char *key`            | [`Self::key`]              |
+/// | `PROV_DIGEST digest`            | `Self::digest_name` (resolved lazily via `MessageDigest::fetch`) |
+/// | `unsigned char *key`            | `Self::key`              |
 /// | `size_t key_len`                | (implicit in `Vec`)        |
-/// | `unsigned char *xcghash`        | [`Self::xcghash`]          |
+/// | `unsigned char *xcghash`        | `Self::xcghash`          |
 /// | `size_t xcghash_len`            | (implicit in `Vec`)        |
-/// | `char type`                     | [`Self::kdf_type`]         |
-/// | `unsigned char *session_id`     | [`Self::session_id`]       |
+/// | `char type`                     | `Self::kdf_type`         |
+/// | `unsigned char *session_id`     | `Self::session_id`       |
 /// | `size_t session_id_len`         | (implicit in `Vec`)        |
 ///
 /// # Security
 ///
 /// The `key`, `xcghash`, and `session_id` fields are automatically
-/// zeroized when the context is dropped via the [`ZeroizeOnDrop`]
+/// zeroized when the context is dropped via the `ZeroizeOnDrop`
 /// derive.  This replaces the C `OPENSSL_clear_free()` calls in
 /// `kdf_sshkdf_reset()` (sshkdf.c lines 92–103).
 ///
@@ -266,9 +266,9 @@ impl SshKdfType {
 ///
 /// # Lazy Digest Resolution
 ///
-/// The digest is stored as an algorithm name ([`Self::digest_name`])
-/// and is **resolved lazily** to a concrete [`MessageDigest`] inside
-/// [`Self::derive_internal`].  This matches the C implementation's
+/// The digest is stored as an algorithm name (`Self::digest_name`)
+/// and is **resolved lazily** to a concrete `MessageDigest` inside
+/// `Self::derive_internal`.  This matches the C implementation's
 /// deferred `PROV_DIGEST_load_from_params()` pattern and allows
 /// callers to set parameters in any order without triggering a fetch
 /// of a possibly-unavailable digest.
@@ -294,8 +294,8 @@ pub struct SshKdfContext {
     kdf_type: Option<SshKdfType>,
 
     /// Name of the underlying digest algorithm.  Resolved lazily to a
-    /// concrete [`MessageDigest`] during [`Self::derive_internal`] via
-    /// [`MessageDigest::fetch`].  Not sensitive — skipped from
+    /// concrete `MessageDigest` during `Self::derive_internal` via
+    /// `MessageDigest::fetch`.  Not sensitive — skipped from
     /// zeroization.
     ///
     /// `None` means the digest has not been set; a derivation attempt
@@ -323,7 +323,7 @@ impl SshKdfContext {
         }
     }
 
-    /// Applies parameters from the provided [`ParamSet`], updating the
+    /// Applies parameters from the provided `ParamSet`, updating the
     /// corresponding context fields.
     ///
     /// Matches the C `kdf_sshkdf_set_ctx_params()` function in
@@ -462,10 +462,10 @@ impl SshKdfContext {
     /// # Errors
     ///
     /// - [`ProviderError::Init`] if no digest has been configured
-    ///   (should be caught earlier by [`Self::validate`]) or if the
+    ///   (should be caught earlier by `Self::validate`) or if the
     ///   configured digest is an XOF (SSH KDF disallows XOF digests).
-    /// - [`ProviderError::Dispatch`] propagated from
-    ///   [`MessageDigest::fetch`] if the digest name is not available
+    /// - `ProviderError::Dispatch` propagated from
+    ///   `MessageDigest::fetch` if the digest name is not available
     ///   in any loaded provider, or from the `MdContext::{init,
     ///   update, finalize}` chain.
     fn derive_internal(&self, output: &mut [u8]) -> ProviderResult<usize> {
@@ -669,7 +669,7 @@ impl KdfContext for SshKdfContext {
     /// Derives SSH key material per RFC 4253 §7.2.
     ///
     /// Any parameters present in `params` are applied via
-    /// [`Self::apply_params`] before derivation begins.  Parameters
+    /// `Self::apply_params` before derivation begins.  Parameters
     /// set via prior [`Self::set_params`] calls remain in effect
     /// unless overridden.
     ///
@@ -679,8 +679,8 @@ impl KdfContext for SshKdfContext {
     ///
     /// # Errors
     ///
-    /// Propagates any error from [`Self::apply_params`],
-    /// [`Self::validate`], or [`Self::derive_internal`].
+    /// Propagates any error from `Self::apply_params`,
+    /// `Self::validate`, or `Self::derive_internal`.
     fn derive(&mut self, key: &mut [u8], params: &ParamSet) -> ProviderResult<usize> {
         if !params.is_empty() {
             self.apply_params(params)?;
@@ -713,7 +713,7 @@ impl KdfContext for SshKdfContext {
         Ok(())
     }
 
-    /// Returns a [`ParamSet`] describing the context's publicly
+    /// Returns a `ParamSet` describing the context's publicly
     /// observable state.
     ///
     /// Matches the C `kdf_sshkdf_get_ctx_params()` function at
@@ -735,13 +735,13 @@ impl KdfContext for SshKdfContext {
 
     /// Applies the parameters in `params` to this context.
     ///
-    /// Public counterpart to [`Self::apply_params`] — invoked by the
+    /// Public counterpart to `Self::apply_params` — invoked by the
     /// dispatch layer when a caller calls `EVP_KDF_CTX_set_params()`
     /// in the C API.
     ///
     /// # Errors
     ///
-    /// Propagates any error from [`Self::apply_params`].
+    /// Propagates any error from `Self::apply_params`.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         self.apply_params(params)
     }
@@ -753,7 +753,7 @@ impl KdfContext for SshKdfContext {
 
 /// SSH KDF provider factory.
 ///
-/// Produces [`SshKdfContext`] instances via the [`KdfProvider`] trait.
+/// Produces `SshKdfContext` instances via the `KdfProvider` trait.
 /// This type is zero-sized — all state lives in the context produced
 /// by [`Self::new_ctx`].
 ///
@@ -825,7 +825,7 @@ mod tests {
     use super::*;
     use openssl_common::param::ParamValue;
 
-    /// Build a [`ParamSet`] with digest, key, xcghash, session_id, and
+    /// Build a `ParamSet` with digest, key, xcghash, session_id, and
     /// type selector.
     fn make_params(key: &[u8], hash: &[u8], sid: &[u8], kt: &str) -> ParamSet {
         let mut ps = ParamSet::new();
@@ -837,7 +837,7 @@ mod tests {
         ps
     }
 
-    /// Build a [`ParamSet`] with a caller-specified digest.
+    /// Build a `ParamSet` with a caller-specified digest.
     fn make_params_with_digest(
         digest: &str,
         key: &[u8],

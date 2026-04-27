@@ -11,32 +11,32 @@
 //!
 //! | Algorithm | Module | RFC/Standard | C Source |
 //! |-----------|--------|-------------|----------|
-//! | HKDF | [`hkdf`] | RFC 5869, RFC 8446 | `hkdf.c` |
-//! | PBKDF2 | [`pbkdf2`] | PKCS#5 v2.1, SP 800-132 | `pbkdf2.c` |
-//! | Argon2 | [`argon2`] | RFC 9106 | `argon2.c` |
-//! | scrypt | [`scrypt`] | RFC 7914 | `scrypt.c` |
-//! | KBKDF | [`kbkdf`] | SP 800-108 | `kbkdf.c` |
-//! | SSKDF | [`sskdf`] | SP 800-56C, X9.63 | `sskdf.c` |
+//! | HKDF | `hkdf` | RFC 5869, RFC 8446 | `hkdf.c` |
+//! | PBKDF2 | `pbkdf2` | PKCS#5 v2.1, SP 800-132 | `pbkdf2.c` |
+//! | Argon2 | `argon2` | RFC 9106 | `argon2.c` |
+//! | scrypt | `scrypt` | RFC 7914 | `scrypt.c` |
+//! | KBKDF | `kbkdf` | SP 800-108 | `kbkdf.c` |
+//! | SSKDF | `sskdf` | SP 800-56C, X9.63 | `sskdf.c` |
 //!
 //! ### Protocol-Specific KDFs
 //!
 //! | Algorithm | Module | RFC/Standard | C Source |
 //! |-----------|--------|-------------|----------|
-//! | SSH KDF | [`ssh`] | RFC 4253 | `sshkdf.c` |
-//! | Kerberos KDF | [`kerberos`] | RFC 3961 | `krb5kdf.c` |
-//! | SRTP KDF | [`srtp`] | RFC 3711 | `srtpkdf.c` |
-//! | SNMP KDF | [`snmp`] | RFC 3414 | `snmpkdf.c` |
-//! | X9.42 KDF | [`x942`] | ANSI X9.42 | `x942kdf.c` |
-//! | TLS1-PRF | [`tls1_prf`] | RFC 2246/5246 | `tls1_prf.c` |
+//! | SSH KDF | `ssh` | RFC 4253 | `sshkdf.c` |
+//! | Kerberos KDF | `kerberos` | RFC 3961 | `krb5kdf.c` |
+//! | SRTP KDF | `srtp` | RFC 3711 | `srtpkdf.c` |
+//! | SNMP KDF | `snmp` | RFC 3414 | `snmpkdf.c` |
+//! | X9.42 KDF | `x942` | ANSI X9.42 | `x942kdf.c` |
+//! | TLS1-PRF | `tls1_prf` | RFC 2246/5246 | `tls1_prf.c` |
 //!
 //! ### Other KDFs
 //!
 //! | Algorithm | Module | Standard | C Source |
 //! |-----------|--------|----------|----------|
-//! | HMAC-DRBG KDF | [`hmacdrbg`] | SP 800-90A | `hmacdrbg_kdf.c` |
-//! | PKCS#12 KDF | [`pkcs12`] | RFC 7292 | `pkcs12kdf.c` |
-//! | PVK KDF | [`pvk`] | Microsoft PVK | `pvkkdf.c` |
-//! | PBKDF1 | [`pbkdf1`] | RFC 8018 (legacy) | `pbkdf1.c` |
+//! | HMAC-DRBG KDF | `hmacdrbg` | SP 800-90A | `hmacdrbg_kdf.c` |
+//! | PKCS#12 KDF | `pkcs12` | RFC 7292 | `pkcs12kdf.c` |
+//! | PVK KDF | `pvk` | Microsoft PVK | `pvkkdf.c` |
+//! | PBKDF1 | `pbkdf1` | RFC 8018 (legacy) | `pbkdf1.c` |
 //!
 //! ## Architecture
 //!
@@ -95,7 +95,7 @@ use crate::traits::AlgorithmDescriptor;
 /// implicit limits in the C implementation where `OSSL_PARAM` size fields
 /// are bounded by `size_t`.
 ///
-/// Used by [`sskdf`], [`kbkdf`], [`hkdf`], and other submodules during
+/// Used by `sskdf`, `kbkdf`, `hkdf`, and other submodules during
 /// parameter validation in their `set_params()` implementations.
 pub const MAX_INPUT_LEN: usize = 1 << 30;
 
@@ -107,7 +107,7 @@ pub const MAX_INPUT_LEN: usize = 1 << 30;
 /// handling in `hkdf.c`). This constant enforces the same limit in the
 /// Rust implementation.
 ///
-/// Used by [`hkdf`], [`sskdf`], and [`kbkdf`] submodules.
+/// Used by `hkdf`, `sskdf`, and `kbkdf` submodules.
 pub const MAX_INFO_SEGMENTS: usize = 5;
 
 // =============================================================================

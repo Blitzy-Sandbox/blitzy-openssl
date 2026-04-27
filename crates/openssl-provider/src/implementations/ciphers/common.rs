@@ -12,22 +12,22 @@
 //! All concrete cipher modules (AES, ChaCha20, DES, Camellia, ARIA, SM4, etc.)
 //! depend on this module for:
 //!
-//! - **[`CipherMode`]** — enum of all supported cipher operating modes
-//! - **[`CipherFlags`]** — bitfield describing cipher capabilities
-//! - **[`IvGeneration`]** — IV/nonce generation strategies
-//! - **[`param_keys`]** — string constants for cipher parameter identification
-//! - **[`GcmState`]** / **[`CcmState`]** — AEAD operation context state
-//! - **[`CipherInitConfig`]** — validated cipher initialization descriptor
-//! - Padding helpers ([`pkcs7_pad`], [`pkcs7_unpad`])
-//! - Generic cipher operations ([`generic_get_params`], [`generic_init_key`],
-//!   [`generic_block_update`], [`generic_stream_update`])
-//! - AEAD validation ([`gcm_validate_tag_len`], [`gcm_validate_iv_len`],
-//!   [`ccm_validate_tag_len`], [`ccm_validate_iv_len`])
-//! - IV management ([`generate_random_iv`], [`increment_iv`])
-//! - Constant-time tag verification ([`verify_tag`])
+//! - **`CipherMode`** — enum of all supported cipher operating modes
+//! - **`CipherFlags`** — bitfield describing cipher capabilities
+//! - **`IvGeneration`** — IV/nonce generation strategies
+//! - **`param_keys`** — string constants for cipher parameter identification
+//! - **`GcmState`** / **`CcmState`** — AEAD operation context state
+//! - **`CipherInitConfig`** — validated cipher initialization descriptor
+//! - Padding helpers (`pkcs7_pad`, `pkcs7_unpad`)
+//! - Generic cipher operations (`generic_get_params`, `generic_init_key`,
+//!   `generic_block_update`, `generic_stream_update`)
+//! - AEAD validation (`gcm_validate_tag_len`, `gcm_validate_iv_len`,
+//!   `ccm_validate_tag_len`, `ccm_validate_iv_len`)
+//! - IV management (`generate_random_iv`, `increment_iv`)
+//! - Constant-time tag verification (`verify_tag`)
 //!
-//! Every [`CipherProvider`] implementation uses these types and helpers to
-//! implement the [`CipherContext`] lifecycle (init → update → finalize).
+//! Every `CipherProvider` implementation uses these types and helpers to
+//! implement the `CipherContext` lifecycle (init → update → finalize).
 
 // =============================================================================
 // Imports
@@ -36,8 +36,8 @@
 use crate::traits::{AlgorithmDescriptor, CipherContext, CipherProvider};
 use openssl_common::error::{ProviderError, ProviderResult};
 use openssl_common::param::{ParamBuilder, ParamSet};
-/// Re-exported so that consumers inspecting [`ParamSet`] entries returned by
-/// [`generic_get_params`] can match on value variants without a separate import.
+/// Re-exported so that consumers inspecting `ParamSet` entries returned by
+/// `generic_get_params` can match on value variants without a separate import.
 pub use openssl_common::param::ParamValue;
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -219,7 +219,7 @@ impl std::fmt::Display for IvGeneration {
 ///
 /// These constants replace the C `OSSL_CIPHER_PARAM_*` macros from
 /// `include/openssl/core_names.h`.  They identify parameter fields in the
-/// typed parameter system ([`ParamSet`]).
+/// typed parameter system (`ParamSet`).
 pub mod param_keys {
     /// Whether PKCS#7 padding is enabled (`u32`: 0 = no, 1 = yes).
     pub const PADDING: &str = "padding";
@@ -352,7 +352,7 @@ pub enum CcmPhase {
 /// operation.  Used by AES-GCM, ARIA-GCM, SM4-GCM, and any other cipher
 /// that operates in GCM mode.
 ///
-/// Derives [`Zeroize`] and [`ZeroizeOnDrop`] per AAP §0.7.6 so that
+/// Derives `Zeroize` and `ZeroizeOnDrop` per AAP §0.7.6 so that
 /// key-adjacent material (IV, tag, AAD) is securely erased when the
 /// context is dropped, replacing C `OPENSSL_cleanse()` calls.
 ///
@@ -453,7 +453,7 @@ pub const GCM_TLS_TAG_LEN: usize = 16;
 /// CCM differs from GCM in requiring the total plaintext length before
 /// any data is processed, which is tracked by the `len_set` flag.
 ///
-/// Derives [`Zeroize`] and [`ZeroizeOnDrop`] per AAP §0.7.6 so that
+/// Derives `Zeroize` and `ZeroizeOnDrop` per AAP §0.7.6 so that
 /// key-adjacent material is securely erased when the context is dropped.
 ///
 /// Corresponds to C `PROV_CCM_CTX` from `ciphercommon_ccm.c`.
@@ -579,8 +579,8 @@ pub const CCM_TLS_FIXED_IV_LEN: usize = 4;
 
 /// Validated cipher initialisation descriptor.
 ///
-/// Returned by [`generic_init_key`] after validating the cipher's fundamental
-/// dimensions.  Concrete [`CipherContext`] implementations use this to set up
+/// Returned by `generic_init_key` after validating the cipher's fundamental
+/// dimensions.  Concrete `CipherContext` implementations use this to set up
 /// their internal state.
 ///
 /// Translates the parameter validation portion of C `ossl_cipher_generic_initkey()`
@@ -648,8 +648,8 @@ impl CipherInitConfig {
 
 /// Error type for PKCS#7 padding validation failures.
 ///
-/// Used internally by [`pkcs7_unpad`] and [`tls_cbc_remove_padding_and_mac`].
-/// Converted to [`ProviderError`] at the public API boundary.
+/// Used internally by `pkcs7_unpad` and `tls_cbc_remove_padding_and_mac`.
+/// Converted to `ProviderError` at the public API boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaddingError {
     /// Data length is zero or not a multiple of the block size.
@@ -826,9 +826,9 @@ pub fn tls_cbc_remove_padding_and_mac(
 
 /// Constructs the common set of algorithm parameters for a cipher.
 ///
-/// Builds a [`ParamSet`] describing the cipher's fundamental properties:
+/// Builds a `ParamSet` describing the cipher's fundamental properties:
 /// mode, key length, IV length, block size, AEAD capability, padding, and
-/// other capability flags.  Called by every [`CipherProvider`] implementation's
+/// other capability flags.  Called by every `CipherProvider` implementation's
 /// `get_params()` method to populate the standard parameter fields.
 ///
 /// Translates `ossl_cipher_generic_get_params()` from `ciphercommon.c`.
@@ -897,7 +897,7 @@ pub fn generic_get_params(
 /// Validates and prepares a cipher initialisation configuration.
 ///
 /// Converts bit-denominated dimensions to byte-denominated values and
-/// bundles them into a [`CipherInitConfig`].  Concrete [`CipherContext`]
+/// bundles them into a `CipherInitConfig`.  Concrete `CipherContext`
 /// implementations call this during `encrypt_init` / `decrypt_init`.
 ///
 /// Translates the validation logic from `ossl_cipher_generic_initkey()` in
@@ -1217,11 +1217,11 @@ pub fn verify_tag(computed: &[u8], expected: &[u8]) -> ProviderResult<()> {
 // Descriptor and Provider Helpers
 // =============================================================================
 
-/// Creates a standard cipher [`AlgorithmDescriptor`] for provider registration.
+/// Creates a standard cipher `AlgorithmDescriptor` for provider registration.
 ///
-/// Convenience wrapper used by every [`CipherProvider`] implementation's
+/// Convenience wrapper used by every `CipherProvider` implementation's
 /// `descriptors()` function to build algorithm entries for the provider
-/// dispatch table, enabling [`CipherContext`] instances to be created on demand.
+/// dispatch table, enabling `CipherContext` instances to be created on demand.
 ///
 /// # Parameters
 ///
@@ -1241,20 +1241,20 @@ pub fn make_cipher_descriptor(
     }
 }
 
-/// Constructs a [`CipherInitConfig`] from a [`CipherProvider`]'s declared
+/// Constructs a `CipherInitConfig` from a `CipherProvider`'s declared
 /// dimensions.
 ///
 /// Reads the provider's key length, IV length, and block size (in bytes),
 /// converts them to the bit-denominated values expected by
-/// [`generic_init_key`], and returns the validated configuration.
+/// `generic_init_key`, and returns the validated configuration.
 ///
-/// This bridges the [`CipherProvider`] trait (which reports byte lengths)
+/// This bridges the `CipherProvider` trait (which reports byte lengths)
 /// with the infrastructure functions (which operate on bit lengths) —
 /// the same conversion performed by C `ossl_cipher_generic_initkey()`.
 ///
 /// # Parameters
 ///
-/// - `provider`: A reference to any [`CipherProvider`] implementation.
+/// - `provider`: A reference to any `CipherProvider` implementation.
 /// - `mode`:     The cipher operating mode to configure.
 /// - `flags`:    Cipher capability flags.
 #[must_use]
@@ -1272,7 +1272,7 @@ pub fn init_config_from_provider(
     )
 }
 
-/// Type alias for a boxed, thread-safe [`CipherContext`] instance.
+/// Type alias for a boxed, thread-safe `CipherContext` instance.
 ///
 /// Used by provider dispatch to hold cipher contexts created by
 /// [`CipherProvider::new_ctx`].

@@ -88,16 +88,42 @@ use openssl_common::time::OsslTime;
 use openssl_common::{CryptoError, CryptoResult};
 
 use super::certificate::{
-    PublicKeyInfo, SignatureAlgorithmId, OID_ECDSA_SHA256, OID_ECDSA_SHA384, OID_ECDSA_SHA512,
-    OID_ED25519, OID_ED448, OID_SHA256_WITH_RSA, OID_SHA384_WITH_RSA, OID_SHA512_WITH_RSA,
+    PublicKeyInfo, SignatureAlgorithmId, OID_SHA256_WITH_RSA, OID_SHA384_WITH_RSA,
+    OID_SHA512_WITH_RSA,
 };
+// The ECDSA / EdDSA OID constants split into two visibility tiers based on
+// where they are actually referenced in this module:
+//
+// 1. `OID_ECDSA_SHA256` and `OID_ED25519` are referenced both by the EC
+//    verification code paths (gated on `feature = "ec"`) AND by tests that
+//    exercise the dispatch mismatch / unsupported-algorithm error paths
+//    (which use them purely as string constants without invoking any EC
+//    primitives). They must therefore be imported whenever EITHER the `ec`
+//    feature is enabled OR the build is a test build (`cfg(test)` is true
+//    throughout the crate).
+//
+// 2. `OID_ECDSA_SHA384`, `OID_ECDSA_SHA512`, and `OID_ED448` are referenced
+//    ONLY by the EC verification code paths (`crl_sha_for_ecdsa_sig` and
+//    `crl_verify_eddsa`, both gated on `feature = "ec"`); no test in this
+//    module uses these OIDs as string constants. Importing them under the
+//    broader `any(feature = "ec", test)` gate would therefore produce a
+//    spurious `unused_imports` warning under `--no-default-features --tests`
+//    (where `cfg(test)` is true but `feature = "ec"` is false). They are
+//    instead gated strictly on `feature = "ec"`.
+#[cfg(any(feature = "ec", test))]
+use super::certificate::{OID_ECDSA_SHA256, OID_ED25519};
+#[cfg(feature = "ec")]
+use super::certificate::{OID_ECDSA_SHA384, OID_ECDSA_SHA512, OID_ED448};
 use crate::asn1::{
     parse_tlv_header, AlgorithmIdentifier, Asn1Class, Asn1Object, Asn1Tag, Asn1Time,
 };
 use crate::bn::montgomery::mod_exp;
 use crate::bn::BigNum;
+#[cfg(feature = "ec")]
 use crate::ec::curve25519::{ed25519_verify, ed448_verify};
+#[cfg(feature = "ec")]
 use crate::ec::ecdsa::verify_der as ecdsa_verify_der;
+#[cfg(feature = "ec")]
 use crate::ec::{EcGroup, EcKey, EcPoint, EcxKeyType, EcxPublicKey, NamedCurve};
 use crate::hash::{create_sha_digest, ShaAlgorithm};
 
@@ -120,12 +146,16 @@ const OID_SHA384: &str = "2.16.840.1.101.3.4.2.2";
 const OID_SHA512: &str = "2.16.840.1.101.3.4.2.3";
 
 /// NIST P-256 (prime256v1) curve OID.
+#[cfg(feature = "ec")]
 const OID_ECC_P256: &str = "1.2.840.10045.3.1.7";
 /// NIST P-384 (secp384r1) curve OID.
+#[cfg(feature = "ec")]
 const OID_ECC_P384: &str = "1.3.132.0.34";
 /// NIST P-521 (secp521r1) curve OID.
+#[cfg(feature = "ec")]
 const OID_ECC_P521: &str = "1.3.132.0.35";
 /// SECG secp256k1 curve OID.
+#[cfg(feature = "ec")]
 const OID_ECC_SECP256K1: &str = "1.3.132.0.10";
 
 // =============================================================================
@@ -2001,17 +2031,41 @@ impl CrlMethod for DefaultCrlMethod {
         let tbs = crl.info.tbs_der.as_slice();
         let sig = crl.signature.as_slice();
 
-        if sig_alg.is_rsa() {
-            crl_verify_rsa_pkcs1_v1_5(&sig_alg, &public_key_info, tbs, sig)
-        } else if sig_alg.is_ecdsa() {
-            crl_verify_ecdsa(&sig_alg, &public_key_info, tbs, sig)
-        } else if sig_alg.is_eddsa() {
-            crl_verify_eddsa(&sig_alg, &public_key_info, tbs, sig)
-        } else {
-            Err(CryptoError::Verification(format!(
-                "CRL signatureAlgorithm OID {} not supported",
-                sig_alg.oid
-            )))
+        // Dispatch on the signature algorithm family. EC-related dispatch arms
+        // (ECDSA, EdDSA) are only compiled when the `ec` feature is enabled.
+        // When the `ec` feature is disabled, only RSA-family signatures are
+        // supported; EC signature algorithms produce a clear "feature disabled"
+        // error rather than a generic "not supported" error.
+        #[cfg(feature = "ec")]
+        {
+            if sig_alg.is_rsa() {
+                crl_verify_rsa_pkcs1_v1_5(&sig_alg, &public_key_info, tbs, sig)
+            } else if sig_alg.is_ecdsa() {
+                crl_verify_ecdsa(&sig_alg, &public_key_info, tbs, sig)
+            } else if sig_alg.is_eddsa() {
+                crl_verify_eddsa(&sig_alg, &public_key_info, tbs, sig)
+            } else {
+                Err(CryptoError::Verification(format!(
+                    "CRL signatureAlgorithm OID {} not supported",
+                    sig_alg.oid
+                )))
+            }
+        }
+        #[cfg(not(feature = "ec"))]
+        {
+            if sig_alg.is_rsa() {
+                crl_verify_rsa_pkcs1_v1_5(&sig_alg, &public_key_info, tbs, sig)
+            } else if sig_alg.is_ecdsa() || sig_alg.is_eddsa() {
+                Err(CryptoError::Verification(format!(
+                    "CRL signatureAlgorithm OID {} requires the `ec` feature, which is disabled",
+                    sig_alg.oid
+                )))
+            } else {
+                Err(CryptoError::Verification(format!(
+                    "CRL signatureAlgorithm OID {} not supported",
+                    sig_alg.oid
+                )))
+            }
         }
     }
 
@@ -2141,6 +2195,11 @@ fn crl_verify_rsa_pkcs1_v1_5(
 /// returns `CryptoResult<bool>` directly. The `tbsCertList` is hashed
 /// with the SHA variant determined from the signatureAlgorithm OID, then
 /// the resulting digest is verified against the SPKI public key.
+///
+/// Compiled only when the `ec` feature is enabled. When EC is disabled,
+/// the dispatch in `verify_signature` returns a descriptive error before
+/// reaching this function.
+#[cfg(feature = "ec")]
 fn crl_verify_ecdsa(
     sig_alg: &SignatureAlgorithmId,
     spki: &PublicKeyInfo,
@@ -2168,6 +2227,11 @@ fn crl_verify_ecdsa(
 /// returns `CryptoResult<bool>` directly. RFC 8410 §6 mandates pure-mode
 /// Ed25519/Ed448 for X.509 (and by extension CRL) signatures: no context
 /// string is permitted, so `context = None`.
+///
+/// Compiled only when the `ec` feature is enabled. When EC is disabled,
+/// the dispatch in `verify_signature` returns a descriptive error before
+/// reaching this function.
+#[cfg(feature = "ec")]
 fn crl_verify_eddsa(
     sig_alg: &SignatureAlgorithmId,
     spki: &PublicKeyInfo,
@@ -2204,6 +2268,10 @@ fn crl_sha_for_rsa_sig(oid: &str) -> CryptoResult<ShaAlgorithm> {
 }
 
 /// Maps an ECDSA signatureAlgorithm OID to its SHA digest variant.
+///
+/// Compiled only when the `ec` feature is enabled, since its only caller
+/// is `crl_verify_ecdsa`.
+#[cfg(feature = "ec")]
 fn crl_sha_for_ecdsa_sig(oid: &str) -> CryptoResult<ShaAlgorithm> {
     match oid {
         OID_ECDSA_SHA256 => Ok(ShaAlgorithm::Sha256),
@@ -2230,6 +2298,11 @@ fn crl_sha_digest_oid(alg: ShaAlgorithm) -> CryptoResult<&'static str> {
 }
 
 /// Maps an EC named-curve OID to its `NamedCurve` enum variant.
+///
+/// Compiled only when the `ec` feature is enabled, since its only caller
+/// is `crl_verify_ecdsa` and its return type uses the EC-feature-gated
+/// `NamedCurve` enum.
+#[cfg(feature = "ec")]
 fn crl_curve_for_oid(oid: &str) -> CryptoResult<NamedCurve> {
     match oid {
         OID_ECC_P256 => Ok(NamedCurve::Prime256v1),
@@ -2244,6 +2317,10 @@ fn crl_curve_for_oid(oid: &str) -> CryptoResult<NamedCurve> {
 
 /// Extracts the named-curve OID from an SPKI's algorithm parameters
 /// (`ECParameters ::= namedCurve OBJECT IDENTIFIER`).
+///
+/// Compiled only when the `ec` feature is enabled, since its only caller
+/// is `crl_verify_ecdsa`.
+#[cfg(feature = "ec")]
 fn crl_curve_oid_from_spki_params(pk: &PublicKeyInfo) -> CryptoResult<String> {
     let params = pk.algorithm_parameters_der.as_ref().ok_or_else(|| {
         CryptoError::Verification("ECDSA SPKI missing algorithm parameters".into())
@@ -5631,6 +5708,10 @@ mod tests {
     /// in the review report — `crypto/x509/crl.rs:DefaultCrlMethod::verify`
     /// "Structural-only implementation — does not verify CRL issuer
     /// signature over TBSCertList").
+    ///
+    /// Compiled only when the `ec` feature is enabled, since the test
+    /// exercises the ECDSA verification path which depends on EC types.
+    #[cfg(feature = "ec")]
     #[test]
     fn verify_signature_accepts_valid_ecdsa_p256_crl() -> CryptoResult<()> {
         use der::asn1::BitString;
@@ -5741,6 +5822,10 @@ mod tests {
     /// returning `Ok(true)` blindly: any mutation of the signed data must be
     /// detected, exactly as required by RFC 5280 §5.1.2 (CRL signature must
     /// cover the entire `tbsCertList`).
+    ///
+    /// Compiled only when the `ec` feature is enabled, since the test
+    /// exercises the ECDSA verification path which depends on EC types.
+    #[cfg(feature = "ec")]
     #[test]
     fn verify_signature_rejects_tampered_crl() -> CryptoResult<()> {
         use der::asn1::BitString;
@@ -5845,6 +5930,10 @@ mod tests {
     /// covers all currently-supported CRL signature algorithm families and
     /// proves that EdDSA verification is wired through to the real Ed25519
     /// implementation in `crate::ec::curve25519`.
+    ///
+    /// Compiled only when the `ec` feature is enabled, since the test
+    /// exercises the EdDSA verification path which depends on EC types.
+    #[cfg(feature = "ec")]
     #[test]
     fn verify_signature_accepts_valid_ed25519_crl() -> CryptoResult<()> {
         use der::asn1::BitString;

@@ -6,9 +6,9 @@
 //! 1. Module imports (verified by compilation)
 //! 2. [`SelfTestPostParams`] default and custom construction
 //! 3. [`FipsOption`] default and custom construction
-//! 4. [`FipsIndicatorConfig`] default and individual-disable behaviour
-//! 5. Provider [`initialize()`] — success, missing checksum, already-running
-//! 6. Algorithm query via [`query_algorithms()`] for every `OperationType`
+//! 4. `FipsIndicatorConfig` default and individual-disable behaviour
+//! 5. Provider `initialize()` — success, missing checksum, already-running
+//! 6. Algorithm query via `query_algorithms()` for every `OperationType`
 //! 7. Gettable / Get parameters via [`gettable_params()`] and [`get_params()`]
 //! 8. Config accessor methods on [`FipsGlobal`]
 //! 9. Provider teardown via [`FipsGlobal::teardown()`]
@@ -53,7 +53,7 @@ fn reset_for_test() {
     reset_all_states();
 }
 
-/// Builds a minimal valid [`ParamSet`] that can drive a successful
+/// Builds a minimal valid `ParamSet` that can drive a successful
 /// `provider::initialize()` call (when integrity checking is stubbed).
 fn build_minimal_init_params() -> ParamSet {
     ParamBuilder::new()
@@ -62,7 +62,7 @@ fn build_minimal_init_params() -> ParamSet {
         .build()
 }
 
-/// Builds a [`ParamSet`] where the module checksum is deliberately absent.
+/// Builds a `ParamSet` where the module checksum is deliberately absent.
 fn build_params_missing_checksum() -> ParamSet {
     ParamBuilder::new()
         .push_utf8("module-filename", "/dev/null".to_string())

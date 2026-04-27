@@ -1215,7 +1215,7 @@ pub mod prov_flags {
 
 impl MlKemKey {
     /// Construct an empty key for the given variant. The returned key has
-    /// neither public nor private components populated; call [`Self::generate`]
+    /// neither public nor private components populated; call `Self::generate`
     /// or parse one of the byte encodings to fill it.
     pub fn new(libctx: Arc<LibContext>, variant: MlKemVariant) -> CryptoResult<Self> {
         Ok(Self {

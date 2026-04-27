@@ -223,7 +223,7 @@ impl CipherContext for NullCipherContext {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError`] if the input is shorter than `tls_mac_size`
+    /// Returns `ProviderError` if the input is shorter than `tls_mac_size`
     /// during TLS MAC stripping.
     fn update(&mut self, input: &[u8], output: &mut Vec<u8>) -> ProviderResult<usize> {
         let effective_input = if self.encrypting {
@@ -264,7 +264,7 @@ impl CipherContext for NullCipherContext {
 
     /// Retrieves context parameters.
     ///
-    /// Replaces C `null_get_ctx_params()`.  Returns a [`ParamSet`] containing:
+    /// Replaces C `null_get_ctx_params()`.  Returns a `ParamSet` containing:
     ///
     /// | Key                          | Value                | Notes                        |
     /// |------------------------------|----------------------|------------------------------|
@@ -301,7 +301,7 @@ impl CipherContext for NullCipherContext {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError`] if the `TLS_MAC_SIZE` parameter has an
+    /// Returns `ProviderError` if the `TLS_MAC_SIZE` parameter has an
     /// incompatible type.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         if let Some(value) = params.get(param_keys::TLS_MAC_SIZE) {

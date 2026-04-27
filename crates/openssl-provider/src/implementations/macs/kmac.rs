@@ -107,7 +107,7 @@ const PARAM_CUSTOM: &str = "custom";
 ///
 /// In the C source (`kmac_set_ctx_params`), the key may also be
 /// provided through `OSSL_PARAM`.  In the Rust design the key is
-/// supplied directly via [`MacContext::init`], so this constant is
+/// supplied directly via `MacContext::init`, so this constant is
 /// used only in documentation and test assertions.
 const _PARAM_KEY: &str = "key";
 
@@ -214,7 +214,7 @@ impl KmacVariant {
 /// KMAC algorithm parameters.
 ///
 /// Provides a typed configuration struct for callers who prefer structured
-/// parameter passing over raw [`ParamSet`] bags.  Each field is optional;
+/// parameter passing over raw `ParamSet` bags.  Each field is optional;
 /// `None` means "use the current or default value."
 ///
 /// Replaces C `OSSL_PARAM` arrays from `kmac_prov.c`.
@@ -229,8 +229,8 @@ pub struct KmacParams {
 }
 
 impl KmacParams {
-    /// Convert these parameters into a [`ParamSet`] suitable for passing
-    /// to [`MacContext::init`] or [`MacContext::set_params`].
+    /// Convert these parameters into a `ParamSet` suitable for passing
+    /// to `MacContext::init` or `MacContext::set_params`.
     pub fn to_param_set(&self) -> ParamSet {
         let mut builder = ParamBuilder::new();
         if let Some(ref custom) = self.custom {
@@ -654,7 +654,7 @@ impl KeccakSponge {
 enum KmacState {
     /// Created but not yet keyed.
     New,
-    /// Keyed and accepting data via [`MacContext::update`].
+    /// Keyed and accepting data via `MacContext::update`.
     /// Boxed to avoid large size difference between variants.
     Initialized(Box<KeccakSponge>),
     /// Finalized; no further updates allowed without re-init.
@@ -740,20 +740,20 @@ impl MacProvider for KmacProvider {
 /// KMAC computation context.
 ///
 /// Maintains the live Keccak sponge state, the encoded key buffer
-/// (protected by [`Zeroizing`]), the encoded customization string,
+/// (protected by `Zeroizing`), the encoded customization string,
 /// and algorithm configuration (variant, output length, XOF mode).
 ///
 /// Replaces C `struct kmac_data_st` from `kmac_prov.c`.
 ///
 /// # Key material protection
 ///
-/// The `key` field is wrapped in [`Zeroizing`] so that key bytes are
+/// The `key` field is wrapped in `Zeroizing` so that key bytes are
 /// securely zeroed when the context is dropped, replacing the C
 /// `OPENSSL_cleanse(kctx->key, kctx->key_len)` from `kmac_free()`.
 pub struct KmacContext {
     /// Which KMAC variant (128 or 256).
     variant: KmacVariant,
-    /// Encoded + bytepadded key buffer — zeroed on Drop via [`Zeroizing`].
+    /// Encoded + bytepadded key buffer — zeroed on Drop via `Zeroizing`.
     key: Zeroizing<Vec<u8>>,
     /// Length of the valid encoded key data within `key`.
     key_len: usize,
@@ -773,7 +773,7 @@ impl KmacContext {
     /// Create a new KMAC context with default parameters for the given variant.
     ///
     /// The context is in the `New` state and must be initialised with a key
-    /// via [`MacContext::init`] before use.
+    /// via `MacContext::init` before use.
     fn new(variant: KmacVariant) -> Self {
         Self {
             variant,
@@ -787,7 +787,7 @@ impl KmacContext {
         }
     }
 
-    /// Apply parameters from a [`ParamSet`] to this context.
+    /// Apply parameters from a `ParamSet` to this context.
     ///
     /// Handles `custom` (customization string), `size` (output length),
     /// `xof` (XOF mode flag), and `key` (re-keying).
@@ -986,7 +986,7 @@ impl MacContext for KmacContext {
         Ok(output)
     }
 
-    /// Retrieve current context parameters as a [`ParamSet`].
+    /// Retrieve current context parameters as a `ParamSet`.
     ///
     /// Returns the current output size (`size`) and block size
     /// (`block-size`) of this KMAC context.
@@ -999,10 +999,10 @@ impl MacContext for KmacContext {
         Ok(builder.build())
     }
 
-    /// Set context parameters from a [`ParamSet`].
+    /// Set context parameters from a `ParamSet`.
     ///
     /// Allows reconfiguring the output length, customization string,
-    /// and XOF mode.  Typically called before [`MacContext::init`].
+    /// and XOF mode.  Typically called before `MacContext::init`.
     ///
     /// Translates C `kmac_set_ctx_params()` from `kmac_prov.c`.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {

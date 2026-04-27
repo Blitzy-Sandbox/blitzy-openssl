@@ -180,7 +180,7 @@ pub struct FileStoreContext {
 
 /// File system store provider.
 ///
-/// Implements [`StoreProvider`] to load keys, certificates, CRLs,
+/// Implements `StoreProvider` to load keys, certificates, CRLs,
 /// and other cryptographic objects from the filesystem. Accepts both
 /// plain filesystem paths and `file:` URIs.
 ///
@@ -386,12 +386,12 @@ impl FileStoreContext {
     /// - `expected_type` — Object type filter applied to loaded objects.
     /// - `subject` — DER-encoded X.509 Name for directory search. Hashed to an
     ///   8-hex-char search name. Only valid in directory mode; rejected in file mode
-    ///   with [`ProviderError::Dispatch`] (replaces C
+    ///   with `ProviderError::Dispatch` (replaces C
     ///   `PROV_R_SEARCH_ONLY_SUPPORTED_FOR_DIRECTORIES`).
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] if `subject` is provided in file mode.
+    /// - `ProviderError::Dispatch` if `subject` is provided in file mode.
     pub fn set_params(
         &mut self,
         propq: Option<&str>,

@@ -11,20 +11,20 @@
 //! The public DRBG serves non-secret randomness (e.g., nonces) while the
 //! private DRBG serves secret randomness (e.g., private key generation).
 //! Both are initialised lazily on first use and reseeded from OS entropy
-//! via [`OsRng`] when the reseed interval is reached.
+//! via `OsRng` when the reseed interval is reached.
 //!
 //! # C Migration Mapping
 //!
 //! | C Function / Constant                      | Rust Equivalent                     |
 //! |--------------------------------------------|-------------------------------------|
-//! | `RAND_bytes()`                             | [`rand_bytes()`]                    |
-//! | `RAND_priv_bytes()`                        | [`rand_priv_bytes()`]               |
-//! | `RAND_seed()`                              | [`rand_seed()`]                     |
-//! | `RAND_status()`                            | [`rand_status()`]                   |
-//! | `RAND_POOL` / `ossl_rand_pool_new()`       | [`EntropyPool::new()`]              |
-//! | `EVP_RAND_CTX` / DRBG instances            | [`Drbg`]                            |
-//! | `PRIMARY_RESEED_INTERVAL`                  | [`PRIMARY_RESEED_INTERVAL`]         |
-//! | `SECONDARY_RESEED_INTERVAL`                | [`SECONDARY_RESEED_INTERVAL`]       |
+//! | `RAND_bytes()`                             | `rand_bytes()`                      |
+//! | `RAND_priv_bytes()`                        | `rand_priv_bytes()`                 |
+//! | `RAND_seed()`                              | `rand_seed()`                       |
+//! | `RAND_status()`                            | `rand_status()`                     |
+//! | `RAND_POOL` / `ossl_rand_pool_new()`       | `EntropyPool::new()`                |
+//! | `EVP_RAND_CTX` / DRBG instances            | `Drbg`                              |
+//! | `PRIMARY_RESEED_INTERVAL`                  | `PRIMARY_RESEED_INTERVAL`           |
+//! | `SECONDARY_RESEED_INTERVAL`                | `SECONDARY_RESEED_INTERVAL`         |
 //!
 //! # Rules Enforced
 //!
@@ -392,7 +392,7 @@ fn get_or_init_seed_buffer() -> &'static Arc<Mutex<Vec<u8>>> {
 /// Returns [`CryptoError::Rand`] if:
 /// - The global DRBG cannot be initialised
 /// - Entropy collection from the OS fails
-/// - The request exceeds [`MAX_REQUEST_SIZE`]
+/// - The request exceeds `MAX_REQUEST_SIZE`
 ///
 /// # Examples
 ///

@@ -9,8 +9,8 @@
 //!
 //! This module is the single initialization point for all workspace
 //! observability.  It is intended to be called once at application startup
-//! (typically from `openssl-cli::main()`) via [`init_tracing`] and
-//! [`init_metrics`].
+//! (typically from `openssl-cli::main()`) via `init_tracing` and
+//! `init_metrics`.
 //!
 //! ```text
 //! openssl-cli::main()
@@ -21,22 +21,22 @@
 //!
 //! # Correlation IDs
 //!
-//! Every operation can be tagged with a [`CorrelationId`] (v4 UUID) via the
-//! tracing span system.  Use [`current_correlation_id`] to read the
+//! Every operation can be tagged with a `CorrelationId` (v4 UUID) via the
+//! tracing span system.  Use `current_correlation_id` to read the
 //! correlation ID from the active span, or create spans with correlation IDs
-//! via [`record_operation_start`].
+//! via `record_operation_start`.
 //!
 //! # Metrics
 //!
-//! After [`init_metrics`] is called, workspace code can use the `metrics`
+//! After `init_metrics` is called, workspace code can use the `metrics`
 //! crate macros (`counter!`, `gauge!`, `histogram!`) anywhere.  The
-//! [`MetricsHandle`] returned by `init_metrics` renders a Prometheus
+//! `MetricsHandle` returned by `init_metrics` renders a Prometheus
 //! exposition-format snapshot via [`MetricsHandle::render`].
 //!
 //! # Health Checks
 //!
-//! The [`HealthRegistry`] collects [`ReadinessCheck`] implementations and
-//! aggregates their [`HealthStatus`] results.  [`HealthStatus`] derives
+//! The `HealthRegistry` collects `ReadinessCheck` implementations and
+//! aggregates their `HealthStatus` results.  `HealthStatus` derives
 //! `serde::Serialize` for direct JSON serialization in health endpoints.
 //!
 //! # Rules Enforced
@@ -76,8 +76,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 static TRACING_INIT: OnceCell<()> = OnceCell::new();
 
 /// Internal concurrent map associating span IDs with their correlation IDs
-/// and start times.  Entries are inserted by [`record_operation_start`] and
-/// removed by [`record_operation_complete`].
+/// and start times.  Entries are inserted by `record_operation_start` and
+/// removed by `record_operation_complete`.
 ///
 /// // LOCK-SCOPE: operation metadata, write on start, remove on complete,
 /// // contention is minimal — each span ID is unique and short-lived
@@ -104,7 +104,7 @@ static OPERATION_DATA: once_cell::sync::Lazy<
 #[derive(Debug, thiserror::Error)]
 pub enum ObservabilityError {
     /// Tracing has already been initialized.  Subsequent calls to
-    /// [`init_tracing`] or [`init_tracing_with_filter`] return this.
+    /// `init_tracing` or `init_tracing_with_filter` return this.
     #[error("tracing already initialized")]
     AlreadyInitialized,
 
@@ -124,7 +124,7 @@ pub enum ObservabilityError {
 /// A v4 UUID used as a correlation identifier across distributed traces.
 ///
 /// Wraps [`uuid::Uuid`] in a newtype for type safety.  Every operation
-/// started via [`record_operation_start`] embeds a `CorrelationId` in
+/// started via `record_operation_start` embeds a `CorrelationId` in
 /// the tracing span, enabling cross-crate request correlation per
 /// AAP §0.6.1.
 ///
@@ -167,8 +167,8 @@ impl fmt::Display for CorrelationId {
 
 /// Reads the correlation ID from the current tracing span context.
 ///
-/// If the current span was created by [`record_operation_start`], its
-/// stored correlation ID is returned.  Otherwise, a fresh [`CorrelationId`]
+/// If the current span was created by `record_operation_start`, its
+/// stored correlation ID is returned.  Otherwise, a fresh `CorrelationId`
 /// is generated.  This ensures every call site always receives a valid
 /// identifier.
 ///
@@ -233,7 +233,7 @@ pub fn init_tracing() -> Result<(), ObservabilityError> {
 
 /// Initializes the global tracing subscriber with a custom filter string.
 ///
-/// Behaves identically to [`init_tracing`] except the filter directive
+/// Behaves identically to `init_tracing` except the filter directive
 /// is taken from `filter` rather than the `RUST_LOG` environment variable.
 ///
 /// # Parameters
@@ -304,7 +304,7 @@ fn init_tracing_internal(custom_filter: Option<&str>) -> Result<(), Observabilit
 /// [`render`](MetricsHandle::render) method for generating Prometheus
 /// exposition-format snapshots.
 ///
-/// Returned by [`init_metrics`].  Callers embed this handle in their HTTP
+/// Returned by `init_metrics`.  Callers embed this handle in their HTTP
 /// server (or diagnostics endpoint) to serve the `/metrics` scrape route.
 ///
 /// # Examples
@@ -343,7 +343,7 @@ impl fmt::Debug for MetricsHandle {
     }
 }
 
-/// Installs a Prometheus metrics recorder and returns a [`MetricsHandle`].
+/// Installs a Prometheus metrics recorder and returns a `MetricsHandle`.
 ///
 /// The recorder captures all metrics emitted via the `metrics` crate macros
 /// (`counter!`, `gauge!`, `histogram!`) across the entire workspace.  Use
@@ -425,9 +425,9 @@ pub enum HealthStatus {
 
 /// Trait for components that can report their readiness status.
 ///
-/// Implementors register with [`HealthRegistry`] to participate in
-/// aggregate health checks.  Each check has a human-readable [`name`]
-/// and a [`check`] method returning [`HealthStatus`].
+/// Implementors register with `HealthRegistry` to participate in
+/// aggregate health checks.  Each check has a human-readable `name`
+/// and a `check` method returning `HealthStatus`.
 ///
 /// # Thread Safety
 ///
@@ -453,7 +453,7 @@ pub trait ReadinessCheck: Send + Sync {
     /// Returns the human-readable name of this check (e.g., `"crypto_provider"`).
     fn name(&self) -> &str;
 
-    /// Performs the readiness check and returns the current [`HealthStatus`].
+    /// Performs the readiness check and returns the current `HealthStatus`.
     fn check(&self) -> HealthStatus;
 }
 
@@ -461,7 +461,7 @@ pub trait ReadinessCheck: Send + Sync {
 // HealthRegistry — Aggregated Health Checks
 // =============================================================================
 
-/// Registry of [`ReadinessCheck`] implementations for aggregate health
+/// Registry of `ReadinessCheck` implementations for aggregate health
 /// reporting.
 ///
 /// Constructed once at startup and populated with checks before the
@@ -561,8 +561,8 @@ impl fmt::Debug for HealthRegistry {
 /// Starts a new tracing span for an operation, embedding a correlation ID.
 ///
 /// Creates an `INFO`-level span named after `operation`, records the
-/// current timestamp, and attaches a fresh [`CorrelationId`].  The returned
-/// [`tracing::Span`] should be passed to [`record_operation_complete`] when
+/// current timestamp, and attaches a fresh `CorrelationId`.  The returned
+/// [`tracing::Span`] should be passed to `record_operation_complete` when
 /// the operation finishes.
 ///
 /// # Parameters
@@ -601,7 +601,7 @@ pub fn record_operation_start(operation: &str) -> Span {
 }
 
 /// Records the completion of an operation previously started with
-/// [`record_operation_start`].
+/// `record_operation_start`.
 ///
 /// Emits an `INFO`-level event within the span containing:
 /// - `success`: whether the operation succeeded.

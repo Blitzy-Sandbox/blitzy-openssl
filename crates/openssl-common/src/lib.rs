@@ -3,16 +3,16 @@
 //! Shared foundation crate for the OpenSSL Rust workspace (`openssl-rs`).
 //! Provides cross-cutting concerns used by all other workspace crates:
 //!
-//! - **Error handling** ([`error`]) — Per-crate error enums with `thiserror` derive,
+//! - **Error handling** (`error`) — Per-crate error enums with `thiserror` derive,
 //!   replacing the C ERR_* thread-local error stack
-//! - **Configuration** ([`config`]) — Config file parsing replacing NCONF/CONF
-//! - **Parameter system** ([`param`]) — Typed parameter passing replacing `OSSL_PARAM`
-//! - **Type definitions** ([`types`]) — Shared newtypes: NID, protocol versions, key types
-//! - **Time** ([`time`]) — Nanosecond-precision time with saturating arithmetic
-//! - **Safe math** ([`safe_math`]) — Overflow-checked arithmetic replacing `safe_math.h` macros
-//! - **Constant-time** ([`constant_time`]) — Constant-time operations via `subtle` crate
-//! - **Memory** ([`mem`]) — Secure zeroing and memory protection via `zeroize`
-//! - **Observability** ([`observability`]) — Structured logging, metrics, and health checks
+//! - **Configuration** (`config`) — Config file parsing replacing NCONF/CONF
+//! - **Parameter system** (`param`) — Typed parameter passing replacing `OSSL_PARAM`
+//! - **Type definitions** (`types`) — Shared newtypes: NID, protocol versions, key types
+//! - **Time** (`time`) — Nanosecond-precision time with saturating arithmetic
+//! - **Safe math** (`safe_math`) — Overflow-checked arithmetic replacing `safe_math.h` macros
+//! - **Constant-time** (`constant_time`) — Constant-time operations via `subtle` crate
+//! - **Memory** (`mem`) — Secure zeroing and memory protection via `zeroize`
+//! - **Observability** (`observability`) — Structured logging, metrics, and health checks
 //!
 //! ## Design Principles
 //!
@@ -39,15 +39,15 @@
 //!
 //! | C Subsystem                        | Rust Module                 |
 //! |------------------------------------|-----------------------------|
-//! | `crypto/err/*.c` (ERR_* stack)     | [`error`]                   |
-//! | `crypto/conf/*.c` (NCONF/CONF)     | [`config`]                  |
-//! | `crypto/params*.c` (OSSL_PARAM)    | [`param`]                   |
-//! | `include/openssl/types.h`          | [`types`]                   |
-//! | `crypto/time.c` (OSSL_TIME)        | [`time`]                    |
-//! | `include/internal/safe_math.h`     | [`safe_math`]               |
-//! | `include/internal/constant_time.h` | [`constant_time`]           |
-//! | `crypto/mem*.c` (OPENSSL_cleanse)  | [`mem`]                     |
-//! | *(no C equivalent)*                | [`observability`]           |
+//! | `crypto/err/*.c` (ERR_* stack)     | `error`                   |
+//! | `crypto/conf/*.c` (NCONF/CONF)     | `config`                  |
+//! | `crypto/params*.c` (OSSL_PARAM)    | `param`                   |
+//! | `include/openssl/types.h`          | `types`                   |
+//! | `crypto/time.c` (OSSL_TIME)        | `time`                    |
+//! | `include/internal/safe_math.h`     | `safe_math`               |
+//! | `include/internal/constant_time.h` | `constant_time`           |
+//! | `crypto/mem*.c` (OPENSSL_cleanse)  | `mem`                     |
+//! | *(no C equivalent)*                | `observability`           |
 
 // =============================================================================
 // Crate-Level Lint Configuration
@@ -103,8 +103,8 @@ pub mod config;
 pub mod param;
 
 /// Shared type definitions — newtype wrappers for algorithm identifiers
-/// ([`Nid`]), protocol versions, padding modes, key types, cipher modes,
-/// operation types, and the [`AlgorithmName`] trait.
+/// (`Nid`), protocol versions, padding modes, key types, cipher modes,
+/// operation types, and the `AlgorithmName` trait.
 ///
 /// Replaces the C `#define NID_*` groups and forward `typedef` declarations
 /// from `include/openssl/types.h` and `include/openssl/obj_mac.h`.

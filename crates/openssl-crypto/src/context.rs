@@ -32,13 +32,13 @@
 //! |-------------------------------|----------------------------------------|
 //! | `OSSL_LIB_CTX` / `ossl_lib_ctx_st` | [`LibContext`]                   |
 //! | `OSSL_LIB_CTX_new()`         | [`LibContext::new()`]                  |
-//! | `ossl_lib_ctx_get_concrete()` (NULL→default) | [`LibContext::default()`] / [`get_default()`] |
+//! | `ossl_lib_ctx_get_concrete()` (NULL→default) | [`LibContext::default()`] / `get_default()` |
 //! | `OSSL_LIB_CTX_load_config()` | [`LibContext::load_config()`]          |
 //! | `ossl_lib_ctx_is_child()`     | [`LibContext::is_child()`]             |
-//! | `ossl_namemap_name2num()`     | [`NameMapData::get_nid()`]             |
-//! | `ossl_namemap_num2name()`     | [`NameMapData::get_name()`]            |
-//! | `ossl_namemap_add_name()`     | [`NameMapData::add_name()`]            |
-//! | `ossl_stored_namemap_new()`   | [`NameMapData::new()`]                 |
+//! | `ossl_namemap_name2num()`     | `NameMapData::get_nid()`               |
+//! | `ossl_namemap_num2name()`     | `NameMapData::get_name()`              |
+//! | `ossl_namemap_add_name()`     | `NameMapData::add_name()`              |
+//! | `ossl_stored_namemap_new()`   | `NameMapData::new()`                   |
 //!
 //! # Rules Enforced
 //!
@@ -1264,10 +1264,10 @@ impl LibContext {
     ///
     /// # Errors
     ///
-    /// Returns [`CryptoError::Common`] wrapping [`CommonError::Io`] if the
+    /// Returns [`CryptoError::Common`] wrapping `CommonError::Io` if the
     /// file cannot be opened or read.
     ///
-    /// Returns [`CryptoError::Common`] wrapping [`CommonError::Config`] if
+    /// Returns [`CryptoError::Common`] wrapping `CommonError::Config` if
     /// the file contains syntax errors.
     ///
     /// # Examples

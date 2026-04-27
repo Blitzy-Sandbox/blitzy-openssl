@@ -1,7 +1,7 @@
 //! Error handling infrastructure for the OpenSSL Rust workspace.
 //!
 //! Replaces the C `ERR_*` thread-local error stack with idiomatic Rust
-//! `Result<T, E>` error types using [`thiserror`] derive macros. Per AAP §0.7.7,
+//! `Result<T, E>` error types using `thiserror` derive macros. Per AAP §0.7.7,
 //! error stacking maps to [`std::error::Error::source()`] chains, and
 //! thread-local queues are replaced by explicit `Result` propagation via
 //! the `?` operator.
@@ -27,15 +27,15 @@
 //! | `ERR_put_error()`         | `return Err(…)`                        |
 //! | `ERR_get_error()`         | `match result { Err(e) => … }`         |
 //! | `ERR_error_string_n()`    | `Display` impl via `#[error("…")]`     |
-//! | `ERR_LIB_*` constants     | [`ErrorLibrary`] enum variants         |
-//! | `ERR_STATE` ring buffer   | [`ErrorStack`] (FFI compatibility only) |
+//! | `ERR_LIB_*` constants     | `ErrorLibrary` enum variants         |
+//! | `ERR_STATE` ring buffer   | `ErrorStack` (FFI compatibility only) |
 //! | Thread-local error queue  | `Result<T, E>` return values           |
 //!
 //! # Rules Enforced
 //!
 //! - **R5 (Nullability):** All variants carry structured data; no integer sentinels.
 //! - **R6 (Lossless Casts):** `CastOverflow` wraps [`std::num::TryFromIntError`].
-//! - **R7 (Lock Granularity):** [`ErrorStack`] is not shared by default.
+//! - **R7 (Lock Granularity):** `ErrorStack` is not shared by default.
 //! - **R8 (Zero Unsafe):** No `unsafe` code in this module.
 //! - **R9 (Warning-Free):** All items documented; no `#[allow(unused)]`.
 //! - **R10 (Wiring):** Reachable from every crate entry point via `Result<T, E>`.
@@ -276,7 +276,7 @@ pub enum CommonError {
 
     /// A numeric cast would have lost data.
     ///
-    /// Wraps [`TryFromIntError`] via `#[from]`, enforcing **Rule R6**
+    /// Wraps `TryFromIntError` via `#[from]`, enforcing **Rule R6**
     /// (lossless numeric casts — no bare `as` for narrowing conversions).
     #[error("numeric cast overflow: {0}")]
     CastOverflow(#[from] TryFromIntError),
@@ -317,7 +317,7 @@ pub enum CommonError {
 /// operations: algorithm fetch, key management, encoding/decoding,
 /// verification, and random number generation.
 ///
-/// Wraps [`CommonError`] via `#[from]` so that any common infrastructure
+/// Wraps `CommonError` via `#[from]` so that any common infrastructure
 /// failure can be propagated transparently through cryptographic call sites.
 ///
 /// # Error Chain
@@ -373,7 +373,7 @@ pub enum CryptoError {
 /// Error type for the `openssl-ssl` crate covering TLS, DTLS, QUIC, and
 /// ECH protocol operations.
 ///
-/// Wraps both [`CommonError`] and [`CryptoError`] via `#[from]`, forming
+/// Wraps both `CommonError` and `CryptoError` via `#[from]`, forming
 /// the highest level of the library error chain.
 ///
 /// # Error Chain
@@ -428,7 +428,7 @@ pub enum SslError {
 /// Error type for the `openssl-provider` crate covering provider
 /// lifecycle, algorithm dispatch, and registration operations.
 ///
-/// Wraps [`CommonError`] via `#[from]` for infrastructure failure
+/// Wraps `CommonError` via `#[from]` for infrastructure failure
 /// propagation.
 ///
 /// # C Mapping
@@ -471,7 +471,7 @@ pub enum ProviderError {
 /// operations: Power-On Self-Test (POST), integrity verification, Known
 /// Answer Tests (KATs), and approved-algorithm indicator checks.
 ///
-/// Wraps [`CommonError`] via `#[from]` for infrastructure failure
+/// Wraps `CommonError` via `#[from]` for infrastructure failure
 /// propagation.
 ///
 /// # FIPS State Machine
@@ -600,7 +600,7 @@ impl fmt::Display for ErrorDetail {
 // ErrorStack — Accumulator for Multiple Error Records
 // =============================================================================
 
-/// An ordered collection of [`ErrorDetail`] records, used for FFI
+/// An ordered collection of `ErrorDetail` records, used for FFI
 /// compatibility with the C `ERR_get_error()` / `ERR_peek_error()` API.
 ///
 /// In idiomatic Rust, errors propagate via `Result<T, E>` and the
@@ -712,11 +712,11 @@ impl fmt::Display for ErrorStack {
 // err_detail! Macro — Convenience Constructor for ErrorDetail
 // =============================================================================
 
-/// Constructs an [`ErrorDetail`] record with automatic source location
+/// Constructs an `ErrorDetail` record with automatic source location
 /// capture via `file!()`, `line!()`, and `module_path!()`.
 ///
 /// This macro eliminates boilerplate when creating error details for
-/// the FFI-facing [`ErrorStack`]. In idiomatic Rust code, prefer
+/// the FFI-facing `ErrorStack`. In idiomatic Rust code, prefer
 /// returning `Err(SomeError::Variant { … })` directly instead.
 ///
 /// # Usage
@@ -765,25 +765,25 @@ macro_rules! err_detail {
 
 /// Convenience `Result` alias for operations in `openssl-common`.
 ///
-/// Functions returning this type use [`CommonError`] as their error variant.
+/// Functions returning this type use `CommonError` as their error variant.
 pub type CommonResult<T> = Result<T, CommonError>;
 
 /// Convenience `Result` alias for operations in `openssl-crypto`.
 ///
-/// Functions returning this type use [`CryptoError`] as their error variant.
+/// Functions returning this type use `CryptoError` as their error variant.
 pub type CryptoResult<T> = Result<T, CryptoError>;
 
 /// Convenience `Result` alias for operations in `openssl-ssl`.
 ///
-/// Functions returning this type use [`SslError`] as their error variant.
+/// Functions returning this type use `SslError` as their error variant.
 pub type SslResult<T> = Result<T, SslError>;
 
 /// Convenience `Result` alias for operations in `openssl-provider`.
 ///
-/// Functions returning this type use [`ProviderError`] as their error variant.
+/// Functions returning this type use `ProviderError` as their error variant.
 pub type ProviderResult<T> = Result<T, ProviderError>;
 
 /// Convenience `Result` alias for operations in `openssl-fips`.
 ///
-/// Functions returning this type use [`FipsError`] as their error variant.
+/// Functions returning this type use `FipsError` as their error variant.
 pub type FipsResult<T> = Result<T, FipsError>;

@@ -1,68 +1,68 @@
 //! # Key Management Provider Implementations
 //!
 //! Contains all key management algorithm implementations that implement the
-//! [`KeyMgmtProvider`] trait from [`crate::traits`]. Each submodule corresponds
+//! `KeyMgmtProvider` trait from [`crate::traits`]. Each submodule corresponds
 //! to one or more C keymgmt implementation files from
 //! `providers/implementations/keymgmt/` (13 C files, ~9,400 total lines).
 //!
 //! ## Algorithm Families
 //!
 //! ### Classical Key Types
-//! - [`dh`] — DH/DHX key management (RFC 3526/7919, X9.42)
-//! - [`dsa`] — DSA key management (FIPS 186-2/186-4)
-//! - [`ec`] — EC key management (NIST P-curves, Brainpool, SM2)
-//! - [`ecx`] — ECX key management (X25519, X448, Ed25519, Ed448)
-//! - [`rsa`] — RSA/RSA-PSS key management
+//! - `dh` — DH/DHX key management (RFC 3526/7919, X9.42)
+//! - `dsa` — DSA key management (FIPS 186-2/186-4)
+//! - `ec` — EC key management (NIST P-curves, Brainpool, SM2)
+//! - `ecx` — ECX key management (X25519, X448, Ed25519, Ed448)
+//! - `rsa` — RSA/RSA-PSS key management
 //!
 //! ### Post-Quantum Key Types
-//! - [`ml_dsa`] — ML-DSA key management (FIPS 204)
-//! - [`ml_kem`] — ML-KEM key management (FIPS 203)
-//! - [`mlx`] — Hybrid ML-KEM + ECDH/XDH key management
-//! - [`slh_dsa`] — SLH-DSA key management (FIPS 205)
-//! - [`lms`] — LMS key management (SP 800-208)
+//! - `ml_dsa` — ML-DSA key management (FIPS 204)
+//! - `ml_kem` — ML-KEM key management (FIPS 203)
+//! - `mlx` — Hybrid ML-KEM + ECDH/XDH key management
+//! - `slh_dsa` — SLH-DSA key management (FIPS 205)
+//! - `lms` — LMS key management (SP 800-208)
 //!
 //! ### Legacy Key Types
-//! - [`legacy`] — KDF/MAC/CMAC legacy key management shims
+//! - `legacy` — KDF/MAC/CMAC legacy key management shims
 //!
 //! ## Operations
 //!
 //! Each keymgmt implementation provides the following operations through
-//! the [`KeyMgmtProvider`] trait:
+//! the `KeyMgmtProvider` trait:
 //!
 //! - `name()` — Canonical algorithm name
 //! - `new_key()` — Allocate empty key data
 //! - `generate(params)` — Generate key material
-//! - `import(selection, data)` — Import key components from [`ParamSet`]
-//! - `export(key, selection)` — Export key components to [`ParamSet`]
+//! - `import(selection, data)` — Import key components from `ParamSet`
+//! - `export(key, selection)` — Export key components to `ParamSet`
 //! - `has(key, selection)` — Check which components are present
 //! - `validate(key, selection)` — Validate key correctness
 //!
 //! ## Architecture
 //!
-//! - Each keymgmt struct implements [`KeyMgmtProvider`] from [`crate::traits`]
-//! - [`KeySelection`] bitflags control which components to import/export
-//! - [`KeyData`] is the type-erasure boundary for key material
+//! - Each keymgmt struct implements `KeyMgmtProvider` from [`crate::traits`]
+//! - `KeySelection` bitflags control which components to import/export
+//! - `KeyData` is the type-erasure boundary for key material
 //! - FIPS restrictions enforced via feature gates
 //! - Zero unsafe code (Rule R8)
 //!
 //! ## Feature Gating
 //!
-//! Each submodule (except [`legacy`]) is wrapped in `#[cfg(feature = "...")]`
+//! Each submodule (except `legacy`) is wrapped in `#[cfg(feature = "...")]`
 //! replacing the C `OPENSSL_NO_*` preprocessor guards:
 //!
 //! | Rust feature | C guard | Submodule |
 //! |-------------|---------|-----------|
-//! | `dh` | `OPENSSL_NO_DH` | [`dh`] |
-//! | `dsa` | `OPENSSL_NO_DSA` | [`dsa`] |
-//! | `ec` | `OPENSSL_NO_EC` | [`ec`] |
-//! | `ecx` | `OPENSSL_NO_ECX` | [`ecx`] |
-//! | `rsa` | (always enabled in C) | [`rsa`] |
-//! | `ml-dsa` | `OPENSSL_NO_ML_DSA` | [`ml_dsa`] |
-//! | `ml-kem` | `OPENSSL_NO_ML_KEM` | [`ml_kem`] |
-//! | `mlx` | (depends on ML-KEM + EC/ECX) | [`mlx`] |
-//! | `slh-dsa` | `OPENSSL_NO_SLH_DSA` | [`slh_dsa`] |
-//! | `lms` | `OPENSSL_NO_LMS` | [`lms`] |
-//! | (always on) | (always compiled) | [`legacy`] |
+//! | `dh` | `OPENSSL_NO_DH` | `dh` |
+//! | `dsa` | `OPENSSL_NO_DSA` | `dsa` |
+//! | `ec` | `OPENSSL_NO_EC` | `ec` |
+//! | `ecx` | `OPENSSL_NO_ECX` | `ecx` |
+//! | `rsa` | (always enabled in C) | `rsa` |
+//! | `ml-dsa` | `OPENSSL_NO_ML_DSA` | `ml_dsa` |
+//! | `ml-kem` | `OPENSSL_NO_ML_KEM` | `ml_kem` |
+//! | `mlx` | (depends on ML-KEM + EC/ECX) | `mlx` |
+//! | `slh-dsa` | `OPENSSL_NO_SLH_DSA` | `slh_dsa` |
+//! | `lms` | `OPENSSL_NO_LMS` | `lms` |
+//! | (always on) | (always compiled) | `legacy` |
 //!
 //! ## Wiring Path (Rule R10)
 //!
@@ -94,7 +94,7 @@
 //! | `lms` | `lms_kmgmt.c` | ~213 |
 //! | `legacy` | `kdf_legacy_kmgmt.c` + `mac_legacy_kmgmt.c` | ~680 |
 //!
-//! [`ParamSet`]: openssl_common::param::ParamSet
+//! `ParamSet`: openssl_common::param::ParamSet
 
 use crate::traits::AlgorithmDescriptor;
 
@@ -140,7 +140,7 @@ pub use crate::traits::KeySelection;
 
 /// DH/DHX key management (RFC 3526/7919, X9.42).
 ///
-/// Provides `DhKeyMgmt` and `DhxKeyMgmt` implementing [`KeyMgmtProvider`]
+/// Provides `DhKeyMgmt` and `DhxKeyMgmt` implementing `KeyMgmtProvider`
 /// for Diffie-Hellman named groups and custom parameters.
 ///
 /// Source: `providers/implementations/keymgmt/dh_kmgmt.c` (~960 lines).
@@ -151,7 +151,7 @@ pub mod dh;
 
 /// DSA key management (FIPS 186-2/186-4).
 ///
-/// Provides `DsaKeyMgmt` implementing [`KeyMgmtProvider`] for DSA
+/// Provides `DsaKeyMgmt` implementing `KeyMgmtProvider` for DSA
 /// key generation, parameter handling, and sign/verify key lifecycle.
 ///
 /// Source: `providers/implementations/keymgmt/dsa_kmgmt.c` (~766 lines).
@@ -162,7 +162,7 @@ pub mod dsa;
 
 /// EC/SM2 key management (NIST P-curves, Brainpool, SM2).
 ///
-/// Provides `EcKeyMgmt` and `Sm2KeyMgmt` implementing [`KeyMgmtProvider`]
+/// Provides `EcKeyMgmt` and `Sm2KeyMgmt` implementing `KeyMgmtProvider`
 /// for elliptic curve key operations on named curves (P-256, P-384, P-521,
 /// secp256k1, Brainpool, SM2).
 ///
@@ -174,7 +174,7 @@ pub mod ec;
 
 /// ECX key management (X25519, X448, Ed25519, Ed448).
 ///
-/// Provides `EcxKeyMgmt` implementing [`KeyMgmtProvider`] for Montgomery
+/// Provides `EcxKeyMgmt` implementing `KeyMgmtProvider` for Montgomery
 /// and Edwards curve key types defined in RFC 7748 and RFC 8032.
 ///
 /// Source: `providers/implementations/keymgmt/ecx_kmgmt.c` (~1,311 lines).
@@ -186,7 +186,7 @@ pub mod ecx;
 /// RSA/RSA-PSS key management.
 ///
 /// Provides `RsaKeyMgmt` and `RsaPssKeyMgmt` implementing
-/// [`KeyMgmtProvider`] for RSA key generation, import/export with CRT
+/// `KeyMgmtProvider` for RSA key generation, import/export with CRT
 /// parameters, and PSS-restricted keys.
 ///
 /// Source: `providers/implementations/keymgmt/rsa_kmgmt.c` (~823 lines).
@@ -200,7 +200,7 @@ pub mod rsa;
 
 /// ML-DSA key management (FIPS 204).
 ///
-/// Provides `MlDsaKeyMgmt` implementing [`KeyMgmtProvider`] for
+/// Provides `MlDsaKeyMgmt` implementing `KeyMgmtProvider` for
 /// ML-DSA-44, ML-DSA-65, and ML-DSA-87 parameter sets.
 ///
 /// Source: `providers/implementations/keymgmt/ml_dsa_kmgmt.c` (~594 lines).
@@ -211,7 +211,7 @@ pub mod ml_dsa;
 
 /// ML-KEM key management (FIPS 203).
 ///
-/// Provides `MlKemKeyMgmt` implementing [`KeyMgmtProvider`] for
+/// Provides `MlKemKeyMgmt` implementing `KeyMgmtProvider` for
 /// ML-KEM-512, ML-KEM-768, and ML-KEM-1024 parameter sets.
 ///
 /// Source: `providers/implementations/keymgmt/ml_kem_kmgmt.c` (~859 lines).
@@ -222,7 +222,7 @@ pub mod ml_kem;
 
 /// Hybrid ML-KEM + ECDH/XDH key management.
 ///
-/// Provides `MlxKeyMgmt` implementing [`KeyMgmtProvider`] for hybrid
+/// Provides `MlxKeyMgmt` implementing `KeyMgmtProvider` for hybrid
 /// post-quantum/classical key exchange combinations:
 /// - X25519MLKEM768 (X25519 + ML-KEM-768)
 /// - X448MLKEM1024 (X448 + ML-KEM-1024)
@@ -237,7 +237,7 @@ pub mod mlx;
 
 /// SLH-DSA key management (FIPS 205).
 ///
-/// Provides `SlhDsaKeyMgmt` implementing [`KeyMgmtProvider`] for all
+/// Provides `SlhDsaKeyMgmt` implementing `KeyMgmtProvider` for all
 /// 12 SLH-DSA parameter sets (SHA2/SHAKE × 128/192/256 × s/f).
 ///
 /// Source: `providers/implementations/keymgmt/slh_dsa_kmgmt.c` (~481 lines).
@@ -248,7 +248,7 @@ pub mod slh_dsa;
 
 /// LMS key management (SP 800-208).
 ///
-/// Provides `LmsKeyMgmt` implementing [`KeyMgmtProvider`] for
+/// Provides `LmsKeyMgmt` implementing `KeyMgmtProvider` for
 /// Leighton-Micali Signature (LMS) hash-based signature verification keys.
 /// Note: LMS is verification-only; key generation is out of scope per
 /// SP 800-208 guidance.
@@ -264,7 +264,7 @@ pub mod lms;
 /// KDF/MAC/CMAC legacy key management shims.
 ///
 /// Provides `KdfLegacyKeyMgmt`, `MacLegacyKeyMgmt`, and `CmacLegacyKeyMgmt`
-/// implementing [`KeyMgmtProvider`] as thin wrappers that allow KDF and MAC
+/// implementing `KeyMgmtProvider` as thin wrappers that allow KDF and MAC
 /// algorithms to participate in the key management dispatch system.
 ///
 /// These shims are always available (no feature gate) because KDF-backed

@@ -6,7 +6,7 @@
 //! - Reseed policy (interval-based and time-based automatic reseeding)
 //! - Fork detection (on Unix systems)
 //! - Health monitoring and error recovery
-//! - Secure zeroization on cleanup via [`Zeroize`]
+//! - Secure zeroization on cleanup via `Zeroize`
 //!
 //! Individual DRBG mechanisms (CTR, Hash, HMAC) implement the
 //! [`DrbgMechanism`] trait and are wrapped by the [`Drbg`] struct.
@@ -144,10 +144,10 @@ impl std::fmt::Display for RandState {
 ///
 /// All implementors must:
 /// - Securely handle entropy and nonce material
-/// - Implement [`Zeroize`] to safely clear working state on cleanup
+/// - Implement `Zeroize` to safely clear working state on cleanup
 /// - Return consistent errors through [`ProviderResult`]
 ///
-/// Implementors should additionally derive [`ZeroizeOnDrop`] from the `zeroize`
+/// Implementors should additionally derive `ZeroizeOnDrop` from the `zeroize`
 /// crate to ensure automatic zeroing when the mechanism is dropped.
 ///
 /// # Source Reference
@@ -274,7 +274,7 @@ impl Default for DrbgConfig {
 /// Core DRBG wrapper providing the full DRBG lifecycle.
 ///
 /// Wraps a mechanism-specific implementation ([`DrbgMechanism`]) and provides:
-/// - Entropy acquisition from OS via [`OsRng`](rand::rngs::OsRng)
+/// - Entropy acquisition from OS via `OsRng` (`rand::rngs::OsRng`)
 /// - Reseed policy enforcement (interval and time-based)
 /// - Optional locking for thread-safe operation
 /// - Fork detection (on Unix systems)
@@ -704,7 +704,7 @@ impl Drbg {
     // Parameters
     // =========================================================================
 
-    /// Returns the current DRBG parameters as a [`ParamSet`].
+    /// Returns the current DRBG parameters as a `ParamSet`.
     ///
     /// Reports: state, strength, reseed counter, max request size,
     /// generate counter, and reseed interval.
@@ -766,7 +766,7 @@ impl Drbg {
         Ok(params)
     }
 
-    /// Configures DRBG parameters from a [`ParamSet`].
+    /// Configures DRBG parameters from a `ParamSet`.
     ///
     /// Accepts `reseed_interval` and `reseed_time_interval` configuration.
     /// Other parameters are read-only and are silently ignored.

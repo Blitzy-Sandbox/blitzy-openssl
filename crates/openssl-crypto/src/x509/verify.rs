@@ -9,9 +9,9 @@
 //! |--------------------------------------|-------------------------------------------------|
 //! | `crypto/x509/x509_vfy.c::X509_verify_cert`   | [`Verifier::verify`]                            |
 //! | `crypto/x509/x509_vfy.c::check_chain_extensions` | Path check helpers in [`Verifier::verify`] |
-//! | `crypto/x509/x509_vfy.c::internal_verify`    | [`Verifier::verify_signature_on`]               |
+//! | `crypto/x509/x509_vfy.c::internal_verify`    | `Verifier::verify_signature_on`               |
 //! | `crypto/x509/x_pubkey.c::i2d_PUBKEY`         | [`Certificate::public_key`] (provides SPKI DER) |
-//! | `crypto/rsa/rsa_ossl.c::rsa_ossl_public_decrypt` | [`verify_rsa_pkcs1_v1_5`] (manual impl)     |
+//! | `crypto/rsa/rsa_ossl.c::rsa_ossl_public_decrypt` | `verify_rsa_pkcs1_v1_5` (manual impl)     |
 //! | `crypto/ec/ecdsa_ossl.c::ossl_ecdsa_verify_sig` | Delegated to [`crate::ec::ecdsa::verify_der`] |
 //! | `crypto/ec/ecx_meth.c::ed25519_verify`       | Delegated to [`crate::ec::curve25519::ed25519_verify`] |
 //!
@@ -69,15 +69,29 @@ use x509_cert::ext::pkix::{BasicConstraints, ExtendedKeyUsage, KeyUsage};
 use openssl_common::CryptoError;
 
 use super::certificate::{
-    Certificate, CertificateVersion, PublicKeyInfo, SignatureAlgorithmId, OID_ECDSA_SHA256,
-    OID_ECDSA_SHA384, OID_ECDSA_SHA512, OID_ED25519, OID_ED448, OID_SHA256_WITH_RSA,
+    Certificate, CertificateVersion, PublicKeyInfo, SignatureAlgorithmId, OID_SHA256_WITH_RSA,
     OID_SHA384_WITH_RSA, OID_SHA512_WITH_RSA,
+};
+// EC-related signature algorithm OIDs — only used by the feature-gated
+// helpers `sha_for_ecdsa_sig`, `verify_eddsa`, and the matching
+// `ecdsa_sha_mapping` test.  Importing them unconditionally would
+// trigger the `unused_imports` lint when `ec` is disabled.
+#[cfg(feature = "ec")]
+use super::certificate::{
+    OID_ECDSA_SHA256, OID_ECDSA_SHA384, OID_ECDSA_SHA512, OID_ED25519, OID_ED448,
 };
 use super::store::X509Store;
 use crate::bn::montgomery::mod_exp;
 use crate::bn::BigNum;
+// EC primitives — only available when the `ec` feature is enabled. The
+// dispatch in `verify_signature_on` (below) and the helper functions
+// `curve_for_oid`, `verify_ecdsa`, and `verify_eddsa` are correspondingly
+// feature-gated so the symbols are referenced only when imported.
+#[cfg(feature = "ec")]
 use crate::ec::curve25519::{ed25519_verify, ed448_verify};
+#[cfg(feature = "ec")]
 use crate::ec::ecdsa::verify_der as ecdsa_verify_der;
+#[cfg(feature = "ec")]
 use crate::ec::{EcGroup, EcKey, EcPoint, EcxKeyType, EcxPublicKey, NamedCurve};
 use crate::hash::{create_sha_digest, ShaAlgorithm};
 
@@ -124,9 +138,17 @@ const OID_SHA384: &str = "2.16.840.1.101.3.4.2.2";
 const OID_SHA512: &str = "2.16.840.1.101.3.4.2.3";
 
 /// ECC curve OIDs (RFC 5480 §2.1).
+///
+/// Only used by the feature-gated helper `curve_for_oid` and the
+/// matching `curve_oid_mapping` test, both of which live behind the
+/// `ec` feature flag.  Gated to silence `dead_code` when `ec` is off.
+#[cfg(feature = "ec")]
 const OID_ECC_P256: &str = "1.2.840.10045.3.1.7";
+#[cfg(feature = "ec")]
 const OID_ECC_P384: &str = "1.3.132.0.34";
+#[cfg(feature = "ec")]
 const OID_ECC_P521: &str = "1.3.132.0.35";
+#[cfg(feature = "ec")]
 const OID_ECC_SECP256K1: &str = "1.3.132.0.10";
 
 /// Default maximum chain depth when `VerificationOptions::max_depth` is
@@ -196,7 +218,7 @@ pub struct VerificationOptions {
     /// [`Purpose::Any`].
     pub purpose: Purpose,
     /// Maximum number of certificates permitted in the chain (leaf
-    /// inclusive).  Defaults to [`DEFAULT_MAX_DEPTH`].
+    /// inclusive).  Defaults to `DEFAULT_MAX_DEPTH`.
     pub max_depth: usize,
     /// Whether to check revocation via any CRLs stored in the
     /// [`X509Store`].  When a CRL for the relevant issuer is present
@@ -1010,17 +1032,41 @@ pub(crate) fn verify_signature_on(
     let tbs = child.tbs_der();
     let sig_bytes = child.signature_value();
 
-    if sig_alg.is_rsa() {
-        verify_rsa_pkcs1_v1_5(&sig_alg, &spki, tbs, &sig_bytes)
-    } else if sig_alg.is_ecdsa() {
-        verify_ecdsa(&sig_alg, &spki, tbs, &sig_bytes)
-    } else if sig_alg.is_eddsa() {
-        verify_eddsa(&sig_alg, &spki, tbs, &sig_bytes)
-    } else {
-        Err(VerificationError::UnsupportedAlgorithm(format!(
-            "signature OID {} not supported",
-            sig_alg.oid
-        )))
+    // Dispatch on the signature algorithm family. EC-related dispatch arms
+    // (ECDSA, EdDSA) are only compiled when the `ec` feature is enabled.
+    // When the `ec` feature is disabled, only RSA-family signatures are
+    // supported; EC signature algorithms produce a clear "feature disabled"
+    // error rather than a generic "not supported" error.
+    #[cfg(feature = "ec")]
+    {
+        if sig_alg.is_rsa() {
+            verify_rsa_pkcs1_v1_5(&sig_alg, &spki, tbs, &sig_bytes)
+        } else if sig_alg.is_ecdsa() {
+            verify_ecdsa(&sig_alg, &spki, tbs, &sig_bytes)
+        } else if sig_alg.is_eddsa() {
+            verify_eddsa(&sig_alg, &spki, tbs, &sig_bytes)
+        } else {
+            Err(VerificationError::UnsupportedAlgorithm(format!(
+                "signature OID {} not supported",
+                sig_alg.oid
+            )))
+        }
+    }
+    #[cfg(not(feature = "ec"))]
+    {
+        if sig_alg.is_rsa() {
+            verify_rsa_pkcs1_v1_5(&sig_alg, &spki, tbs, &sig_bytes)
+        } else if sig_alg.is_ecdsa() || sig_alg.is_eddsa() {
+            Err(VerificationError::UnsupportedAlgorithm(format!(
+                "signature OID {} requires the `ec` feature, which is disabled",
+                sig_alg.oid
+            )))
+        } else {
+            Err(VerificationError::UnsupportedAlgorithm(format!(
+                "signature OID {} not supported",
+                sig_alg.oid
+            )))
+        }
     }
 }
 
@@ -1039,6 +1085,11 @@ fn sha_for_rsa_sig(oid: &str) -> Result<ShaAlgorithm, VerificationError> {
     }
 }
 
+/// Map an ECDSA signature algorithm OID to its SHA hash variant.
+///
+/// Only available when the `ec` feature is enabled, since ECDSA
+/// signature verification cannot be performed without the EC primitives.
+#[cfg(feature = "ec")]
 fn sha_for_ecdsa_sig(oid: &str) -> Result<ShaAlgorithm, VerificationError> {
     match oid {
         OID_ECDSA_SHA256 => Ok(ShaAlgorithm::Sha256),
@@ -1062,6 +1113,11 @@ fn sha_digest_oid(alg: ShaAlgorithm) -> Result<&'static str, VerificationError> 
     }
 }
 
+/// Map a named-curve OID to the corresponding `NamedCurve`.
+///
+/// Only available when the `ec` feature is enabled, since
+/// `NamedCurve` itself lives in the `ec` module.
+#[cfg(feature = "ec")]
 fn curve_for_oid(oid: &str) -> Result<NamedCurve, VerificationError> {
     match oid {
         OID_ECC_P256 => Ok(NamedCurve::Prime256v1),
@@ -1079,6 +1135,11 @@ fn curve_for_oid(oid: &str) -> Result<NamedCurve, VerificationError> {
 /// For an ECC SPKI, RFC 5480 §2.1.1 specifies that the parameters
 /// field of the `AlgorithmIdentifier` is an OBJECT IDENTIFIER naming
 /// the curve.
+///
+/// Only available when the `ec` feature is enabled — when the feature
+/// is disabled, ECDSA SPKI parameters cannot be parsed because the
+/// dispatch path that would consume the result is unreachable.
+#[cfg(feature = "ec")]
 fn curve_oid_from_spki_params(pk: &PublicKeyInfo) -> Result<String, VerificationError> {
     let params = pk.algorithm_parameters_der.as_ref().ok_or_else(|| {
         VerificationError::DecodingError("ECDSA SPKI missing algorithm parameters".into())
@@ -1094,6 +1155,11 @@ fn curve_oid_from_spki_params(pk: &PublicKeyInfo) -> Result<String, Verification
 // Signature verification back-ends
 // ---------------------------------------------------------------------------
 
+/// Verify an ECDSA-with-SHA-{256,384,512} signature against the supplied SPKI.
+///
+/// Only available when the `ec` feature is enabled, since ECDSA depends
+/// on the elliptic curve types in the `ec` module.
+#[cfg(feature = "ec")]
 fn verify_ecdsa(
     sig_alg: &SignatureAlgorithmId,
     spki: &PublicKeyInfo,
@@ -1129,6 +1195,12 @@ fn verify_ecdsa(
     }
 }
 
+/// Verify a Pure Ed25519 / Ed448 signature against the supplied SPKI.
+///
+/// Only available when the `ec` feature is enabled, since `EdDSA` depends
+/// on the `EcxPublicKey`/`EcxKeyType` types and the verification
+/// routines in the `ec::curve25519` module.
+#[cfg(feature = "ec")]
 fn verify_eddsa(
     sig_alg: &SignatureAlgorithmId,
     spki: &PublicKeyInfo,
@@ -1473,6 +1545,10 @@ mod tests {
     }
 
     /// Mapping from ECDSA OIDs to SHA variants.
+    ///
+    /// Only available when the `ec` feature is enabled, since the helper
+    /// `sha_for_ecdsa_sig` is itself feature-gated.
+    #[cfg(feature = "ec")]
     #[test]
     fn ecdsa_sha_mapping() {
         assert_eq!(
@@ -1490,6 +1566,11 @@ mod tests {
     }
 
     /// Mapping from ECC curve OIDs to named curves.
+    ///
+    /// Only available when the `ec` feature is enabled, since the helper
+    /// `curve_for_oid` and the `NamedCurve` type both live behind the
+    /// `ec` feature gate.
+    #[cfg(feature = "ec")]
     #[test]
     fn curve_oid_mapping() {
         assert_eq!(curve_for_oid(OID_ECC_P256).expect("p256"), NamedCurve::Prime256v1);

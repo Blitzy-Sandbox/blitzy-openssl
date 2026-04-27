@@ -14,24 +14,24 @@
 //!
 //! Exercises the full public API of the [`crate::observability`] module:
 //!
-//! - **[`CorrelationId`]:** Creation, uniqueness (100 IDs via [`HashSet`]),
-//!   [`Display`]/[`Debug`] traits, Clone/Copy semantics, UUID format validation.
-//! - **[`init_tracing`] / [`init_tracing_with_filter`]:** Idempotency — no panic
+//! - **`CorrelationId`:** Creation, uniqueness (100 IDs via `HashSet`),
+//!   `Display`/`Debug` traits, Clone/Copy semantics, UUID format validation.
+//! - **`init_tracing` / `init_tracing_with_filter`:** Idempotency — no panic
 //!   on repeated calls, `AlreadyInitialized` error on second invocation.
-//! - **[`init_metrics`] / [`MetricsHandle`]:** Global Prometheus recorder
+//! - **`init_metrics` / `MetricsHandle`:** Global Prometheus recorder
 //!   installation, `render()` output verification.
-//! - **[`HealthStatus`]:** Variant construction, `PartialEq`, `Debug`,
-//!   `serde::Serialize` via [`serde_json`].
-//! - **[`ReadinessCheck`] / [`HealthRegistry`]:** Custom trait impl via `MockCheck`,
+//! - **`HealthStatus`:** Variant construction, `PartialEq`, `Debug`,
+//!   `serde::Serialize` via `serde_json`.
+//! - **`ReadinessCheck` / `HealthRegistry`:** Custom trait impl via `MockCheck`,
 //!   empty/single/mixed/all-healthy aggregation, registration-order preservation.
-//! - **[`ObservabilityError`]:** Display messages, [`std::error::Error`] trait impl,
-//!   distinctness from [`CommonError`].
-//! - **[`record_operation_start`] / [`record_operation_complete`]:** Span creation
+//! - **`ObservabilityError`:** Display messages, [`std::error::Error`] trait impl,
+//!   distinctness from `CommonError`.
+//! - **`record_operation_start` / `record_operation_complete`:** Span creation
 //!   returning [`tracing::Span`], completion without panic.
 //!
 //! # Global State Notes
 //!
-//! [`init_tracing`] and [`init_metrics`] install process-global singletons (tracing
+//! `init_tracing` and `init_metrics` install process-global singletons (tracing
 //! subscriber and Prometheus recorder, respectively).  Tests account for
 //! test-parallelism by accepting either `Ok(())` (first test to run) or the
 //! `AlreadyInitialized` / `MetricsSetupFailed` error (another test ran first).
@@ -69,8 +69,8 @@ use crate::observability::{
 // MockCheck — Test Helper for ReadinessCheck Trait (Phase 5)
 // =============================================================================
 
-/// A configurable mock implementation of [`ReadinessCheck`] for testing
-/// [`HealthRegistry`] aggregation logic.
+/// A configurable mock implementation of `ReadinessCheck` for testing
+/// `HealthRegistry` aggregation logic.
 ///
 /// Each instance carries a fixed name and status, enabling deterministic
 /// testing of all health-check combinations (healthy, degraded, unhealthy).

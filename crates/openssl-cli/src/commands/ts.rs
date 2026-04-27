@@ -1686,7 +1686,7 @@ impl TsArgs {
     }
 
     /// Parses an accuracy string from the configuration into a
-    /// [`TsAccuracy`] value.
+    /// `TsAccuracy` value.
     ///
     /// The accuracy string format is: `secs:millis:micros`
     /// (e.g., `"1:500:100"`).

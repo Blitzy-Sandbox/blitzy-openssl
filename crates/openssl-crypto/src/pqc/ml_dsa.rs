@@ -51,7 +51,6 @@
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
-#![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
@@ -423,6 +422,12 @@ fn maximum(x: u32, y: u32) -> u32 {
 /// Implements the classic word-level Montgomery reduction used in `ml_dsa_ntt.c`.
 #[inline]
 fn reduce_montgomery(a: u64) -> u32 {
+    // TRUNCATION: low 32 bits of `a` by design. The Montgomery reduction algorithm
+    // explicitly uses `a_low = a mod 2^32`; the high 32 bits are NOT lost because the
+    // subsequent line (`b = a.wrapping_add(...)`) operates on the full u64 `a`. The
+    // pair (`a_low`, `t`, `b`) preserves the algebraic invariant
+    // `a ≡ a_low * R^{-1} mod q` per the standard word-level Montgomery algorithm.
+    #[allow(clippy::cast_possible_truncation)]
     let a_low = a as u32;
     let t = a_low.wrapping_mul(Q_NEG_INV);
     let b = a.wrapping_add((t as u64).wrapping_mul(ML_DSA_Q as u64));
@@ -999,8 +1004,22 @@ fn matrix_expand_a(rho: &[u8; RHO_BYTES], a_hat: &mut Matrix) -> CryptoResult<()
     derived[..RHO_BYTES].copy_from_slice(rho);
     for i in 0..a_hat.rows {
         for j in 0..a_hat.cols {
-            derived[RHO_BYTES] = j as u8;
-            derived[RHO_BYTES + 1] = i as u8;
+            // TRUNCATION: `j` iterates `0..a_hat.cols`, where `a_hat.cols == params.l`
+            // and `params.l` is at most 7 (ML-DSA-87 has the largest column count). So
+            // `j < 7 < 256`; cast is loss-less. Per FIPS 204 Algorithm 32 (ExpandA), the
+            // matrix indices are encoded as single bytes appended to the seed.
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                derived[RHO_BYTES] = j as u8;
+            }
+            // TRUNCATION: `i` iterates `0..a_hat.rows`, where `a_hat.rows == params.k`
+            // and `params.k` is at most 8 (ML-DSA-87 has the largest row count). So
+            // `i < 8 < 256`; cast is loss-less. Per FIPS 204 Algorithm 32 (ExpandA), the
+            // matrix indices are encoded as single bytes appended to the seed.
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                derived[RHO_BYTES + 1] = i as u8;
+            }
             rej_ntt_poly(&derived, a_hat.get_mut(i, j))?;
         }
     }
@@ -1020,13 +1039,27 @@ fn vector_expand_s(
     let mut counter: u16 = 0;
 
     for i in 0..s1.polys.len() {
-        derived[PRIV_SEED_BYTES] = counter as u8;
+        // TRUNCATION: low byte of the u16 `counter`; the next line stores the high byte
+        // (`(counter >> 8) as u8`). Together both bytes round-trip back to `counter`.
+        // This is the canonical FIPS 204 little-endian serialisation for the
+        // rejection-sampling nonce in `ExpandS` (Algorithm 31).
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            derived[PRIV_SEED_BYTES] = counter as u8;
+        }
         derived[PRIV_SEED_BYTES + 1] = (counter >> 8) as u8;
         rej_bounded_poly(&derived, eta, &mut s1.polys[i])?;
         counter = counter.wrapping_add(1);
     }
     for i in 0..s2.polys.len() {
-        derived[PRIV_SEED_BYTES] = counter as u8;
+        // TRUNCATION: low byte of the u16 `counter`; the next line stores the high byte
+        // (`(counter >> 8) as u8`). Together both bytes round-trip back to `counter`.
+        // This is the canonical FIPS 204 little-endian serialisation for the
+        // rejection-sampling nonce in `ExpandS` (Algorithm 31).
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            derived[PRIV_SEED_BYTES] = counter as u8;
+        }
         derived[PRIV_SEED_BYTES + 1] = (counter >> 8) as u8;
         rej_bounded_poly(&derived, eta, &mut s2.polys[i])?;
         counter = counter.wrapping_add(1);
@@ -1112,6 +1145,14 @@ fn poly_expand_mask(
     };
     let mut ctx = ShakeContext::shake256();
     ctx.update(rho_prime)?;
+    // TRUNCATION: little-endian serialisation of the u16 `nonce`. The first byte stores
+    // the low 8 bits (`nonce as u8`) and the second byte stores the high 8 bits
+    // (`(nonce >> 8) as u8`); together they reconstruct `nonce` exactly. This is the
+    // serialisation format required by FIPS 204 Algorithm 33 (ExpandMask). The
+    // narrowing cast for the high byte (`(nonce >> 8) as u8`) is also "low byte by
+    // design" since `nonce >> 8` is in `0..=255` after shifting. Both casts are
+    // loss-less in the sense that the pair of bytes round-trips back to `nonce`.
+    #[allow(clippy::cast_possible_truncation)]
     let nonce_bytes = [nonce as u8, (nonce >> 8) as u8];
     ctx.update(&nonce_bytes)?;
     let buf = ctx.finalize_xof(buf_len)?;
@@ -1297,7 +1338,12 @@ impl Vector {
         gamma1: u32,
     ) -> CryptoResult<()> {
         for i in 0..self.polys.len() {
-            let nonce = kappa.wrapping_add(i as u16);
+            // TRUNCATION: `i < self.polys.len()`, and `polys.len()` is at most `params.l`
+            // (the column count of `A_hat`) which is at most 7 (ML-DSA-87 has the largest
+            // value). So `i < 7 < u16::MAX`; cast is loss-less.
+            #[allow(clippy::cast_possible_truncation)]
+            let i_u16 = i as u16;
+            let nonce = kappa.wrapping_add(i_u16);
             poly_expand_mask(&mut self.polys[i], rho_prime, nonce, gamma1)?;
         }
         Ok(())
@@ -1402,7 +1448,14 @@ fn bit_unpack(data: &[u8], bits: u32, coeffs: &mut [u32]) -> CryptoResult<()> {
             acc_bits += 8;
             in_pos += 1;
         }
-        *c = (acc & mask) as u32;
+        // TRUNCATION: `mask` is either `u32::MAX as u64` (when `bits == 32`) or
+        // `(1u64 << bits) - 1` for `bits < 32`. In both cases `acc & mask <= u32::MAX`,
+        // so the narrowing cast is loss-less. The function precondition
+        // `debug_assert!(bits > 0 && bits <= 32)` guarantees this invariant.
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            *c = (acc & mask) as u32;
+        }
         acc >>= bits;
         acc_bits -= bits;
     }
@@ -1935,11 +1988,25 @@ fn hint_bits_encode(hint: &Vector, params: &MlDsaParams, out: &mut [u8]) -> Cryp
                         "hint_bits_encode: number of 1-bits exceeds ω".into(),
                     ));
                 }
-                out[index] = c as u8;
+                // TRUNCATION: `c` is the loop variable of `0..NUM_POLY_COEFFICIENTS`, where
+                // `NUM_POLY_COEFFICIENTS == 256` and the upper bound is exclusive, so
+                // `c <= 255`; per FIPS 204 §7.4 (`HintBitPack`) coefficient indices are
+                // serialised as a single byte. Cast is loss-less.
+                #[allow(clippy::cast_possible_truncation)]
+                {
+                    out[index] = c as u8;
+                }
                 index += 1;
             }
         }
-        out[omega + poly_idx] = index as u8;
+        // TRUNCATION: `index` is bounded above by `omega = params.omega as usize`, and
+        // `params.omega` is at most 80 (ML-DSA-44; ML-DSA-65 has 55 and ML-DSA-87 has 75).
+        // The early-return `if index >= omega { return Err(...) }` above guarantees
+        // `index <= omega <= 80 < 256`. Cast is loss-less.
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            out[omega + poly_idx] = index as u8;
+        }
     }
     Ok(())
 }
@@ -2800,7 +2867,11 @@ fn mu_init_int(tr: &[u8], encode: bool, prehash: bool, ctx: &[u8]) -> CryptoResu
     shake.update(tr)?;
     if encode {
         let prehash_byte: u8 = u8::from(prehash);
-        // `ctx.len() <= 255` was enforced above, so this cast is loss-less.
+        // TRUNCATION: `ctx.len() <= MAX_CONTEXT_STRING_LEN == 255` was enforced by the
+        // explicit guard above (`if encode && ctx.len() > MAX_CONTEXT_STRING_LEN`), and
+        // `_ASSERT_CTX_LEN_FITS_U8` const-asserts the constant equals 255. The cast is
+        // therefore loss-less.
+        #[allow(clippy::cast_possible_truncation)]
         let ctx_len_byte: u8 = ctx.len() as u8;
         let itb = [prehash_byte, ctx_len_byte];
         shake.update(&itb)?;
@@ -3008,7 +3079,10 @@ impl MlDsaKey {
                     "ML-DSA sign: rejection sampling failed to converge".to_string(),
                 ));
             }
-            // κ is at most u16::MAX per the guard above, so the cast is safe.
+            // TRUNCATION: kappa is bounded above by `max_kappa.saturating_sub(l_u32)` and
+            // `max_kappa` is `u16::MAX` (see `max_kappa` derivation), so kappa <= u16::MAX
+            // is enforced by the loop guard above; the cast is therefore loss-less.
+            #[allow(clippy::cast_possible_truncation)]
             let kappa_u16: u16 = kappa as u16;
 
             // --- y = ExpandMask(ρ', κ, γ₁) ---

@@ -17,15 +17,15 @@
 //!
 //! | C Source (`apps/kdf.c`)             | Rust Equivalent                              |
 //! |-------------------------------------|----------------------------------------------|
-//! | `kdf_main()`                        | [`KdfArgs::execute()`]                       |
-//! | `OPTION_CHOICE` enum                | clap `#[derive(Args)]` on [`KdfArgs`]        |
+//! | `kdf_main()`                        | `KdfArgs::execute()`                       |
+//! | `OPTION_CHOICE` enum                | clap `#[derive(Args)]` on `KdfArgs`        |
 //! | `kdf_options[]` array               | clap field annotations                       |
-//! | `alloc_kdf_algorithm_name()`        | [`KdfArgs::collect_all_opts()`]              |
-//! | `EVP_KDF_fetch()`                   | [`parse_kdf_type()`] → [`KdfType`]           |
-//! | `EVP_KDF_CTX_new` / `set_params`    | [`KdfContext`] builder pattern               |
-//! | `EVP_KDF_derive()`                  | [`KdfContext::derive()`]                     |
-//! | `OPENSSL_buf2hexstr()`              | [`hex::encode_upper()`] + [`format_hex_with_colons()`] |
-//! | `OPENSSL_clear_free()`              | [`Zeroizing<Vec<u8>>`]                       |
+//! | `alloc_kdf_algorithm_name()`        | `KdfArgs::collect_all_opts()`              |
+//! | `EVP_KDF_fetch()`                   | `parse_kdf_type()` → `KdfType`           |
+//! | `EVP_KDF_CTX_new` / `set_params`    | `KdfContext` builder pattern               |
+//! | `EVP_KDF_derive()`                  | `KdfContext::derive()`                     |
+//! | `OPENSSL_buf2hexstr()`              | [`hex::encode_upper()`] + `format_hex_with_colons()` |
+//! | `OPENSSL_clear_free()`              | `Zeroizing<Vec<u8>>`                         |
 //!
 //! # Rule Compliance
 //!
@@ -173,11 +173,11 @@ impl KdfArgs {
     /// This method replaces `kdf_main()` from `apps/kdf.c` lines 75–210.
     /// The execution flow mirrors the C implementation:
     ///
-    /// 1. Parse algorithm name → [`KdfType`] (replaces `EVP_KDF_fetch`)
+    /// 1. Parse algorithm name → `KdfType` (replaces `EVP_KDF_fetch`)
     /// 2. Validate output key length
-    /// 3. Create [`KdfContext`] (replaces `EVP_KDF_CTX_new`)
+    /// 3. Create `KdfContext` (replaces `EVP_KDF_CTX_new`)
     /// 4. Merge `kdfopt` + shorthand options into unified option list
-    /// 5. Route params to dedicated setters or [`ParamSet`]
+    /// 5. Route params to dedicated setters or `ParamSet`
     /// 6. Derive key material (replaces `EVP_KDF_derive`)
     /// 7. Write output in binary or colon-separated hex format
     ///
@@ -368,7 +368,7 @@ impl KdfArgs {
 // Free Functions — Algorithm Resolution
 // ===========================================================================
 
-/// Parses a KDF algorithm name string into the corresponding [`KdfType`]
+/// Parses a KDF algorithm name string into the corresponding `KdfType`
 /// enum variant.
 ///
 /// Performs case-insensitive matching against all recognized KDF algorithm
@@ -423,7 +423,7 @@ fn parse_kdf_type(name: &str) -> Result<KdfType, CryptoError> {
 // ===========================================================================
 
 /// Processes all collected KDF options, routing values to either dedicated
-/// [`KdfContext`] setter methods or into a [`ParamSet`] for remaining
+/// `KdfContext` setter methods or into a `ParamSet` for remaining
 /// algorithm-specific parameters.
 ///
 /// Replaces `app_params_new_from_opts()` at `apps/kdf.c:159` and the
@@ -437,7 +437,7 @@ fn parse_kdf_type(name: &str) -> Result<KdfType, CryptoError> {
 /// | `salt`   | [`KdfContext::set_salt()`]        | Sets internal salt buffer     |
 /// | `info`   | [`KdfContext::set_info()`]        | Sets internal info/context    |
 /// | `digest` | [`KdfContext::set_digest()`]      | Sets digest algorithm name    |
-/// | Other    | [`ParamBuilder`] → [`ParamSet`]  | Algorithm-specific params     |
+/// | Other    | [`ParamBuilder`] → `ParamSet`  | Algorithm-specific params     |
 ///
 /// The `key`, `salt`, and `info` values are parsed as bytes: hex-decoded
 /// if the value starts with `0x`/`0X`, otherwise used as raw UTF-8 bytes.
@@ -515,7 +515,7 @@ fn split_kdfopt(opt: &str) -> Result<(&str, &str), CryptoError> {
 /// Parses a value string as a byte vector.
 ///
 /// - If the value starts with `"0x"` or `"0X"`, the remainder is
-///   hex-decoded into bytes using [`from_text()`]'s hex parsing logic.
+///   hex-decoded into bytes using `from_text()`'s hex parsing logic.
 /// - Otherwise, the value's raw UTF-8 bytes are used directly.
 ///
 /// This matches the C behaviour where `-kdfopt key:0x...` passes hex-decoded
@@ -544,12 +544,12 @@ fn parse_value_as_bytes(value: &str) -> Result<Vec<u8>, CryptoError> {
     }
 }
 
-/// Pushes a [`ParamValue`] into a [`ParamBuilder`] with the correct
+/// Pushes a `ParamValue` into a [`ParamBuilder`] with the correct
 /// type-specific method, returning the updated builder.
 ///
 /// Dispatches to the appropriate `push_*` method based on the
-/// [`ParamValue`] variant to preserve type information in the resulting
-/// [`ParamSet`].
+/// `ParamValue` variant to preserve type information in the resulting
+/// `ParamSet`.
 ///
 /// # Rule Compliance
 ///

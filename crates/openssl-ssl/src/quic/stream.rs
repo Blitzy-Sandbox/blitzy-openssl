@@ -998,7 +998,7 @@ impl Drop for QuicSendStream {
 
 /// Receive-side QUIC stream buffer.
 ///
-/// Manages incoming data reassembly using a [`SortedFragList`], delivering
+/// Manages incoming data reassembly using a `SortedFragList`, delivering
 /// contiguous data to the application in order. Handles out-of-order arrival,
 /// duplicate detection, and FIN processing.
 ///

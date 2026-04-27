@@ -3,24 +3,24 @@
 //! This module translates `crypto/modes/*.c` (12 files in the C tree) into
 //! idiomatic Rust. It provides both the shared mode-of-operation engines
 //! (CBC, CTR, CFB, OFB, ECB) and the AEAD mode types (GCM, CCM, XTS, SIV,
-//! GCM-SIV) layered on top of any [`BlockCipher`] implementation.
+//! GCM-SIV) layered on top of any `BlockCipher` implementation.
 //!
 //! ## Crate layout per AAP §0.4.1
 //!
 //! | Submodule | Purpose                                     | C source analogue |
 //! |-----------|---------------------------------------------|-------------------|
-//! | [`gcm`]   | Galois/Counter Mode — RFC 5288              | `crypto/modes/gcm128.c` |
-//! | [`ccm`]   | Counter with CBC-MAC — NIST SP 800-38C      | `crypto/modes/ccm128.c` |
-//! | [`ctr`]   | Counter mode — NIST SP 800-38A              | `crypto/modes/ctr128.c` |
-//! | [`cfb`]   | Cipher Feedback — NIST SP 800-38A           | `crypto/modes/cfb128.c` |
-//! | [`ofb`]   | Output Feedback — NIST SP 800-38A           | `crypto/modes/ofb128.c` |
-//! | [`xts`]   | XEX Tweakable Block Cipher — IEEE 1619      | `crypto/modes/xts128.c` |
-//! | [`siv`]   | Synthetic Initialization Vector — RFC 5297  | `crypto/modes/siv128.c` |
-//! | [`cbc`]   | Cipher Block Chaining — NIST SP 800-38A     | `crypto/modes/cbc128.c` |
-//! | [`ecb`]   | Electronic Codebook — NIST SP 800-38A       | `crypto/modes/ecb128.c` |
+//! | `gcm`     | Galois/Counter Mode — RFC 5288              | `crypto/modes/gcm128.c` |
+//! | `ccm`     | Counter with CBC-MAC — NIST SP 800-38C      | `crypto/modes/ccm128.c` |
+//! | `ctr`     | Counter mode — NIST SP 800-38A              | `crypto/modes/ctr128.c` |
+//! | `cfb`     | Cipher Feedback — NIST SP 800-38A           | `crypto/modes/cfb128.c` |
+//! | `ofb`     | Output Feedback — NIST SP 800-38A           | `crypto/modes/ofb128.c` |
+//! | `xts`     | XEX Tweakable Block Cipher — IEEE 1619      | `crypto/modes/xts128.c` |
+//! | `siv`     | Synthetic Initialization Vector — RFC 5297  | `crypto/modes/siv128.c` |
+//! | `cbc`     | Cipher Block Chaining — NIST SP 800-38A     | `crypto/modes/cbc128.c` |
+//! | `ecb`     | Electronic Codebook — NIST SP 800-38A       | `crypto/modes/ecb128.c` |
 //!
 //! The concrete cipher-specific implementations remain in
-//! [`super::symmetric::aes`] (and siblings), which provide authoritative
+//! `super::symmetric::aes` (and siblings), which provide authoritative
 //! AEAD constructions. The thin wrappers here expose stable module paths
 //! that satisfy the AAP §0.4.1 crate layout, preserve feature parity with
 //! the C `crypto/modes/` tree, and make the mode engines callable from
@@ -43,22 +43,34 @@
 #![allow(clippy::module_inception)]
 
 pub mod cbc;
+#[cfg(feature = "aes")]
 pub mod ccm;
 pub mod cfb;
 pub mod ctr;
 pub mod ecb;
+#[cfg(feature = "aes")]
 pub mod gcm;
 pub mod ofb;
+#[cfg(feature = "aes")]
 pub mod siv;
+#[cfg(feature = "aes")]
 pub mod xts;
 
 // ------------------------------------------------------------------------
 // Re-exports of ergonomic public types that carry the "mode" concept in
 // their name. Consumers can write `use openssl_crypto::modes::gcm::*;` for
 // fine-grained access, or import the AEAD types directly from the top level.
+//
+// Gated re-exports: the AEAD aliases below depend on the cipher whose name
+// they carry. Without the corresponding feature, the underlying cipher is
+// not compiled into the crate, so the alias is also unavailable. This
+// preserves the AAP §0.6 promise of independent feature toggling and
+// matches the gating pattern used in `crate::symmetric::mod`.
 // ------------------------------------------------------------------------
 
+#[cfg(feature = "aes")]
 pub use super::symmetric::aes::{AesCcm, AesGcm, AesSiv, AesXts};
+#[cfg(feature = "chacha")]
 pub use super::symmetric::chacha20::ChaCha20Poly1305;
 pub use super::symmetric::BlockSize;
 

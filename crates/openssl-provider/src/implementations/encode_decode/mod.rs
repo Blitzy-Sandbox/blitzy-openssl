@@ -44,19 +44,19 @@
 //!
 //! | Module | Source C File | Purpose |
 //! |--------|--------------|---------|
-//! | [`common`] | `endecoder_common.c` | Shared types, constants, utilities |
-//! | [`pq_codecs`] | *(new)* | Post-quantum key codec tables |
-//! | [`der_decoder`] | `decode_der2key.c` | DER-to-key decoder |
-//! | [`pem_decoder`] | `decode_pem2der.c` | PEM-to-DER decoder |
-//! | [`epki_decoder`] | `decode_epki2pki.c` | Encrypted PKCS#8 decryptor |
-//! | [`spki_decoder`] | `decode_spki2typespki.c` | SPKI type tagging |
-//! | [`msblob_decoder`] | `decode_msblob2key.c` | Microsoft MSBLOB decoder |
-//! | [`pvk_decoder`] | `decode_pvk2key.c` | Microsoft PVK decoder |
-//! | [`lms_decoder`] | `decode_lmsxdr2key.c` | LMS XDR decoder |
-//! | [`key_encoder`] | `encode_key2any.c` | PKCS#8/SPKI/legacy encoder |
-//! | [`text_encoder`] | `encode_key2text.c` | Human-readable text encoder |
-//! | [`blob_encoder`] | `encode_key2blob.c` | EC public key blob encoder |
-//! | [`ms_encoder`] | `encode_key2ms.c` | Microsoft MSBLOB/PVK encoder |
+//! | `common` | `endecoder_common.c` | Shared types, constants, utilities |
+//! | `pq_codecs` | *(new)* | Post-quantum key codec tables |
+//! | `der_decoder` | `decode_der2key.c` | DER-to-key decoder |
+//! | `pem_decoder` | `decode_pem2der.c` | PEM-to-DER decoder |
+//! | `epki_decoder` | `decode_epki2pki.c` | Encrypted PKCS#8 decryptor |
+//! | `spki_decoder` | `decode_spki2typespki.c` | SPKI type tagging |
+//! | `msblob_decoder` | `decode_msblob2key.c` | Microsoft MSBLOB decoder |
+//! | `pvk_decoder` | `decode_pvk2key.c` | Microsoft PVK decoder |
+//! | `lms_decoder` | `decode_lmsxdr2key.c` | LMS XDR decoder |
+//! | `key_encoder` | `encode_key2any.c` | PKCS#8/SPKI/legacy encoder |
+//! | `text_encoder` | `encode_key2text.c` | Human-readable text encoder |
+//! | `blob_encoder` | `encode_key2blob.c` | EC public key blob encoder |
+//! | `ms_encoder` | `encode_key2ms.c` | Microsoft MSBLOB/PVK encoder |
 
 use crate::traits::AlgorithmDescriptor;
 
@@ -305,7 +305,7 @@ pub use common::STRUCTURE_ENCRYPTED_PRIVATE_KEY_INFO;
 /// used for public key serialization.
 pub use common::STRUCTURE_SUBJECT_PUBLIC_KEY_INFO;
 
-/// Free a key object created by [`import_key`].
+/// Free a key object created by `import_key`.
 ///
 /// Explicit key disposal for API symmetry with the C `ossl_prov_free_key()`.
 /// In Rust, this simply drops the key (RAII handles cleanup).
@@ -354,10 +354,10 @@ pub use common::MAX_PROPQUERY_SIZE;
 ///
 /// Aggregates encoder descriptors from all encoder submodules:
 ///
-/// - [`key_encoder`] — PKCS#8, SPKI, and legacy DER/PEM key encoders
-/// - [`text_encoder`] — Human-readable text format encoders
-/// - [`blob_encoder`] — EC public key blob encoders (requires feature `"ec"`)
-/// - [`ms_encoder`] — Microsoft MSBLOB and PVK format encoders
+/// - `key_encoder` — PKCS#8, SPKI, and legacy DER/PEM key encoders
+/// - `text_encoder` — Human-readable text format encoders
+/// - `blob_encoder` — EC public key blob encoders (requires feature `"ec"`)
+/// - `ms_encoder` — Microsoft MSBLOB and PVK format encoders
 ///
 /// Called by [`super::all_encoder_descriptors()`] when the `"encode-decode"`
 /// feature is enabled. The returned descriptors are used by
@@ -403,13 +403,13 @@ pub fn encoder_descriptors() -> Vec<AlgorithmDescriptor> {
 ///
 /// Aggregates decoder descriptors from all decoder submodules:
 ///
-/// - [`der_decoder`] — DER-to-key decoders for all algorithm types
+/// - `der_decoder` — DER-to-key decoders for all algorithm types
 /// - PEM-to-DER decoder (single instance, handles all PEM labels)
 /// - `EncryptedPrivateKeyInfo` decryption bridge (single instance)
 /// - `SubjectPublicKeyInfo` type-tagging decoder (single instance)
-/// - [`msblob_decoder`] — Microsoft MSBLOB format decoders
-/// - [`pvk_decoder`] — Microsoft PVK format decoders
-/// - [`lms_decoder`] — LMS XDR key decoder (requires feature `"lms"`)
+/// - `msblob_decoder` — Microsoft MSBLOB format decoders
+/// - `pvk_decoder` — Microsoft PVK format decoders
+/// - `lms_decoder` — LMS XDR key decoder (requires feature `"lms"`)
 ///
 /// Called by [`super::all_decoder_descriptors()`] when the `"encode-decode"`
 /// feature is enabled. The returned descriptors are used by

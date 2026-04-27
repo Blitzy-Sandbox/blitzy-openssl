@@ -12,14 +12,14 @@
 //! command module. This module provides domain-specific helpers that
 //! clap doesn't provide natively:
 //!
-//! - [`Format`] enum for `-inform`/`-outform` parsing
-//! - [`FormatFlags`] bitflags for validating acceptable formats per command
-//! - [`VerifyParams`] clap `Args` struct for X.509 verification parameters
-//! - [`DisplayColumns`] and [`calculate_columns`] for list/help column layout
-//! - [`name_cmp`] and [`print_names`] for algorithm name collection and display
-//! - [`ParamType`], [`ParamValue`], and associated printing functions for
+//! - `Format` enum for `-inform`/`-outform` parsing
+//! - `FormatFlags` bitflags for validating acceptable formats per command
+//! - `VerifyParams` clap `Args` struct for X.509 verification parameters
+//! - `DisplayColumns` and `calculate_columns` for list/help column layout
+//! - `name_cmp` and `print_names` for algorithm name collection and display
+//! - `ParamType`, `ParamValue`, and associated printing functions for
 //!   provider diagnostics
-//! - [`opt_printf_stderr`] for structured error output
+//! - `opt_printf_stderr` for structured error output
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -58,7 +58,7 @@ pub enum FormatError {
     /// A known format was provided but is not supported in this context.
     ///
     /// Carries the format name and a comma-separated list of valid formats
-    /// derived from the [`FormatFlags`] bitmask for the current command.
+    /// derived from the `FormatFlags` bitmask for the current command.
     #[error("unsupported format '{format}'; must be one of: {valid_formats}")]
     UnsupportedFormat {
         /// The format the user provided.
@@ -144,7 +144,7 @@ impl Format {
         )
     }
 
-    /// Validates that this format is permitted by the given [`FormatFlags`].
+    /// Validates that this format is permitted by the given `FormatFlags`.
     ///
     /// Replaces the per-format `(flags & OPT_FMT_X) == 0` checks in
     /// `opt_format()` from `opt.c:275-358`.
@@ -166,7 +166,7 @@ impl Format {
         }
     }
 
-    /// Maps this format variant to its corresponding single [`FormatFlags`] bit.
+    /// Maps this format variant to its corresponding single `FormatFlags` bit.
     fn to_format_flag(self) -> FormatFlags {
         match self {
             Self::Pem => FormatFlags::PEM,
@@ -674,7 +674,7 @@ pub enum ParamType {
 /// Typed parameter value for display purposes.
 ///
 /// Represents the concrete value held by a provider parameter, used by
-/// [`print_param_value`] to render human-readable output.
+/// `print_param_value` to render human-readable output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParamValue {
     /// Signed integer value.
@@ -853,7 +853,7 @@ pub fn opt_printf_stderr(msg: &str) {
 ///
 /// Provides a tracing-integrated wrapper for non-fatal diagnostic messages
 /// during option parsing or parameter inspection. Complements
-/// [`opt_printf_stderr`] for non-error conditions.
+/// `opt_printf_stderr` for non-error conditions.
 pub fn opt_warn_diagnostic(msg: &str) {
     warn!("{}", msg);
 }

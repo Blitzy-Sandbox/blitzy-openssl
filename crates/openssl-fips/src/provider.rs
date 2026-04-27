@@ -9,7 +9,7 @@
 //! The FIPS provider is the only provider that may be used in FIPS 140-3 compliant mode.
 //! It registers a curated set of FIPS-approved algorithms and enforces compliance through:
 //!
-//! 1. **Power-On Self-Test (POST):** Executed during [`initialize()`] before the module
+//! 1. **Power-On Self-Test (POST):** Executed during `initialize()` before the module
 //!    transitions to the `Running` state.
 //! 2. **Known Answer Tests (KATs):** Delegated to [`crate::kats`] for per-algorithm
 //!    verification.
@@ -31,12 +31,12 @@
 //! |---------------------------|-----------------------------------------------------|
 //! | [`FipsGlobal`]            | `FIPS_GLOBAL` struct (`fipsprov.c` lines 97–109)      |
 //! | [`FipsOption`]            | `FIPS_OPTION` struct (`fipsprov.c` lines 92–95)       |
-//! | [`FipsIndicatorConfig`]   | `.inc` macro expansion (`fips_indicator_params.inc`)   |
+//! | `FipsIndicatorConfig`   | `.inc` macro expansion (`fips_indicator_params.inc`)   |
 //! | [`SelfTestPostParams`]    | `SELF_TEST_POST_PARAMS` (`self_test.h` lines 30–40)   |
-//! | [`FipsAlgorithmEntry`]    | `OSSL_ALGORITHM` (`core_dispatch.h`)                   |
-//! | [`initialize()`]          | `OSSL_provider_init_int()` (`fipsprov.c` lines 870–1086)|
-//! | [`query_algorithms()`]    | `fips_query()` (`fipsprov.c` lines 714–765)            |
-//! | [`run_deferred_test()`]   | `ossl_deferred_self_test()` (fipsprov.c lines 1464–1498)|
+//! | `FipsAlgorithmEntry`    | `OSSL_ALGORITHM` (`core_dispatch.h`)                   |
+//! | `initialize()`          | `OSSL_provider_init_int()` (`fipsprov.c` lines 870–1086)|
+//! | `query_algorithms()`    | `fips_query()` (`fipsprov.c` lines 714–765)            |
+//! | `run_deferred_test()`   | `ossl_deferred_self_test()` (fipsprov.c lines 1464–1498)|
 //!
 //! # Rules
 //!
@@ -303,7 +303,7 @@ impl Default for FipsIndicatorConfig {
 ///
 /// Holds provider metadata, self-test configuration, indicator parameters, and
 /// the deferred-test serialization lock. An instance is created during
-/// [`initialize()`] and shared (via `Arc`) across all algorithm dispatch contexts.
+/// `initialize()` and shared (via `Arc`) across all algorithm dispatch contexts.
 ///
 /// **Rule R7:** `deferred_lock` carries a `// LOCK-SCOPE:` annotation.
 ///
@@ -974,7 +974,7 @@ pub static FIPS_SKEYMGMT: Lazy<Vec<FipsAlgorithmEntry>> = Lazy::new(|| {
 ///
 /// All algorithm table entries are reachable from this function via the
 /// `OperationType` enum match. The function itself is reachable from the
-/// provider dispatch table returned by [`initialize()`].
+/// provider dispatch table returned by `initialize()`.
 #[instrument(skip_all, fields(operation = %operation))]
 pub fn query_algorithms(operation: OperationType) -> &'static [FipsAlgorithmEntry] {
     debug!("Querying FIPS algorithms for operation: {}", operation);
@@ -1061,7 +1061,7 @@ pub fn gettable_params() -> &'static [&'static str] {
 
 /// Retrieves the current parameter values from the FIPS provider.
 ///
-/// Returns a [`ParamSet`] containing the provider name, version, build info,
+/// Returns a `ParamSet` containing the provider name, version, build info,
 /// operational status, and all 27 indicator configuration values.
 ///
 /// # C Mapping
@@ -1173,7 +1173,7 @@ fn bool_to_i32(b: bool) -> i32 {
 /// in the C implementation. It:
 ///
 /// 1. Creates a [`FipsGlobal`] instance with default values.
-/// 2. Extracts self-test parameters from the provided config [`ParamSet`].
+/// 2. Extracts self-test parameters from the provided config `ParamSet`.
 /// 3. Extracts all 27 indicator configuration parameters.
 /// 4. Transitions the module state to `SelfTesting`.
 /// 5. Executes the Power-On Self-Test via [`crate::kats::run_all_kats()`].
@@ -1257,7 +1257,7 @@ pub fn initialize(config: &ParamSet) -> FipsResult<FipsGlobal> {
     Ok(global)
 }
 
-/// Extracts self-test parameters from the config [`ParamSet`] into
+/// Extracts self-test parameters from the config `ParamSet` into
 /// [`SelfTestPostParams`].
 ///
 /// Reads optional string values for module filename, checksum data, indicator
@@ -1310,7 +1310,7 @@ fn extract_selftest_params(config: &ParamSet, params: &mut SelfTestPostParams) {
 }
 
 /// Extracts all 27 FIPS indicator configuration parameters from the config
-/// [`ParamSet`] into [`FipsIndicatorConfig`].
+/// `ParamSet` into `FipsIndicatorConfig`.
 ///
 /// For each indicator, if the key is present in the config as a `Utf8String`,
 /// its value is stored in the option and `apply_config()` sets the enabled flag.
@@ -1443,7 +1443,7 @@ fn extract_single_indicator(config: &ParamSet, key: &str, opt: &mut FipsOption) 
 
 /// Internal initialization for recursive EVP calls within the FIPS module.
 ///
-/// Unlike [`initialize()`], this does not run the POST or extract configuration
+/// Unlike `initialize()`, this does not run the POST or extract configuration
 /// parameters. It verifies the module is already operational and returns success,
 /// allowing internal algorithm fetches to proceed without re-initialization.
 ///

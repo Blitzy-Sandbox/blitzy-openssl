@@ -34,8 +34,8 @@
 //! ## BLAKE2b backend
 //!
 //! All cryptographic hashing routes through the provider framework's
-//! [`MessageDigest`] / [`MdContext`] primitives with the canonical name
-//! [`BLAKE2B512`].  This mirrors the sibling PBKDF1 implementation
+//! `MessageDigest` / `MdContext` primitives with the canonical name
+//! `BLAKE2B512`.  This mirrors the sibling PBKDF1 implementation
 //! ([`crate::implementations::kdfs::pbkdf1`]) and keeps algorithm selection
 //! under the control of the provider framework — no direct `blake2`/`sha2`
 //! crate use.  Keyed BLAKE2b (BLAKE2BMAC) is *not* required by the RFC 9106
@@ -47,7 +47,7 @@
 //! `MAX_MEMORY_KIB × 1024` bytes — 4 GiB upper bound).  The working
 //! buffer is a `Vec<Argon2Block>` (not a raw byte buffer) so accidental
 //! misalignment is impossible and the compiler can vectorise u64 access.
-//! The [`Zeroize`] trait scrubs secrets on drop.
+//! The `Zeroize` trait scrubs secrets on drop.
 //!
 //! ## Rules compliance
 //!
@@ -61,12 +61,12 @@
 //! | R7   | Per-context memory (no globals) — no lock needed                    |
 //! | R8   | ZERO `unsafe` in this module                                        |
 //! | R9   | `#![deny(missing_docs)]` honoured — every `pub` item is documented  |
-//! | R10  | Reachable from `DefaultProvider` via [`descriptors()`]              |
+//! | R10  | Reachable from `DefaultProvider` via `descriptors()`              |
 //!
 //! ## Observability
 //!
-//! - `#[instrument]` spans on [`Argon2Context::derive`] and
-//!   [`Argon2Context::set_params`] carry the selected variant.
+//! - `#[instrument]` spans on `Argon2Context::derive` and
+//!   `Argon2Context::set_params` carry the selected variant.
 //! - `debug!` on lifecycle events (construction, reset, provider creation).
 //! - `trace!` inside hot loops (`fill_segment`, `blake2b_long` iterative
 //!   phase) — gated off in release builds unless the tracing subscriber
@@ -87,8 +87,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 // Error helpers
 // =============================================================================
 
-/// Converts a [`CryptoError`] from a [`MessageDigest::fetch`] /
-/// [`MdContext`] call into a [`ProviderError::Dispatch`].
+/// Converts a [`CryptoError`] from a `MessageDigest::fetch` /
+/// `MdContext` call into a `ProviderError::Dispatch`.
 ///
 /// Mirrors the canonical pattern used in
 /// [`crate::implementations::kdfs::pbkdf1::dispatch_err`].
@@ -414,13 +414,13 @@ const ADDRESSES_IN_BLOCK_U32: u32 = 128;
 /// ```
 ///
 /// All secret-bearing fields (`password`, `secret`) implement
-/// [`Zeroize`] and are scrubbed when the context is dropped, per the
+/// `Zeroize` and are scrubbed when the context is dropped, per the
 /// RFC 9106 §10 memory-hygiene guidance.  The `salt` and `ad` fields
 /// are not secret by definition, so they are cleared on reset but not
 /// derived via `#[zeroize]` — clearing is sufficient.
 ///
 /// The memory matrix is held outside the struct (allocated afresh for
-/// each [`Argon2Context::derive`] call) so that the context itself stays
+/// each `Argon2Context::derive` call) so that the context itself stays
 /// small (≈256 bytes) and idle contexts do not pin large allocations.
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Argon2Context {
@@ -467,8 +467,8 @@ impl Argon2Context {
     /// RFC 9106 default parameter values.
     ///
     /// The caller must subsequently supply at least `password` and
-    /// `salt` via [`Argon2Context::set_params`] (or as part of the
-    /// `params` argument to [`Argon2Context::derive`]) before calling
+    /// `salt` via `Argon2Context::set_params` (or as part of the
+    /// `params` argument to `Argon2Context::derive`) before calling
     /// `derive`.
     fn new(variant: Argon2Variant) -> Self {
         debug!(variant = %variant, "Argon2Context::new");
@@ -626,7 +626,7 @@ impl Argon2Context {
 
     /// Validates that the parameter combination is well-formed and that
     /// all required fields are present.  Does *not* allocate memory —
-    /// that happens in [`Self::derive_internal`] after the ceiling
+    /// that happens in `Self::derive_internal` after the ceiling
     /// [`MAX_MEMORY_KIB`] has been enforced here.
     fn validate(&self) -> ProviderResult<()> {
         if self.password.is_empty() {
@@ -717,7 +717,7 @@ impl Argon2Context {
     /// into `output`.  Returns the number of bytes written (equal to
     /// `output.len()` on success).
     ///
-    /// **Preconditions:** [`validate`](Self::validate) must have been
+    /// **Preconditions:** `validate` must have been
     /// called so that `password`, `salt`, `lanes`, `m_cost`, `t_cost`,
     /// `version`, and `out_len` are in-range.  The effective output
     /// length is `output.len()` — `self.out_len` is ignored by this
@@ -906,7 +906,7 @@ impl Argon2Context {
     }
 }
 
-/// Extract a `u32` from a [`ParamValue`] that may be encoded as either
+/// Extract a `u32` from a `ParamValue` that may be encoded as either
 /// `UInt32` or `UInt64` — the provider framework accepts both and
 /// higher-level callers vary in which they emit.  Returns
 /// `ProviderError::Common(CommonError::InvalidArgument)` for unexpected
@@ -935,7 +935,7 @@ fn extract_u32(val: &openssl_common::param::ParamValue, key: &str) -> ProviderRe
 ///
 /// This is factored into its own function because every stage of Argon2
 /// (initial hash, block seeding, finalisation) needs a fresh handle.
-/// The [`MessageDigest`] itself is cheap to clone within a single
+/// The `MessageDigest` itself is cheap to clone within a single
 /// derivation (it is just a descriptor), but it *cannot* be created
 /// without a library context.
 #[inline]
@@ -981,7 +981,7 @@ fn blake2b_oneshot(digest: &MessageDigest, data: &[&[u8]]) -> ProviderResult<Vec
 ///
 /// # Errors
 ///
-/// Returns [`ProviderError::Dispatch`] if the `BLAKE2b` fetch or any of
+/// Returns `ProviderError::Dispatch` if the `BLAKE2b` fetch or any of
 /// the digest operations fails — i.e. this can only happen when the
 /// provider framework is misconfigured or `LibContext` is missing the
 /// default provider.
@@ -1650,7 +1650,7 @@ impl KdfContext for Argon2Context {
     /// Derives an Argon2 digest of length `key.len()` into `key`.
     ///
     /// If `params` is non-empty, parameters are applied via
-    /// [`Argon2Context::apply_params`] before derivation — this lets
+    /// `Argon2Context::apply_params` before derivation — this lets
     /// callers set password / salt / cost parameters in the same call.
     /// `self.out_len` is overridden by `key.len()` so the caller's
     /// buffer size always wins (the explicit `"size"` parameter is
@@ -1663,12 +1663,12 @@ impl KdfContext for Argon2Context {
     ///   set (via `set_params` or the `params` argument).
     /// - [`ProviderError::Common(CommonError::InvalidArgument)`] if any
     ///   cost/size parameter is out of RFC 9106 range or if `key.len()`
-    ///   is below [`MIN_OUT_LENGTH`] (4 bytes).
+    ///   is below `MIN_OUT_LENGTH` (4 bytes).
     /// - [`ProviderError::Common(CommonError::CastOverflow)`] if
     ///   `key.len()` does not fit in `u32`.
     /// - [`ProviderError::Common(CommonError::ArithmeticOverflow)`] for
     ///   internal index overflow during memory matrix addressing.
-    /// - [`ProviderError::Dispatch`] for BLAKE2b-512 fetch / update /
+    /// - `ProviderError::Dispatch` for BLAKE2b-512 fetch / update /
     ///   finalise failures (indicates a misconfigured `LibContext`).
     #[instrument(
         skip(self, key, params),
@@ -1698,7 +1698,7 @@ impl KdfContext for Argon2Context {
     /// variant pinned.
     ///
     /// All key-dependent fields (password, secret, salt, associated
-    /// data) are scrubbed via [`Zeroize::zeroize`] before being cleared,
+    /// data) are scrubbed via `Zeroize::zeroize` before being cleared,
     /// matching OpenSSL's `kdf_argon2_reset` which calls
     /// `OPENSSL_cleanse` followed by `OPENSSL_clear_free` on each
     /// allocated buffer.  The variant (Argon2d/Argon2i/Argon2id) is
@@ -1739,7 +1739,7 @@ impl KdfContext for Argon2Context {
         Ok(())
     }
 
-    /// Returns a [`ParamSet`] containing the current numeric parameters
+    /// Returns a `ParamSet` containing the current numeric parameters
     /// of the context: `size`, `iter`, `memcost`, `lanes`, `threads`,
     /// `version`.
     ///
@@ -1761,7 +1761,7 @@ impl KdfContext for Argon2Context {
     }
 
     /// Applies a fresh set of parameters, overriding whatever was
-    /// previously set.  See [`Argon2Context::apply_params`] for the
+    /// previously set.  See `Argon2Context::apply_params` for the
     /// recognised key / value schema.
     #[instrument(skip(self, params), fields(variant = %self.variant))]
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {

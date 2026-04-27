@@ -10,7 +10,7 @@
 //! OpenSSL configuration files are INI-style text files organized into sections
 //! (`[section_name]`) containing key=value pairs. The C implementation stores
 //! these in an `LHASH_OF(CONF_VALUE)` hash table; this Rust translation uses
-//! nested [`HashMap`]s for clarity and safety.
+//! nested `HashMap`s for clarity and safety.
 //!
 //! # Parser Features
 //!
@@ -27,7 +27,7 @@
 //!
 //! # Config Module System
 //!
-//! The [`ConfigModule`] trait and [`ConfigModuleRegistry`] replicate the C
+//! The `ConfigModule` trait and `ConfigModuleRegistry` replicate the C
 //! `CONF_MODULE` / `CONF_IMODULE` runtime from `crypto/conf/conf_mod.c`,
 //! allowing subsystems to register configuration handlers that are invoked
 //! during config loading.
@@ -36,16 +36,16 @@
 //!
 //! | C Construct                | Rust Equivalent                          |
 //! |----------------------------|------------------------------------------|
-//! | `CONF` / `NCONF`           | [`Config`]                               |
-//! | `CONF_VALUE`               | [`ConfValue`]                            |
-//! | `_CONF_get_string()`       | [`Config::get_string()`]                 |
-//! | `_CONF_get_section()`      | [`Config::get_section()`]                |
-//! | `_CONF_add_string()`       | [`Config::set_string()`]                 |
-//! | `NCONF_load()`             | [`ConfigParser::parse_file()`]           |
-//! | `NCONF_load_bio()`         | [`ConfigParser::parse_reader()`]         |
-//! | `CONF_modules_load()`      | [`ConfigModuleRegistry::load_modules()`] |
-//! | `CONF_get1_default_config_file()` | [`get_default_config_path()`]     |
-//! | `MAX_CONF_VALUE_LENGTH`    | [`MAX_CONF_VALUE_LENGTH`]                |
+//! | `CONF` / `NCONF`           | `Config`                               |
+//! | `CONF_VALUE`               | `ConfValue`                            |
+//! | `_CONF_get_string()`       | `Config::get_string()`                 |
+//! | `_CONF_get_section()`      | `Config::get_section()`                |
+//! | `_CONF_add_string()`       | `Config::set_string()`                 |
+//! | `NCONF_load()`             | `ConfigParser::parse_file()`           |
+//! | `NCONF_load_bio()`         | `ConfigParser::parse_reader()`         |
+//! | `CONF_modules_load()`      | `ConfigModuleRegistry::load_modules()` |
+//! | `CONF_get1_default_config_file()` | `get_default_config_path()`     |
+//! | `MAX_CONF_VALUE_LENGTH`    | `MAX_CONF_VALUE_LENGTH`                |
 //!
 //! # Rules Enforced
 //!
@@ -103,7 +103,7 @@ const DEFAULT_SECTION: &str = "default";
 ///
 /// In the C implementation, `CONF_VALUE` is stored in an
 /// `LHASH_OF(CONF_VALUE)` keyed by `(section, name)`. Here, the owning
-/// [`Config`] stores values in nested `HashMap`s, and `ConfValue` serves
+/// `Config` stores values in nested `HashMap`s, and `ConfValue` serves
 /// as a convenient transport type for returning complete entries.
 ///
 /// # Examples
@@ -140,7 +140,7 @@ pub struct ConfValue {
 ///
 /// # Lookup Precedence
 ///
-/// [`Config::get_string()`] follows the same precedence as the C
+/// `Config::get_string()` follows the same precedence as the C
 /// `_CONF_get_string()` function in `crypto/conf/conf_api.c`:
 ///
 /// 1. Look up in the explicitly requested section.
@@ -385,7 +385,7 @@ impl ConfigParser {
     ///
     /// Opens the file at `path`, wraps it in a [`BufReader`], and delegates
     /// to [`parse_reader()`](Self::parse_reader). Returns the fully parsed
-    /// [`Config`] on success.
+    /// `Config` on success.
     ///
     /// Replaces `NCONF_load()` / `def_load()` from `crypto/conf/conf_def.c`.
     ///
@@ -1164,7 +1164,7 @@ pub trait ConfigModule: Send + Sync {
 
     /// Initializes the module with configuration data from the given section.
     ///
-    /// Called during [`ConfigModuleRegistry::load_modules()`] when a
+    /// Called during `ConfigModuleRegistry::load_modules()` when a
     /// matching section reference is found. Corresponds to
     /// `conf_init_func` in C.
     ///
@@ -1352,7 +1352,7 @@ pub fn load_config(path: &Path) -> Result<Config, CommonError> {
 /// followed by `NCONF_load()` with fallback to empty config on
 /// `CONF_R_NO_SUCH_FILE`.
 ///
-/// The default path is determined by [`get_default_config_path()`]:
+/// The default path is determined by `get_default_config_path()`:
 ///
 /// 1. `$OPENSSL_CONF` environment variable.
 /// 2. Platform-specific default (`/etc/ssl/openssl.cnf` on Unix).

@@ -419,7 +419,7 @@ pub trait Asn1Item: Sized + fmt::Debug {
     ///
     /// # Errors
     ///
-    /// Returns [`CryptoError::Encoding`] if the value cannot be encoded
+    /// Returns `CryptoError::Encoding` if the value cannot be encoded
     /// (e.g., length overflow, invalid content).
     fn encode_der(&self) -> CryptoResult<Vec<u8>>;
 
@@ -430,9 +430,9 @@ pub trait Asn1Item: Sized + fmt::Debug {
     ///
     /// # Errors
     ///
-    /// - [`CryptoError::Encoding`] for malformed input (bad tag, invalid
+    /// - `CryptoError::Encoding` for malformed input (bad tag, invalid
     ///   length, truncated data).
-    /// - [`CryptoError::Encoding`] if the content fails type-specific
+    /// - `CryptoError::Encoding` if the content fails type-specific
     ///   validation (e.g., invalid UTF-8 in a `UTF8String`).
     fn decode_der(data: &[u8]) -> CryptoResult<Self>;
 
@@ -713,8 +713,8 @@ pub fn encode_item_ndef<T: Asn1Item>(value: &T) -> CryptoResult<Vec<u8>> {
 ///
 /// # Errors
 ///
-/// - [`CryptoError::Encoding`] for malformed input.
-/// - [`CryptoError::Encoding`] with a [`Asn1Error::NestingDepthExceeded`]
+/// - `CryptoError::Encoding` for malformed input.
+/// - `CryptoError::Encoding` with a [`Asn1Error::NestingDepthExceeded`]
 ///   source when constructed nesting exceeds [`MAX_CONSTRUCTED_NEST`].
 pub fn decode_item<T: Asn1Item>(data: &[u8]) -> CryptoResult<T> {
     decode_item_with_depth::<T>(data, 0)
@@ -735,7 +735,7 @@ pub fn decode_item<T: Asn1Item>(data: &[u8]) -> CryptoResult<T> {
 /// # Errors
 ///
 /// Returns [`Asn1Error::NestingDepthExceeded`] (converted via
-/// [`From`] to [`CryptoError::Encoding`]) when `current_depth` meets or
+/// [`From`] to `CryptoError::Encoding`) when `current_depth` meets or
 /// exceeds [`MAX_CONSTRUCTED_NEST`].
 pub fn decode_item_with_depth<T: Asn1Item>(data: &[u8], current_depth: usize) -> CryptoResult<T> {
     if current_depth >= MAX_CONSTRUCTED_NEST {
@@ -1091,7 +1091,7 @@ pub fn pack_item<T: Asn1Item>(value: &T) -> CryptoResult<Vec<u8>> {
 /// # Errors
 ///
 /// Propagates the error returned by [`Asn1Item::decode_der`], typically
-/// [`CryptoError::Encoding`] for malformed input.
+/// `CryptoError::Encoding` for malformed input.
 pub fn unpack_item<T: Asn1Item>(data: &[u8]) -> CryptoResult<T> {
     T::decode_der(data)
 }

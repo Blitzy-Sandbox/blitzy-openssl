@@ -1,26 +1,26 @@
 //! Elliptic Curve operations for the OpenSSL Rust workspace.
 //!
 //! Provides the foundational types for elliptic curve cryptography:
-//! - [`EcGroup`] — Curve parameters (replaces C `EC_GROUP`)
-//! - [`EcPoint`] — Point on a curve (replaces C `EC_POINT`)
-//! - [`EcKey`] — EC key pair (replaces C `EC_KEY`)
+//! - `EcGroup` — Curve parameters (replaces C `EC_GROUP`)
+//! - `EcPoint` — Point on a curve (replaces C `EC_POINT`)
+//! - `EcKey` — EC key pair (replaces C `EC_KEY`)
 //!
 //! Submodules:
-//! - [`ecdsa`] — ECDSA sign/verify operations
-//! - [`ecdh`] — ECDH key exchange
-//! - [`curve25519`] — X25519/Ed25519/X448/Ed448 primitives
+//! - `ecdsa` — ECDSA sign/verify operations
+//! - `ecdh` — ECDH key exchange
+//! - `curve25519` — X25519/Ed25519/X448/Ed448 primitives
 //!
 //! ## Named Curves
 //!
-//! The short-Weierstrass curve catalog ([`NamedCurve`]) enumerates only
+//! The short-Weierstrass curve catalog (`NamedCurve`) enumerates only
 //! curves with built-in parameter implementations: NIST P-256, P-384,
 //! P-521, and secp256k1. The enum is `#[non_exhaustive]` so additional
 //! curves can be added without breaking changes once their parameter
 //! sets and arithmetic are implemented.
 //!
 //! Curve25519-family primitives (X25519, X448, Ed25519, Ed448) are
-//! deliberately **not** members of [`NamedCurve`]: they are handled by
-//! the [`curve25519`] submodule using a separate [`EcxKeyType`] enum,
+//! deliberately **not** members of `NamedCurve`: they are handled by
+//! the `curve25519` submodule using a separate `EcxKeyType` enum,
 //! because they are Montgomery / Edwards curves rather than short-
 //! Weierstrass and use a distinct arithmetic stack.
 //!
@@ -58,7 +58,7 @@ pub use ecdsa::{EcdsaSignature, NonceType};
 /// Replaces C curve NIDs from `crypto/ec/ec_curve.c`. Each variant maps
 /// to a set of built-in curve parameters (field prime, coefficients a/b,
 /// generator coordinates, order, and cofactor) loaded by
-/// [`load_curve_params`].
+/// `load_curve_params`.
 ///
 /// # Catalog membership rule (AAP §0.7.x, AAP rule R5)
 ///
@@ -66,7 +66,7 @@ pub use ecdsa::{EcdsaSignature, NonceType};
 /// implementations and arithmetic support in this crate. Curves whose
 /// parameter sets are not yet built in are intentionally **absent** from
 /// the enum so that compile-time matching is exhaustive at the call sites
-/// of [`load_curve_params`]. This honors AAP rule R5 ("no placeholders"):
+/// of `load_curve_params`. This honors AAP rule R5 ("no placeholders"):
 /// the absence of an `_ =>` Err arm at the enumerator level reflects the
 /// absence of placeholder code paths.
 ///
@@ -1052,7 +1052,7 @@ fn ct_swap_points(a: &mut EcPoint, b: &mut EcPoint, group: &EcGroup, choice: Cho
 
 /// EC key pair — the Rust equivalent of C `EC_KEY`.
 ///
-/// Private key material is securely zeroed on drop via [`Zeroize`].
+/// Private key material is securely zeroed on drop via [`zeroize::Zeroize`].
 /// Replaces `struct ec_key_st` from `crypto/ec/ec_local.h` lines 294–312.
 ///
 /// # Security

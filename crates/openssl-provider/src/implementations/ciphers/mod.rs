@@ -8,22 +8,22 @@
 //!
 //! | Module | Algorithm | C Source Files | Key Sizes |
 //! |--------|-----------|---------------|-----------|
-//! | [`common`] | Shared infrastructure | `ciphercommon*.c` (8 files) | — |
-//! | [`aes`] | AES ECB/CBC/OFB/CFB/CTR/CTS | `cipher_aes*.c` (4 files) | 128/192/256 |
-//! | [`aes_gcm`] | AES-GCM AEAD | `cipher_aes_gcm*.c` + `ciphercommon_gcm*.c` | 128/192/256 |
-//! | [`aes_ccm`] | AES-CCM AEAD | `cipher_aes_ccm*.c` + `ciphercommon_ccm*.c` | 128/192/256 |
-//! | [`aes_ocb`] | AES-OCB AEAD | `cipher_aes_ocb*.c` | 128/192/256 |
-//! | [`aes_siv`] | AES-SIV / AES-GCM-SIV | `cipher_aes_siv*.c` + `cipher_aes_gcm_siv*.c` | 128/192/256 |
-//! | [`aes_xts`] | AES-XTS | `cipher_aes_xts*.c` | 128/256 |
-//! | [`aes_wrap`] | AES Key Wrap | `cipher_aes_wrp.c` | 128/192/256 |
-//! | [`aes_cbc_hmac`] | AES-CBC-HMAC composite | `cipher_aes_cbc_hmac*.c` (7 files) | 128/256 |
-//! | [`chacha20`] | ChaCha20 / ChaCha20-Poly1305 | `cipher_chacha20*.c` (4 files) | 256 |
-//! | [`des`] | DES / 3DES / DESX / TDES Wrap | `cipher_des*.c` + `cipher_tdes*.c` (11 files) | 64/128/192 |
-//! | [`camellia`] | Camellia | `cipher_camellia*.c` (3 files) | 128/192/256 |
-//! | [`aria`] | ARIA + GCM/CCM | `cipher_aria*.c` (6 files) | 128/192/256 |
-//! | [`sm4`] | SM4 + GCM/CCM/XTS | `cipher_sm4*.c` (8 files) | 128 |
-//! | [`null`] | NULL cipher | `cipher_null.c` | 0 |
-//! | [`legacy`] | BF/CAST5/IDEA/SEED/RC2/RC4/RC5 | 16+ C files | variable |
+//! | `common` | Shared infrastructure | `ciphercommon*.c` (8 files) | — |
+//! | `aes` | AES ECB/CBC/OFB/CFB/CTR/CTS | `cipher_aes*.c` (4 files) | 128/192/256 |
+//! | `aes_gcm` | AES-GCM AEAD | `cipher_aes_gcm*.c` + `ciphercommon_gcm*.c` | 128/192/256 |
+//! | `aes_ccm` | AES-CCM AEAD | `cipher_aes_ccm*.c` + `ciphercommon_ccm*.c` | 128/192/256 |
+//! | `aes_ocb` | AES-OCB AEAD | `cipher_aes_ocb*.c` | 128/192/256 |
+//! | `aes_siv` | AES-SIV / AES-GCM-SIV | `cipher_aes_siv*.c` + `cipher_aes_gcm_siv*.c` | 128/192/256 |
+//! | `aes_xts` | AES-XTS | `cipher_aes_xts*.c` | 128/256 |
+//! | `aes_wrap` | AES Key Wrap | `cipher_aes_wrp.c` | 128/192/256 |
+//! | `aes_cbc_hmac` | AES-CBC-HMAC composite | `cipher_aes_cbc_hmac*.c` (7 files) | 128/256 |
+//! | `chacha20` | ChaCha20 / ChaCha20-Poly1305 | `cipher_chacha20*.c` (4 files) | 256 |
+//! | `des` | DES / 3DES / DESX / TDES Wrap | `cipher_des*.c` + `cipher_tdes*.c` (11 files) | 64/128/192 |
+//! | `camellia` | Camellia | `cipher_camellia*.c` (3 files) | 128/192/256 |
+//! | `aria` | ARIA + GCM/CCM | `cipher_aria*.c` (6 files) | 128/192/256 |
+//! | `sm4` | SM4 + GCM/CCM/XTS | `cipher_sm4*.c` (8 files) | 128 |
+//! | `null` | NULL cipher | `cipher_null.c` | 0 |
+//! | `legacy` | BF/CAST5/IDEA/SEED/RC2/RC4/RC5 | 16+ C files | variable |
 //!
 //! ## Architecture
 //!

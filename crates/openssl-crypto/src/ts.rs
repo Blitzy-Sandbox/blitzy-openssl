@@ -8,11 +8,11 @@
 //!
 //! | C File                   | Rust Equivalent                             |
 //! |--------------------------|---------------------------------------------|
-//! | `ts_req_utils.c`         | [`TsRequest`], [`TsRequestBuilder`]         |
-//! | `ts_rsp_utils.c`         | [`TsResponse`], [`TsTokenInfo`], [`TsStatus`], [`TsAccuracy`] |
-//! | `ts_rsp_sign.c`          | Response signing (via [`TsTokenInfo`] builder) |
-//! | `ts_rsp_verify.c`        | [`verify()`], status checking, imprint comparison |
-//! | `ts_verify_ctx.c`        | [`TsVerifyContext`]                         |
+//! | `ts_req_utils.c`         | `TsRequest`, `TsRequestBuilder`             |
+//! | `ts_rsp_utils.c`         | `TsResponse`, `TsTokenInfo`, `TsStatus`, `TsAccuracy` |
+//! | `ts_rsp_sign.c`          | Response signing (via `TsTokenInfo` builder) |
+//! | `ts_rsp_verify.c`        | `verify()`, status checking, imprint comparison |
+//! | `ts_verify_ctx.c`        | `TsVerifyContext`                           |
 //! | `ts_lib.c`               | Display impls, utility formatting           |
 //! | `ts_conf.c`              | TSA configuration via serde deserialization  |
 //! | `ts_err.c`               | Error strings → [`CryptoError`] variants    |
@@ -22,14 +22,14 @@
 //! The Time-Stamp Protocol provides evidence that a datum existed before a
 //! particular time.  The protocol involves:
 //!
-//! 1. **Request** — A client constructs a [`TsRequest`] containing the hash
+//! 1. **Request** — A client constructs a `TsRequest` containing the hash
 //!    of the data to timestamp, an optional nonce, policy OID, and certificate
 //!    request flag.
-//! 2. **Response** — A Time Stamping Authority (TSA) returns a [`TsResponse`]
-//!    containing a [`TsStatus`] and, if successful, a [`TsTokenInfo`] with
+//! 2. **Response** — A Time Stamping Authority (TSA) returns a `TsResponse`
+//!    containing a `TsStatus` and, if successful, a `TsTokenInfo` with
 //!    the TSA's signed assertion of the generation time.
 //! 3. **Verification** — The client verifies the response using a
-//!    [`TsVerifyContext`] that checks version, policy, message imprint,
+//!    `TsVerifyContext` that checks version, policy, message imprint,
 //!    nonce, and optionally the TSA name and signature.
 //!
 //! # Rules Enforced

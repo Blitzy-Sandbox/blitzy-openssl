@@ -3,22 +3,22 @@
 //! This module is the Rust translation of `ssl/ssl_ciph.c` (2,322 `LoC`) —
 //! the central cipher-suite subsystem for `libssl`. It provides:
 //!
-//! 1. A strongly-typed [`CipherSuite`] record describing every IANA-registered
+//! 1. A strongly-typed `CipherSuite` record describing every IANA-registered
 //!    and OpenSSL-supported TLS / DTLS cipher suite (replacing the C
 //!    `SSL_CIPHER` struct in `ssl/ssl_local.h`).
-//! 2. A static [`CIPHER_CATALOG`] enumerating the well-known cipher suites
+//! 2. A static `CIPHER_CATALOG` enumerating the well-known cipher suites
 //!    historically compiled into `ssl3_ciphers[]` in `ssl/s3_lib.c`, plus a
-//!    dedicated [`TLS13_CIPHERS`] table for the RFC 8446 v1.3 set.
-//! 3. A rule-string parser — [`parse_cipher_rule_string`] — that replicates
+//!    dedicated `TLS13_CIPHERS` table for the RFC 8446 v1.3 set.
+//! 3. A rule-string parser — `parse_cipher_rule_string` — that replicates
 //!    OpenSSL's `ssl_cipher_process_rulestr()` semantics: the `+`, `-`, `!`
 //!    operators, the `@STRENGTH` and `@SECLEVEL=N` directives, multi-clause
 //!    expressions (`kRSA+AESGCM+SHA256`), and the full set of aliases
 //!    (`ALL`, `HIGH`, `MEDIUM`, `eNULL`, `kRSA`, `aECDSA`, and so on).
-//! 4. A [`CipherList`] container holding the ordered preference list for a
+//! 4. A `CipherList` container holding the ordered preference list for a
 //!    single SSL context, with `set_cipher_list()` (TLS ≤ 1.2) and
 //!    `set_ciphersuites()` (TLS 1.3) entry points.
-//! 5. A per-SSL-context [`CipherEvpCache`] caching provider-fetched
-//!    [`Cipher`] / [`MessageDigest`] handles for each active cipher suite —
+//! 5. A per-SSL-context `CipherEvpCache` caching provider-fetched
+//!    `Cipher` / `MessageDigest` handles for each active cipher suite —
 //!    the direct analogue of `ssl_load_ciphers()` / `ssl_cipher_get_evp()`
 //!    in the C source.
 //!
@@ -29,9 +29,9 @@
 //! * **R6** — every integer narrowing goes through `u32::try_from` /
 //!   `usize::try_from`; there is no bare `as` narrowing cast anywhere in this
 //!   file.  Cipher IDs and bit counts are `u32`.
-//! * **R7** — the [`CIPHER_CATALOG`] and [`TLS13_CIPHERS`] arrays are
+//! * **R7** — the `CIPHER_CATALOG` and `TLS13_CIPHERS` arrays are
 //!   immutable `&'static` data (`LOCK-SCOPE: none — immutable catalog`).
-//!   The [`CipherEvpCache`] uses a `parking_lot::RwLock` annotated with
+//!   The `CipherEvpCache` uses a `parking_lot::RwLock` annotated with
 //!   `LOCK-SCOPE: per-SSL_CTX cipher cache, read-heavy, rare write on first
 //!   use` to match its contention profile.
 //! * **R8** — this file contains zero `unsafe` blocks.
@@ -63,7 +63,7 @@ use crate::method::ProtocolVersion;
 // These are u32 flags combined bit-wise in the C cipher_aliases[] table; we
 // mirror them verbatim so the rule-string parser can evaluate the same
 // expressions.  Every mask is `pub(crate)` (implementation detail) — callers
-// obtain the typed [`KeyExchangeAlgorithm`] projection instead.
+// obtain the typed `KeyExchangeAlgorithm` projection instead.
 // ---------------------------------------------------------------------------
 
 /// RSA key transport (historical `SSL_kRSA`).
@@ -514,7 +514,7 @@ impl EncryptionAlgorithm {
         }
     }
 
-    /// Provider-side algorithm name passed to [`Cipher::fetch`].
+    /// Provider-side algorithm name passed to `Cipher::fetch`.
     ///
     /// These strings are the canonical algorithm identifiers accepted by the
     /// default provider's `OSSL_ALGORITHM` tables; they correspond to the
@@ -606,7 +606,7 @@ impl MacAlgorithm {
         }
     }
 
-    /// Provider-side digest name passed to [`MessageDigest::fetch`].
+    /// Provider-side digest name passed to `MessageDigest::fetch`.
     #[must_use]
     pub const fn provider_name(self) -> Option<&'static str> {
         match self {
@@ -640,7 +640,7 @@ pub const DEFAULT_TLS13_CIPHER_LIST: &str =
 /// algorithm combination (key-exchange, authentication, symmetric cipher, MAC),
 /// its wire-encoded identifier, and protocol-version bounds.
 ///
-/// Instances live in the static [`CIPHER_CATALOG`] and [`TLS13_CIPHERS`]
+/// Instances live in the static `CIPHER_CATALOG` and `TLS13_CIPHERS`
 /// tables and are referenced by `&'static CipherSuite` throughout the rest of
 /// the crate.
 ///
@@ -746,7 +746,7 @@ impl CipherSuite {
     /// Equivalent to `SSL_CIPHER_get_version()`. Returns the canonical string
     /// form (`"TLSv1.3"`, `"TLSv1.2"`, `"SSLv3"`, `"TLSv1.0"`, etc.).
     ///
-    /// This is the schema-mandated accessor name. A synonymous [`version`]
+    /// This is the schema-mandated accessor name. A synonymous `version`
     /// accessor is also provided for idiomatic Rust callers.
     ///
     /// [`version`]: Self::version
@@ -1953,11 +1953,11 @@ fn find_cipher_by_name(name: &str) -> Option<&'static CipherSuite> {
 }
 
 /// Look up a cipher suite by its 32-bit cipher ID in the union of
-/// [`CIPHER_CATALOG`] and [`TLS13_CIPHERS`].
+/// `CIPHER_CATALOG` and `TLS13_CIPHERS`.
 ///
 /// This is the module-level Rust equivalent of C's `ssl3_get_cipher_by_id()`.
 /// It searches the entire static catalog regardless of whether the suite is
-/// configured in any particular [`CipherList`]; use [`CipherList::get_by_id`]
+/// configured in any particular `CipherList`; use [`CipherList::get_by_id`]
 /// to restrict the search to a specific context's configured preferences.
 #[must_use]
 pub fn find_cipher_by_id(id: u32) -> Option<&'static CipherSuite> {
@@ -2221,7 +2221,7 @@ impl CipherList {
     /// of cipher names.
     ///
     /// TLS 1.3 uses a simpler syntax than the full cipher rule string — each
-    /// token is an explicit cipher name drawn from [`TLS13_CIPHERS`].
+    /// token is an explicit cipher name drawn from `TLS13_CIPHERS`.
     ///
     /// # Errors
     /// Returns `SslError::Protocol` if any token does not name a known
@@ -2310,14 +2310,14 @@ impl CipherList {
 /// Per-`SSL_CTX` cache of fetched provider-backed EVP ciphers and digests.
 ///
 /// When the TLS stack needs to encrypt or decrypt records for a negotiated
-/// cipher suite, it invokes [`Cipher::fetch`] and [`MessageDigest::fetch`]
+/// cipher suite, it invokes `Cipher::fetch` and `MessageDigest::fetch`
 /// against the library's provider registry.  Repeated fetches for the same
 /// algorithm are avoided via this cache — the very first encryption after a
 /// cipher is negotiated performs the fetch and stores the result; subsequent
 /// records reuse the cached handle.
 ///
 /// # Concurrency
-/// The inner [`RwLock`] is used in read-heavy mode — most requests hit
+/// The inner `RwLock` is used in read-heavy mode — most requests hit
 /// already-fetched algorithms — with rare writes during first-use lazy
 /// fetches.
 // LOCK-SCOPE: per-SSL_CTX cipher/digest cache, read-heavy, rare write on

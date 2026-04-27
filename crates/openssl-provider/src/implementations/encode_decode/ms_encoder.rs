@@ -15,16 +15,16 @@
 //!
 //! | C Construct                    | Rust Equivalent                        |
 //! |--------------------------------|----------------------------------------|
-//! | `struct key2ms_ctx_st`         | [`MsEncoderContext`]                   |
-//! | `key2ms_newctx()`              | [`MsEncoderContext::new()`]            |
+//! | `struct key2ms_ctx_st`         | `MsEncoderContext`                   |
+//! | `key2ms_newctx()`              | `MsEncoderContext::new()`            |
 //! | `key2ms_freectx()`             | `Drop` impl with `zeroize`            |
-//! | `write_msblob()`               | [`MsBlobEncoder::encode()`]            |
-//! | `write_pvk()`                  | [`PvkEncoder::encode()`]               |
+//! | `write_msblob()`               | `MsBlobEncoder::encode()`            |
+//! | `write_pvk()`                  | `PvkEncoder::encode()`               |
 //! | `key2msblob_encode()`          | [`MsBlobEncoder`] `EncoderProvider`    |
 //! | `key2pvk_encode()`             | [`PvkEncoder`] `EncoderProvider`       |
-//! | `key2pvk_settable_ctx_params()`| [`MsEncoderContext::set_pvk_encr_level()`] |
+//! | `key2pvk_settable_ctx_params()`| `MsEncoderContext::set_pvk_encr_level()` |
 //! | `key2ms_does_selection()`      | [`check_selection_hierarchy()`] call   |
-//! | `MAKE_MS_ENCODER` macro        | [`all_ms_encoders()`]                  |
+//! | `MAKE_MS_ENCODER` macro        | `all_ms_encoders()`                  |
 //! | `ossl_pw_clear_passphrase_data`| `zeroize::Zeroize` on `Drop`           |
 //!
 //! # Rules Enforced
@@ -194,7 +194,7 @@ impl MsEncoderContext {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Dispatch`] if `level` is not 0, 1, or 2.
+    /// Returns `ProviderError::Dispatch` if `level` is not 0, 1, or 2.
     ///
     /// Replaces C `key2pvk_set_ctx_params()` from `encode_key2ms.c`
     /// (lines 99–110).
@@ -486,8 +486,8 @@ impl EncoderProvider for MsBlobEncoder {
     ///
     /// # Key Selection Rules
     ///
-    /// - [`KeySelection::PRIVATE_KEY`] → `PRIVATEKEYBLOB`
-    /// - [`KeySelection::PUBLIC_KEY`] → `PUBLICKEYBLOB`
+    /// - `KeySelection::PRIVATE_KEY` → `PRIVATEKEYBLOB`
+    /// - `KeySelection::PUBLIC_KEY` → `PUBLICKEYBLOB`
     /// - [`KeySelection::KEYPAIR`] → `PRIVATEKEYBLOB` (includes both components)
     /// - Empty selection → error (per C `key2ms_does_selection()`)
     ///
@@ -495,8 +495,8 @@ impl EncoderProvider for MsBlobEncoder {
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] if selection doesn't include KEYPAIR flags.
-    /// - [`ProviderError::Dispatch`] if key type is unsupported.
+    /// - `ProviderError::Dispatch` if selection doesn't include KEYPAIR flags.
+    /// - `ProviderError::Dispatch` if key type is unsupported.
     fn encode(
         &self,
         key: &dyn KeyData,
@@ -696,12 +696,12 @@ impl EncoderProvider for PvkEncoder {
     /// Encodes key data into PVK format.
     ///
     /// PVK is a **private-key-only** format. The selection MUST include
-    /// [`KeySelection::PRIVATE_KEY`]; otherwise an error is returned.
+    /// `KeySelection::PRIVATE_KEY`; otherwise an error is returned.
     ///
     /// # Selection Rules
     ///
-    /// - [`KeySelection::PRIVATE_KEY`] or [`KeySelection::KEYPAIR`] → accepted
-    /// - [`KeySelection::PUBLIC_KEY`] alone → rejected (`NotAPrivateKey`)
+    /// - `KeySelection::PRIVATE_KEY` or [`KeySelection::KEYPAIR`] → accepted
+    /// - `KeySelection::PUBLIC_KEY` alone → rejected (`NotAPrivateKey`)
     /// - Empty selection → rejected
     ///
     /// Replaces C `key2pvk_encode()` from `encode_key2ms.c` (lines 150–167).
@@ -709,7 +709,7 @@ impl EncoderProvider for PvkEncoder {
     /// # Errors
     ///
     /// - [`EndecoderError::NotAPrivateKey`] if selection doesn't include `PRIVATE_KEY`.
-    /// - [`ProviderError::Dispatch`] if key type is unsupported.
+    /// - `ProviderError::Dispatch` if key type is unsupported.
     fn encode(
         &self,
         key: &dyn KeyData,

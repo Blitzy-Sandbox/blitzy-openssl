@@ -10,7 +10,7 @@
 //! (provider dispatch layer) and `crypto/siphash/siphash.c` (core algorithm)
 //! to idiomatic Rust with zero `unsafe` code. The implementation replaces the
 //! C `OSSL_DISPATCH ossl_siphash_functions[]` table with Rust trait-based
-//! dispatch via [`MacProvider`] and [`MacContext`].
+//! dispatch via `MacProvider` and `MacContext`.
 //!
 //! # Algorithm overview
 //!
@@ -84,7 +84,7 @@ const MAGIC_V3: u64 = 0x7465_6462_7974_6573;
 /// `SipHash` algorithm parameters.
 ///
 /// Provides a typed configuration struct for callers who prefer structured
-/// parameter passing over raw [`ParamSet`] bags. Each field is optional;
+/// parameter passing over raw `ParamSet` bags. Each field is optional;
 /// `None` means "use the current or default value."
 ///
 /// Replaces C `OSSL_PARAM` arrays from `siphash_prov.c`.
@@ -109,8 +109,8 @@ impl Default for SipHashParams {
 }
 
 impl SipHashParams {
-    /// Convert these parameters into a [`ParamSet`] suitable for passing
-    /// to [`MacContext::init`] or [`MacContext::set_params`].
+    /// Convert these parameters into a `ParamSet` suitable for passing
+    /// to `MacContext::init` or `MacContext::set_params`.
     pub fn to_param_set(&self) -> ParamSet {
         let mut builder = ParamBuilder::new();
         if let Some(size) = self.hash_size {
@@ -490,7 +490,7 @@ impl SipHashContext {
         }
     }
 
-    /// Apply parameters from a [`ParamSet`] to this context.
+    /// Apply parameters from a `ParamSet` to this context.
     ///
     /// Handles `size` (output hash size), `c-rounds`, `d-rounds`, and `key`.
     /// If the context is already active, hash size changes are propagated to
@@ -719,7 +719,7 @@ impl MacContext for SipHashContext {
 
     /// Retrieve current context parameters.
     ///
-    /// Returns output `size`, `c-rounds`, and `d-rounds` as a [`ParamSet`].
+    /// Returns output `size`, `c-rounds`, and `d-rounds` as a `ParamSet`.
     ///
     /// Translates `siphash_get_ctx_params()` from `siphash_prov.c`.
     fn get_params(&self) -> ProviderResult<ParamSet> {
@@ -733,7 +733,7 @@ impl MacContext for SipHashContext {
 
     /// Apply parameter changes to this context.
     ///
-    /// Delegates to [`apply_params`](SipHashContext::apply_params).
+    /// Delegates to `apply_params`.
     ///
     /// Translates standalone `siphash_set_ctx_params()` invocation from
     /// `siphash_prov.c`.

@@ -13,7 +13,7 @@
 //! | `Blake2bContext` | `BLAKE2B_CTX` (compression, streaming, parameter block) |
 //! | `Blake2sContext` | `BLAKE2S_CTX` (compression, streaming, parameter block) |
 //! | Helper functions | `blake2_impl.h` (load/store/rotate → Rust native ops) |
-//! | [`descriptors()`] | `defltprov.c` `OSSL_ALGORITHM` entries for BLAKE2 |
+//! | `descriptors()` | `defltprov.c` `OSSL_ALGORITHM` entries for BLAKE2 |
 //!
 //! ## Algorithm Properties
 //!
@@ -35,7 +35,7 @@
 //!
 //! ## Security
 //!
-//! All context types derive [`Zeroize`] and [`ZeroizeOnDrop`] to ensure
+//! All context types derive `Zeroize` and `ZeroizeOnDrop` to ensure
 //! cryptographic state (chaining values, counters, key material, buffer)
 //! is securely erased from memory on drop. This replaces C
 //! `OPENSSL_cleanse()` calls from `blake2b_prov.c` and `blake2s_prov.c`.
@@ -159,7 +159,7 @@ const BLAKE2S_SIGMA: [[u8; 16]; 10] = [
 /// - `buflen`: number of valid bytes currently in `buf`
 /// - `outlen`: configured output digest length in bytes (1..=64)
 ///
-/// All fields derive [`Zeroize`] and [`ZeroizeOnDrop`] to ensure
+/// All fields derive `Zeroize` and `ZeroizeOnDrop` to ensure
 /// cryptographic state is securely erased on drop, replacing C
 /// `OPENSSL_cleanse()` calls from `blake2b_prov.c`.
 ///
@@ -382,7 +382,7 @@ fn blake2b_g(v: &mut [u64; 16], a: usize, b: usize, c: usize, d: usize, x: u64, 
 /// - `buflen`: number of valid bytes currently in `buf`
 /// - `outlen`: configured output digest length in bytes (1..=32)
 ///
-/// All fields derive [`Zeroize`] and [`ZeroizeOnDrop`] to ensure
+/// All fields derive `Zeroize` and `ZeroizeOnDrop` to ensure
 /// cryptographic state is securely erased on drop, replacing C
 /// `OPENSSL_cleanse()` calls from `blake2s_prov.c`.
 ///
@@ -749,7 +749,7 @@ impl DigestContext for Blake2bContext {
         Ok(Box::new(self.clone()))
     }
 
-    /// Returns the current digest parameters as a [`ParamSet`].
+    /// Returns the current digest parameters as a `ParamSet`.
     ///
     /// Reports block size (128), current digest size (`outlen`), and
     /// flags (empty — BLAKE2 has no XOF, no `ALGID_ABSENT`, no CUSTOM).

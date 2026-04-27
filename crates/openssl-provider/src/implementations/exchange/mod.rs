@@ -12,10 +12,10 @@
 //!
 //! | Module | Algorithm | RFC / Standard |
 //! |--------|-----------|----------------|
-//! | [`dh`] | Finite-field Diffie-Hellman | RFC 7919 |
-//! | [`ecdh`] | Elliptic-curve Diffie-Hellman (NIST curves) | SEC 1, FIPS 186-4 |
-//! | [`x25519`] | X25519 / X448 Montgomery DH (legacy provider façade) | RFC 7748 |
-//! | [`ecx`] | X25519 / X448 Montgomery DH (ECX provider — AAP §0.5 mapping) | RFC 7748 |
+//! | `dh` | Finite-field Diffie-Hellman | RFC 7919 |
+//! | `ecdh` | Elliptic-curve Diffie-Hellman (NIST curves) | SEC 1, FIPS 186-4 |
+//! | `x25519` | X25519 / X448 Montgomery DH (legacy provider façade) | RFC 7748 |
+//! | `ecx` | X25519 / X448 Montgomery DH (ECX provider — AAP §0.5 mapping) | RFC 7748 |
 
 pub mod dh;
 pub mod ecdh;

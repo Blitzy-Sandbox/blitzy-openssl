@@ -12,7 +12,7 @@
 //!   C `jitterentropy` library binding, ensuring zero `unsafe` code per Rule R8.
 //! - This is a seed source: it MUST NOT have a parent RAND (enforced by
 //!   the [`JitterProvider::new_ctx`] API which does not accept a parent parameter).
-//! - Maximum retry count: [`JITTER_MAX_NUM_TRIES`] (3) attempts per collection.
+//! - Maximum retry count: `JITTER_MAX_NUM_TRIES` (3) attempts per collection.
 //! - Entropy strength: 1024 bits (matching C `jitter_get_ctx_params`).
 //! - Maximum single request: 128 bytes (matching C implementation).
 //!
@@ -201,7 +201,7 @@ impl JitterSource {
     /// Generates random bytes by collecting CPU timing jitter entropy.
     ///
     /// Fills the output buffer with entropy from timing jitter measurements.
-    /// Uses retry logic with up to [`JITTER_MAX_NUM_TRIES`] attempts.
+    /// Uses retry logic with up to `JITTER_MAX_NUM_TRIES` attempts.
     ///
     /// # Errors
     ///
@@ -312,7 +312,7 @@ impl JitterSource {
 
     /// Securely zeroizes a previously obtained seed buffer.
     ///
-    /// Uses the [`Zeroize`] trait to ensure the seed material is securely
+    /// Uses the `Zeroize` trait to ensure the seed material is securely
     /// overwritten, preventing information leakage through freed memory.
     /// Replaces C `jitter_clear_seed()` → `OPENSSL_secure_clear_free()`.
     pub fn clear_seed(&mut self, seed: &mut [u8]) {
@@ -380,7 +380,7 @@ impl JitterSource {
 
     /// Collects jitter entropy into the provided buffer with retry logic.
     ///
-    /// Attempts up to [`JITTER_MAX_NUM_TRIES`] times to collect enough
+    /// Attempts up to `JITTER_MAX_NUM_TRIES` times to collect enough
     /// timing jitter entropy to fill the buffer. Each attempt calls
     /// [`collect_timing_jitter`](JitterSource::collect_timing_jitter)
     /// for the actual measurement loop.
@@ -583,7 +583,7 @@ impl Drop for JitterSource {
 
 /// Provider factory for creating [`JitterSource`] instances.
 ///
-/// Implements the [`RandProvider`] trait to integrate with the provider
+/// Implements the `RandProvider` trait to integrate with the provider
 /// framework's algorithm dispatch system. The provider is registered
 /// under the name `"JITTER"` and creates new `JitterSource` contexts
 /// without a parent RAND (seed source constraint).

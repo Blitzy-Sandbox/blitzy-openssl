@@ -8,19 +8,19 @@
 //! | Rust Type/Fn            | C Source                           | Notes                                             |
 //! |-------------------------|------------------------------------|---------------------------------------------------|
 //! | [`Aes`]                 | `crypto/aes/aes_core.c`            | Core block primitive + key schedule (~3,624 LoC)  |
-//! | [`AesKey`]              | `crypto/aes/aes_core.c`            | `AES_set_encrypt_key` / `AES_set_decrypt_key`     |
+//! | `AesKey`                | `crypto/aes/aes_core.c`            | `AES_set_encrypt_key` / `AES_set_decrypt_key`     |
 //! | [`AesGcm`]              | `crypto/modes/gcm128.c`            | CTR encryption + GHASH authentication             |
-//! | [`GHashTable`]          | `crypto/modes/gcm128.c`            | `gcm_init_4bit` / `gcm_gmult_4bit`                |
+//! | `GHashTable`            | `crypto/modes/gcm128.c`            | `gcm_init_4bit` / `gcm_gmult_4bit`                |
 //! | [`AesCcm`]              | `crypto/modes/ccm128.c`            | CBC-MAC + CTR                                     |
 //! | [`AesXts`]              | `crypto/modes/xts128.c`            | Tweakable encryption with ciphertext stealing     |
-//! | [`AesOcb`]              | `crypto/modes/ocb128.c`            | Single-pass AEAD with offset codebook             |
-//! | [`AesSiv`]              | `crypto/modes/siv128.c`            | Deterministic AEAD (RFC 5297)                     |
-//! | [`aes_key_wrap`]        | `crypto/modes/wrap128.c`           | RFC 3394 key wrap                                 |
-//! | [`aes_key_wrap_pad`]    | `crypto/modes/wrap128.c`           | RFC 5649 key wrap with padding                    |
-//! | [`aes_cbc_encrypt`]     | `crypto/aes/aes_cbc.c`             | Thin wrapper composing CBC engine                 |
-//! | [`aes_ctr_encrypt`]     | `crypto/modes/ctr128.c`            | Thin wrapper composing CTR engine                 |
-//! | [`aes_cfb_encrypt`]     | `crypto/aes/aes_cfb.c`             | Thin wrapper composing CFB engine                 |
-//! | [`aes_ofb_encrypt`]     | `crypto/aes/aes_ofb.c`             | Thin wrapper composing OFB engine                 |
+//! | `AesOcb`                | `crypto/modes/ocb128.c`            | Single-pass AEAD with offset codebook             |
+//! | `AesSiv`                | `crypto/modes/siv128.c`            | Deterministic AEAD (RFC 5297)                     |
+//! | `aes_key_wrap`          | `crypto/modes/wrap128.c`           | RFC 3394 key wrap                                 |
+//! | `aes_key_wrap_pad`      | `crypto/modes/wrap128.c`           | RFC 5649 key wrap with padding                    |
+//! | `aes_cbc_encrypt`       | `crypto/aes/aes_cbc.c`             | Thin wrapper composing CBC engine                 |
+//! | `aes_ctr_encrypt`       | `crypto/modes/ctr128.c`            | Thin wrapper composing CTR engine                 |
+//! | `aes_cfb_encrypt`       | `crypto/aes/aes_cfb.c`             | Thin wrapper composing CFB engine                 |
+//! | `aes_ofb_encrypt`       | `crypto/aes/aes_ofb.c`             | Thin wrapper composing OFB engine                 |
 //!
 //! ## Design Notes
 //!
@@ -93,7 +93,7 @@
 //!    library provides `aesni-x86_64.pl` (AES-NI) and `aesv8-armx.pl`
 //!    (ARMv8 Crypto Extensions) which execute AES rounds in constant time
 //!    on hardware lanes that do not touch the data cache. The
-//!    [`crate::ffi`]-mediated path delegates to that constant-time C
+//!    `crate::ffi`-mediated path delegates to that constant-time C
 //!    backend.
 //! 2. **A bitsliced constant-time software backend** (e.g., the
 //!    Käsper-Schwabe construction from CHES 2009). This module does not
@@ -138,7 +138,7 @@ const AES_BLOCK_SIZE: usize = 16;
 
 /// Default Integrity Check Value for AES Key Wrap (RFC 3394 §2.2.3.1).
 ///
-/// Initial Value A[0] for unpadded key wrapping. Correctly unwrapped keys
+/// Initial Value `A[0]` for unpadded key wrapping. Correctly unwrapped keys
 /// produce this value as the plaintext prefix; constant-time comparison
 /// against this array detects integrity failures.
 pub const DEFAULT_IV: [u8; 8] = [0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6, 0xA6];
@@ -1174,7 +1174,7 @@ impl GHashTable {
     /// Construct a new GHASH table from a 16-byte subkey `H`.
     ///
     /// Translates `gcm_init_4bit` from `crypto/modes/gcm128.c`. Recursively
-    /// computes `H >> 1`, `H >> 2`, `H >> 3` via [`ghash_reduce_1bit`], then
+    /// computes `H >> 1`, `H >> 2`, `H >> 3` via `ghash_reduce_1bit`, then
     /// fills the remaining table entries via XOR combinations.
     #[must_use]
     pub fn new(h: &[u8; AES_BLOCK_SIZE]) -> Self {

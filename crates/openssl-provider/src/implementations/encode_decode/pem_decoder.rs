@@ -4,7 +4,7 @@
 //! `-----BEGIN <LABEL>-----` / `-----END <LABEL>-----` boundaries and
 //! Base64-decoding the body.  It optionally handles legacy PEM encryption
 //! (RFC 1421 `Proc-Type: 4,ENCRYPTED` / `DEK-Info:` headers) via the
-//! [`decrypt_legacy_pem`] helper.
+//! `decrypt_legacy_pem` helper.
 //!
 //! # Architecture
 //!
@@ -31,12 +31,12 @@
 //!
 //! * **PKCS#8 range** (indices 0..=1):
 //!   `"ENCRYPTED PRIVATE KEY"`, `"PRIVATE KEY"` — downstream decoders may
-//!   delegate to [`super::epki_decoder::decrypt_epki`] for PKCS#8
+//!   delegate to `super::epki_decoder::decrypt_epki` for PKCS#8
 //!   encrypted private keys.
 //!
 //! * **SubjectPublicKeyInfo range** (index 2):
 //!   `"PUBLIC KEY"` — downstream decoders may use
-//!   [`super::spki_decoder::oid_to_algorithm_name`] to resolve the
+//!   `super::spki_decoder::oid_to_algorithm_name` to resolve the
 //!   AlgorithmIdentifier OID.
 //!
 //! * **Type-specific and certificate range** (indices 3..=17):
@@ -48,18 +48,18 @@
 //!
 //! | C Construct                                  | Rust Equivalent            |
 //! |----------------------------------------------|----------------------------|
-//! | `decode_pem2der.c:137-166 pem_name_map[]`    | [`PEM_LABEL_TABLE`]        |
-//! | `decode_pem2der.c:57-61 pem2der_ctx_st`      | [`PemDecoderContext`]      |
-//! | `decode_pem2der.c:35-48 read_pem()`          | [`read_pem`]               |
-//! | `decode_pem2der.c:124-266 pem2der_decode()`  | [`PemDecoder::decode`]     |
-//! | `decode_pem2der.c:112-122 pem2der_pass_helper` | [`PassphraseCallback`]   |
-//! | `PEM_get_EVP_CIPHER_INFO` / `PEM_do_header`  | [`decrypt_legacy_pem`]     |
+//! | `decode_pem2der.c:137-166 pem_name_map[]`    | `PEM_LABEL_TABLE`        |
+//! | `decode_pem2der.c:57-61 pem2der_ctx_st`      | `PemDecoderContext`      |
+//! | `decode_pem2der.c:35-48 read_pem()`          | `read_pem`               |
+//! | `decode_pem2der.c:124-266 pem2der_decode()`  | `PemDecoder::decode`     |
+//! | `decode_pem2der.c:112-122 pem2der_pass_helper` | `PassphraseCallback`   |
+//! | `PEM_get_EVP_CIPHER_INFO` / `PEM_do_header`  | `decrypt_legacy_pem`     |
 //! | `PKCS8_LAST_IDX`, `SPKI_LAST_IDX`            | Private constants          |
 //!
 //! # Rules Compliance
 //!
 //! * **R5 (Nullability over sentinels):** PEM parse failures return
-//!   `Ok(None)` from [`read_pem`] — "empty-handed success" — mirroring the
+//!   `Ok(None)` from `read_pem` — "empty-handed success" — mirroring the
 //!   C behaviour where `ok = 1` even when no PEM block is found.  All
 //!   `data_structure` fields use `Option<String>` rather than empty strings.
 //! * **R8 (Zero unsafe outside FFI):** This module contains **zero** `unsafe`
@@ -173,11 +173,11 @@ pub const STRUCTURE_CERTIFICATE_LIST: &str = "CertificateList";
 //   * PKCS8_LAST_IDX+1..=SPKI_LAST_IDX → SPKI range (may delegate to SPKI)
 //   * SPKI_LAST_IDX+1..                → type-specific / certificate range
 
-/// Last index in [`PEM_LABEL_TABLE`] that represents a PKCS#8-family label.
+/// Last index in `PEM_LABEL_TABLE` that represents a PKCS#8-family label.
 /// Matches `PKCS8_LAST_IDX` in `decode_pem2der.c:141`.
 const PKCS8_LAST_IDX: usize = 1;
 
-/// Last index in [`PEM_LABEL_TABLE`] that represents a `SubjectPublicKeyInfo`
+/// Last index in `PEM_LABEL_TABLE` that represents a `SubjectPublicKeyInfo`
 /// label.  Matches `SPKI_LAST_IDX` in `decode_pem2der.c:143`.
 const SPKI_LAST_IDX: usize = 2;
 
@@ -188,9 +188,9 @@ const SPKI_LAST_IDX: usize = 2;
 /// Association between a PEM label and the resulting object metadata.
 ///
 /// Replaces the C `struct pem_name_map_st` from `decode_pem2der.c:132-137`.
-/// Instances are stored in the static [`PEM_LABEL_TABLE`] and consulted
+/// Instances are stored in the static `PEM_LABEL_TABLE` and consulted
 /// when a PEM block is parsed to determine the correct `ObjectType`,
-/// `data_type`, and `data_structure` for the emitted [`DecodedObject`].
+/// `data_type`, and `data_structure` for the emitted `DecodedObject`.
 ///
 /// # Fields
 ///
@@ -250,12 +250,12 @@ impl PemLabelInfo {
 /// This table is a direct translation of the C `pem_name_map[]` array in
 /// `providers/implementations/encode_decode/decode_pem2der.c:137-166`.
 /// Entries are ordered identically to the C source so that the
-/// [`PKCS8_LAST_IDX`] / [`SPKI_LAST_IDX`] boundaries remain valid.
+/// `PKCS8_LAST_IDX` / `SPKI_LAST_IDX` boundaries remain valid.
 ///
 /// Any PEM label not listed here is treated as unrecognised — the decoder
-/// returns "empty-handed success" (`Ok(None)` from [`read_pem`] and a
-/// `BadEncoding` error from [`PemDecoder::decode`]) without emitting a
-/// [`DecodedObject`].
+/// returns "empty-handed success" (`Ok(None)` from `read_pem` and a
+/// `BadEncoding` error from `PemDecoder::decode`) without emitting a
+/// `DecodedObject`.
 pub static PEM_LABEL_TABLE: &[PemLabelInfo] = &[
     // --- Index 0: PKCS#8 EncryptedPrivateKeyInfo ---
     PemLabelInfo {
@@ -379,7 +379,7 @@ pub static PEM_LABEL_TABLE: &[PemLabelInfo] = &[
 
 /// A single PEM block parsed out of an input byte buffer.
 ///
-/// This structure carries the result of [`read_pem`] — the decoded label,
+/// This structure carries the result of `read_pem` — the decoded label,
 /// the raw DER body (post Base64 decoding), and a flag indicating whether
 /// the block used the legacy RFC 1421 in-band encryption headers
 /// (`Proc-Type: 4,ENCRYPTED` / `DEK-Info:`).
@@ -402,7 +402,7 @@ pub static PEM_LABEL_TABLE: &[PemLabelInfo] = &[
 /// -----END CERTIFICATE-----
 /// ```
 ///
-/// Parsed into a [`PemBlock`] as:
+/// Parsed into a `PemBlock` as:
 /// * `label = "CERTIFICATE"`
 /// * `der_data = <Base64-decoded bytes>`
 /// * `is_encrypted = false`
@@ -415,7 +415,7 @@ pub struct PemBlock {
     /// The raw DER bytes produced by Base64-decoding the PEM body.
     /// When [`Self::is_encrypted`] is `true`, these bytes are the
     /// cipher ciphertext, not the plaintext DER; the caller must
-    /// invoke [`decrypt_legacy_pem`] to recover the plaintext.
+    /// invoke `decrypt_legacy_pem` to recover the plaintext.
     pub der_data: Vec<u8>,
 
     /// `true` if the PEM block carries legacy RFC 1421 encryption
@@ -482,7 +482,7 @@ pub trait PassphraseCallback: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Dispatch`] (via
+    /// Returns `ProviderError::Dispatch` (via
     /// [`EndecoderError::UnableToGetPassphrase`]) when no passphrase is
     /// available.
     fn get_passphrase(&self, prompt: &str) -> ProviderResult<Vec<u8>>;
@@ -518,7 +518,7 @@ pub trait PassphraseCallback: Send + Sync {
 ///
 /// While the Rust version uses `String` (no compile-time size limit),
 /// [`Self::set_propq`] and [`Self::set_data_structure`] still enforce
-/// the [`MAX_PROPQUERY_SIZE`] limit to preserve behavioural parity with
+/// the `MAX_PROPQUERY_SIZE` limit to preserve behavioural parity with
 /// the C layer.
 #[derive(Debug, Clone, Default)]
 pub struct PemDecoderContext {
@@ -547,9 +547,9 @@ impl PemDecoderContext {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Dispatch`] via
+    /// Returns `ProviderError::Dispatch` via
     /// [`EndecoderError::UnsupportedFormat`] if the input exceeds
-    /// [`MAX_PROPQUERY_SIZE`] bytes (a conservative upper bound).
+    /// `MAX_PROPQUERY_SIZE` bytes (a conservative upper bound).
     pub fn set_data_structure(&mut self, value: &str) -> ProviderResult<()> {
         if value.len() > MAX_PROPQUERY_SIZE {
             return Err(ProviderError::Dispatch(
@@ -568,14 +568,14 @@ impl PemDecoderContext {
     }
 
     /// Sets the property query string, enforcing the
-    /// [`MAX_PROPQUERY_SIZE`] length limit.  Stores the value as `None`
+    /// `MAX_PROPQUERY_SIZE` length limit.  Stores the value as `None`
     /// if the input is empty per Rule R5.
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Dispatch`] via
+    /// Returns `ProviderError::Dispatch` via
     /// [`EndecoderError::UnsupportedFormat`] if the input exceeds
-    /// [`MAX_PROPQUERY_SIZE`] bytes.
+    /// `MAX_PROPQUERY_SIZE` bytes.
     pub fn set_propq(&mut self, value: &str) -> ProviderResult<()> {
         if value.len() > MAX_PROPQUERY_SIZE {
             return Err(ProviderError::Dispatch(
@@ -598,7 +598,7 @@ impl PemDecoderContext {
 // PemDecoder — Public DecoderProvider Implementation
 // =============================================================================
 
-/// PEM-to-DER decoder implementing the [`DecoderProvider`] trait.
+/// PEM-to-DER decoder implementing the `DecoderProvider` trait.
 ///
 /// Replaces the C `ossl_pem_to_der_decoder_functions` dispatch table
 /// from `decode_pem2der.c:268-` by providing a trait-based implementation
@@ -608,15 +608,15 @@ impl PemDecoderContext {
 /// decoding pipeline.  It performs:
 ///
 /// 1. PEM armor stripping (RFC 7468 strict mode via `pem-rfc7468`, or
-///    RFC 1421 fallback via [`read_pem`]).
+///    RFC 1421 fallback via `read_pem`).
 /// 2. Base64 decoding of the PEM body.
 /// 3. Legacy encryption detection (RFC 1421 `Proc-Type:` /
 ///    `DEK-Info:` headers).
-/// 4. Label-driven dispatch through [`PEM_LABEL_TABLE`] to tag the
-///    resulting [`DecodedObject`] with the correct `ObjectType`,
+/// 4. Label-driven dispatch through `PEM_LABEL_TABLE` to tag the
+///    resulting `DecodedObject` with the correct `ObjectType`,
 ///    `data_type`, and `data_structure`.
 ///
-/// The decoded DER bytes are wrapped in a [`KeyData`] trait object and
+/// The decoded DER bytes are wrapped in a `KeyData` trait object and
 /// returned.  Downstream decoders ([`super::epki_decoder::EpkiDecoder`],
 /// [`super::spki_decoder::SpkiTaggingDecoder`], etc.) consume these DER
 /// bytes in subsequent pipeline stages.
@@ -640,11 +640,11 @@ impl PemDecoderContext {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PemDecoder;
 
-/// Wrapper around [`DecodedObject`] that implements [`KeyData`] so it can
+/// Wrapper around `DecodedObject` that implements `KeyData` so it can
 /// be returned from [`DecoderProvider::decode`].
 ///
 /// The provider framework expects decoders to return `Box<dyn KeyData>`.
-/// This wrapper adapts the [`DecodedObject`] metadata struct to that
+/// This wrapper adapts the `DecodedObject` metadata struct to that
 /// interface while carrying the full DER bytes for downstream pipeline
 /// stages.
 // JUSTIFICATION for `dead_code` allow: `PemDecodedData` is the runtime
@@ -692,8 +692,8 @@ impl DecoderProvider for PemDecoder {
         "PEM"
     }
 
-    /// Decodes a PEM-armoured byte buffer into a [`DecodedObject`]
-    /// wrapped in a [`KeyData`] trait object.
+    /// Decodes a PEM-armoured byte buffer into a `DecodedObject`
+    /// wrapped in a `KeyData` trait object.
     ///
     /// This function is a direct translation of the C `pem2der_decode()`
     /// function (`decode_pem2der.c:124-266`) with the following
@@ -707,7 +707,7 @@ impl DecoderProvider for PemDecoder {
     ///    rather than a side-channel `ok` flag.
     ///
     /// 2. **Label lookup:** The parsed label is matched against
-    ///    [`PEM_LABEL_TABLE`].  Unrecognised labels produce a
+    ///    `PEM_LABEL_TABLE`.  Unrecognised labels produce a
     ///    `BadEncoding` error (mirroring the C `if (i < OSSL_NELEM(...))`
     ///    guard at line 212 which simply skips callback invocation).
     ///
@@ -717,7 +717,7 @@ impl DecoderProvider for PemDecoder {
     ///    `decode(&self, input: &[u8])` has no passphrase channel,
     ///    this path returns `Err(Dispatch(UnableToGetPassphrase))`.
     ///    Callers with a passphrase available should invoke
-    ///    [`decrypt_legacy_pem`] directly before calling `decode()`.
+    ///    `decrypt_legacy_pem` directly before calling `decode()`.
     ///
     /// 4. **PKCS#8 / SPKI delegation:** For labels in the PKCS#8 or
     ///    SPKI range, the decoder emits the DER bytes with the
@@ -730,7 +730,7 @@ impl DecoderProvider for PemDecoder {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Dispatch`] wrapping:
+    /// Returns `ProviderError::Dispatch` wrapping:
     ///
     /// * [`EndecoderError::BadEncoding`] — `input` is not valid PEM,
     ///   the label is unrecognised, or the block is malformed.
@@ -826,7 +826,7 @@ impl DecoderProvider for PemDecoder {
 
     /// Returns the list of supported input formats.
     ///
-    /// PEM decoder accepts only one format: [`FORMAT_PEM`] (`"PEM"`).
+    /// PEM decoder accepts only one format: `FORMAT_PEM` (`"PEM"`).
     fn supported_formats(&self) -> Vec<&'static str> {
         vec![FORMAT_PEM]
     }
@@ -840,12 +840,12 @@ impl DecoderProvider for PemDecoder {
 /// selection hints.
 ///
 /// This function exposes the full C-equivalent decoding API that the
-/// trait-level [`PemDecoder::decode`] cannot express due to its limited
+/// trait-level `PemDecoder::decode` cannot express due to its limited
 /// signature.  It accepts:
 ///
 /// * `ctx` — per-operation context carrying `data_structure` and `propq`
 ///   filters.
-/// * `selection` — [`KeySelection`] flags indicating whether the caller
+/// * `selection` — `KeySelection` flags indicating whether the caller
 ///   is interested in private keys, public keys, or domain parameters.
 ///   Mirrors the C `selection` parameter of `pem2der_decode()`.
 /// * `passphrase` — optional passphrase callback for legacy-encrypted
@@ -859,7 +859,7 @@ impl DecoderProvider for PemDecoder {
 /// * For PKCS#8 labels (indices 0..=1) when the selection includes
 ///   `PRIVATE_KEY` or the context's `data_structure` explicitly
 ///   requests `EncryptedPrivateKeyInfo` / `PrivateKeyInfo`, the decoder
-///   delegates to [`super::epki_decoder::decrypt_epki`] for
+///   delegates to `super::epki_decoder::decrypt_epki` for
 ///   passphrase-based decryption (empty passphrase if `passphrase` is
 ///   `None`).
 ///
@@ -867,15 +867,15 @@ impl DecoderProvider for PemDecoder {
 ///   or `data_structure == "SubjectPublicKeyInfo"`, the decoder surfaces
 ///   the DER bytes as `SubjectPublicKeyInfo` and may optionally resolve
 ///   the algorithm name via
-///   [`super::spki_decoder::oid_to_algorithm_name`].  The DER bytes are
+///   `super::spki_decoder::oid_to_algorithm_name`.  The DER bytes are
 ///   NOT parsed here — that is the job of the SPKI tagging decoder.
 ///
-/// * For other labels, the decoder emits a tagged [`DecodedObject`] and
+/// * For other labels, the decoder emits a tagged `DecodedObject` and
 ///   leaves further processing to the type-specific downstream decoders.
 ///
 /// # Errors
 ///
-/// See [`PemDecoder::decode`] for the error contract.
+/// See `PemDecoder::decode` for the error contract.
 pub fn decode_with_context(
     ctx: &PemDecoderContext,
     input: &[u8],
@@ -1053,14 +1053,14 @@ pub fn decode_with_context(
 // Internal Helpers — Decoder Plumbing
 // =============================================================================
 
-/// Looks up `label` in [`PEM_LABEL_TABLE`] and returns the matching
+/// Looks up `label` in `PEM_LABEL_TABLE` and returns the matching
 /// metadata if found, or `None` if the label is unrecognised.
 fn find_label_info(label: &str) -> Option<&'static PemLabelInfo> {
     PEM_LABEL_TABLE.iter().find(|info| info.label == label)
 }
 
-/// Like [`find_label_info`] but also returns the table index so callers
-/// can apply the [`PKCS8_LAST_IDX`] / [`SPKI_LAST_IDX`] range checks.
+/// Like `find_label_info` but also returns the table index so callers
+/// can apply the `PKCS8_LAST_IDX` / `SPKI_LAST_IDX` range checks.
 fn find_label_info_with_index(label: &str) -> Option<(usize, &'static PemLabelInfo)> {
     PEM_LABEL_TABLE
         .iter()
@@ -1080,10 +1080,10 @@ fn resolve_data_type(info: &PemLabelInfo) -> String {
         .map_or_else(|| info.object_type.to_string(), str::to_string)
 }
 
-/// Constructs a [`DecodedObject`] and wraps it in the [`KeyData`]-
-/// conforming [`PemDecodedData`] adapter.
+/// Constructs a `DecodedObject` and wraps it in the `KeyData`-
+/// conforming `PemDecodedData` adapter.
 ///
-/// This helper never fails — constructing the [`DecodedObject`] is
+/// This helper never fails — constructing the `DecodedObject` is
 /// purely memory allocation governed by `Vec<u8>` ownership — so the
 /// return type is a plain `Box<dyn KeyData>` (no `Result` wrapper).
 /// Callers that need a `ProviderResult` wrap the return value in
@@ -1118,7 +1118,7 @@ fn emit_decoded(
 ///
 /// This is a best-effort enrichment: it exists so the compile-time
 /// contract in the schema (which mandates use of
-/// [`oid_to_algorithm_name`]) is satisfied even when the caller chose
+/// `oid_to_algorithm_name`) is satisfied even when the caller chose
 /// not to delegate to the dedicated SPKI decoder.
 fn maybe_resolve_spki_algorithm(der: &[u8]) -> Option<&'static str> {
     use der::asn1::ObjectIdentifier;
@@ -1198,7 +1198,7 @@ const PEM_LINE_WIDTH: usize = 64;
 ///
 /// # Errors
 ///
-/// Returns [`EndecoderError::BadEncoding`] (wrapped in [`ProviderError`])
+/// Returns [`EndecoderError::BadEncoding`] (wrapped in `ProviderError`)
 /// when the line does not match the expected `PREFIX...SUFFIX` shape or
 /// the label portion is empty.
 ///
@@ -1245,7 +1245,7 @@ fn extract_label(line: &str, prefix: &str) -> ProviderResult<String> {
 ///
 /// The parser is lenient: if no blank separator is present but the
 /// very first non-blank line looks like a header (`Key: Value` with a
-/// key that matches [`is_valid_header_key`]), it continues consuming
+/// key that matches `is_valid_header_key`), it continues consuming
 /// headers until the first non-header line, which is treated as the
 /// body start.
 ///
@@ -1311,7 +1311,7 @@ fn is_valid_header_key(key: &str) -> bool {
 ///
 /// # Errors
 ///
-/// Returns [`EndecoderError::BadEncoding`] (as [`ProviderError`]) when:
+/// Returns [`EndecoderError::BadEncoding`] (as `ProviderError`) when:
 ///
 /// * There is no `,` separator.
 /// * The cipher-name field is empty.
@@ -1346,7 +1346,7 @@ fn parse_dek_info(dek_info: &str) -> ProviderResult<(&str, &str)> {
 ///
 /// # Errors
 ///
-/// Returns [`EndecoderError::BadEncoding`] (as [`ProviderError`]) when:
+/// Returns [`EndecoderError::BadEncoding`] (as `ProviderError`) when:
 ///
 /// * The input has an odd length.
 /// * Any character outside `[0-9A-Fa-f]` appears.
@@ -1414,7 +1414,7 @@ const PEM_HEADER_PROC_TYPE: &str = "Proc-Type";
 /// `Ok(None)`, matching the "empty-handed success" idiom of the C
 /// reference.
 ///
-/// The returned [`PemBlock`] carries:
+/// The returned `PemBlock` carries:
 /// * `label` — the label portion of the BEGIN line.
 /// * `der_data` — the Base64-decoded body bytes.
 /// * `is_encrypted` — `true` iff a `Proc-Type: 4,ENCRYPTED` header is
@@ -1524,7 +1524,7 @@ fn read_pem_custom(pem_text: &str) -> ProviderResult<Option<PemBlock>> {
 ///    headers, strict line-width enforcement, etc.).
 /// 2. **Lenient stage** — if the strict parse fails because of
 ///    headers or other tolerable deviations, try the custom parser
-///    ([`read_pem_custom`]).  This handles legacy encrypted blocks
+///    (`read_pem_custom`).  This handles legacy encrypted blocks
 ///    with `Proc-Type` / `DEK-Info` headers.
 ///
 /// # Return values
@@ -1550,7 +1550,7 @@ fn read_pem_custom(pem_text: &str) -> ProviderResult<Option<PemBlock>> {
 ///
 /// # Errors
 ///
-/// Returns [`ProviderError::Dispatch`] wrapping an
+/// Returns `ProviderError::Dispatch` wrapping an
 /// [`EndecoderError::BadEncoding`] message when the input looks like
 /// PEM but cannot be parsed (e.g., malformed headers, Base64 errors,
 /// label mismatches).
@@ -1615,7 +1615,7 @@ pub fn read_pem(input: &[u8]) -> ProviderResult<Option<PemBlock>> {
 /// 1. The `DEK-Info` header specifies a block cipher algorithm and
 ///    an initialisation vector — e.g., `AES-128-CBC,0123...`.
 /// 2. The key is derived from the passphrase using
-///    [`EVP_BytesToKey`][evpbtk] with MD5 as the hash and the first 8
+///    `EVP_BytesToKey`[evpbtk] with MD5 as the hash and the first 8
 ///    bytes of the IV as the "salt".
 /// 3. The Base64 body is decrypted using the derived key and the IV
 ///    in the appropriate block-cipher mode.

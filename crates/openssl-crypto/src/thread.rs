@@ -7,13 +7,13 @@
 //!
 //! | Rust Type | C Equivalent | Source File |
 //! |-----------|-------------|-------------|
-//! | [`CryptoLock<T>`] | `CRYPTO_RWLOCK` / `pthread_rwlock_t` | `crypto/threads_pthread.c` |
-//! | [`CryptoOnce`] | `CRYPTO_ONCE` / `pthread_once_t` | `crypto/threads_pthread.c`, `crypto/init.c` |
-//! | [`CryptoThreadLocal<T>`] | `CRYPTO_THREAD_LOCAL` / `pthread_key_t` | `crypto/threads_common.c` |
-//! | [`register_thread_stop_handler`] | `ossl_init_thread_start()` | `crypto/initthread.c` |
-//! | [`atomic_load_u64`] | `fallback_atomic_load_n` | `crypto/threads_pthread.c` |
-//! | [`atomic_store_u64`] | `fallback_atomic_store_n` | `crypto/threads_pthread.c` |
-//! | [`atomic_add_u64`] | `fallback_atomic_add_fetch` | `crypto/threads_pthread.c` |
+//! | `CryptoLock<T>` | `CRYPTO_RWLOCK` / `pthread_rwlock_t` | `crypto/threads_pthread.c` |
+//! | `CryptoOnce` | `CRYPTO_ONCE` / `pthread_once_t` | `crypto/threads_pthread.c`, `crypto/init.c` |
+//! | `CryptoThreadLocal<T>` | `CRYPTO_THREAD_LOCAL` / `pthread_key_t` | `crypto/threads_common.c` |
+//! | `register_thread_stop_handler` | `ossl_init_thread_start()` | `crypto/initthread.c` |
+//! | `atomic_load_u64` | `fallback_atomic_load_n` | `crypto/threads_pthread.c` |
+//! | `atomic_store_u64` | `fallback_atomic_store_n` | `crypto/threads_pthread.c` |
+//! | `atomic_add_u64` | `fallback_atomic_add_fetch` | `crypto/threads_pthread.c` |
 //!
 //! # Design Decisions
 //!

@@ -32,7 +32,7 @@
 //!
 //! # Observability
 //!
-//! All derivation events are instrumented with [`tracing`] for correlation
+//! All derivation events are instrumented with `tracing` for correlation
 //! with the broader TLS / application flow.  Parameter validation failures
 //! emit `warn!` events; successful derivations emit `debug!` events with
 //! algorithm and length metadata.
@@ -86,10 +86,10 @@ const DEFAULT_ITERATIONS: u64 = 1;
 // Error Conversion Helpers
 // =============================================================================
 
-/// Converts a [`CryptoError`] returned by
+/// Converts a `CryptoError` returned by
 /// [`MessageDigest::fetch`](openssl_crypto::evp::md::MessageDigest::fetch)
 /// or the `MdContext::{init,update,finalize}` chain into a
-/// [`ProviderError::Dispatch`] for the provider layer.
+/// `ProviderError::Dispatch` for the provider layer.
 ///
 /// Centralising this mapping keeps per-call sites concise via
 /// `.map_err(dispatch_err)?` and preserves the underlying error message
@@ -114,17 +114,17 @@ fn dispatch_err(e: CryptoError) -> ProviderError {
 ///
 /// | C field                    | Rust field             |
 /// | -------------------------- | ---------------------- |
-/// | `unsigned char *pass`      | [`Self::password`]     |
+/// | `unsigned char *pass`      | `Self::password`     |
 /// | `size_t pass_len`          | (implicit in `Vec`)    |
-/// | `unsigned char *salt`      | [`Self::salt`]         |
+/// | `unsigned char *salt`      | `Self::salt`         |
 /// | `size_t salt_len`          | (implicit in `Vec`)   |
-/// | `uint64_t iter`            | [`Self::iterations`]   |
-/// | `PROV_DIGEST digest`       | [`Self::digest_name`] (resolved lazily via `MessageDigest::fetch`) |
+/// | `uint64_t iter`            | `Self::iterations`   |
+/// | `PROV_DIGEST digest`       | `Self::digest_name` (resolved lazily via `MessageDigest::fetch`) |
 ///
 /// # Security
 ///
 /// The `password` and `salt` fields are automatically zeroized when the
-/// context is dropped via the [`ZeroizeOnDrop`] derive, replacing the C
+/// context is dropped via the `ZeroizeOnDrop` derive, replacing the C
 /// `OPENSSL_cleanse()` call in `kdf_pbkdf1_cleanup()`.
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Pbkdf1Context {
@@ -139,8 +139,8 @@ pub struct Pbkdf1Context {
     iterations: u64,
 
     /// Name of the underlying digest algorithm.  Resolved lazily to a
-    /// concrete [`MessageDigest`] during [`Self::derive_internal`] via
-    /// [`MessageDigest::fetch`].  Not sensitive — skipped from zeroization.
+    /// concrete `MessageDigest` during `Self::derive_internal` via
+    /// `MessageDigest::fetch`.  Not sensitive — skipped from zeroization.
     #[zeroize(skip)]
     digest_name: String,
 }
@@ -160,7 +160,7 @@ impl Pbkdf1Context {
         }
     }
 
-    /// Applies parameters from the provided [`ParamSet`], updating the
+    /// Applies parameters from the provided `ParamSet`, updating the
     /// corresponding context fields.
     ///
     /// Matches the C `kdf_pbkdf1_set_ctx_params()` function in
@@ -265,8 +265,8 @@ impl Pbkdf1Context {
     /// - [`ProviderError::Init`] if `output.len() == 0` or
     ///   `output.len() > digest.digest_size()` (the fundamental PBKDF1
     ///   constraint — it cannot produce output longer than one hash).
-    /// - [`ProviderError::Dispatch`] propagated from
-    ///   [`MessageDigest::fetch`] or the digest operation chain if the
+    /// - `ProviderError::Dispatch` propagated from
+    ///   `MessageDigest::fetch` or the digest operation chain if the
     ///   underlying digest is not available in any loaded provider.
     fn derive_internal(&self, output: &mut [u8]) -> ProviderResult<usize> {
         // Fetch the digest algorithm descriptor from the default library
@@ -361,7 +361,7 @@ impl KdfContext for Pbkdf1Context {
     /// Derives a key from the configured password, salt, and iteration count.
     ///
     /// Any parameters present in `params` are applied via
-    /// [`Self::apply_params`] before derivation begins.  Parameters set via
+    /// `Self::apply_params` before derivation begins.  Parameters set via
     /// a prior [`Self::set_params`] call remain in effect unless overridden.
     fn derive(&mut self, key: &mut [u8], params: &ParamSet) -> ProviderResult<usize> {
         if !params.is_empty() {
@@ -387,7 +387,7 @@ impl KdfContext for Pbkdf1Context {
         Ok(())
     }
 
-    /// Returns a [`ParamSet`] containing the current non-sensitive
+    /// Returns a `ParamSet` containing the current non-sensitive
     /// configuration (digest name and iteration count).
     ///
     /// The password and salt are **not** included in the returned set —
@@ -403,7 +403,7 @@ impl KdfContext for Pbkdf1Context {
     /// Applies the parameters in `params` to this context.
     ///
     /// This is the public counterpart to the internal
-    /// [`Self::apply_params`] helper and is called by the dispatch layer
+    /// `Self::apply_params` helper and is called by the dispatch layer
     /// when a caller invokes `EVP_KDF_CTX_set_params()` in the C API.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         self.apply_params(params)
@@ -416,7 +416,7 @@ impl KdfContext for Pbkdf1Context {
 
 /// PBKDF1 provider factory.
 ///
-/// Produces [`Pbkdf1Context`] instances via the [`KdfProvider`] trait.
+/// Produces `Pbkdf1Context` instances via the `KdfProvider` trait.
 /// This type is zero-sized — all state lives in the context produced by
 /// [`Self::new_ctx`].
 ///
@@ -464,7 +464,7 @@ mod tests {
     use super::*;
     use openssl_common::param::ParamValue;
 
-    /// Build a [`ParamSet`] with password, salt, iteration count, and the
+    /// Build a `ParamSet` with password, salt, iteration count, and the
     /// default digest (SHA2-256).
     fn make_params(pw: &[u8], salt: &[u8], iter: u64) -> ParamSet {
         let mut ps = ParamSet::new();
@@ -475,7 +475,7 @@ mod tests {
         ps
     }
 
-    /// Build a [`ParamSet`] with a caller-specified digest.
+    /// Build a `ParamSet` with a caller-specified digest.
     fn make_params_with_digest(
         digest: &str,
         pw: &[u8],

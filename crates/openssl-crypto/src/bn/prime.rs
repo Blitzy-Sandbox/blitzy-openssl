@@ -561,7 +561,7 @@ pub fn miller_rabin_test(w: &BigNum, rounds: u32) -> CryptoResult<PrimalityResul
 ///
 /// # Errors
 ///
-/// Propagates any [`CryptoError`] raised by underlying arithmetic, Montgomery
+/// Propagates any `CryptoError` raised by underlying arithmetic, Montgomery
 /// context construction, or random-number generation (e.g. if the system
 /// entropy source is unavailable).
 pub fn check_prime(n: &BigNum) -> CryptoResult<PrimalityResult> {
@@ -650,7 +650,7 @@ const MAX_GENERATION_ATTEMPTS: u32 = 1_000_000;
 ///   `bits < 6 && bits != 3` (a safe prime below this size can only be 5
 ///   or 7 and is not useful for any cryptographic purpose).
 /// - `BigNumError::InvalidArgument` if `options.add` is present and zero,
-///   or if the generator exceeds [`MAX_GENERATION_ATTEMPTS`] candidates.
+///   or if the generator exceeds `MAX_GENERATION_ATTEMPTS` candidates.
 /// - Propagates underlying RNG / arithmetic errors.
 pub fn generate_prime(options: &GeneratePrimeOptions) -> CryptoResult<BigNum> {
     let bits = options.bits;

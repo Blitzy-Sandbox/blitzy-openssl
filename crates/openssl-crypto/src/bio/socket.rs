@@ -134,7 +134,7 @@ const DGRAM_PAIR_LEN_PREFIX: usize = 2;
 /// | `BIO_ADDR_new()`             | [`BioAddr::from_socket_addr`] or [`BioAddr::from_host_port`] |
 /// | `BIO_ADDR_family()`          | [`SocketAddr::ip`] method chain |
 /// | `BIO_ADDR_rawport()`         | [`BioAddr::port`]            |
-/// | `BIO_ADDR_hostname_string()` | [`BioAddr::hostname`] or [`BioAddr::to_string`] |
+/// | `BIO_ADDR_hostname_string()` | [`BioAddr::hostname`] or `BioAddr::to_string` |
 /// | `BIO_lookup_ex()`            | [`BioAddr::resolve`]         |
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BioAddr {
@@ -605,12 +605,12 @@ impl ConnectBio {
 
     /// Drives the connect state machine to completion.
     ///
-    /// 1. If [`ConnectState::Idle`]: resolves the address via
+    /// 1. If `ConnectState::Idle`: resolves the address via
     ///    [`BioAddr::resolve`] (DNS if necessary).
     /// 2. Iterates through resolved addresses, attempting
     ///    [`TcpStream::connect_timeout`] (if timeout is set) or
     ///    [`TcpStream::connect`] (otherwise).
-    /// 3. On first success: transitions to [`ConnectState::Connected`]
+    /// 3. On first success: transitions to `ConnectState::Connected`
     ///    and stores the stream.
     /// 4. If nonblocking mode is configured, sets the socket to
     ///    nonblocking via [`TcpStream::set_nonblocking`].
@@ -894,7 +894,7 @@ impl AcceptBio {
     /// subsequent invocations of `BIO_do_accept()` in the C code.
     ///
     /// The accepted stream is ALSO cached in
-    /// [`AcceptBio::accepted`] (private) to allow the Bio trait's
+    /// `AcceptBio::accepted` (private) to allow the Bio trait's
     /// stats tracking to reflect the most recent accept.
     ///
     /// # Errors
@@ -1060,7 +1060,7 @@ fn parse_bind_spec(bind_addr: &str) -> BioAddr {
 /// # MTU Handling
 ///
 /// The MTU field tracks the maximum payload size for QUIC-style datagram
-/// framing.  Defaults to [`DEFAULT_DGRAM_MTU`] (1500 — Ethernet standard).
+/// framing.  Defaults to `DEFAULT_DGRAM_MTU` (1500 — Ethernet standard).
 /// Callers using path-MTU-discovery can update via [`DatagramBio::set_mtu`].
 /// Replaces `BIO_CTRL_DGRAM_GET_MTU` / `BIO_CTRL_DGRAM_SET_MTU` from the C code.
 ///
@@ -1092,7 +1092,7 @@ pub struct DatagramBio {
     /// The underlying UDP socket.
     socket: UdpSocket,
 
-    /// Maximum Transmission Unit.  Defaults to [`DEFAULT_DGRAM_MTU`].
+    /// Maximum Transmission Unit.  Defaults to `DEFAULT_DGRAM_MTU`.
     mtu: usize,
 
     /// Cached peer address from [`DatagramBio::connect`].
@@ -1220,7 +1220,7 @@ impl DatagramBio {
     /// Sets the socket receive timeout.
     ///
     /// Calls [`UdpSocket::set_read_timeout`] and caches the value
-    /// in [`DatagramBio::read_timeout`] for later retrieval.  A value
+    /// in `DatagramBio::read_timeout` for later retrieval.  A value
     /// of `None` disables the timeout.  Replaces
     /// `BIO_CTRL_DGRAM_SET_RECV_TIMEOUT` from the C code.
     pub fn set_read_timeout(&mut self, dur: Option<Duration>) -> io::Result<()> {
@@ -1232,7 +1232,7 @@ impl DatagramBio {
     /// Sets the socket send timeout.
     ///
     /// Calls [`UdpSocket::set_write_timeout`] and caches the value in
-    /// [`DatagramBio::write_timeout`] for later retrieval.  A value of
+    /// `DatagramBio::write_timeout` for later retrieval.  A value of
     /// `None` disables the timeout.  Replaces
     /// `BIO_CTRL_DGRAM_SET_SEND_TIMEOUT` from the C code.
     pub fn set_write_timeout(&mut self, dur: Option<Duration>) -> io::Result<()> {
@@ -1553,11 +1553,11 @@ impl Bio for DatagramPairBio {
 ///
 /// The `mtu` parameter controls the maximum payload size for packets
 /// written to either BIO (packets exceeding `mtu` are truncated).  If
-/// `mtu` is 0, [`DEFAULT_DGRAM_PAIR_MTU`] (1472 — the IPv4 path MTU for
+/// `mtu` is 0, `DEFAULT_DGRAM_PAIR_MTU` (1472 — the IPv4 path MTU for
 /// a 1500-byte Ethernet frame minus IP+UDP headers) is substituted.
 ///
 /// Each buffer is pre-allocated with capacity sufficient for
-/// approximately [`DEFAULT_DGRAM_PAIR_CAPACITY`] (9) MTU-sized packets,
+/// approximately `DEFAULT_DGRAM_PAIR_CAPACITY` (9) MTU-sized packets,
 /// matching the C code's default ring-buffer sizing.
 ///
 /// # Example

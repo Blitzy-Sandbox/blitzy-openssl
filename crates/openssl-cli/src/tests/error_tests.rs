@@ -21,7 +21,7 @@
 //! isolation from global state. Temporary files and directories are managed
 //! via [`tempfile::TempDir`] for automatic cleanup.
 //!
-//! Error assertions use [`predicates`] combinators — `str::contains()` for
+//! Error assertions use `predicates` combinators — `str::contains()` for
 //! keyword matching and `str::is_match()` for regex-based pattern validation —
 //! ensuring that error output is human-readable and actionable.
 //!
@@ -221,7 +221,7 @@ fn test_bad_input_file() {
 /// Input: `openssl rand -out /no/such/dir/rand.bin 32`
 /// Expected: non-zero exit + non-empty stderr
 ///
-/// Uses [`TempDir`] for test isolation context. The target output path
+/// Uses `TempDir` for test isolation context. The target output path
 /// `/no/such/dir/rand.bin` deliberately references a non-existent
 /// directory to trigger an I/O error during output file creation.
 #[test]

@@ -12,15 +12,15 @@
 //!
 //! | C Function | Rust Equivalent |
 //! |-----------|-----------------|
-//! | `hmac_new` | [`HmacProvider::new_ctx()`] |
-//! | `hmac_free` | `Drop` for [`HmacContext`] (automatic via `Zeroizing`) |
-//! | `hmac_dup` | `Clone` for [`HmacContext`] |
-//! | `hmac_init` | [`MacContext::init()`] |
-//! | `hmac_update` | [`MacContext::update()`] |
-//! | `hmac_final` | [`MacContext::finalize()`] |
+//! | `hmac_new` | `HmacProvider::new_ctx()` |
+//! | `hmac_free` | `Drop` for `HmacContext` (automatic via `Zeroizing`) |
+//! | `hmac_dup` | `Clone` for `HmacContext` |
+//! | `hmac_init` | `MacContext::init()` |
+//! | `hmac_update` | `MacContext::update()` |
+//! | `hmac_final` | `MacContext::finalize()` |
 //! | `hmac_setkey` | Part of `init()` with FIPS key-size check |
-//! | `hmac_get_ctx_params` | [`MacContext::get_params()`] |
-//! | `hmac_set_ctx_params` | [`MacContext::set_params()`] |
+//! | `hmac_get_ctx_params` | `MacContext::get_params()` |
+//! | `hmac_set_ctx_params` | `MacContext::set_params()` |
 //! | `ossl_hmac_functions[]` | [`HmacProvider::descriptors()`] |
 //! | `ossl_hmac_internal_functions[]` | [`HmacProvider::new_internal()`] |
 //!
@@ -464,7 +464,7 @@ impl HmacContext {
         }
     }
 
-    /// Applies parameters from a [`ParamSet`] to this context.
+    /// Applies parameters from a `ParamSet` to this context.
     ///
     /// Extracts and validates:
     /// - `"digest"` — digest algorithm name
@@ -786,7 +786,7 @@ impl MacContext for HmacContext {
 
     /// Sets context parameters.
     ///
-    /// Delegates to [`apply_params()`](HmacContext::apply_params) for
+    /// Delegates to `apply_params()` for
     /// parameter extraction and validation.
     ///
     /// Corresponds to C `hmac_set_ctx_params()` from `hmac_prov.c`.

@@ -9,7 +9,7 @@
 //!
 //! Each test spawns the compiled `openssl` binary as a child process using
 //! [`assert_cmd::Command`], passes subcommand-specific arguments, and validates
-//! exit status and output using [`predicates`] matchers. Temporary files for
+//! exit status and output using `predicates` matchers. Temporary files for
 //! plaintext, ciphertext, keys, and certificates are managed by
 //! [`tempfile::TempDir`] for automatic cleanup.
 //!
@@ -53,7 +53,7 @@ use tempfile::TempDir;
 // Helper Functions
 // ============================================================================
 
-/// Returns a [`Command`] configured to invoke the compiled `openssl` binary.
+/// Returns a `Command` configured to invoke the compiled `openssl` binary.
 ///
 /// Uses `super::openssl_cmd()` from the parent test module (`tests/mod.rs`)
 /// which calls `Command::cargo_bin("openssl")` to locate the binary built

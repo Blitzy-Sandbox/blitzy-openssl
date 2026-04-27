@@ -813,7 +813,7 @@ impl<R: Read> ReadBufferFilter<R> {
     /// Reads more bytes from `inner` into the cache.
     ///
     /// Reads up to `min_bytes` bytes (rounded up to the nearest
-    /// [`CACHE_GROW_CHUNK`]) in a single call. Returns the number of bytes
+    /// `CACHE_GROW_CHUNK`) in a single call. Returns the number of bytes
     /// added to the cache. Returns `0` when `inner` is at EOF.
     ///
     /// # Errors
@@ -1095,7 +1095,7 @@ pub struct PrefixFilter<W> {
     /// use `Option<String>` instead of empty-string sentinel.
     prefix: Option<String>,
     /// Number of space characters to emit after the prefix. Clamped to
-    /// [`MAX_INDENT`] on write. Zero means no indent.
+    /// `MAX_INDENT` on write. Zero means no indent.
     indent: usize,
     /// Line-start state. Initialized to `true` (matches C `prefix_create`
     /// at `bf_prefix.c` line 56). Reset to `true` after emitting a `\n`.
@@ -1141,7 +1141,7 @@ impl<W> PrefixFilter<W> {
     /// Creates a new prefix filter with the given prefix string and
     /// indent.
     ///
-    /// The indent is clamped to [`MAX_INDENT`] (=128) columns, matching
+    /// The indent is clamped to `MAX_INDENT` (=128) columns, matching
     /// the historical C limit.
     #[must_use]
     pub fn with_prefix_and_indent(inner: W, prefix: &str, indent: usize) -> Self {
@@ -1166,7 +1166,7 @@ impl<W> PrefixFilter<W> {
 
     /// Sets the indent column count.
     ///
-    /// The value is clamped to [`MAX_INDENT`] (=128). Matches C
+    /// The value is clamped to `MAX_INDENT` (=128). Matches C
     /// `BIO_CTRL_SET_INDENT` at `bf_prefix.c` lines 159-164 which
     /// validates `num >= 0` (Rule R5: we use `usize` so this is
     /// implicit).
@@ -1553,7 +1553,7 @@ impl FilterChainBuilder {
     /// over non-seekable sources.
     ///
     /// The cache starts empty and grows on demand in
-    /// [`CACHE_GROW_CHUNK`]-sized chunks.
+    /// `CACHE_GROW_CHUNK`-sized chunks.
     #[must_use]
     pub fn with_read_buffer<R: Read>(inner: R) -> ReadBufferFilter<R> {
         ReadBufferFilter::new(inner)
@@ -1563,7 +1563,7 @@ impl FilterChainBuilder {
     /// start of every output line followed by `indent` spaces.
     ///
     /// Passing `None` for `prefix` disables prefix emission (indent-only
-    /// mode). Indent is clamped to [`MAX_INDENT`] = 128.
+    /// mode). Indent is clamped to `MAX_INDENT` = 128.
     #[must_use]
     pub fn with_prefix<W: Write>(
         inner: W,

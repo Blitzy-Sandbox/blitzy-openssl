@@ -241,7 +241,7 @@ impl HmacDrbg {
     /// # Arguments
     ///
     /// * `digest_name` — Name of the hash function (e.g., "SHA-256", "SHA3-512").
-    ///   Case-insensitive. See [`blocklen_for_digest`] for supported names.
+    ///   Case-insensitive. See `blocklen_for_digest` for supported names.
     ///
     /// # Errors
     ///
@@ -609,7 +609,7 @@ impl DrbgMechanism for HmacDrbg {
 
 /// Provider factory for HMAC-DRBG instances.
 ///
-/// Implements the [`RandProvider`] trait to register as an HMAC-DRBG algorithm
+/// Implements the `RandProvider` trait to register as an HMAC-DRBG algorithm
 /// provider in the dispatch system. Creates [`Drbg`]-wrapped [`HmacDrbg`]
 /// instances with appropriate configuration derived from the default digest
 /// (SHA-256).

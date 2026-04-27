@@ -11,12 +11,12 @@
 //!   generation types (FIPS 186-2, FIPS 186-4, or default).
 //! - **Key generation**: Produces `(x, y)` key pairs from existing domain
 //!   parameters using uniform sampling in `[1, q-1]`.
-//! - **Import/export**: Converts between [`ParamSet`] representations and
-//!   structured [`DsaKeyData`] instances for FFC parameters and key material.
+//! - **Import/export**: Converts between `ParamSet` representations and
+//!   structured `DsaKeyData` instances for FFC parameters and key material.
 //! - **Validation**: Structural checks on domain parameters and key material,
 //!   including public key range checks (`0 < y < p`) and private key range
 //!   checks (`0 < x < q`).
-//! - **Introspection**: Reports which components are present via [`has()`] and
+//! - **Introspection**: Reports which components are present via `has()` and
 //!   surfaces key metadata (bit sizes, security strength, default digest)
 //!   through the parameter system.
 //!
@@ -25,8 +25,8 @@
 //! ### Key Data Decomposition
 //!
 //! Unlike `openssl_crypto::dsa::DsaPrivateKey` and `DsaPublicKey` which require
-//! a fully-constructed [`DsaParams`] at construction time and have no public
-//! constructors, [`DsaKeyData`] decomposes the key representation into three
+//! a fully-constructed `DsaParams` at construction time and have no public
+//! constructors, `DsaKeyData` decomposes the key representation into three
 //! independent optional components:
 //!
 //! ```text
@@ -45,14 +45,14 @@
 //! ### Single Dispatch Table
 //!
 //! Unlike DH which splits into `DhKeyMgmt` and `DhxKeyMgmt` for RFC 3526
-//! versus X9.42 dispatch, DSA has a single [`DsaKeyMgmt`] struct registering
+//! versus X9.42 dispatch, DSA has a single `DsaKeyMgmt` struct registering
 //! a single algorithm descriptor. The C source (`dsa_kmgmt.c`) provides only
 //! one `OSSL_DISPATCH` table for "DSA".
 //!
 //! ## Security Properties
 //!
-//! - **Secure erasure**: [`DsaKeyData::drop`] explicitly zeros `private_value`
-//!   via [`BigNum::clear`] to prevent key material leakage, replacing the C
+//! - **Secure erasure**: `DsaKeyData::drop` explicitly zeros `private_value`
+//!   via `BigNum::clear` to prevent key material leakage, replacing the C
 //!   `BN_clear_free()` pattern from `crypto/dsa/dsa_lib.c`.
 //! - **FIPS approved pairs**: Only `(L=2048, N={224,256})` and `(L=3072, N=256)`
 //!   are approved for signing per FIPS 186-4 Section 4.2. All other pairs are
@@ -77,22 +77,22 @@
 //!
 //! | Rust item                    | C function (`dsa_kmgmt.c`)                   | Lines     |
 //! |------------------------------|----------------------------------------------|-----------|
-//! | [`DsaKeyMgmt::new_key`]      | `dsa_newdata()`                              | ~30–40    |
-//! | [`DsaKeyMgmt::generate`]     | `dsa_gen_init()` + `dsa_gen_set_params()` + `dsa_gen()` | ~380–730 |
-//! | [`DsaKeyMgmt::import`]       | `dsa_import()` + `dsa_import_types()`        | ~275–320  |
-//! | [`DsaKeyMgmt::export`]       | `dsa_export()` + `dsa_export_types()`        | ~325–370  |
-//! | [`DsaKeyMgmt::has`]          | `dsa_has()`                                  | ~110–140  |
-//! | [`DsaKeyMgmt::match_keys`]   | `dsa_match()`                                | ~145–175  |
-//! | [`DsaKeyMgmt::validate`]     | `dsa_validate()` + helper                    | ~175–240  |
-//! | [`DsaKeyMgmt::get_params`]   | `dsa_get_params()`                           | ~245–275  |
-//! | [`DsaKeyMgmt::gettable_params`] | `dsa_gettable_params()`                   | ~275–285  |
-//! | [`DsaGenContext`]            | `struct dsa_gen_ctx`                         | ~330–360  |
-//! | [`DsaGenType`]               | `gen_type` discriminant                      | ~360–380  |
-//! | [`dsa_descriptors`]          | `deflt_keymgmt[]` DSA entry in `defltprov.c` | L≈599     |
+//! | `DsaKeyMgmt::new_key`      | `dsa_newdata()`                              | ~30–40    |
+//! | `DsaKeyMgmt::generate`     | `dsa_gen_init()` + `dsa_gen_set_params()` + `dsa_gen()` | ~380–730 |
+//! | `DsaKeyMgmt::import`       | `dsa_import()` + `dsa_import_types()`        | ~275–320  |
+//! | `DsaKeyMgmt::export`       | `dsa_export()` + `dsa_export_types()`        | ~325–370  |
+//! | `DsaKeyMgmt::has`          | `dsa_has()`                                  | ~110–140  |
+//! | `DsaKeyMgmt::match_keys`   | `dsa_match()`                                | ~145–175  |
+//! | `DsaKeyMgmt::validate`     | `dsa_validate()` + helper                    | ~175–240  |
+//! | `DsaKeyMgmt::get_params`   | `dsa_get_params()`                           | ~245–275  |
+//! | `DsaKeyMgmt::gettable_params` | `dsa_gettable_params()`                   | ~275–285  |
+//! | `DsaGenContext`            | `struct dsa_gen_ctx`                         | ~330–360  |
+//! | `DsaGenType`               | `gen_type` discriminant                      | ~360–380  |
+//! | `dsa_descriptors`          | `deflt_keymgmt[]` DSA entry in `defltprov.c` | L≈599     |
 //!
-//! [`ParamSet`]: openssl_common::param::ParamSet
-//! [`DsaParams`]: openssl_crypto::dsa::DsaParams
-//! [`has()`]: DsaKeyMgmt::has
+//! `ParamSet`: openssl_common::param::ParamSet
+//! `DsaParams`: openssl_crypto::dsa::DsaParams
+//! `has()`: DsaKeyMgmt::has
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -251,7 +251,7 @@ const DSA_MAX_PBITS_FOR_GEN: usize = 3072;
 // =============================================================================
 
 /// Selects which DSA parameter generation algorithm is used by
-/// [`DsaKeyMgmt::generate`].
+/// `DsaKeyMgmt::generate`.
 ///
 /// # C Mapping
 ///
@@ -288,7 +288,7 @@ pub enum DsaGenType {
 }
 
 impl DsaGenType {
-    /// Parses the FFC `"type"` parameter string into a [`DsaGenType`].
+    /// Parses the FFC `"type"` parameter string into a `DsaGenType`.
     ///
     /// Recognised values match the C string tokens accepted by
     /// `ossl_ffc_params_set_gen_type()`:
@@ -337,9 +337,9 @@ impl Default for DsaGenType {
 /// mirroring the C `struct dsa_gen_ctx` from `dsa_kmgmt.c` (~line 330).
 ///
 /// A context is created with [`DsaGenContext::new`] and then populated via
-/// [`DsaGenContext::absorb`] from a [`ParamSet`] supplied by the caller.
+/// [`DsaGenContext::absorb`] from a `ParamSet` supplied by the caller.
 /// The populated context drives the parameter or key pair generation path
-/// selected by [`DsaKeyMgmt::generate`].
+/// selected by `DsaKeyMgmt::generate`.
 ///
 /// # Fields
 ///
@@ -351,7 +351,7 @@ impl Default for DsaGenType {
 ///
 /// [`DsaGenContext::seed`] holds sensitive bytes when the caller requests
 /// verifiable parameter generation with a user-supplied seed. Wrapping with
-/// [`Zeroizing`] ensures the seed is zeroed from memory on drop, replacing
+/// `Zeroizing` ensures the seed is zeroed from memory on drop, replacing
 /// the C `OPENSSL_clear_free()` pattern used around `ctx->seed` in
 /// `ossl_ffc_params_release()`.
 #[derive(Debug)]
@@ -364,14 +364,14 @@ pub struct DsaGenContext {
 
     /// Prime modulus `p` bit size.
     ///
-    /// Defaults to [`DSA_DEFAULT_PBITS`] (2048) per FIPS 186-4 Section 4.2.
-    /// Updated from the `"pbits"` entry of the input [`ParamSet`] during
+    /// Defaults to `DSA_DEFAULT_PBITS` (2048) per FIPS 186-4 Section 4.2.
+    /// Updated from the `"pbits"` entry of the input `ParamSet` during
     /// [`DsaGenContext::absorb`].
     pub pbits: usize,
 
     /// Subprime `q` bit size.
     ///
-    /// Defaults to [`DSA_DEFAULT_QBITS`] (224). The library's underlying
+    /// Defaults to `DSA_DEFAULT_QBITS` (224). The library's underlying
     /// `openssl_crypto::dsa::generate_params` function auto-selects `q_bits`
     /// based on `p_bits` (160 for L=1024, 256 for L∈{2048, 3072}), so this
     /// value is retained for API-surface parity rather than active use during
@@ -395,7 +395,7 @@ pub struct DsaGenContext {
     /// When present, the generation algorithm uses this seed to
     /// deterministically recompute `p` and `q`, enabling verifier-side
     /// reproduction per FIPS 186-4 Appendix A.1.1.3. The wrapping
-    /// [`Zeroizing`] ensures the seed bytes are zeroed on drop.
+    /// `Zeroizing` ensures the seed bytes are zeroed on drop.
     pub seed: Option<Zeroizing<Vec<u8>>>,
 
     /// Unverifiable generator `h` index.
@@ -440,7 +440,7 @@ impl DsaGenContext {
         }
     }
 
-    /// Consumes the relevant entries of a [`ParamSet`] into this context.
+    /// Consumes the relevant entries of a `ParamSet` into this context.
     ///
     /// Replaces the C `dsa_gen_set_params()` dispatcher from `dsa_kmgmt.c`
     /// (~line 619–720) which walks `OSSL_PARAM[]` matching each known key.
@@ -449,21 +449,21 @@ impl DsaGenContext {
     ///
     /// | Parameter key           | Expected type                   | Field updated |
     /// |-------------------------|---------------------------------|---------------|
-    /// | [`PARAM_FFC_TYPE`]      | `Utf8String`                    | `gen_type`    |
-    /// | [`PARAM_PBITS`]         | `Int32` / `UInt32` / `Int64` / `UInt64` | `pbits` |
-    /// | [`PARAM_QBITS`]         | `Int32` / `UInt32` / `Int64` / `UInt64` | `qbits` |
-    /// | [`PARAM_DIGEST`]        | `Utf8String`                    | `mdname`      |
-    /// | [`PARAM_FFC_SEED`]      | `OctetString`                   | `seed`        |
-    /// | [`PARAM_FFC_H`]         | `Int32`                         | `hindex`      |
-    /// | [`PARAM_FFC_GINDEX`]    | `Int32`                         | `gindex`      |
-    /// | [`PARAM_FFC_PCOUNTER`]  | `Int32`                         | `pcounter`    |
+    /// | `PARAM_FFC_TYPE`      | `Utf8String`                    | `gen_type`    |
+    /// | `PARAM_PBITS`         | `Int32` / `UInt32` / `Int64` / `UInt64` | `pbits` |
+    /// | `PARAM_QBITS`         | `Int32` / `UInt32` / `Int64` / `UInt64` | `qbits` |
+    /// | `PARAM_DIGEST`        | `Utf8String`                    | `mdname`      |
+    /// | `PARAM_FFC_SEED`      | `OctetString`                   | `seed`        |
+    /// | `PARAM_FFC_H`         | `Int32`                         | `hindex`      |
+    /// | `PARAM_FFC_GINDEX`    | `Int32`                         | `gindex`      |
+    /// | `PARAM_FFC_PCOUNTER`  | `Int32`                         | `pcounter`    |
     ///
     /// Missing parameters preserve the current context value. Unrecognised
     /// keys are silently ignored to match the C dispatcher behaviour.
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] if a known key holds an unsupported
+    /// - `ProviderError::Dispatch` if a known key holds an unsupported
     ///   type (e.g. `PARAM_PBITS` as `OctetString`) — type mismatch is a
     ///   caller error rather than a "parameter not present" sentinel.
     pub fn absorb(&mut self, params: &ParamSet) -> ProviderResult<()> {
@@ -512,7 +512,7 @@ impl DsaGenContext {
     }
 }
 
-/// Converts a numeric [`ParamValue`] into a `usize` with Rule R6 compliance.
+/// Converts a numeric `ParamValue` into a `usize` with Rule R6 compliance.
 ///
 /// Accepts signed and unsigned 32- and 64-bit integer variants and rejects
 /// negative values or overflowing 64-bit values. No bare `as` casts are used
@@ -520,7 +520,7 @@ impl DsaGenContext {
 ///
 /// # Errors
 ///
-/// Returns [`ProviderError::Dispatch`] if the value variant is non-numeric
+/// Returns `ProviderError::Dispatch` if the value variant is non-numeric
 /// or the value cannot be losslessly represented as a `usize`.
 fn param_to_usize(value: &ParamValue, key: &str) -> ProviderResult<usize> {
     let parsed: Option<usize> = match value {
@@ -556,18 +556,18 @@ fn param_to_usize(value: &ParamValue, key: &str) -> ProviderResult<usize> {
 ///
 /// # Security Properties
 ///
-/// The [`Drop`] implementation explicitly zeros `private_value` via
-/// [`BigNum::clear`], replicating the C `BN_clear_free(dsa->priv_key)` pattern
+/// The `Drop` implementation explicitly zeros `private_value` via
+/// `BigNum::clear`, replicating the C `BN_clear_free(dsa->priv_key)` pattern
 /// from `crypto/dsa/dsa_lib.c`. This upholds Rule R8 (no `unsafe`) while
 /// preserving the secure-erasure invariant.
 ///
 /// # Representation Choice
 ///
-/// `private_value` and `public_value` are stored as raw [`BigNum`] values
+/// `private_value` and `public_value` are stored as raw `BigNum` values
 /// rather than the structured [`openssl_crypto::dsa::DsaPrivateKey`] /
 /// [`openssl_crypto::dsa::DsaPublicKey`] types because those structured types
 /// do not expose public constructors and require a fully-constructed
-/// [`DsaParams`] at construction time. Direct [`BigNum`] storage permits
+/// `DsaParams` at construction time. Direct `BigNum` storage permits
 /// building the key data incrementally during import, and converting to the
 /// structured types only at validation time (when all components are present).
 pub struct DsaKeyData {
@@ -580,9 +580,9 @@ pub struct DsaKeyData {
 
     /// Raw private exponent `x ∈ [1, q-1]`.
     ///
-    /// Stored as a bare [`BigNum`] (not wrapped in `DsaPrivateKey`) so that
+    /// Stored as a bare `BigNum` (not wrapped in `DsaPrivateKey`) so that
     /// import/export operations can manipulate the value before the parameters
-    /// are populated. Zeroed on drop via [`Drop`].
+    /// are populated. Zeroed on drop via `Drop`.
     pub(crate) private_value: Option<BigNum>,
 
     /// Raw public value `y = g^x mod p`, `y ∈ [1, p-1]`.
@@ -597,7 +597,7 @@ impl fmt::Debug for DsaKeyData {
     /// `has_private`, `has_public`, `has_params` are load-bearing: they are
     /// used by the [`KeyMgmtProvider::has`] and related trait-object methods
     /// to structurally introspect `&dyn KeyData` via `format!("{key:?}")`
-    /// since [`KeyData`] is a marker trait without downcasting support.
+    /// since `KeyData` is a marker trait without downcasting support.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DsaKeyData")
             .field("has_private", &self.private_value.is_some())
@@ -610,7 +610,7 @@ impl fmt::Debug for DsaKeyData {
 impl Drop for DsaKeyData {
     /// Secure erasure on drop.
     ///
-    /// Explicitly clears `private_value` via [`BigNum::clear`] so that the
+    /// Explicitly clears `private_value` via `BigNum::clear` so that the
     /// secret exponent `x` is zeroed from memory even if the allocator does
     /// not reuse or overwrite the region. Mirrors the C
     /// `BN_clear_free(dsa->priv_key)` pattern from `crypto/dsa/dsa_lib.c:45`.
@@ -624,7 +624,7 @@ impl Drop for DsaKeyData {
 impl KeyData for DsaKeyData {}
 
 impl DsaKeyData {
-    /// Constructs an empty [`DsaKeyData`] with no components populated.
+    /// Constructs an empty `DsaKeyData` with no components populated.
     ///
     /// Replaces the C `dsa_newdata()` function (`dsa_kmgmt.c:31`) which
     /// allocates a fresh `DSA` struct via `DSA_new_ex()`.
@@ -637,7 +637,7 @@ impl DsaKeyData {
         }
     }
 
-    /// Returns a reference to the stored [`DsaParams`] if present.
+    /// Returns a reference to the stored `DsaParams` if present.
     ///
     /// Equivalent to the C `DSA_get0_pqg()` accessor. Returns `None` when
     /// the key data has not yet had parameters installed (e.g., freshly
@@ -723,7 +723,7 @@ impl DsaKeyData {
         })
     }
 
-    /// Exports the selected components into a fresh [`ParamSet`].
+    /// Exports the selected components into a fresh `ParamSet`.
     ///
     /// Replaces the C `dsa_export()` (~line 325) and `ossl_ffc_params_todata()`
     /// helpers. Each requested component is serialised via
@@ -732,11 +732,11 @@ impl DsaKeyData {
     ///
     /// # Selection Semantics
     ///
-    /// - [`KeySelection::DOMAIN_PARAMETERS`] → emits `p`, `q`, `g` (and
+    /// - `KeySelection::DOMAIN_PARAMETERS` → emits `p`, `q`, `g` (and
     ///   `cofactor` as `"j"` is only emitted when a non-trivial value exists,
     ///   which for DSA is never — `q` divides `p-1` exactly by construction).
-    /// - [`KeySelection::PUBLIC_KEY`]        → emits `pub` (the `y` value).
-    /// - [`KeySelection::PRIVATE_KEY`]       → emits `priv` (the `x` value).
+    /// - `KeySelection::PUBLIC_KEY`        → emits `pub` (the `y` value).
+    /// - `KeySelection::PRIVATE_KEY`       → emits `priv` (the `x` value).
     ///
     /// Missing components are silently omitted — it is valid to request an
     /// export of `KEYPAIR` when only the public part is present, in which
@@ -744,7 +744,7 @@ impl DsaKeyData {
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] if the requested selection is empty
+    /// - `ProviderError::Dispatch` if the requested selection is empty
     ///   (`KeySelection::empty()`) — callers must select at least one
     ///   component.
     pub fn export_to_params(&self, selection: KeySelection) -> ProviderResult<ParamSet> {
@@ -785,7 +785,7 @@ impl DsaKeyData {
         Ok(out)
     }
 
-    /// Constructs a [`DsaKeyData`] from an inbound [`ParamSet`] per
+    /// Constructs a `DsaKeyData` from an inbound `ParamSet` per
     /// `selection`.
     ///
     /// Replaces the C `dsa_import()` (~line 275) and
@@ -795,18 +795,18 @@ impl DsaKeyData {
     ///
     /// - When `DOMAIN_PARAMETERS` is selected, **all** of `p`, `q`, `g` must
     ///   be present or the call errors — partial domain parameter imports
-    ///   are rejected to avoid constructing a [`DsaParams`] with holes.
+    ///   are rejected to avoid constructing a `DsaParams` with holes.
     /// - When `PUBLIC_KEY` or `PRIVATE_KEY` are selected, the corresponding
     ///   component must be present or the call errors.
     /// - Key components are accepted from either [`ParamValue::BigNum`] or
-    ///   [`ParamValue::OctetString`] variants — both are big-endian byte
+    ///   `ParamValue::OctetString` variants — both are big-endian byte
     ///   representations and the C dispatcher accepts both.
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] if a required component is missing or has
+    /// - `ProviderError::Dispatch` if a required component is missing or has
     ///   an incompatible `ParamValue` variant.
-    /// - [`ProviderError::Dispatch`] wrapping a [`openssl_common::error::CryptoError`]
+    /// - `ProviderError::Dispatch` wrapping a [`openssl_common::error::CryptoError`]
     ///   display if the constructed parameters fail [`DsaParams::new`]
     ///   validation (out-of-range, structurally invalid).
     pub fn from_params(
@@ -850,7 +850,7 @@ impl DsaKeyData {
     }
 
     /// Generates fresh domain parameters and optionally a key pair per the
-    /// supplied [`DsaGenContext`].
+    /// supplied `DsaGenContext`.
     ///
     /// Replaces the C `dsa_gen()` function (~line 530) which orchestrates
     /// calls to `ossl_ffc_params_FIPS186_4_generate()` followed (when
@@ -866,13 +866,13 @@ impl DsaKeyData {
     ///    L ∈ {1024, 2048, 3072}.
     /// 3. When `selection` includes `PUBLIC_KEY` or `PRIVATE_KEY`, calls
     ///    [`openssl_crypto::dsa::generate_key`] to sample a uniformly-random
-    ///    key pair and extracts raw [`BigNum`] values via `.value().clone()`.
+    ///    key pair and extracts raw `BigNum` values via `.value().clone()`.
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] with an out-of-range diagnostic if
+    /// - `ProviderError::Dispatch` with an out-of-range diagnostic if
     ///   `pbits` is not in `[1024, 3072]`.
-    /// - [`ProviderError::Dispatch`] wrapping the underlying crypto error if
+    /// - `ProviderError::Dispatch` wrapping the underlying crypto error if
     ///   the generation primitive fails (e.g., sampler exhaustion).
     pub fn generate_from_params(ctx: &DsaGenContext) -> ProviderResult<Self> {
         debug!(
@@ -967,7 +967,7 @@ impl DsaKeyData {
     ///   the selection includes both `PUBLIC_KEY` and `PRIVATE_KEY` and
     ///   domain parameters are present, the recomputed `g^x mod p` must
     ///   equal the stored public value `y`. Performed via
-    ///   [`mod_exp_consttime`] because the private exponent `x` is secret
+    ///   `mod_exp_consttime` because the private exponent `x` is secret
     ///   material; the limb-level non-constant-time behavior of the
     ///   underlying `num-bigint` crate is a documented residual leak that
     ///   applies workspace-wide, not specific to this routine.
@@ -976,7 +976,7 @@ impl DsaKeyData {
     ///
     /// Returns `Ok(true)` when all present components pass validation,
     /// `Ok(false)` when structural or pairwise checks fail, and
-    /// [`ProviderError`] only when the selection is inconsistent (e.g.,
+    /// `ProviderError` only when the selection is inconsistent (e.g.,
     /// asks to validate a component that is not present) or when the
     /// constant-time modular exponentiation reports an internal error.
     pub fn validate_selection(&self, selection: KeySelection) -> ProviderResult<bool> {
@@ -1175,15 +1175,15 @@ impl Default for DsaKeyData {
 // Helper functions
 // =============================================================================
 
-/// Extracts a big-endian big-number byte sequence from a [`ParamSet`] entry.
+/// Extracts a big-endian big-number byte sequence from a `ParamSet` entry.
 ///
-/// Accepts both [`ParamValue::BigNum`] and [`ParamValue::OctetString`]
+/// Accepts both [`ParamValue::BigNum`] and `ParamValue::OctetString`
 /// variants — these are interchangeable big-endian representations and the
 /// C dispatcher does not distinguish between them for FFC components.
 ///
 /// # Errors
 ///
-/// - [`ProviderError::Dispatch`] if the key is missing or holds an
+/// - `ProviderError::Dispatch` if the key is missing or holds an
 ///   incompatible variant.
 fn extract_bignum_bytes(params: &ParamSet, key: &str) -> ProviderResult<Vec<u8>> {
     match params.get(key) {
@@ -1201,7 +1201,7 @@ fn extract_bignum_bytes(params: &ParamSet, key: &str) -> ProviderResult<Vec<u8>>
 /// Maps prime `p` bit size to the NIST SP 800-57 Part 1 Table 2 security
 /// strength in bits.
 ///
-/// Used by [`DsaKeyData::security_bits`] and by [`DsaKeyMgmt::get_params`]
+/// Used by [`DsaKeyData::security_bits`] and by `DsaKeyMgmt::get_params`
 /// when surfacing the `"security-bits"` metadata parameter.
 ///
 /// Returns `0` for sub-1024 bit primes (not approved for any FIPS use).
@@ -1235,7 +1235,7 @@ fn security_bits_from_prime(bits: u32) -> u32 {
 /// single dispatch table because the algorithm family is uniform.
 ///
 /// This struct is a zero-sized type — all state lives on the
-/// [`DsaKeyData`] values returned by [`new_key`](KeyMgmtProvider::new_key),
+/// `DsaKeyData` values returned by [`new_key`](KeyMgmtProvider::new_key),
 /// [`import`](KeyMgmtProvider::import), and
 /// [`generate`](KeyMgmtProvider::generate). Multiple `DsaKeyMgmt` values may
 /// coexist without contention because the type carries no mutable state — see
@@ -1253,7 +1253,7 @@ pub struct DsaKeyMgmt;
 impl DsaKeyMgmt {
     /// Constructs a new DSA key management instance.
     ///
-    /// Because [`DsaKeyMgmt`] is a zero-sized type this is equivalent to
+    /// Because `DsaKeyMgmt` is a zero-sized type this is equivalent to
     /// [`DsaKeyMgmt::default()`], but the inherent constructor matches the
     /// workspace convention for `KeyMgmt` providers (see
     /// [`DhKeyMgmt::new`](super::dh::DhKeyMgmt::new)).
@@ -1283,10 +1283,10 @@ impl DsaKeyMgmt {
     ///
     /// | C constant                    | Rust constant             | Type    | Value                                    |
     /// |-------------------------------|---------------------------|---------|------------------------------------------|
-    /// | `OSSL_PKEY_PARAM_BITS`        | [`PARAM_BITS`]            | `u32`   | `p` bit size (via [`DsaKeyData::bits`])  |
-    /// | `OSSL_PKEY_PARAM_MAX_SIZE`    | [`PARAM_MAX_SIZE`]        | `u32`   | Max DER signature bytes (see [`DsaKeyData::max_size`]) |
-    /// | `OSSL_PKEY_PARAM_SECURITY_BITS` | [`PARAM_SECURITY_BITS`] | `u32`   | NIST SP 800-57 strength mapping           |
-    /// | `OSSL_PKEY_PARAM_DEFAULT_DIGEST` | [`PARAM_DEFAULT_DIGEST`] | `&str` | [`DSA_DEFAULT_MD`] = `"SHA256"`          |
+    /// | `OSSL_PKEY_PARAM_BITS`        | `PARAM_BITS`            | `u32`   | `p` bit size (via [`DsaKeyData::bits`])  |
+    /// | `OSSL_PKEY_PARAM_MAX_SIZE`    | `PARAM_MAX_SIZE`        | `u32`   | Max DER signature bytes (see [`DsaKeyData::max_size`]) |
+    /// | `OSSL_PKEY_PARAM_SECURITY_BITS` | `PARAM_SECURITY_BITS` | `u32`   | NIST SP 800-57 strength mapping           |
+    /// | `OSSL_PKEY_PARAM_DEFAULT_DIGEST` | `PARAM_DEFAULT_DIGEST` | `&str` | `DSA_DEFAULT_MD` = `"SHA256"`          |
     ///
     /// Unlike DH (which emits an empty string for `default-digest` because
     /// DH is not a signature primitive), DSA always emits `"SHA256"`
@@ -1295,12 +1295,12 @@ impl DsaKeyMgmt {
     ///
     /// When domain parameters are absent the numeric metadata slots are
     /// omitted — Rule R5 forbids returning sentinel `0` to represent
-    /// "unknown". Only the always-valid [`PARAM_DEFAULT_DIGEST`] entry is
-    /// unconditionally present in the returned [`ParamSet`].
+    /// "unknown". Only the always-valid `PARAM_DEFAULT_DIGEST` entry is
+    /// unconditionally present in the returned `ParamSet`.
     ///
     /// # Rule R6 Compliance
     ///
-    /// The `usize` → `u32` conversion for [`PARAM_MAX_SIZE`] uses
+    /// The `usize` → `u32` conversion for `PARAM_MAX_SIZE` uses
     /// [`u32::try_from`] with a [`u32::MAX`] saturating fall-back. No bare
     /// `as` cast appears anywhere on this path.
     ///
@@ -1486,7 +1486,7 @@ impl KeyMgmtProvider for DsaKeyMgmt {
 /// aliases mirror the name list used by the C `ossl_dsa_keymgmt_functions`
 /// registration block in `defltprov.c:599`.
 ///
-/// The `property` field is [`DEFAULT_PROPERTY`] (`"provider=default"`)
+/// The `property` field is `DEFAULT_PROPERTY` (`"provider=default"`)
 /// because DSA is part of the default provider. FIPS-specific descriptors
 /// for DSA are registered separately in the `openssl-fips` crate with a
 /// different property string.

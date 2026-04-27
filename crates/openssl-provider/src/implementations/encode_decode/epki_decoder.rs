@@ -18,7 +18,7 @@
 //!
 //! 1. Parses the `EncryptedPrivateKeyInfo` envelope
 //! 2. Obtains a passphrase (empty default through the trait interface;
-//!    explicit passphrase via [`decrypt_epki()`] for pipeline callers)
+//!    explicit passphrase via `decrypt_epki()` for pipeline callers)
 //! 3. Decrypts the payload using the PKCS#5 PBE scheme (PBES2/PBES1)
 //! 4. Parses the resulting `PrivateKeyInfo`
 //! 5. Extracts the `AlgorithmIdentifier` OID and resolves it to a name
@@ -32,10 +32,10 @@
 //!
 //! | C Function / Symbol | Rust Equivalent |
 //! |---------------------|-----------------|
-//! | `struct epki2pki_ctx_st` | [`EpkiDecoderContext`] |
-//! | `ossl_epki2pki_der_decode()` | [`EpkiDecoder::decode()`] + [`decrypt_epki()`] |
-//! | `PKCS12_pbe_crypt_ex()` | [`decrypt_epki()`] via `pkcs8::EncryptedPrivateKeyInfo::decrypt()` |
-//! | `PKCS8_pkey_get0()` + `OBJ_obj2txt()` | [`identify_key_algorithm()`] |
+//! | `struct epki2pki_ctx_st` | `EpkiDecoderContext` |
+//! | `ossl_epki2pki_der_decode()` | `EpkiDecoder::decode()` + `decrypt_epki()` |
+//! | `PKCS12_pbe_crypt_ex()` | `decrypt_epki()` via `pkcs8::EncryptedPrivateKeyInfo::decrypt()` |
+//! | `PKCS8_pkey_get0()` + `OBJ_obj2txt()` | `identify_key_algorithm()` |
 //! | `ossl_EncryptedPrivateKeyInfo_der_to_der_decoder_functions` | `impl DecoderProvider for EpkiDecoder` |
 //!
 //! # Rules Compliance
@@ -176,7 +176,7 @@ impl Default for EpkiDecoderContext {
 /// - The trait-based [`decode()`](DecoderProvider::decode) attempts decryption
 ///   with an empty passphrase (common for test and unprotected keys).
 /// - For explicit passphrase-based decryption, callers use the standalone
-///   [`decrypt_epki()`] function directly, passing the passphrase.
+///   `decrypt_epki()` function directly, passing the passphrase.
 ///
 /// Replaces the C `ossl_EncryptedPrivateKeyInfo_der_to_der_decoder_functions`
 /// dispatch table from `decode_epki2pki.c` (lines 196–206).
@@ -255,16 +255,16 @@ impl DecoderProvider for EpkiDecoder {
     ///
     /// The trait-based decode attempts decryption with an empty passphrase.
     /// If the key requires a non-empty passphrase, the method returns
-    /// [`ProviderError::Dispatch`] wrapping [`EndecoderError::UnableToGetPassphrase`].
-    /// Callers with passphrase access should use [`decrypt_epki()`] directly.
+    /// `ProviderError::Dispatch` wrapping [`EndecoderError::UnableToGetPassphrase`].
+    /// Callers with passphrase access should use `decrypt_epki()` directly.
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] wrapping [`EndecoderError::BadEncoding`]:
+    /// - `ProviderError::Dispatch` wrapping [`EndecoderError::BadEncoding`]:
     ///   input is not valid EPKI DER.
-    /// - [`ProviderError::Dispatch`] wrapping [`EndecoderError::UnableToGetPassphrase`]:
+    /// - `ProviderError::Dispatch` wrapping [`EndecoderError::UnableToGetPassphrase`]:
     ///   decryption failed (passphrase required but not available via trait).
-    /// - [`ProviderError::Dispatch`]: unrecognised algorithm OID in the
+    /// - `ProviderError::Dispatch`: unrecognised algorithm OID in the
     ///   decrypted `PrivateKeyInfo`.
     fn decode(&self, input: &[u8]) -> ProviderResult<Box<dyn KeyData>> {
         debug!(
@@ -411,9 +411,9 @@ impl DecoderProvider for EpkiDecoder {
 ///
 /// # Errors
 ///
-/// - [`ProviderError::Dispatch`] wrapping [`EndecoderError::BadEncoding`]:
+/// - `ProviderError::Dispatch` wrapping [`EndecoderError::BadEncoding`]:
 ///   input is not valid `EncryptedPrivateKeyInfo` DER.
-/// - [`ProviderError::Dispatch`]: decryption failed (wrong passphrase,
+/// - `ProviderError::Dispatch`: decryption failed (wrong passphrase,
 ///   unsupported PBE algorithm, corrupt ciphertext).
 ///
 /// # C Source Mapping
@@ -485,7 +485,7 @@ pub fn decrypt_epki(input: &[u8], passphrase: &[u8]) -> ProviderResult<Vec<u8>> 
 /// # Arguments
 ///
 /// * `pki_der` — DER-encoded `PrivateKeyInfo` bytes (the decrypted output
-///   from [`decrypt_epki()`]).
+///   from `decrypt_epki()`).
 ///
 /// # Returns
 ///
@@ -494,9 +494,9 @@ pub fn decrypt_epki(input: &[u8], passphrase: &[u8]) -> ProviderResult<Vec<u8>> 
 ///
 /// # Errors
 ///
-/// - [`ProviderError::Dispatch`] wrapping [`EndecoderError::BadEncoding`]:
+/// - `ProviderError::Dispatch` wrapping [`EndecoderError::BadEncoding`]:
 ///   input is not valid `PrivateKeyInfo` DER.
-/// - [`ProviderError::Dispatch`]: the algorithm OID is unrecognised.
+/// - `ProviderError::Dispatch`: the algorithm OID is unrecognised.
 ///
 /// # C Source Mapping
 ///

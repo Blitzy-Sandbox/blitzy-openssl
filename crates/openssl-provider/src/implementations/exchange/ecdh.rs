@@ -36,7 +36,7 @@
 //! | Rust type | C construct | Source |
 //! |-----------|------------|--------|
 //! | [`EcdhKeyExchange`] | `ossl_ecdh_keyexch_functions` | `ecdh_exch.c` |
-//! | [`EcdhExchangeContext`] | `PROV_ECDH_CTX` | `ecdh_exch.c:30` |
+//! | `EcdhExchangeContext` | `PROV_ECDH_CTX` | `ecdh_exch.c:30` |
 
 use tracing::{debug, trace, warn};
 use zeroize::{Zeroize, Zeroizing};
@@ -207,7 +207,11 @@ impl AffinePoint {
     /// Encode to uncompressed form: `04 || x || y`.
     ///
     /// Used for test round-trip verification and future public-key export.
+    // Reserved for upcoming public-key export and round-trip diagnostic tests;
+    // retained alongside `from_uncompressed` to preserve symmetric encode/decode
+    // helpers for the AffinePoint type.
     #[cfg(test)]
+    #[allow(dead_code)]
     fn to_uncompressed(&self, field_len: usize) -> Vec<u8> {
         let mut out = Vec::with_capacity(1 + 2 * field_len);
         out.push(0x04);

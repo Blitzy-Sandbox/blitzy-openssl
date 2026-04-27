@@ -18,7 +18,7 @@
 //! | `http_server_get_asn1_req()` | [`HttpServer::accept_request()`] |
 //! | `http_server_send_asn1_resp()` | [`HttpServer::send_response()`] |
 //! | `http_server_send_status()` | [`HttpServer::send_status()`] |
-//! | `urldecode()` | [`url_decode()`] |
+//! | `urldecode()` | `url_decode()` |
 //!
 //! ## Daemon Mode
 //! The C implementation's `HTTP_DAEMON` fork-based spawning
@@ -104,7 +104,7 @@ pub enum HttpServerError {
 
     /// A percent-encoded URL sequence contained invalid hex digits.
     ///
-    /// Raised by [`url_decode()`] when a `%xx` escape contains non-hex
+    /// Raised by `url_decode()` when a `%xx` escape contains non-hex
     /// characters, or by base64 decoding failure for GET request paths.
     #[error("URL decode error")]
     UrlDecodeError,

@@ -9,7 +9,7 @@
 //!
 //! ## Rust Implementation
 //!
-//! Uses the `rand` crate's [`OsRng`] for cross-platform OS entropy access,
+//! Uses the `rand` crate's `OsRng` for cross-platform OS entropy access,
 //! which delegates to the appropriate system API on each platform.
 //!
 //! Source: `providers/implementations/rands/seed_src.c`
@@ -44,7 +44,7 @@ pub const SEED_SRC_MAX_REQUEST: usize = 256;
 ///
 /// This is the root of the DRBG chain and MUST NOT have a parent RAND.
 /// It acquires entropy directly from the OS via `getrandom(2)` (Linux/macOS)
-/// or `BCryptGenRandom` (Windows) through the `rand` crate's [`OsRng`].
+/// or `BCryptGenRandom` (Windows) through the `rand` crate's `OsRng`.
 ///
 /// Fixed capabilities:
 /// - Strength: 256 bits (see [`SEED_SRC_STRENGTH`])
@@ -157,7 +157,7 @@ impl SeedSource {
     /// Generates random bytes from the OS entropy source.
     ///
     /// Fills the `output` buffer with random bytes obtained directly from the
-    /// operating system's entropy source. Uses [`OsRng`] which delegates to
+    /// operating system's entropy source. Uses `OsRng` which delegates to
     /// the platform's cryptographic RNG (`getrandom()`, `/dev/urandom`,
     /// `BCryptGenRandom`).
     ///
@@ -174,7 +174,7 @@ impl SeedSource {
     /// # Errors
     ///
     /// - [`ProviderError::Init`] if the seed source has not been instantiated
-    /// - [`ProviderError::Dispatch`] if the request exceeds [`SEED_SRC_MAX_REQUEST`]
+    /// - `ProviderError::Dispatch` if the request exceeds [`SEED_SRC_MAX_REQUEST`]
     pub fn generate(
         &mut self,
         output: &mut [u8],
@@ -248,7 +248,7 @@ impl SeedSource {
     /// # Errors
     ///
     /// - [`ProviderError::Init`] if the seed source has not been instantiated
-    /// - [`ProviderError::Dispatch`] if `min_len > max_len` or `min_len` is 0
+    /// - `ProviderError::Dispatch` if `min_len > max_len` or `min_len` is 0
     pub fn get_seed(&mut self, min_len: usize, max_len: usize) -> ProviderResult<Vec<u8>> {
         let _guard = self.lock.as_ref().map(|m| m.lock());
 
@@ -417,7 +417,7 @@ impl RandContext for SeedSource {
 
 /// Provider factory for creating [`SeedSource`] instances.
 ///
-/// Implements the [`RandProvider`] trait to integrate with the provider
+/// Implements the `RandProvider` trait to integrate with the provider
 /// framework's algorithm dispatch system. Registered as the `"SEED-SRC"`
 /// algorithm in the default provider.
 ///

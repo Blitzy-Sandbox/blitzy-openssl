@@ -8,11 +8,11 @@
 //!
 //! | C Function / Pattern            | Rust Equivalent                           |
 //! |---------------------------------|-------------------------------------------|
-//! | `errstr_main()`                 | [`ErrstrArgs::execute()`]                 |
+//! | `errstr_main()`                 | `ErrstrArgs::execute()`                 |
 //! | `sscanf(*argv, "%lx", &l)`      | `u64::from_str_radix(s, 16)`              |
-//! | `ERR_error_string_n(l, buf, …)` | [`decode_error_code()`] + [`ErrorDetail`] |
+//! | `ERR_error_string_n(l, buf, …)` | `decode_error_code()` + `ErrorDetail` |
 //! | `OPT_SECTION` / `OPTIONS[]`     | `#[derive(clap::Args)]`                   |
-//! | `ERR_GET_LIB(l)`                | [`library_from_code()`]                   |
+//! | `ERR_GET_LIB(l)`                | `library_from_code()`                   |
 //! | `ERR_GET_REASON(l)`             | Bit masking: `code & ERR_REASON_MASK`     |
 //!
 //! # Error Code Bit Layout
@@ -157,7 +157,7 @@ impl ErrstrArgs {
     /// 3. Unpacks the library code and reason code using the OpenSSL bit
     ///    layout constants defined in `include/openssl/err.h.in`.
     /// 4. Maps the library code to an [`ErrorLibrary`] variant.
-    /// 5. Constructs an [`ErrorDetail`] via the [`err_detail!`] macro for
+    /// 5. Constructs an `ErrorDetail` via the [`err_detail!`] macro for
     ///    structured logging and output formatting.
     /// 6. Prints the decoded error string to stdout.
     ///
@@ -235,7 +235,7 @@ impl ErrstrArgs {
 // Error Code Decoding — Private Helpers
 // =============================================================================
 
-/// Decodes a packed OpenSSL error code into an [`ErrorDetail`].
+/// Decodes a packed OpenSSL error code into an `ErrorDetail`.
 ///
 /// Implements the equivalent of C's `ERR_error_string_n()` from
 /// `crypto/err/err.c`. The packed error code uses the bit layout
@@ -251,7 +251,7 @@ impl ErrstrArgs {
 ///
 /// For non-system errors, the library code is extracted from bits 23–30
 /// and the reason code from bits 0–22. The library code is mapped to an
-/// [`ErrorLibrary`] variant via [`library_from_code()`].
+/// [`ErrorLibrary`] variant via `library_from_code()`.
 ///
 /// # Examples
 ///

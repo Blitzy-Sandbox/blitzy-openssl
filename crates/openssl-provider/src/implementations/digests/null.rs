@@ -66,7 +66,7 @@ impl DigestProvider for NullDigestProvider {
         0
     }
 
-    /// Creates a new [`NullDigestContext`] — a zero-cost no-op context.
+    /// Creates a new `NullDigestContext` — a zero-cost no-op context.
     ///
     /// Always succeeds; the NULL digest has no initialization requirements.
     fn new_ctx(&self) -> ProviderResult<Box<dyn DigestContext>> {
@@ -87,7 +87,7 @@ impl DigestProvider for NullDigestProvider {
 /// - `init()` always succeeds.
 /// - `update()` accepts and silently discards all input data.
 /// - `finalize()` returns an empty `Vec<u8>` (matching C `*outl = 0`).
-/// - `get_params()` delegates to [`default_get_params`] with `block_size=0`,
+/// - `get_params()` delegates to `default_get_params` with `block_size=0`,
 ///   `digest_size=0`, and [`DigestFlags::empty()`].
 /// - `set_params()` is a no-op that accepts any parameter set.
 #[derive(Debug, Clone)]
@@ -134,7 +134,7 @@ impl DigestContext for NullDigestContext {
 
     /// Returns the digest parameter set with `block_size=0` and `digest_size=0`.
     ///
-    /// Delegates to [`default_get_params`] with `(0, 0, DigestFlags::empty())`
+    /// Delegates to `default_get_params` with `(0, 0, DigestFlags::empty())`
     /// which mirrors the C `IMPLEMENT_digest_functions` macro behaviour calling
     /// `ossl_digest_default_get_params(0, 0, 0)` for the NULL digest.
     fn get_params(&self) -> ProviderResult<ParamSet> {

@@ -21,20 +21,20 @@
 //!
 //! | Module          | Source (C)                                                    | Purpose                                                                 |
 //! |-----------------|---------------------------------------------------------------|-------------------------------------------------------------------------|
-//! | [`state`]       | `providers/fips/self_test.c` (state machine)                  | Module-level and per-test state enums with atomic accessors             |
-//! | [`indicator`]   | `providers/fips/fipsindicator.c`                              | FIPS approved service indicator with settable-state overrides           |
-//! | [`kats`]        | `providers/fips/self_test_kats.c`, `self_test_data.c`         | KAT execution engine and compiled test-vector catalogue                 |
-//! | [`self_test`]   | `providers/fips/self_test.c`                                  | POST orchestration, integrity verification, state transitions           |
-//! | [`provider`]    | `providers/fips/fipsprov.c`, `fips_entry.c`                   | Provider entry, algorithm dispatch tables, configuration lifecycle      |
+//! | `state`       | `providers/fips/self_test.c` (state machine)                  | Module-level and per-test state enums with atomic accessors             |
+//! | `indicator`   | `providers/fips/fipsindicator.c`                              | FIPS approved service indicator with settable-state overrides           |
+//! | `kats`        | `providers/fips/self_test_kats.c`, `self_test_data.c`         | KAT execution engine and compiled test-vector catalogue                 |
+//! | `self_test`   | `providers/fips/self_test.c`                                  | POST orchestration, integrity verification, state transitions           |
+//! | `provider`    | `providers/fips/fipsprov.c`, `fips_entry.c`                   | Provider entry, algorithm dispatch tables, configuration lifecycle      |
 //!
 //! ### Migration from C
 //!
 //! The trivial 20-line `fips_entry.c` trampoline (which forwards
 //! `OSSL_provider_init` to `OSSL_provider_init_int`) is replaced in Rust by
 //! the direct convenience functions exposed at this crate root
-//! ([`is_operational`], [`is_self_testing`], [`current_state`]).  The
-//! equivalent dispatch logic lives in [`provider`], and the state accessors
-//! live in [`state`] and [`self_test`].
+//! (`is_operational`, `is_self_testing`, `current_state`).  The
+//! equivalent dispatch logic lives in `provider`, and the state accessors
+//! live in `state` and `self_test`.
 //!
 //! ## FIPS Boundary Isolation
 //!
@@ -103,7 +103,7 @@
 //!
 //! The typical lifecycle is: construct a configuration `ParamSet`,
 //! call [`provider::initialize`] to run POST and register algorithms,
-//! then gate subsequent operations behind [`is_operational`] checks.
+//! then gate subsequent operations behind `is_operational` checks.
 //!
 //! ```rust,no_run
 //! use openssl_fips::provider::{initialize, SelfTestPostParams};
@@ -129,14 +129,14 @@
 //!
 //! | Re-export                 | Source Module            | Kind       |
 //! |---------------------------|--------------------------|------------|
-//! | [`FipsState`]             | [`state::FipsState`]     | `enum`     |
-//! | [`TestState`]             | [`state::TestState`]     | `enum`     |
-//! | [`TestCategory`]          | [`state::TestCategory`]  | `enum`     |
-//! | [`FipsIndicator`]         | [`indicator::FipsIndicator`] | `struct` |
-//! | [`SettableState`]         | [`indicator::SettableState`] | `enum`   |
-//! | [`FipsGlobal`]            | [`provider::FipsGlobal`] | `struct`   |
-//! | [`FipsOption`]            | [`provider::FipsOption`] | `struct`   |
-//! | [`SelfTestPostParams`]    | [`provider::SelfTestPostParams`] | `struct` |
+//! | `FipsState`             | [`state::FipsState`]     | `enum`     |
+//! | `TestState`             | [`state::TestState`]     | `enum`     |
+//! | `TestCategory`          | [`state::TestCategory`]  | `enum`     |
+//! | `FipsIndicator`         | [`indicator::FipsIndicator`] | `struct` |
+//! | `SettableState`         | [`indicator::SettableState`] | `enum`   |
+//! | `FipsGlobal`            | [`provider::FipsGlobal`] | `struct`   |
+//! | `FipsOption`            | [`provider::FipsOption`] | `struct`   |
+//! | `SelfTestPostParams`    | [`provider::SelfTestPostParams`] | `struct` |
 
 // =============================================================================
 // Crate-Level Lint Configuration
@@ -230,13 +230,13 @@ mod tests;
 // `use openssl_fips::state::FipsState;`.  The underlying module paths remain
 // fully accessible for consumers that need fine-grained imports.
 
-// State machine types (from [`state`]).
+// State machine types (from `state`).
 pub use state::{FipsState, TestCategory, TestState};
 
-// Indicator types (from [`indicator`]).
+// Indicator types (from `indicator`).
 pub use indicator::{FipsIndicator, SettableState};
 
-// Provider types (from [`provider`]).
+// Provider types (from `provider`).
 pub use provider::{FipsGlobal, FipsOption, SelfTestPostParams};
 
 // =============================================================================
@@ -260,7 +260,7 @@ pub const NAME: &str = "OpenSSL FIPS Provider";
 
 /// Concatenated build identifier: `"openssl-fips <version>"`.
 ///
-/// Built at compile time from [`NAME`] and [`VERSION`]. Surfaced by
+/// Built at compile time from `NAME` and `VERSION`. Surfaced by
 /// [`provider::FipsGlobal::build_info`] and used as the `OSSL_PROV_PARAM_BUILDINFO`
 /// value when the provider is queried. Matches the canonical build-info string
 /// format used throughout the OpenSSL codebase.
@@ -309,7 +309,7 @@ pub fn is_operational() -> bool {
 /// (integrity verification or Known Answer Tests).
 ///
 /// Used by reentrancy guards in cryptographic algorithms: while
-/// [`is_self_testing`] returns `true`, algorithm implementations must
+/// `is_self_testing` returns `true`, algorithm implementations must
 /// skip their normal indicator / approval checks to avoid recursive
 /// self-test invocations (matches the `SELF_TEST_FLAG_PENDING_SETUP`
 /// behaviour in `providers/fips/self_test.c`).
@@ -332,7 +332,7 @@ pub fn is_self_testing() -> bool {
 
 /// Returns the current process-wide FIPS module state.
 ///
-/// Reads the atomic state machine variable maintained by the [`state`]
+/// Reads the atomic state machine variable maintained by the `state`
 /// submodule. Useful for diagnostics and for making fine-grained decisions
 /// that depend on more than the binary "operational" question.
 ///

@@ -15,7 +15,7 @@
 //!
 //! 1. `B_0 = n-fold(C, blocksize)`       — fold the constant to the
 //!    cipher block size using the 13-bit rotation and carry-propagation
-//!    scheme of RFC 3961 §5.1 ([`n_fold`]).
+//!    scheme of RFC 3961 §5.1 (`n_fold`).
 //! 2. `B_i = E_k(B_{i-1})`              — repeatedly encrypt the prior
 //!    block with key `k` in CBC mode with a zero IV.  Because the
 //!    underlying mode is CBC and each iteration uses a fresh context
@@ -29,7 +29,7 @@
 //! For the `DES-EDE3-CBC` cipher the algorithm has two distinct modes:
 //!
 //! * **Normal mode** (`okey_len == 24`):  derive 24 bytes of raw output
-//!   and then apply the 3DES *parity fixup* via [`fixup_des3_key`].  The
+//!   and then apply the 3DES *parity fixup* via `fixup_des3_key`.  The
 //!   fixup treats the first 21 octets of the derived output as
 //!   information-bearing data, packs them into three 7-byte sub-keys,
 //!   appends a parity byte to each, sets odd parity on every byte, and
@@ -47,7 +47,7 @@
 //! | R1   | No async — KDF is fully synchronous.                              |
 //! | R2   | No `.await` points; no locks.                                     |
 //! | R3   | Every context field has a documented write- and read-site.        |
-//! | R5   | [`KerberosKdfContext::cipher`] and `cipher_properties` are `Option`.|
+//! | R5   | `KerberosKdfContext::cipher` and `cipher_properties` are `Option`.|
 //! | R7   | No shared mutable state beyond the single `Arc<LibContext>`.      |
 //! | R8   | Zero `unsafe` code.                                                |
 //! | R9   | Every public item is documented.                                   |
@@ -57,8 +57,8 @@
 //! This module is a direct, idiomatic translation of
 //! `providers/implementations/kdfs/krb5kdf.c` (487 lines).  The original
 //! `PROV_CIPHER` helper in `providers/common/provider_util.c` collapses
-//! into the fields [`KerberosKdfContext::cipher`] and
-//! [`KerberosKdfContext::cipher_properties`].
+//! into the fields `KerberosKdfContext::cipher` and
+//! `KerberosKdfContext::cipher_properties`.
 //!
 //! # References
 //!
@@ -285,7 +285,7 @@ fn des_set_odd_parity(block: &mut [u8]) {
 ///      `key[i*8..i*8 + 7]` (allowing overlap safely).
 ///    * Clears `key[i*8 + 7]`, then packs the low (parity) bits of
 ///      `key[i*8..i*8 + 7]` into bits 1..7 of `key[i*8 + 7]`.
-///    * Applies [`des_set_odd_parity`] to the 8-byte sub-key.
+///    * Applies `des_set_odd_parity` to the 8-byte sub-key.
 /// 2. Performs the 3DES *degeneracy check*: the derivation is rejected
 ///    if the resulting triple-key collapses into effectively single DES
 ///    — i.e. if `K1 == K2` or `K2 == K3`.
@@ -337,8 +337,8 @@ fn fixup_des3_key(key: &mut [u8; 24]) -> bool {
 // Error helpers
 // =============================================================================
 
-/// Converts a [`CryptoError`] (from cipher operations) into a
-/// [`ProviderError::Dispatch`] value with the original message preserved.
+/// Converts a `CryptoError` (from cipher operations) into a
+/// `ProviderError::Dispatch` value with the original message preserved.
 ///
 /// This mirrors the `ERR_raise` calls in the C source that surface
 /// lower-level cipher errors to the KDF caller.
@@ -365,7 +365,7 @@ fn invalid_arg(msg: impl Into<String>) -> ProviderError {
 /// it, the caller-supplied key, and the caller-supplied constant
 /// (label).  Lifetime of the secret material is strictly bound to the
 /// context: both `key` and `constant` are zeroed on drop via the
-/// [`ZeroizeOnDrop`] derive macro, matching the
+/// `ZeroizeOnDrop` derive macro, matching the
 /// `OPENSSL_clear_free()` calls in `krb5kdf_reset()` / `krb5kdf_free()`
 /// of the C source.
 ///
@@ -373,11 +373,11 @@ fn invalid_arg(msg: impl Into<String>) -> ProviderError {
 ///
 /// | Field               | Write-site                              | Read-site                                                 |
 /// |---------------------|-----------------------------------------|-----------------------------------------------------------|
-/// | `libctx`            | [`KerberosKdfContext::new`]             | [`KerberosKdfContext::apply_cipher`]                      |
-/// | `cipher`            | [`KerberosKdfContext::apply_cipher`] / [`KerberosKdfContext::reset`] | [`KerberosKdfContext::require_cipher`] / [`KerberosKdfContext::get_params`] |
-/// | `cipher_properties` | [`KerberosKdfContext::apply_params`] / [`KerberosKdfContext::reset`] | [`KerberosKdfContext::apply_cipher`]                      |
-/// | `key`               | [`KerberosKdfContext::apply_params`] / [`KerberosKdfContext::reset`] | [`KerberosKdfContext::krb5_derive`]                       |
-/// | `constant`          | [`KerberosKdfContext::apply_params`] / [`KerberosKdfContext::reset`] | [`KerberosKdfContext::krb5_derive`]                       |
+/// | `libctx`            | [`KerberosKdfContext::new`]             | `KerberosKdfContext::apply_cipher`                      |
+/// | `cipher`            | `KerberosKdfContext::apply_cipher` / [`KerberosKdfContext::reset`] | `KerberosKdfContext::require_cipher` / [`KerberosKdfContext::get_params`] |
+/// | `cipher_properties` | `KerberosKdfContext::apply_params` / [`KerberosKdfContext::reset`] | `KerberosKdfContext::apply_cipher`                      |
+/// | `key`               | `KerberosKdfContext::apply_params` / [`KerberosKdfContext::reset`] | `KerberosKdfContext::krb5_derive`                       |
+/// | `constant`          | `KerberosKdfContext::apply_params` / [`KerberosKdfContext::reset`] | `KerberosKdfContext::krb5_derive`                       |
 #[derive(ZeroizeOnDrop)]
 pub struct KerberosKdfContext {
     /// Library context used to fetch the underlying cipher.  Shared and
@@ -492,7 +492,7 @@ impl KerberosKdfContext {
             .ok_or_else(|| invalid_arg("KRB5KDF: cipher not set"))
     }
 
-    /// Parses parameters from a [`ParamSet`] and updates the context.
+    /// Parses parameters from a `ParamSet` and updates the context.
     ///
     /// Accepts any subset of `PARAM_PROPERTIES`, `PARAM_CIPHER`,
     /// `PARAM_KEY`, `PARAM_CONSTANT`.  Unknown parameter names are
@@ -582,18 +582,18 @@ impl KerberosKdfContext {
     /// be exactly one block in length).
     ///
     /// Called once per RFC 3961 iteration.  Each call creates a fresh
-    /// [`CipherCtx`] so that the CBC chaining state is reset — this is
+    /// `CipherCtx` so that the CBC chaining state is reset — this is
     /// equivalent to the C source's `EVP_CIPHER_CTX_reset()` +
     /// `cipher_init()` pattern.
     ///
-    /// The caller owns the [`CipherCtx`] so that a single context can
+    /// The caller owns the `CipherCtx` so that a single context can
     /// be reused across successive iterations.  On each invocation the
     /// context is first reset (mirroring `EVP_CIPHER_CTX_reset`) and
     /// then re-initialised with the supplied key and a zero IV.
     ///
     /// This is an associated function — it performs no operation on the
-    /// [`KerberosKdfContext`] itself, only on the supplied
-    /// [`CipherCtx`], [`Cipher`], and byte buffers.
+    /// `KerberosKdfContext` itself, only on the supplied
+    /// `CipherCtx`, `Cipher`, and byte buffers.
     fn cbc_encrypt_block(
         ctx: &mut CipherCtx,
         cipher: &Cipher,
@@ -857,7 +857,7 @@ impl KdfContext for KerberosKdfContext {
 pub struct KerberosKdfProvider {
     /// Library context shared with all contexts created by this
     /// provider.  Written at construction; read when spawning a new
-    /// [`KerberosKdfContext`].
+    /// `KerberosKdfContext`.
     libctx: Arc<LibContext>,
 }
 
@@ -876,7 +876,7 @@ impl Default for KerberosKdfProvider {
 impl KerberosKdfProvider {
     /// Creates a new Kerberos KDF provider bound to `libctx`.
     ///
-    /// All [`KerberosKdfContext`] instances created by this provider
+    /// All `KerberosKdfContext` instances created by this provider
     /// will use `libctx` for cipher fetches.
     #[must_use]
     pub fn new(libctx: Arc<LibContext>) -> Self {
@@ -884,10 +884,10 @@ impl KerberosKdfProvider {
     }
 
     /// Returns the set of parameter names that callers may pass to
-    /// [`KdfContext::set_params`].  Useful for provider introspection
+    /// `KdfContext::set_params`.  Useful for provider introspection
     /// and for the CLI / FFI layers.
     ///
-    /// The returned [`ParamSet`] carries sentinel (empty) values — the
+    /// The returned `ParamSet` carries sentinel (empty) values — the
     /// presence of a name is what clients inspect via
     /// [`ParamSet::contains`].
     #[must_use]
@@ -901,7 +901,7 @@ impl KerberosKdfProvider {
     }
 
     /// Returns the set of parameter names that callers may retrieve via
-    /// [`KdfContext::get_params`].
+    /// `KdfContext::get_params`.
     #[must_use]
     pub fn gettable_params() -> ParamSet {
         ParamBuilder::new().push_u64(PARAM_SIZE, 0).build()
@@ -926,7 +926,7 @@ impl KdfProvider for KerberosKdfProvider {
 // Algorithm registration
 // =============================================================================
 
-/// Returns the [`AlgorithmDescriptor`] entries that register `KRB5KDF`
+/// Returns the `AlgorithmDescriptor` entries that register `KRB5KDF`
 /// with the provider system.
 ///
 /// A single descriptor is returned, carrying the algorithm name

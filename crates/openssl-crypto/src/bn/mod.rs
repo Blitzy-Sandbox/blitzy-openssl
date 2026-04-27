@@ -6,10 +6,10 @@
 //!
 //! # Module Structure
 //!
-//! - [`BigNum`] — Core type wrapping `BigInt` with OpenSSL-compatible API
-//! - [`arithmetic`] — Addition, subtraction, multiplication, division, modular ops
-//! - [`montgomery`] — Montgomery multiplication and modular exponentiation
-//! - [`prime`] — Primality testing (Miller-Rabin) and prime generation
+//! - `BigNum` — Core type wrapping `BigInt` with OpenSSL-compatible API
+//! - `arithmetic` — Addition, subtraction, multiplication, division, modular ops
+//! - `montgomery` — Montgomery multiplication and modular exponentiation
+//! - `prime` — Primality testing (Miller-Rabin) and prime generation
 //!
 //! # Design Decisions
 //!

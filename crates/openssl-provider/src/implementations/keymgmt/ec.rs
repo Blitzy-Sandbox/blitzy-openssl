@@ -8,8 +8,8 @@
 //!
 //! # Architecture
 //!
-//! `EcKeyMgmt` implements [`KeyMgmtProvider`] for elliptic curve keys.
-//! Key material is stored in [`EcKeyData`], which holds optional private
+//! `EcKeyMgmt` implements `KeyMgmtProvider` for elliptic curve keys.
+//! Key material is stored in `EcKeyData`, which holds optional private
 //! and public components along with the selected curve.
 //!
 //! # Security Properties
@@ -34,9 +34,9 @@
 //!
 //! | Rust type | C construct | Source |
 //! |-----------|------------|--------|
-//! | [`EcKeyData`] | `EC_KEY` + params | `ec_kmgmt.c:30-70` |
-//! | [`EcKeyMgmt`] | `ossl_ec_keymgmt_functions` | `ec_kmgmt.c:1480-1523` |
-//! | [`ec_descriptors()`] | `deflt_keymgmt[]` EC entries | `defltprov.c` |
+//! | `EcKeyData` | `EC_KEY` + params | `ec_kmgmt.c:30-70` |
+//! | `EcKeyMgmt` | `ossl_ec_keymgmt_functions` | `ec_kmgmt.c:1480-1523` |
+//! | `ec_descriptors()` | `deflt_keymgmt[]` EC entries | `defltprov.c` |
 
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
@@ -121,7 +121,7 @@ impl EcCurveId {
 
 /// EC key data holding optional private and public key components.
 ///
-/// Private key material is automatically zeroed on drop via [`Zeroizing`].
+/// Private key material is automatically zeroed on drop via `Zeroizing`.
 pub struct EcKeyData {
     /// Selected curve.
     curve: Option<EcCurveId>,
@@ -153,7 +153,7 @@ impl EcKeyData {
         }
     }
 
-    /// Exports key components to a [`ParamSet`].
+    /// Exports key components to a `ParamSet`.
     pub fn export_to_params(&self, selection: KeySelection) -> ParamSet {
         let mut ps = ParamSet::new();
         if selection.contains(KeySelection::DOMAIN_PARAMETERS) {
@@ -178,7 +178,7 @@ impl EcKeyData {
         ps
     }
 
-    /// Imports key data from a [`ParamSet`].
+    /// Imports key data from a `ParamSet`.
     fn from_params(selection: KeySelection, data: &ParamSet) -> ProviderResult<Self> {
         let mut key = Self::new();
 
@@ -355,7 +355,7 @@ fn derive_public_key_placeholder(curve: EcCurveId, priv_bytes: &[u8]) -> Vec<u8>
 
 /// EC key management provider.
 ///
-/// Implements the [`KeyMgmtProvider`] trait for elliptic curve keys,
+/// Implements the `KeyMgmtProvider` trait for elliptic curve keys,
 /// supporting NIST P-256, P-384, P-521, and `secp256k1` curves.
 pub struct EcKeyMgmt;
 

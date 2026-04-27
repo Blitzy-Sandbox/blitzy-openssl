@@ -20,9 +20,9 @@
 //!
 //! ## Module Structure
 //!
-//! - [`core`] — Provider store, instance lifecycle, activation, algorithm enumeration
-//! - [`predefined`] — Built-in provider registry (default, base, null, legacy, fips)
-//! - [`property`] — Property query/match system for algorithm selection
+//! - `core` — Provider store, instance lifecycle, activation, algorithm enumeration
+//! - `predefined` — Built-in provider registry (default, base, null, legacy, fips)
+//! - `property` — Property query/match system for algorithm selection
 //!
 //! ## Source Mapping
 //!
@@ -37,17 +37,17 @@
 //! ## Provider Traits (replacing `OSSL_DISPATCH`)
 //!
 //! Each algorithm category becomes a Rust trait:
-//! - [`DigestProvider`] — Hash algorithm implementations
-//! - [`CipherProvider`] — Symmetric cipher implementations
-//! - [`MacProvider`] — Message authentication code implementations
-//! - [`KdfProvider`] — Key derivation function implementations
-//! - [`SignatureProvider`] — Digital signature implementations
-//! - [`KemProvider`] — Key encapsulation mechanism implementations
-//! - [`KeyMgmtProvider`] — Key management implementations
-//! - [`KeyExchangeProvider`] — Key exchange implementations
-//! - [`RandProvider`] — Random number generator implementations
-//! - [`EncoderDecoderProvider`] — Key serialization implementations
-//! - [`StoreProvider`] — Key/certificate store implementations
+//! - `DigestProvider` — Hash algorithm implementations
+//! - `CipherProvider` — Symmetric cipher implementations
+//! - `MacProvider` — Message authentication code implementations
+//! - `KdfProvider` — Key derivation function implementations
+//! - `SignatureProvider` — Digital signature implementations
+//! - `KemProvider` — Key encapsulation mechanism implementations
+//! - `KeyMgmtProvider` — Key management implementations
+//! - `KeyExchangeProvider` — Key exchange implementations
+//! - `RandProvider` — Random number generator implementations
+//! - `EncoderDecoderProvider` — Key serialization implementations
+//! - `StoreProvider` — Key/certificate store implementations
 //!
 //! ## Locking Strategy (Rule R7)
 //!
@@ -69,10 +69,10 @@
 //! The module provides top-level convenience functions that mirror the C
 //! `OSSL_PROVIDER_*()` public API from `crypto/provider.c`:
 //!
-//! - [`load()`] — Load a provider (disables fallback loading)
-//! - [`try_load()`] — Try to load a provider (retains fallbacks)
-//! - [`unload()`] — Unload a provider
-//! - [`available()`] — Check if a provider is available
+//! - `load()` — Load a provider (disables fallback loading)
+//! - `try_load()` — Try to load a provider (retains fallbacks)
+//! - `unload()` — Unload a provider
+//! - `available()` — Check if a provider is available
 
 use std::sync::Arc;
 

@@ -10,18 +10,18 @@
 //!
 //! | Rust Component           | C Source File               | Purpose                        |
 //! |--------------------------|-----------------------------|--------------------------------|
-//! | [`DhParams`]             | `crypto/dh/dh_lib.c`        | DH parameter lifecycle         |
-//! | [`DhNamedGroup`]         | `crypto/dh/dh_group_params.c` | Named group constants        |
-//! | [`generate_params`]      | `crypto/dh/dh_gen.c`        | Safe-prime parameter generation|
-//! | [`generate_key`]         | `crypto/dh/dh_key.c`        | Key pair generation            |
-//! | [`compute_key`]          | `crypto/dh/dh_key.c`        | Shared secret computation      |
-//! | [`check_params`]         | `crypto/dh/dh_check.c`      | Parameter validation           |
-//! | [`DhCheckResult`]        | `crypto/dh/dh_check.c`      | Typed check results            |
+//! | `DhParams`               | `crypto/dh/dh_lib.c`        | DH parameter lifecycle         |
+//! | `DhNamedGroup`           | `crypto/dh/dh_group_params.c` | Named group constants        |
+//! | `generate_params`        | `crypto/dh/dh_gen.c`        | Safe-prime parameter generation|
+//! | `generate_key`           | `crypto/dh/dh_key.c`        | Key pair generation            |
+//! | `compute_key`            | `crypto/dh/dh_key.c`        | Shared secret computation      |
+//! | `check_params`           | `crypto/dh/dh_check.c`      | Parameter validation           |
+//! | `DhCheckResult`          | `crypto/dh/dh_check.c`      | Typed check results            |
 //! | FFC parameter support    | `crypto/ffc/ffc_params.c`   | Finite field parameters        |
 //!
 //! # Rules Enforced
 //!
-//! - **R5 (Nullability):** [`DhCheckResult`] is a typed enum, not integer flags.
+//! - **R5 (Nullability):** `DhCheckResult` is a typed enum, not integer flags.
 //!   Optional parameters (q, length) use `Option<T>`.
 //! - **R6 (Lossless Casts):** Bit sizes validated; no bare `as` casts.
 //! - **R7 (Lock Granularity):** `DhParams` is `Clone`-able; shared access uses
@@ -32,10 +32,10 @@
 //!
 //! # Security Considerations
 //!
-//! - Private key material in [`DhPrivateKey`] is zeroed on drop via `zeroize`.
+//! - Private key material in `DhPrivateKey` is zeroed on drop via `zeroize`.
 //! - Computed shared secrets are padded to the modulus byte length per
 //!   SP 800-56A Rev. 3 §5.7.1.1, preventing timing leaks from variable-length output.
-//! - Parameter validation via [`check_params`] should always be performed on
+//! - Parameter validation via `check_params` should always be performed on
 //!   untrusted DH parameters before key generation or computation.
 //!
 //! # Example
@@ -219,7 +219,7 @@ impl DhParams {
     /// Returns [`CryptoError::Key`] if:
     /// - `p` is zero or negative
     /// - `g` is not in the range `(1, p)`
-    /// - `p` is smaller than [`DH_MIN_MODULUS_BITS`]
+    /// - `p` is smaller than `DH_MIN_MODULUS_BITS`
     pub fn new(p: BigNum, g: BigNum, q: Option<BigNum>) -> CryptoResult<Self> {
         // Validate p > 0
         if p.is_zero() {
@@ -538,7 +538,7 @@ impl std::fmt::Display for DhCheckResult {
 /// # Arguments
 ///
 /// * `bits` — Desired bit size for the prime modulus `p`.
-///   Must be at least [`DH_MIN_MODULUS_BITS`] and at most [`DH_MAX_MODULUS_BITS`].
+///   Must be at least `DH_MIN_MODULUS_BITS` and at most `DH_MAX_MODULUS_BITS`.
 ///
 /// # Errors
 ///

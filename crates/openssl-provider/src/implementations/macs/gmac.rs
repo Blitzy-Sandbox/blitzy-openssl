@@ -78,7 +78,7 @@ pub struct GmacParams {
 }
 
 impl GmacParams {
-    /// Converts GMAC parameters to a [`ParamSet`] for storage and transport.
+    /// Converts GMAC parameters to a `ParamSet` for storage and transport.
     pub fn to_param_set(&self) -> ParamSet {
         let mut builder = ParamBuilder::new();
         if let Some(ref cipher) = self.cipher {
@@ -596,7 +596,7 @@ impl GcmGmacState {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Dispatch`] if the total AAD length overflows u64.
+    /// Returns `ProviderError::Dispatch` if the total AAD length overflows u64.
     fn update_aad(&mut self, data: &[u8]) -> ProviderResult<()> {
         // Rule R6: checked arithmetic for AAD length accumulation.
         let data_len = data.len() as u64;
@@ -889,7 +889,7 @@ impl MacContext for GmacContext {
 }
 
 impl GmacContext {
-    /// Apply parameters from a [`ParamSet`] to internal configuration.
+    /// Apply parameters from a `ParamSet` to internal configuration.
     ///
     /// Shared between `init()` and `set_params()` to avoid duplication.
     /// Replaces the parameter-handling section of C `gmac_set_ctx_params`.

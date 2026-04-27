@@ -43,7 +43,7 @@
 //! Because the `openssl-provider` crate enforces `#![forbid(unsafe_code)]`,
 //! direct Windows CryptoAPI calls cannot be made here.  Instead,
 //! certificate loading is delegated to a pluggable loader function
-//! registered via [`register_certificate_loader`].  The `openssl-ffi`
+//! registered via `register_certificate_loader`.  The `openssl-ffi`
 //! crate is responsible for registering the actual CryptoAPI
 //! implementation at application startup.
 //!
@@ -104,9 +104,9 @@ type CertLoaderFn = fn(Option<&[u8]>) -> ProviderResult<Vec<Vec<u8>>>;
 
 /// Global registration point for the certificate loader function.
 ///
-/// Uses [`OnceLock`] for one-time, thread-safe initialisation.  The
+/// Uses `OnceLock` for one-time, thread-safe initialisation.  The
 /// FFI crate registers the Windows CryptoAPI-based loader at startup
-/// via [`register_certificate_loader`].
+/// via `register_certificate_loader`.
 static CERT_LOADER: OnceLock<CertLoaderFn> = OnceLock::new();
 
 /// Registers the platform-specific certificate loader.
@@ -258,7 +258,7 @@ pub struct WinStoreContext {
 }
 
 impl WinStoreContext {
-    /// Creates a new context in the [`WinStoreState::Idle`] state with
+    /// Creates a new context in the `WinStoreState::Idle` state with
     /// no certificates loaded and no filters applied.
     fn new() -> Self {
         Self {
@@ -270,7 +270,7 @@ impl WinStoreContext {
         }
     }
 
-    /// Resets the iterator to the [`WinStoreState::Idle`] state.
+    /// Resets the iterator to the `WinStoreState::Idle` state.
     ///
     /// Clears the current index but does **not** clear the loaded
     /// certificates or filters — those persist until explicitly changed
@@ -286,10 +286,10 @@ impl WinStoreContext {
     /// Advances the iterator to the next available certificate.
     ///
     /// If more certificates remain in the pre-loaded list, transitions
-    /// to [`WinStoreState::Read`].  Otherwise transitions to
-    /// [`WinStoreState::Eof`].
+    /// to `WinStoreState::Read`.  Otherwise transitions to
+    /// `WinStoreState::Eof`.
     ///
-    /// When in the [`WinStoreState::Eof`] state the call is a no-op,
+    /// When in the `WinStoreState::Eof` state the call is a no-op,
     /// preventing inadvertent re-entry.
     ///
     /// Replaces C `winstore_win_advance()` (lines 63–76).
@@ -395,11 +395,11 @@ impl StoreContext for WinStoreContext {
     ///
     /// Returns `Ok(Some(StoreObject::Certificate(der_bytes)))` if a
     /// certificate is available, or `Ok(None)` if the iterator is not
-    /// in the [`WinStoreState::Read`] state (either idle or exhausted).
+    /// in the `WinStoreState::Read` state (either idle or exhausted).
     ///
     /// After successfully loading a certificate, the iterator advances
     /// to the next certificate.  If no more certificates remain, the
-    /// state transitions to [`WinStoreState::Eof`].
+    /// state transitions to `WinStoreState::Eof`.
     ///
     /// Replaces C `winstore_load()` (lines 287–305).
     fn load(&mut self) -> ProviderResult<Option<StoreObject>> {
@@ -429,9 +429,9 @@ impl StoreContext for WinStoreContext {
     /// Returns `true` when no more certificates are available.
     ///
     /// Specifically, returns `true` whenever the state is **not**
-    /// [`WinStoreState::Read`], which includes both the initial
-    /// [`WinStoreState::Idle`] state and the terminal
-    /// [`WinStoreState::Eof`] state.
+    /// `WinStoreState::Read`, which includes both the initial
+    /// `WinStoreState::Idle` state and the terminal
+    /// `WinStoreState::Eof` state.
     ///
     /// Replaces C `winstore_eof()` (lines 307–312).
     fn eof(&self) -> bool {
@@ -441,7 +441,7 @@ impl StoreContext for WinStoreContext {
     /// Closes the store context and releases all resources.
     ///
     /// Clears the certificate list, subject filter, property query,
-    /// and transitions to [`WinStoreState::Eof`].
+    /// and transitions to `WinStoreState::Eof`.
     ///
     /// After closing, the context must not be reused.  Any subsequent
     /// calls to [`load`](Self::load) will return `Ok(None)` and
@@ -464,7 +464,7 @@ impl StoreContext for WinStoreContext {
 
 /// Windows certificate store provider.
 ///
-/// Implements [`StoreProvider`] for the `org.openssl.winstore:` URI
+/// Implements `StoreProvider` for the `org.openssl.winstore:` URI
 /// scheme.  The store opens the system "ROOT" certificate store, which
 /// contains trusted root CA certificates installed by the operating
 /// system and system administrator.
@@ -499,7 +499,7 @@ impl StoreProvider for WinStore {
     ///
     /// The URI must start with `"org.openssl.winstore:"` (compared
     /// case-insensitively, matching the C `HAS_CASE_PREFIX` macro).
-    /// Returns a [`WinStoreContext`] in the [`WinStoreState::Idle`]
+    /// Returns a `WinStoreContext` in the `WinStoreState::Idle`
     /// state.
     ///
     /// After opening, the caller should configure the context via

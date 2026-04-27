@@ -7,7 +7,7 @@
 //! (buffering, line-buffering, prefix).
 //!
 //! In Rust, the BIO pattern maps naturally to [`std::io::Read`]/[`std::io::Write`]
-//! traits with type-specific extensions via the [`Bio`] trait. Filter BIOs become
+//! traits with type-specific extensions via the `Bio` trait. Filter BIOs become
 //! generic wrappers around inner `Read + Write` implementors.
 //!
 //! # Architecture
@@ -21,31 +21,31 @@
 //!
 //! # Submodules
 //!
-//! - [`mem`] — In-memory BIOs ([`MemBio`], [`SecureMemBio`], [`BioPairEnd`])
-//! - [`file`] — File and file-descriptor BIOs ([`FileBio`], [`FdBio`], [`NullBio`], [`LogBio`])
-//! - [`socket`] — Socket BIOs ([`SocketBio`], [`ConnectBio`], [`AcceptBio`], [`DatagramBio`])
-//! - [`filter`] — Filter chain BIOs ([`BufferFilter`], [`LineBufferFilter`], [`PrefixFilter`])
+//! - `mem` — In-memory BIOs (`MemBio`, `SecureMemBio`, `BioPairEnd`)
+//! - `file` — File and file-descriptor BIOs (`FileBio`, `FdBio`, `NullBio`, `LogBio`)
+//! - `socket` — Socket BIOs (`SocketBio`, `ConnectBio`, `AcceptBio`, `DatagramBio`)
+//! - `filter` — Filter chain BIOs (`BufferFilter`, `LineBufferFilter`, `PrefixFilter`)
 //!
 //! # C-to-Rust Mapping
 //!
 //! | C Concept | Rust Equivalent |
 //! |-----------|----------------|
-//! | `BIO_METHOD` function pointers | [`Bio`] trait + [`Read`](std::io::Read)/[`Write`](std::io::Write) |
-//! | `BIO_new()` / `BIO_free()` | Constructor + [`Drop`] (RAII) |
+//! | `BIO_METHOD` function pointers | `Bio` trait + [`Read`](std::io::Read)/[`Write`](std::io::Write) |
+//! | `BIO_new()` / `BIO_free()` | Constructor + `Drop` (RAII) |
 //! | `BIO_read()` / `BIO_write()` | [`Read::read()`](std::io::Read::read) / [`Write::write()`](std::io::Write::write) |
-//! | `BIO_ctrl(PENDING)` | [`Bio::pending()`] |
+//! | `BIO_ctrl(PENDING)` | `Bio::pending()` |
 //! | `BIO_push()` / `BIO_pop()` | Generic filter nesting |
-//! | `BIO_TYPE_*` constants | [`BioType`] enum |
-//! | `BIO_FLAGS_*` bitmask | [`BioFlags`] bitflags |
-//! | `bio->num_read` / `bio->num_write` | [`BioStats`] counters |
-//! | `BIO_debug_callback_ex()` | [`BioCallback`] / `tracing` integration |
+//! | `BIO_TYPE_*` constants | `BioType` enum |
+//! | `BIO_FLAGS_*` bitmask | `BioFlags` bitflags |
+//! | `bio->num_read` / `bio->num_write` | `BioStats` counters |
+//! | `BIO_debug_callback_ex()` | `BioCallback` / `tracing` integration |
 //!
 //! # Rules Enforced
 //!
-//! - **R5 (Nullability):** [`BioType::None`] and [`BioRetryReason::None`] are explicit
-//!   enum variants, not zero sentinels. Optional data uses [`Option<T>`].
-//! - **R6 (Lossless Casts):** [`BioStats`] counters use [`u64::saturating_add`].
-//! - **R7 (Concurrency):** [`Bio`] trait is `Send`-bound. No global locks.
+//! - **R5 (Nullability):** `BioType::None` and `BioRetryReason::None` are explicit
+//!   enum variants, not zero sentinels. Optional data uses `Option<T>`.
+//! - **R6 (Lossless Casts):** `BioStats` counters use `u64::saturating_add`.
+//! - **R7 (Concurrency):** `Bio` trait is `Send`-bound. No global locks.
 //! - **R8 (Zero Unsafe):** No `unsafe` code in this module or submodules.
 //! - **R9 (Warning-Free):** All public items have `///` documentation.
 //! - **R10 (Wiring):** Reachable via PEM, X.509, ASN.1, SSL, and CLI entry points.
@@ -428,10 +428,10 @@ impl BioStats {
 /// `callback_ctrl`. In Rust:
 ///
 /// - `bread` / `bwrite` map to [`Read::read`](std::io::Read::read) /
-///   [`Write::write`](std::io::Write::write) (standard traits)
-/// - `bputs` / `bgets` map to [`Write::write_all`](std::io::Write::write_all) /
+///   [`Write::write`] (standard traits)
+/// - `bputs` / `bgets` map to [`Write::write_all`] /
 ///   [`BufRead::read_line`](std::io::BufRead::read_line)
-/// - `ctrl(FLUSH)` maps to [`Write::flush`](std::io::Write::flush)
+/// - `ctrl(FLUSH)` maps to [`Write::flush`]
 /// - `create` / `destroy` map to Rust constructor / [`Drop`] (RAII)
 /// - Remaining `ctrl` commands become typed methods on this trait
 ///
@@ -509,8 +509,8 @@ pub trait Bio: Send {
     /// Returns a mutable reference to the I/O statistics counters.
     ///
     /// Primarily used by BIO implementations to update counters after
-    /// read/write operations via [`BioStats::record_read`] and
-    /// [`BioStats::record_write`].
+    /// read/write operations via `BioStats::record_read` and
+    /// `BioStats::record_write`.
     fn stats_mut(&mut self) -> &mut BioStats;
 
     /// Returns the human-readable name of this BIO method.
@@ -743,7 +743,7 @@ const MAX_INDENT: usize = 128;
 ///
 /// - `writer` — Output destination (any [`Write`] implementor).
 /// - `data` — The byte slice to hex-dump.
-/// - `indent` — Number of leading spaces on each line (clamped to [`MAX_INDENT`]).
+/// - `indent` — Number of leading spaces on each line (clamped to `MAX_INDENT`).
 ///
 /// # Errors
 ///

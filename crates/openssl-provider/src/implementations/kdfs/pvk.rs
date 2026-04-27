@@ -40,13 +40,13 @@
 //!
 //! # Rules Compliance
 //!
-//! - **R5** — `Option<T>` is used for the fetched [`MessageDigest`]
+//! - **R5** — `Option<T>` is used for the fetched `MessageDigest`
 //!   cache, rather than a sentinel value.
 //! - **R6** — No bare `as` narrowing casts. All numeric conversions are
 //!   either widening or use checked arithmetic / explicit bounds.
 //! - **R7** — No shared mutable state; each context owns its own fields.
 //! - **R8** — Zero `unsafe` blocks. Key material zeroization is handled
-//!   via the [`Zeroize`] / [`ZeroizeOnDrop`] derive macros.
+//!   via the `Zeroize` / `ZeroizeOnDrop` derive macros.
 //! - **R9** — Warning-free under `-D warnings`; no `#[allow(warnings)]`
 //!   or module-level lint relaxations.
 //! - **R10** — Wired into the legacy provider via
@@ -110,7 +110,7 @@ const ALGORITHM_DESCRIPTION: &str =
 // =============================================================================
 
 /// Converts a [`CryptoError`] raised by the digest subsystem into a
-/// [`ProviderError::Dispatch`] so the error surface remains consistent
+/// `ProviderError::Dispatch` so the error surface remains consistent
 /// with the other KDF implementations in this crate.
 #[inline]
 #[allow(clippy::needless_pass_by_value)]
@@ -137,8 +137,8 @@ fn invalid_arg(msg: impl Into<String>) -> ProviderError {
 /// PVK KDF derivation context.
 ///
 /// Holds the password, salt, and selected digest name for the next call
-/// to [`KdfContext::derive`]. The password is sensitive key material and
-/// is erased automatically on drop via [`ZeroizeOnDrop`] — matching the
+/// to `KdfContext::derive`. The password is sensitive key material and
+/// is erased automatically on drop via `ZeroizeOnDrop` — matching the
 /// C source's `OPENSSL_clear_free(ctx->pass, ctx->pass_len)` in
 /// `kdf_pvk_cleanup`.
 ///
@@ -492,7 +492,7 @@ impl KdfContext for PvkKdfContext {
 
 /// Provider factory for the PVK KDF.
 ///
-/// A zero-sized type that implements [`KdfProvider`] to produce fresh
+/// A zero-sized type that implements `KdfProvider` to produce fresh
 /// [`PvkKdfContext`] instances on demand. Instances are cheap to clone
 /// and hold no state.
 #[derive(Debug, Default, Clone, Copy)]

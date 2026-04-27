@@ -25,7 +25,7 @@
 //! final `EVP_DigestUpdate(password, PASSWORD_HASH_AMOUNT - len)` call.
 //!
 //! Both mandatory parameters — the passphrase (`pass`) and the engine ID
-//! (`eid`) — must be supplied before [`derive`](KdfContext::derive) can
+//! (`eid`) — must be supplied before `derive` can
 //! succeed, mirroring the C source's `PROV_R_MISSING_PASS` and
 //! `PROV_R_MISSING_EID` error paths.  A message digest must also be
 //! selected; `SNMPKDF` defaults to SHA-1 — the only digest approved for FIPS
@@ -48,7 +48,7 @@
 //!
 //! # Output Size
 //!
-//! [`get_params`](KdfContext::get_params) reports a `size` parameter equal
+//! `get_params` reports a `size` parameter equal
 //! to the currently selected digest's output length, exactly mirroring the C
 //! `kdf_snmpkdf_size` function which returns `EVP_MD_get_size(md)`.  The
 //! Rust port additionally exposes `digest` so callers may introspect the
@@ -128,7 +128,7 @@ const PARAM_PASSWORD: &str = "pass";
 const PARAM_ENGINE_ID: &str = "eid";
 
 /// `OSSL_KDF_PARAM_SIZE` — `u64` output size, returned from
-/// [`KdfContext::get_params`].  C equivalent: `kdf_snmpkdf_get_ctx_params`
+/// `KdfContext::get_params`.  C equivalent: `kdf_snmpkdf_get_ctx_params`
 /// sets this to `EVP_MD_get_size(md)`.
 const PARAM_SIZE: &str = "size";
 
@@ -137,7 +137,7 @@ const PARAM_SIZE: &str = "size";
 const DEFAULT_DIGEST: &str = SHA1;
 
 /// Canonical algorithm name.  Emitted in the
-/// [`AlgorithmDescriptor`] returned by [`descriptors`] and used by the
+/// `AlgorithmDescriptor` returned by `descriptors` and used by the
 /// provider framework for fetch/match.
 const ALGORITHM_NAME: &str = "SNMPKDF";
 
@@ -157,7 +157,7 @@ const ALGORITHM_DESCRIPTION: &str =
 /// [`openssl_crypto::evp::md`](openssl_crypto::evp::md) into the provider
 /// error taxonomy.  Used uniformly inside [`SnmpKdfContext::derive_internal`]
 /// so that digest-level errors are reported to the caller as
-/// [`ProviderError::Dispatch`].  Consistent with PVK, PBKDF1, KRB5 and the
+/// `ProviderError::Dispatch`.  Consistent with PVK, PBKDF1, KRB5 and the
 /// rest of the KDF family (see the PVK reference pattern).
 #[inline]
 #[allow(clippy::needless_pass_by_value)]
@@ -212,7 +212,7 @@ pub struct SnmpKdfContext {
 
     /// Selected digest algorithm name — e.g. `"SHA1"`, `"SHA2-256"`.  Not
     /// sensitive, but carried as a `String` for fetch at derive time.
-    /// Starts at [`DEFAULT_DIGEST`] and is overwritten by `PARAM_DIGEST`.
+    /// Starts at `DEFAULT_DIGEST` and is overwritten by `PARAM_DIGEST`.
     #[zeroize(skip)]
     digest_name: String,
 }
@@ -337,12 +337,12 @@ impl SnmpKdfContext {
     }
 
     /// Validates that all mandatory inputs have been supplied before
-    /// [`derive_internal`](Self::derive_internal) is invoked.
+    /// `derive_internal` is invoked.
     ///
     /// Mirrors the three error paths at the top of the C
     /// `kdf_snmpkdf_derive`:
     /// - `PROV_R_MISSING_MESSAGE_DIGEST` — digest never set (impossible
-    ///   here because of [`DEFAULT_DIGEST`], but kept for parity).
+    ///   here because of `DEFAULT_DIGEST`, but kept for parity).
     /// - `PROV_R_MISSING_EID` — engine ID never supplied.
     /// - `PROV_R_MISSING_PASS` — password never supplied.
     fn validate(&self) -> ProviderResult<()> {
@@ -392,10 +392,10 @@ impl SnmpKdfContext {
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] if any `MdContext` operation fails.
+    /// - `ProviderError::Dispatch` if any `MdContext` operation fails.
     /// - [`ProviderError::Common(CommonError::InvalidArgument)`] if the
     ///   output buffer is empty or smaller than the digest size.
-    /// - [`ProviderError::AlgorithmUnavailable`] if the configured digest
+    /// - `ProviderError::AlgorithmUnavailable` if the configured digest
     ///   cannot be resolved by any active provider.
     fn derive_internal(&self, output: &mut [u8]) -> ProviderResult<usize> {
         // --- Guard output buffer ----------------------------------------
@@ -595,7 +595,7 @@ impl KdfContext for SnmpKdfContext {
     /// `kdf_snmpkdf_reset` function (which `OPENSSL_clear_free`s the
     /// sensitive fields and `memset(ctx, 0, sizeof(*ctx))` before
     /// restoring `provctx`).  The digest selection is restored to
-    /// [`DEFAULT_DIGEST`] because the C `reset` wipes the entire
+    /// `DEFAULT_DIGEST` because the C `reset` wipes the entire
     /// `PROV_DIGEST` struct too.
     fn reset(&mut self) -> ProviderResult<()> {
         debug!("SnmpKdfContext::reset: wiping sensitive state");
@@ -614,7 +614,7 @@ impl KdfContext for SnmpKdfContext {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::AlgorithmUnavailable`] if the digest name
+    /// Returns `ProviderError::AlgorithmUnavailable` if the digest name
     /// cannot be resolved at call time.  Returns
     /// [`ProviderError::Common(CommonError::InvalidArgument)`] if the
     /// digest size cannot be represented as `u64` (this is purely
@@ -666,9 +666,9 @@ impl KdfContext for SnmpKdfContext {
 /// Provider-side adapter for the SNMP KDF.
 ///
 /// Registered in the default provider's algorithm list via
-/// [`descriptors`] and wired into the module aggregator in
+/// `descriptors` and wired into the module aggregator in
 /// `crates/openssl-provider/src/implementations/kdfs/mod.rs`.  Implements
-/// [`KdfProvider::new_ctx`] to hand out a fresh [`SnmpKdfContext`] boxed as
+/// [`KdfProvider::new_ctx`] to hand out a fresh `SnmpKdfContext` boxed as
 /// a `dyn KdfContext` trait object — the Rust replacement for the C
 /// `OSSL_DISPATCH` function-pointer table declared in
 /// `ossl_kdf_snmpkdf_functions`.

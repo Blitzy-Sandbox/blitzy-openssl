@@ -16,7 +16,7 @@
 //!   decrypt, derive, encapsulate, decapsulate.
 //! - Key type identification via the [`KeyType`] enum (replaces NID-based
 //!   identification in C).
-//! - Provider-based dispatch through [`KeyMgmt`](super::keymgmt::KeyMgmt)
+//! - Provider-based dispatch through [`KeyMgmt`]
 //!   (see `keymgmt.rs`).
 //!
 //! ## C to Rust Mapping (`p_lib.c` — 2472 lines)

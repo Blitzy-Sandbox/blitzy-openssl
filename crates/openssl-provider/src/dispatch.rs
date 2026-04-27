@@ -9,8 +9,8 @@
 //!
 //! The method store sits at the centre of the provider-based dispatch
 //! architecture.  Providers register their algorithm descriptors via
-//! [`MethodStore::register_provider`], and consumers fetch resolved
-//! implementations via [`MethodStore::fetch`].
+//! `MethodStore::register_provider`, and consumers fetch resolved
+//! implementations via `MethodStore::fetch`.
 //!
 //! ```text
 //! ┌──────────────┐     register_provider()     ┌──────────────┐
@@ -110,7 +110,7 @@ pub struct MethodKey {
 ///
 /// Wraps an [`AlgorithmDescriptor`] together with the name of the provider
 /// that supplied it.  The internal `operation` field is used for
-/// operation-type filtering during [`MethodStore::fetch`].
+/// operation-type filtering during `MethodStore::fetch`.
 ///
 /// Replaces the entries inserted by `ossl_method_store_add()` in
 /// `crypto/core_fetch.c`.
@@ -223,7 +223,7 @@ pub struct AlgorithmCapability {
 }
 
 impl AlgorithmCapability {
-    /// Converts this capability into a [`ParamSet`] for parameter-based
+    /// Converts this capability into a `ParamSet` for parameter-based
     /// exchange with callers that operate on generic parameter bags.
     ///
     /// Mirrors the C `OSSL_PARAM` array construction in the
@@ -366,7 +366,7 @@ impl MethodStore {
     /// 1. **Cache hit** — Acquires a read lock on `cache` and returns the
     ///    `Arc<dyn AlgorithmProvider>` immediately if found.
     /// 2. **Cache miss** — Acquires a read lock on `registry`, scans for a
-    ///    matching entry, wraps it in a [`ResolvedAlgorithm`], inserts into
+    ///    matching entry, wraps it in a `ResolvedAlgorithm`, inserts into
     ///    `cache` under a write lock, and returns.
     ///
     /// Property matching supports:
@@ -526,7 +526,7 @@ impl MethodStore {
     /// Queries the provider for every operation type and registers all
     /// returned algorithm descriptors.
     ///
-    /// Iterates over [`ALL_OPERATIONS`], calling
+    /// Iterates over `ALL_OPERATIONS`, calling
     /// [`Provider::query_operation`] for each type.  Descriptors returned
     /// by the provider are passed to [`register`](Self::register).
     ///
@@ -632,7 +632,7 @@ impl std::fmt::Debug for MethodStore {
 /// Scans the registry for an algorithm matching the given operation type,
 /// normalised name, and optional property query.
 ///
-/// Returns a [`ResolvedAlgorithm`] wrapping the first matching entry, or
+/// Returns a `ResolvedAlgorithm` wrapping the first matching entry, or
 /// `None` if no match is found.
 fn find_in_registry(
     registry: &[RegisteredAlgorithm],
@@ -740,7 +740,7 @@ fn property_contains(property_def: &str, needle: &str) -> bool {
     false
 }
 
-/// Resolves a normalised algorithm name to its [`Nid`].
+/// Resolves a normalised algorithm name to its `Nid`.
 ///
 /// Maps well-known algorithm names to their numeric identifiers as defined
 /// in `include/openssl/obj_mac.h`.  Returns [`Nid::UNDEF`] for unrecognised

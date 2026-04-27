@@ -11,9 +11,9 @@
 //!
 //! | `ID` | Purpose                               |
 //! | ---- | ------------------------------------- |
-//! |  1   | Encryption key ([`Pkcs12KdfId::Key`]) |
-//! |  2   | Initialization vector ([`Pkcs12KdfId::Iv`]) |
-//! |  3   | MAC key ([`Pkcs12KdfId::Mac`])        |
+//! |  1   | Encryption key (`Pkcs12KdfId::Key`) |
+//! |  2   | Initialization vector (`Pkcs12KdfId::Iv`) |
+//! |  3   | MAC key (`Pkcs12KdfId::Mac`)        |
 //!
 //! Given a hash function `H` with block size `v` (hash input block, e.g.
 //! 64 bytes for SHA-256) and output size `u` (hash output, e.g. 32 bytes
@@ -122,7 +122,7 @@ const DEFAULT_ITERATIONS: u64 = 2048;
 // =============================================================================
 
 /// Bridge a [`CryptoError`] from the `openssl_crypto` crate into a
-/// [`ProviderError`] suitable for the `KdfContext` trait return type.
+/// `ProviderError` suitable for the `KdfContext` trait return type.
 ///
 /// The string representation is preserved so that diagnostic information
 /// (algorithm name, operation that failed, etc.) is not lost across the
@@ -220,18 +220,18 @@ impl From<Pkcs12KdfId> for i32 {
 ///
 /// | C field                       | Rust field                    |
 /// | ----------------------------- | ----------------------------- |
-/// | `PROV_DIGEST digest`          | [`Self::digest_name`] + [`Self::properties`] (resolved via [`MessageDigest::fetch`]) |
-/// | `unsigned char *pass`         | [`Self::password`]            |
+/// | `PROV_DIGEST digest`          | `Self::digest_name` + `Self::properties` (resolved via `MessageDigest::fetch`) |
+/// | `unsigned char *pass`         | `Self::password`            |
 /// | `size_t pass_len`             | (implicit in `Vec`)           |
-/// | `unsigned char *salt`         | [`Self::salt`]                |
+/// | `unsigned char *salt`         | `Self::salt`                |
 /// | `size_t salt_len`             | (implicit in `Vec`)           |
-/// | `uint64_t iter`               | [`Self::iterations`]          |
-/// | `int id`                      | [`Self::id`]                  |
+/// | `uint64_t iter`               | `Self::iterations`          |
+/// | `int id`                      | `Self::id`                  |
 ///
 /// # Security
 ///
 /// The `password` field is automatically zeroized when the context is
-/// dropped via the [`ZeroizeOnDrop`] derive — replacing the explicit
+/// dropped via the `ZeroizeOnDrop` derive — replacing the explicit
 /// `OPENSSL_cleanse()` call in the C `kdf_pkcs12_cleanup()`.  The salt
 /// is not considered sensitive in PKCS#12 but is retained alongside the
 /// password for completeness.
@@ -242,7 +242,7 @@ pub struct Pkcs12KdfContext {
     password: Vec<u8>,
 
     /// Salt octet string.  `None` until set via [`Self::set_params`].
-    /// PKCS#12 KDF requires a non-empty salt — [`Self::validate`] rejects
+    /// PKCS#12 KDF requires a non-empty salt — `Self::validate` rejects
     /// derivation without one.
     salt: Option<Vec<u8>>,
 
@@ -257,8 +257,8 @@ pub struct Pkcs12KdfContext {
     id: Option<Pkcs12KdfId>,
 
     /// Name of the underlying hash algorithm.  Resolved lazily to a
-    /// concrete [`MessageDigest`] at derivation time via
-    /// [`MessageDigest::fetch`].  Defaults to [`DEFAULT_DIGEST`].
+    /// concrete `MessageDigest` at derivation time via
+    /// `MessageDigest::fetch`.  Defaults to [`DEFAULT_DIGEST`].
     #[zeroize(skip)]
     digest_name: String,
 
@@ -285,7 +285,7 @@ impl Pkcs12KdfContext {
         }
     }
 
-    /// Applies parameters from a [`ParamSet`], updating context fields.
+    /// Applies parameters from a `ParamSet`, updating context fields.
     ///
     /// Unknown parameters are silently ignored, matching the C
     /// `kdf_pkcs12_set_ctx_params` behaviour.
@@ -422,7 +422,7 @@ impl Pkcs12KdfContext {
     /// derived bytes into `output` and returning the number of bytes
     /// written (always `output.len()` on success).
     ///
-    /// Assumes [`Self::validate`] has already been called by the caller.
+    /// Assumes `Self::validate` has already been called by the caller.
     #[instrument(level = "trace", skip(self, output), fields(
         digest = %self.digest_name,
         iter = self.iterations,
@@ -676,7 +676,7 @@ impl KdfContext for Pkcs12KdfContext {
         Ok(())
     }
 
-    /// Returns a [`ParamSet`] describing the context's currently
+    /// Returns a `ParamSet` describing the context's currently
     /// gettable parameters.
     ///
     /// Mirrors C `kdf_pkcs12_get_ctx_params`, which exposes only the
@@ -715,9 +715,9 @@ impl KdfContext for Pkcs12KdfContext {
 // Pkcs12KdfProvider — Provider-Level Factory
 // =============================================================================
 
-/// Zero-sized provider factory implementing [`KdfProvider`] for PKCS#12 KDF.
+/// Zero-sized provider factory implementing `KdfProvider` for PKCS#12 KDF.
 ///
-/// The provider is stateless; callers obtain a per-derivation [`KdfContext`]
+/// The provider is stateless; callers obtain a per-derivation `KdfContext`
 /// via [`KdfProvider::new_ctx`].  This matches the C provider-pattern where
 /// `EVP_KDF_fetch` returns a shared `EVP_KDF` and `EVP_KDF_CTX_new` creates
 /// per-call state.
@@ -799,7 +799,7 @@ mod tests {
     use super::*;
     use openssl_common::ParamValue;
 
-    /// Builds a fully-populated [`ParamSet`] suitable for happy-path tests.
+    /// Builds a fully-populated `ParamSet` suitable for happy-path tests.
     ///
     /// Note: the `id` parameter uses [`ParamValue::Int32`] to match the
     /// C `OSSL_PARAM_get_int` wire type (signed 32-bit integer).  This

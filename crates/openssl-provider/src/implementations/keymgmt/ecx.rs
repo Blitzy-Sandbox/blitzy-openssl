@@ -15,15 +15,15 @@
 //!
 //! # Architecture
 //!
-//! - [`EcxAlgorithm`] identifies one of the four raw-key ECX variants.
-//! - [`EcxKeyData`] holds the public and private key octets for a given
+//! - `EcxAlgorithm` identifies one of the four raw-key ECX variants.
+//! - `EcxKeyData` holds the public and private key octets for a given
 //!   algorithm, with automatic zeroing of private material via
 //!   [`zeroize::Zeroizing`] (Rule R8-compliant, no `unsafe`).
-//! - [`EcxGenContext`] stores key generation configuration, including optional
+//! - `EcxGenContext` stores key generation configuration, including optional
 //!   DHKEM Input Keying Material (non-FIPS, X types only).
-//! - [`EcxKeyMgmt`] implements the [`KeyMgmtProvider`] trait, dispatching
-//!   operations per algorithm via its internal [`EcxAlgorithm`] discriminant.
-//! - [`ecx_descriptors`] enumerates the four algorithms for provider
+//! - `EcxKeyMgmt` implements the `KeyMgmtProvider` trait, dispatching
+//!   operations per algorithm via its internal `EcxAlgorithm` discriminant.
+//! - `ecx_descriptors` enumerates the four algorithms for provider
 //!   registration.
 //!
 //! # Security Properties
@@ -52,16 +52,16 @@
 //!
 //! | Rust type / function         | C construct                              | Source |
 //! |------------------------------|------------------------------------------|--------|
-//! | [`EcxKeyData`]               | `ECX_KEY` struct                         | `ecx_key.c` |
-//! | [`EcxGenContext`]            | `struct ecx_gen_ctx`                     | `ecx_kmgmt.c:~350` |
-//! | [`EcxKeyMgmt::new_key`]      | `x25519_new_key` / `x448_new_key` / ...  | `ecx_kmgmt.c:~120` |
-//! | [`EcxKeyMgmt::generate`]     | `ecx_gen` + clamping + public derivation | `ecx_kmgmt.c:~540` |
-//! | [`EcxKeyMgmt::import`]       | `ecx_import`                             | `ecx_kmgmt.c:190-280` |
-//! | [`EcxKeyMgmt::export`]       | `ecx_export` / `key_to_params`           | `ecx_kmgmt.c:280-330` |
-//! | [`EcxKeyMgmt::has`]          | `ecx_has`                                | `ecx_kmgmt.c:130-155` |
-//! | [`EcxKeyMgmt::validate`]     | `ecx_validate` + pairwise check          | `ecx_kmgmt.c:160-190` |
-//! | [`EcxKeyMgmt::match_keys`]   | `ecx_match` (CRYPTO_memcmp→subtle)       | `ecx_kmgmt.c:~165` |
-//! | [`ecx_descriptors`]          | `MAKE_KEYMGMT_FUNCTIONS(alg)` × 4         | `ecx_kmgmt.c:~1200` |
+//! | `EcxKeyData`               | `ECX_KEY` struct                         | `ecx_key.c` |
+//! | `EcxGenContext`            | `struct ecx_gen_ctx`                     | `ecx_kmgmt.c:~350` |
+//! | `EcxKeyMgmt::new_key`      | `x25519_new_key` / `x448_new_key` / ...  | `ecx_kmgmt.c:~120` |
+//! | `EcxKeyMgmt::generate`     | `ecx_gen` + clamping + public derivation | `ecx_kmgmt.c:~540` |
+//! | `EcxKeyMgmt::import`       | `ecx_import`                             | `ecx_kmgmt.c:190-280` |
+//! | `EcxKeyMgmt::export`       | `ecx_export` / `key_to_params`           | `ecx_kmgmt.c:280-330` |
+//! | `EcxKeyMgmt::has`          | `ecx_has`                                | `ecx_kmgmt.c:130-155` |
+//! | `EcxKeyMgmt::validate`     | `ecx_validate` + pairwise check          | `ecx_kmgmt.c:160-190` |
+//! | `EcxKeyMgmt::match_keys`   | `ecx_match` (CRYPTO_memcmp→subtle)       | `ecx_kmgmt.c:~165` |
+//! | `ecx_descriptors`          | `MAKE_KEYMGMT_FUNCTIONS(alg)` × 4         | `ecx_kmgmt.c:~1200` |
 
 use std::fmt;
 use std::sync::Arc;
@@ -228,7 +228,7 @@ impl EcxAlgorithm {
         }
     }
 
-    /// Converts this algorithm to the crypto-layer [`EcxKeyType`] discriminant.
+    /// Converts this algorithm to the crypto-layer `EcxKeyType` discriminant.
     #[must_use]
     pub const fn as_key_type(&self) -> EcxKeyType {
         match self {
@@ -239,7 +239,7 @@ impl EcxAlgorithm {
         }
     }
 
-    /// Parses a case-insensitive algorithm name into an [`EcxAlgorithm`].
+    /// Parses a case-insensitive algorithm name into an `EcxAlgorithm`.
     ///
     /// Accepted forms (case insensitive):
     /// - `"x25519"` → [`Self::X25519`]
@@ -274,7 +274,7 @@ impl fmt::Display for EcxAlgorithm {
 ///
 /// # Security Properties
 ///
-/// - Private key bytes are wrapped in [`Zeroizing`] and securely erased
+/// - Private key bytes are wrapped in `Zeroizing` and securely erased
 ///   on drop. This replaces the C `OPENSSL_secure_clear_free()` pattern.
 /// - Public key bytes are held in plain `Vec<u8>` (no secrecy requirement).
 /// - Optional [`Arc<LibContext>`] enables provider-aware operations without
@@ -282,17 +282,17 @@ impl fmt::Display for EcxAlgorithm {
 ///
 /// # Debug Redaction
 ///
-/// The [`Debug`] implementation redacts all key bytes. The derived string
+/// The `Debug` implementation redacts all key bytes. The derived string
 /// includes `has_private: bool` and `has_public: bool` markers that the
 /// provider-layer `has()` / `export()` implementations inspect when the
-/// concrete type cannot be downcast through the [`KeyData`] trait object.
+/// concrete type cannot be downcast through the `KeyData` trait object.
 ///
 /// # Fields
 ///
-/// - `key_type`: which ECX variant this key is for ([`EcxAlgorithm`]).
+/// - `key_type`: which ECX variant this key is for (`EcxAlgorithm`).
 /// - `pub_key`: `None` when absent; otherwise `key_type.key_size()` bytes.
 /// - `priv_key`: `None` when absent; otherwise `key_type.key_size()` bytes
-///   wrapped in [`Zeroizing`] for secure erasure on drop.
+///   wrapped in `Zeroizing` for secure erasure on drop.
 /// - `lib_ctx`: optional shared library context for provider-aware ops.
 /// - `prop_query`: optional provider property query string
 ///   (e.g. `"provider=default"`).
@@ -324,7 +324,7 @@ impl fmt::Debug for EcxKeyData {
 impl KeyData for EcxKeyData {}
 
 impl EcxKeyData {
-    /// Creates a new empty [`EcxKeyData`] for the given algorithm.
+    /// Creates a new empty `EcxKeyData` for the given algorithm.
     ///
     /// Both `pub_key` and `priv_key` start as `None`. This matches the C
     /// `ossl_ecx_key_new()` initial state.
@@ -339,7 +339,7 @@ impl EcxKeyData {
         }
     }
 
-    /// Creates a new empty [`EcxKeyData`] with an optional [`LibContext`].
+    /// Creates a new empty `EcxKeyData` with an optional `LibContext`.
     #[must_use]
     pub fn new_with_ctx(key_type: EcxAlgorithm, lib_ctx: Option<Arc<LibContext>>) -> Self {
         Self {
@@ -365,7 +365,7 @@ impl EcxKeyData {
 
     /// Returns a reference to the private key bytes if present.
     ///
-    /// The returned slice remains within the [`Zeroizing`] wrapper and
+    /// The returned slice remains within the `Zeroizing` wrapper and
     /// will be zeroed when the enclosing `EcxKeyData` is dropped.
     #[must_use]
     pub fn private_bytes(&self) -> Option<&[u8]> {
@@ -517,7 +517,7 @@ impl EcxKeyData {
         Ok(matches)
     }
 
-    /// Exports public and/or private key bytes to a [`ParamSet`].
+    /// Exports public and/or private key bytes to a `ParamSet`.
     ///
     /// Translates C `key_to_params` (`ecx_kmgmt.c:~260-290`).
     ///
@@ -550,12 +550,12 @@ impl EcxKeyData {
         ps
     }
 
-    /// Imports key data from a [`ParamSet`] into a new [`EcxKeyData`].
+    /// Imports key data from a `ParamSet` into a new `EcxKeyData`.
     ///
     /// Translates C `ecx_import` (`ecx_kmgmt.c:~190-280`).
     ///
     /// Rule R6: exact byte-length comparison (no truncation), returns
-    /// [`ProviderError::Dispatch`] on length mismatch.
+    /// `ProviderError::Dispatch` on length mismatch.
     ///
     /// Rule R5: absent fields encoded as `None`, never as an empty vector.
     ///
@@ -638,7 +638,7 @@ impl EcxKeyData {
 ///
 /// Replaces the C `struct ecx_gen_ctx` (`ecx_kmgmt.c:~350`). Provider-level
 /// APIs populate this context via `set_params` before invoking
-/// [`EcxKeyMgmt::generate`].
+/// `EcxKeyMgmt::generate`.
 ///
 /// # Fields
 ///
@@ -714,7 +714,7 @@ impl EcxGenContext {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::AlgorithmUnavailable`] if the algorithm is
+    /// Returns `ProviderError::AlgorithmUnavailable` if the algorithm is
     /// not a key-exchange variant (Ed25519/Ed448 do not support DHKEM IKM).
     ///
     /// This method also stages non-FIPS enforcement: callers in FIPS mode
@@ -736,7 +736,7 @@ impl EcxGenContext {
         self.prop_query = prop_query;
     }
 
-    /// Updates this context from an `OSSL_PARAM`-equivalent [`ParamSet`].
+    /// Updates this context from an `OSSL_PARAM`-equivalent `ParamSet`.
     ///
     /// Translates the C `ecx_gen_set_params` routine
     /// (`ecx_kmgmt.c:~650-720`).
@@ -783,8 +783,8 @@ impl EcxGenContext {
 
 /// ECX key management provider.
 ///
-/// Implements the [`KeyMgmtProvider`] trait with per-algorithm dispatch.
-/// A single `EcxKeyMgmt` instance is parameterized by its [`EcxAlgorithm`]
+/// Implements the `KeyMgmtProvider` trait with per-algorithm dispatch.
+/// A single `EcxKeyMgmt` instance is parameterized by its `EcxAlgorithm`
 /// at construction time; the four factory functions
 /// ([`Self::x25519`], [`Self::x448`], [`Self::ed25519`], [`Self::ed448`])
 /// cover all supported algorithms.

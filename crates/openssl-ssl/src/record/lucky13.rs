@@ -23,9 +23,9 @@
 //! The defense centres on three constant-time helpers translated literally
 //! from the upstream C reference at `ssl/record/methods/tls_pad.c`:
 //!
-//! * [`ssl3_cbc_remove_padding_and_mac`] — SSLv3 padding removal.
-//! * [`tls1_cbc_remove_padding_and_mac`] — TLS 1.0 / 1.1 / 1.2 padding removal.
-//! * [`ssl3_cbc_copy_mac`] — Constant-time MAC extraction from the trailer.
+//! * `ssl3_cbc_remove_padding_and_mac` — SSLv3 padding removal.
+//! * `tls1_cbc_remove_padding_and_mac` — TLS 1.0 / 1.1 / 1.2 padding removal.
+//! * `ssl3_cbc_copy_mac` — Constant-time MAC extraction from the trailer.
 //!
 //! The TLS 1.x helper performs a **256-byte fixed-iteration scan** regardless
 //! of the actual padding length byte. The SSLv3 variant performs a single
@@ -33,7 +33,7 @@
 //! `good` mask that is `u64::MAX` (all-ones) on success and `0` on failure,
 //! suitable for combining with subsequent MAC-equality masks via bitwise AND.
 //!
-//! The MAC extractor [`ssl3_cbc_copy_mac`] reads the MAC bytes from the
+//! The MAC extractor `ssl3_cbc_copy_mac` reads the MAC bytes from the
 //! decrypted record using a constant-time rotation: the mask flow ensures
 //! that each output byte is selected from `rotated_mac[(rotate_offset + j) %
 //! mac_size]` independent of the runtime values of `mac_start`, `mac_end`,
@@ -120,7 +120,7 @@ const ROTATED_MAC_BUF_ALIGN: usize = 64;
 ///                     is reduced by the padding length plus the MAC length
 ///                     (when valid).
 /// * `origreclen`    — Original record length before any reduction. Required
-///                     for [`ssl3_cbc_copy_mac`] to clamp the scan window.
+///                     for `ssl3_cbc_copy_mac` to clamp the scan window.
 /// * `recdata`       — The decrypted record buffer. Read-only — this helper
 ///                     does **not** modify the buffer; it computes lengths
 ///                     and a `good` mask from it.
@@ -137,7 +137,7 @@ const ROTATED_MAC_BUF_ALIGN: usize = 64;
 /// * `Ok(true)`  — The record was publicly valid (length checks passed) and
 ///                 padding/MAC processing produced consistent output. Note:
 ///                 the `good` mask returned via the public API is
-///                 [`PaddingMacResult::is_good`].
+///                 `PaddingMacResult::is_good`.
 /// * `Ok(false)` — The record was publicly invalid (e.g., `overhead > reclen`).
 ///                 The caller must surface a `bad_record_mac` alert.
 /// * `Err(_)`    — RNG failure or buffer allocation failure (rare).
@@ -145,8 +145,8 @@ const ROTATED_MAC_BUF_ALIGN: usize = 64;
 /// # Constant-Time Behaviour
 ///
 /// All operations on the secret-tainted `padding_length` byte use the
-/// 64-bit constant-time helpers ([`constant_time_ge_64`],
-/// [`constant_time_lt_64`]). The function executes the same code path
+/// 64-bit constant-time helpers (`constant_time_ge_64`,
+/// `constant_time_lt_64`). The function executes the same code path
 /// regardless of whether the padding is correct.
 ///
 /// # Source
@@ -240,10 +240,10 @@ pub fn ssl3_cbc_remove_padding_and_mac(
 ///
 /// The padding scan is performed over a fixed 256-byte window — the
 /// maximum permitted padding (255 + length byte). Each iteration checks a
-/// single byte using [`constant_time_ge_8_64`] and accumulates the result
+/// single byte using `constant_time_ge_8_64` and accumulates the result
 /// into the `good` mask. If any of the final `padding_length + 1` bytes had
 /// the wrong value, one or more low bits of `good` will be cleared and the
-/// final [`constant_time_eq_64`] reduction will collapse `good` to zero.
+/// final `constant_time_eq_64` reduction will collapse `good` to zero.
 ///
 /// The 256-byte loop runs even when the actual padding is shorter so that
 /// timing leaks no information about `padding_length`.
@@ -389,7 +389,7 @@ pub fn tls1_cbc_remove_padding_and_mac(
 /// * `mac_out`    — Destination MAC buffer. Populated with `mac_size` bytes.
 ///                  When `good == 0` the bytes are random (anti-oracle).
 /// * `block_size` — Cipher block size.
-/// * `mac_size`   — MAC size in bytes (≤ [`EVP_MAX_MD_SIZE`]).
+/// * `mac_size`   — MAC size in bytes (≤ `EVP_MAX_MD_SIZE`).
 /// * `good`       — Mask: `u64::MAX` if padding was good, `0` otherwise.
 ///
 /// # Returns

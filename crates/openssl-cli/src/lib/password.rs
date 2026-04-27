@@ -2,26 +2,26 @@
 //!
 //! Replaces `apps/lib/apps_ui.c` (216 lines) and `apps/include/apps_ui.h`.
 //! Provides secure passphrase collection with verification, prompt construction,
-//! default password replay, and secure memory cleanup via [`zeroize`].
+//! default password replay, and secure memory cleanup via `zeroize`.
 //!
 //! ## Key Differences from C
 //!
 //! - Uses [`zeroize::Zeroizing<String>`] for all passphrase buffers (replaces
 //!   `OPENSSL_cleanse` and `OPENSSL_clear_free`).
 //! - RAII-based cleanup replaces manual `destroy_ui_method()` / `UI_free()`.
-//! - [`rpassword`] crate for console prompting replaces `UI_OpenSSL()`.
-//! - No global mutable state: [`PasswordHandler`] is an owned value.
+//! - `rpassword` crate for console prompting replaces `UI_OpenSSL()`.
+//! - No global mutable state: `PasswordHandler` is an owned value.
 //! - [`Result<T, PasswordError>`] replaces sentinel return values (0, -1, -2).
 //!
 //! ## C Source Reference
 //!
 //! | C Construct | Rust Replacement |
 //! |-------------|-----------------|
-//! | `static UI_METHOD *ui_method` (global) | [`PasswordHandler`] (owned, no global) |
-//! | `PW_CB_DATA` | [`PasswordCallbackData`] with `Option<Zeroizing<String>>` |
-//! | `password_callback()` returning `strlen`/`0`/`-1`/`-2` | [`PasswordHandler::prompt_password`] returning `Result` |
+//! | `static UI_METHOD *ui_method` (global) | `PasswordHandler` (owned, no global) |
+//! | `PW_CB_DATA` | `PasswordCallbackData` with `Option<Zeroizing<String>>` |
+//! | `password_callback()` returning `strlen`/`0`/`-1`/`-2` | `PasswordHandler::prompt_password` returning `Result` |
 //! | `setup_ui_method()` / `destroy_ui_method()` | [`PasswordHandler::new()`] / `Drop` trait |
-//! | `OPENSSL_cleanse(buf, bufsiz)` | [`Zeroizing<String>`] (auto-zeroed on drop) |
+//! | `OPENSSL_cleanse(buf, bufsiz)` | `Zeroizing<String>` (auto-zeroed on drop) |
 //! | `UI_add_input_string()` + `UI_process()` | [`rpassword::prompt_password()`] |
 //! | `UI_null()` as base | `interactive: false` mode |
 //! | `UI_OpenSSL()` as base | `interactive: true` mode |
@@ -40,7 +40,7 @@ use zeroize::Zeroizing;
 /// Minimum password length accepted by password prompts.
 ///
 /// Replaces C's `PW_MIN_LENGTH` from `apps_ui.h:13`.
-/// Used in [`PasswordHandler::prompt_password`] for interactive validation
+/// Used in `PasswordHandler::prompt_password` for interactive validation
 /// and corresponds to the `PW_MIN_LENGTH` parameter passed to
 /// `UI_add_input_string()` in the C implementation.
 pub const PW_MIN_LENGTH: usize = 4;
@@ -48,7 +48,7 @@ pub const PW_MIN_LENGTH: usize = 4;
 /// Maximum number of retry attempts for password verification when the
 /// first and second passwords do not match.
 ///
-/// This bounds the verification loop in [`PasswordHandler::prompt_password`]
+/// This bounds the verification loop in `PasswordHandler::prompt_password`
 /// to prevent an infinite retry cycle. The C implementation used
 /// `UI_ctrl(ui, UI_CTRL_IS_REDOABLE)` which allowed a single redo;
 /// we allow up to 3 attempts for better user experience while still
@@ -77,7 +77,7 @@ pub enum PasswordError {
     #[error("I/O error during password input: {0}")]
     Io(#[from] io::Error),
 
-    /// Password is shorter than [`PW_MIN_LENGTH`] characters.
+    /// Password is shorter than `PW_MIN_LENGTH` characters.
     ///
     /// Raised when the user enters a password that doesn't meet the minimum
     /// length requirement. Replaces C's silent enforcement via
@@ -88,7 +88,7 @@ pub enum PasswordError {
 
     /// First and second password entries do not match during verification.
     ///
-    /// Raised after exhausting [`MAX_VERIFY_RETRIES`] attempts. Replaces C's
+    /// Raised after exhausting `MAX_VERIFY_RETRIES` attempts. Replaces C's
     /// redo loop: `do { ok = UI_process(ui); } while (ok < 0 && UI_ctrl(..))`.
     #[error("password verification failed: passwords do not match")]
     VerificationMismatch,
@@ -133,7 +133,7 @@ pub struct PasswordCallbackData {
     /// Pre-set password for non-interactive or default mode.
     ///
     /// When `Some`, this password is returned by
-    /// [`PasswordHandler::prompt_password`] without prompting the user.
+    /// `PasswordHandler::prompt_password` without prompting the user.
     /// Uses [`Zeroizing<String>`] per AAP §0.7.6 — the password is
     /// automatically zeroed in memory on drop, replacing C's
     /// `OPENSSL_cleanse()` calls.
@@ -151,7 +151,7 @@ impl PasswordCallbackData {
     /// Create callback data with a preset password.
     ///
     /// The password will be returned without prompting when passed to
-    /// [`PasswordHandler::prompt_password`].
+    /// `PasswordHandler::prompt_password`.
     pub fn with_password(password: impl Into<String>) -> Self {
         Self {
             password: Some(Zeroizing::new(password.into())),
@@ -203,7 +203,7 @@ impl Default for PasswordCallbackData {
 /// ## Interactive vs Non-Interactive
 ///
 /// - **Interactive** (`interactive: true`): Prompts on the terminal via
-///   [`rpassword`] without echo. Behaves like C's `UI_OpenSSL()`.
+///   `rpassword` without echo. Behaves like C's `UI_OpenSSL()`.
 /// - **Non-Interactive** (`interactive: false`): Returns empty password or
 ///   preset from callback data. Behaves like C's `UI_null()`.
 ///
@@ -288,7 +288,7 @@ impl PasswordHandler {
     ///    (replaces `UI_add_input_string` + `UI_process` at `apps_ui.c:185-196`).
     /// 4. If `verify` is `true`, prompts again and compares
     ///    (replaces `UI_add_verify_string` at `apps_ui.c:188-192`).
-    /// 5. Validates minimum length ([`PW_MIN_LENGTH`]).
+    /// 5. Validates minimum length (`PW_MIN_LENGTH`).
     pub fn prompt_password(
         &self,
         verify: bool,
@@ -331,7 +331,7 @@ impl PasswordHandler {
 
     /// Prompt for a password once without verification.
     ///
-    /// Reads the password from the terminal without echo using [`rpassword`].
+    /// Reads the password from the terminal without echo using `rpassword`.
     /// Validates that the password meets the minimum length requirement.
     ///
     /// Replaces `UI_add_input_string()` + `UI_process()` from
@@ -373,7 +373,7 @@ impl PasswordHandler {
     /// } while (ok < 0 && UI_ctrl(ui, UI_CTRL_IS_REDOABLE, 0, 0, 0));
     /// ```
     ///
-    /// Bounded to [`MAX_VERIFY_RETRIES`] attempts to prevent infinite loops.
+    /// Bounded to `MAX_VERIFY_RETRIES` attempts to prevent infinite loops.
     fn prompt_with_verification(prompt: &str) -> Result<Zeroizing<String>, PasswordError> {
         for attempt in 0..MAX_VERIFY_RETRIES {
             // First prompt — reads and validates minimum length.
@@ -448,7 +448,7 @@ impl Default for PasswordHandler {
 ///
 /// # Security
 ///
-/// - All returned passwords are wrapped in [`Zeroizing`] for automatic
+/// - All returned passwords are wrapped in `Zeroizing` for automatic
 ///   secure memory cleanup on drop.
 /// - `pass:` sources expose the password on the command line (visible in
 ///   `/proc/*/cmdline`). Prefer `env:` or `file:` for production use.

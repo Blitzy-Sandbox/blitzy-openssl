@@ -10,8 +10,8 @@
 //!
 //! | C Source                  | Platform     | Rust Equivalent            |
 //! |---------------------------|--------------|----------------------------|
-//! | `crypto/cpuid.c`          | `x86/x86_64` | [`detect_x86_features()`]  |
-//! | `crypto/armcap.c`         | ARM/AArch64  | [`detect_arm_features()`]  |
+//! | `crypto/cpuid.c`          | `x86/x86_64` | `detect_x86_features()`    |
+//! | `crypto/armcap.c`         | ARM/AArch64  | `detect_arm_features()`    |
 //! | `crypto/ppccap.c`         | `PowerPC64`  | Arch-only detection        |
 //! | `crypto/riscvcap.c`       | RISC-V 64    | Arch-only detection        |
 //! | `crypto/s390xcap.c`       | s390x        | Arch-only detection        |
@@ -26,7 +26,7 @@
 //!
 //! # Rules Enforced
 //!
-//! - **R5 (Nullability):** Returns typed [`CpuCapabilities`] struct, never sentinel integers.
+//! - **R5 (Nullability):** Returns typed `CpuCapabilities` struct, never sentinel integers.
 //! - **R6 (Lossless Casts):** No bare `as` casts — all conversions use typed methods.
 //! - **R8 (Zero Unsafe):** Detection uses safe `std::is_x86_feature_detected!()` and
 //!   `std::arch::is_aarch64_feature_detected!()` macros — zero `unsafe` blocks.

@@ -15,7 +15,7 @@
 //! | `OPENSSL_VERSION_TEXT` | `env!("CARGO_PKG_VERSION")` workspace version |
 //! | `OpenSSL_version(type)` return value | Per-type compile-time constants |
 //! | `BN_options()` | `bn_options()` compile-time string |
-//! | `OpenSSL_version(OPENSSL_CPU_INFO)` | [`capabilities()`] from `openssl_crypto::cpu_detect` |
+//! | `OpenSSL_version(OPENSSL_CPU_INFO)` | `capabilities()` from `openssl_crypto::cpu_detect` |
 //! | `printf(...)` | `println!(...)` |
 //! | `#if defined(_WIN32)` / `OPT_W` | `#[cfg(target_os = "windows")]` on `windows_context` field |
 //! | `if (!dirty) version = 1;` | Default to showing version when no flags set |
@@ -121,7 +121,7 @@ const SEED_SOURCES: &str = "os";
 /// Target architecture name — compile-time constant from `std::env::consts`.
 ///
 /// Provides the target CPU architecture (e.g., `"x86_64"`, `"aarch64"`).
-/// Combined with [`TARGET_OS`] and [`TARGET_ENV`] to produce the full
+/// Combined with [`TARGET_OS`] and `TARGET_ENV` to produce the full
 /// platform identification string, replacing the C `OPENSSL_PLATFORM`
 /// define from the Configure script.
 const TARGET_ARCH: &str = std::env::consts::ARCH;
@@ -634,7 +634,7 @@ fn format_seed_source() -> String {
 /// printf("%s\n", OpenSSL_version(OPENSSL_CPU_INFO));
 /// ```
 ///
-/// Calls [`capabilities()`] from `openssl_crypto::cpu_detect` to obtain the
+/// Calls `capabilities()` from `openssl_crypto::cpu_detect` to obtain the
 /// lazily-initialized CPU capability singleton, then formats it as a
 /// human-readable string listing the architecture and detected features.
 ///

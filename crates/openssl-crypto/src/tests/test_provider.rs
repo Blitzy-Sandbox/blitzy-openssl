@@ -436,6 +436,23 @@ fn test_provider_double_activate() {
 /// This is the Rust equivalent of `OSSL_PROVIDER_status(prov)` queries in
 /// `test/provider_status_test.c`, exercised through the store API rather
 /// than the direct `ProviderInstance` handle returned by `load`.
+///
+/// # Feature gating
+///
+/// This test is gated on `not(feature = "fips_module")` because under the
+/// FIPS module build the `predefined_providers()` registry contains only
+/// the `fips` provider — the `default` provider is excluded by design (see
+/// `crypto/provider/predefined.rs::predefined_providers` and the C
+/// reference `provider_predefined.c` lines 22–29 where the predefined
+/// table is partitioned at compile time by `#ifdef FIPS_MODULE`).
+/// Consequently, the `store.find("default")` call below would return
+/// `None` and the subsequent `.expect("predefined 'default' must exist")`
+/// would panic. The behaviour validated here — that `find()` reports the
+/// correct status for the predefined `default` instance before and after
+/// activation — applies only to non-FIPS builds; the FIPS build asserts
+/// the equivalent invariant for the `fips` provider through the dedicated
+/// FIPS-module test suite (`crates/openssl-fips/src/tests/`).
+#[cfg(not(feature = "fips_module"))]
 #[test]
 fn test_provider_status_after_activate() {
     let (_strings, store) = fresh_store();
@@ -890,6 +907,20 @@ fn test_property_fips_query() {
 /// Mirrors the C behaviour where `EVP_MD_fetch(NULL, ...)` succeeds even
 /// when `OSSL_PROVIDER_load()` was never called — because the library
 /// silently activates fallbacks on first use.
+///
+/// # Feature gating
+///
+/// This test is gated on `not(feature = "fips_module")` because the
+/// fallback provider in the predefined registry differs by build profile:
+/// non-FIPS builds register `default` as the fallback (see
+/// `crypto/provider/predefined.rs::predefined_providers`, mirroring C
+/// `provider_predefined.c` line 24), whereas the FIPS module build
+/// registers `fips` as the sole predefined fallback (line 22 of the same
+/// C file, gated by `#ifdef FIPS_MODULE`). The assertions below
+/// (`available(&store, "default")`) therefore hold only for the non-FIPS
+/// configuration. The FIPS-module fallback equivalent is exercised in
+/// the dedicated FIPS test suite under `crates/openssl-fips/src/tests/`.
+#[cfg(not(feature = "fips_module"))]
 #[test]
 fn test_provider_fallback_to_default() {
     let (_strings, store) = fresh_store();

@@ -14,27 +14,27 @@
 //! 3. **AEAD constructions** — GCM/CCM/OCB/SIV/ChaCha20-Poly1305 provide authenticated encryption
 //!
 //! This replaces the C `block128_f` callback pattern from `crypto/modes/*.c` with
-//! Rust's trait-based dispatch via [`SymmetricCipher`].
+//! Rust's trait-based dispatch via `SymmetricCipher`.
 //!
 //! ## Source Mapping
 //!
 //! | Rust Trait/Type    | C Source                     | Purpose                  |
 //! |--------------------|------------------------------|--------------------------|
-//! | [`SymmetricCipher`]| `block128_f` in `modes.h`    | Block cipher trait       |
-//! | [`AeadCipher`]     | GCM/CCM/OCB/SIV modes       | Authenticated encryption |
-//! | [`StreamCipher`]   | RC4, `ChaCha20`              | Stream cipher trait      |
-//! | [`cbc_encrypt`]    | `crypto/modes/cbc128.c`      | CBC mode engine          |
-//! | [`ctr_encrypt`]    | `crypto/modes/ctr128.c`      | CTR mode engine          |
-//! | [`cfb_encrypt`]    | `crypto/modes/cfb128.c`      | CFB mode engine          |
-//! | [`ofb_encrypt`]    | `crypto/modes/ofb128.c`      | OFB mode engine          |
-//! | [`ecb_encrypt`]    | N/A (trivial wrapper)        | ECB mode engine          |
-//! | [`pkcs7_pad`]      | `EVP_CIPHER_CTX` padding     | PKCS#7 padding           |
-//! | [`pkcs7_unpad`]    | `EVP_CIPHER_CTX` padding     | PKCS#7 unpadding         |
+//! | `SymmetricCipher`  | `block128_f` in `modes.h`    | Block cipher trait       |
+//! | `AeadCipher`       | GCM/CCM/OCB/SIV modes       | Authenticated encryption |
+//! | `StreamCipher`     | RC4, `ChaCha20`              | Stream cipher trait      |
+//! | `cbc_encrypt`      | `crypto/modes/cbc128.c`      | CBC mode engine          |
+//! | `ctr_encrypt`      | `crypto/modes/ctr128.c`      | CTR mode engine          |
+//! | `cfb_encrypt`      | `crypto/modes/cfb128.c`      | CFB mode engine          |
+//! | `ofb_encrypt`      | `crypto/modes/ofb128.c`      | OFB mode engine          |
+//! | `ecb_encrypt`      | N/A (trivial wrapper)        | ECB mode engine          |
+//! | `pkcs7_pad`        | `EVP_CIPHER_CTX` padding     | PKCS#7 padding           |
+//! | `pkcs7_unpad`      | `EVP_CIPHER_CTX` padding     | PKCS#7 unpadding         |
 //!
 //! ## Rules Enforced
 //!
 //! - **R5 (Nullability):** All fallible operations return `CryptoResult<T>`.
-//! - **R6 (Lossless Casts):** Block size uses typed [`BlockSize`] enum; counter
+//! - **R6 (Lossless Casts):** Block size uses typed `BlockSize` enum; counter
 //!   increments use wrapping arithmetic; no bare `as` narrowing.
 //! - **R7 (Lock Granularity):** N/A — mode engines are stateless.
 //! - **R8 (Zero Unsafe):** Zero `unsafe` blocks in this module.
@@ -53,10 +53,10 @@
 //!
 //! | Submodule       | Feature  | Default? | Opt-Out / Opt-In                                                               |
 //! |-----------------|----------|----------|--------------------------------------------------------------------------------|
-//! | [`aes`]         | `aes`    | ✅ Yes   | `--no-default-features --features "..."` (omit `aes` from list)                |
-//! | [`chacha20`]    | `chacha` | ✅ Yes   | `--no-default-features --features "..."` (omit `chacha`)                       |
-//! | [`des`]         | `des`    | ✅ Yes   | `--no-default-features --features "..."` (omit `des`) — recommended opt-out    |
-//! | [`legacy`]      | `legacy` | ❌ No    | `--features "openssl-crypto/legacy"` — explicit opt-in                         |
+//! | `aes`           | `aes`    | ✅ Yes   | `--no-default-features --features "..."` (omit `aes` from list)                |
+//! | `chacha20`      | `chacha` | ✅ Yes   | `--no-default-features --features "..."` (omit `chacha`)                       |
+//! | `des`           | `des`    | ✅ Yes   | `--no-default-features --features "..."` (omit `des`) — recommended opt-out    |
+//! | `legacy`        | `legacy` | ❌ No    | `--features "openssl-crypto/legacy"` — explicit opt-in                         |
 //!
 //! ### Side-Channel Security Implications
 //!

@@ -10,7 +10,7 @@
 //! | C Pattern | Rust Pattern |
 //! |-----------|-------------|
 //! | `OPTION_CHOICE` enum (8 variants) | `InfoArgs` boolean fields (8 flags) |
-//! | `opt_next()` loop + `dirty` counter | [`InfoArgs::count_selected()`] mutual exclusion |
+//! | `opt_next()` loop + `dirty` counter | `InfoArgs::count_selected()` mutual exclusion |
 //! | `OPENSSL_info(type)` return value | Per-type query functions with compile-time constants |
 //! | `BIO_printf(bio_out, "%s\n", val)` | `println!("{value}")` |
 //! | `#ifdef OPENSSL_SYS_WINDOWS` | `#[cfg(target_os = "windows")]` |
@@ -223,7 +223,7 @@ impl InfoArgs {
     /// # Arguments
     ///
     /// * `_ctx` — Library context (unused by this command but required by the
-    ///   [`CliCommand::execute()`] dispatch interface for uniform command dispatch).
+    ///   `CliCommand::execute()` dispatch interface for uniform command dispatch).
     ///
     /// # Errors
     ///
@@ -380,7 +380,7 @@ impl InfoArgs {
 ///
 /// Replaces the C `OPENSSL_info(OPENSSL_INFO_CPU_SETTINGS)` output, which reads
 /// from `OPENSSL_ia32cap_P` / `OPENSSL_armcap_P` globals and formats them as a
-/// descriptive string. This function calls [`capabilities()`] from
+/// descriptive string. This function calls `capabilities()` from
 /// [`openssl_crypto::cpu_detect`] and formats the cached detection results.
 ///
 /// # Output Format
@@ -434,7 +434,7 @@ fn format_cpu_settings() -> String {
 /// features. The names match the conventional nomenclature used in CPU
 /// capability reporting (e.g., `AESNI`, `AVX2`, `PCLMULQDQ`).
 ///
-/// Features are listed in the same order as the [`X86Features`] bitflags
+/// Features are listed in the same order as the `X86Features` bitflags
 /// definition, providing a consistent and predictable output format.
 fn collect_x86_feature_names(
     caps: &openssl_crypto::cpu_detect::CpuCapabilities,
@@ -475,7 +475,7 @@ fn collect_x86_feature_names(
 /// Returns a vector of human-readable feature names for all detected ARM CPU
 /// features. Feature names match the conventional `ARMv8` extension nomenclature.
 ///
-/// Features are listed in the same order as the [`ArmFeatures`] bitflags
+/// Features are listed in the same order as the `ArmFeatures` bitflags
 /// definition.
 fn collect_arm_feature_names(
     caps: &openssl_crypto::cpu_detect::CpuCapabilities,

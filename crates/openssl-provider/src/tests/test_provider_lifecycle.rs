@@ -64,7 +64,7 @@ enum BuiltinProviderKind {
 }
 
 impl BuiltinProviderKind {
-    /// Creates a boxed [`Provider`] trait object for the given provider kind.
+    /// Creates a boxed `Provider` trait object for the given provider kind.
     ///
     /// Returns a dynamically-dispatched provider, mirroring the C pattern of
     /// `OSSL_PROVIDER_load()` → dispatch table resolution.

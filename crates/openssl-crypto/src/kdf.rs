@@ -62,12 +62,12 @@
 //!
 //! | C API | Rust Equivalent |
 //! |-------|-----------------|
-//! | `EVP_KDF_fetch()` | [`KdfType`] enum variant selection |
-//! | `EVP_KDF_CTX_new()` | [`KdfContext::new()`] |
-//! | `EVP_KDF_CTX_set_params()` | [`KdfContext::set_key()`], [`KdfContext::set_salt()`], etc. |
-//! | `EVP_KDF_derive()` | [`KdfContext::derive()`] |
+//! | `EVP_KDF_fetch()` | `KdfType` enum variant selection |
+//! | `EVP_KDF_CTX_new()` | `KdfContext::new()` |
+//! | `EVP_KDF_CTX_set_params()` | `KdfContext::set_key()`, `KdfContext::set_salt()`, etc. |
+//! | `EVP_KDF_derive()` | `KdfContext::derive()` |
 //! | `EVP_KDF_CTX_free()` | `Drop` with `ZeroizeOnDrop` |
-//! | `OSSL_PARAM` bags | [`ParamSet`] typed parameters |
+//! | `OSSL_PARAM` bags | `ParamSet` typed parameters |
 
 use openssl_common::{CryptoError, CryptoResult, ParamSet};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -623,7 +623,7 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; SHA256_DIGEST_SIZE] {
 /// of `HashLen` zeros").
 ///
 /// `digest_name` selects the HMAC variant — `"SHA-256"`, `"SHA-512"`, etc.
-/// The accepted name set is documented on [`digest_output_len`] and matches
+/// The accepted name set is documented on `digest_output_len` and matches
 /// the underlying [`crate::mac::hmac`] backend.
 ///
 /// # Errors
@@ -1423,7 +1423,7 @@ impl KdfContext {
     /// accepted for HKDF dispatch — `"SHA-256"`, `"SHA-512"`,
     /// `"SHA3-256"`, etc. — backed by the workspace HMAC implementation in
     /// [`crate::mac::hmac`]. The accepted name set is documented on
-    /// [`digest_output_len`]; both hyphenated and non-hyphenated forms are
+    /// `digest_output_len`; both hyphenated and non-hyphenated forms are
     /// recognised.
     ///
     /// PBKDF2 currently remains hard-bound to HMAC-SHA-256 by design;

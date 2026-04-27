@@ -11,18 +11,18 @@
 //! associated lifecycle routines (`ssl/record/rec_layer_s3.c`) into
 //! idiomatic Rust. The central abstractions are:
 //!
-//! * [`RecordLayerState`] — per-connection state, replacing C's `RECORD_LAYER`
-//! * [`RecordMethod`] trait — pluggable record-layer backend, replacing
+//! * `RecordLayerState` — per-connection state, replacing C's `RECORD_LAYER`
+//! * `RecordMethod` trait — pluggable record-layer backend, replacing
 //!   C's `OSSL_RECORD_METHOD` function-pointer dispatch table
-//! * [`RecordLayerInstance`] trait — an opaque instantiated record-layer
+//! * `RecordLayerInstance` trait — an opaque instantiated record-layer
 //!   object
-//! * [`TlsRecord`] — a single TLS/DTLS record, replacing C's `TLS_RECORD`
+//! * `TlsRecord` — a single TLS/DTLS record, replacing C's `TLS_RECORD`
 //!
 //! # Provider Integration
 //!
 //! The record-layer methods (default, KTLS, custom) are expressed through
-//! the [`RecordMethod`] trait. Provider selection happens via
-//! [`set_new_record_layer`] during handshake epoch transitions.
+//! the `RecordMethod` trait. Provider selection happens via
+//! `set_new_record_layer` during handshake epoch transitions.
 //!
 //! # Safety and Rules Compliance
 //!
@@ -451,7 +451,7 @@ pub type MsgCallback = Box<dyn Fn(bool, u16, u8, &[u8]) + Send + Sync>;
 /// Replaces C's `int (*ssl_security)(SSL *s, int op, int bits, int nid,
 /// void *other)` pattern from `ssl/record/rec_layer_s3.c` line 1143–1150.
 /// The C implementation defaults to "permit" when no callback is installed;
-/// this behaviour is preserved in [`rlayer_security_wrapper`].
+/// this behaviour is preserved in `rlayer_security_wrapper`.
 pub type SecurityCallback = Box<dyn Fn(i32, i32, i32) -> bool + Send + Sync>;
 
 // ---------------------------------------------------------------------------
@@ -460,14 +460,14 @@ pub type SecurityCallback = Box<dyn Fn(i32, i32, i32) -> bool + Send + Sync>;
 
 /// An instantiated record-layer object.
 ///
-/// A [`RecordMethod`] implementation returns a `Box<dyn RecordLayerInstance>`
+/// A `RecordMethod` implementation returns a `Box<dyn RecordLayerInstance>`
 /// from `new_record_layer`. All subsequent operations (`read_record`,
 /// `write_records`, etc.) take a mutable reference to this trait object.
 ///
 /// The trait is intentionally minimal — the real state lives in the
 /// concrete type returned by each backend. Downcasting is performed by the
 /// backend itself; the record-layer framework only ever accesses the
-/// instance through the [`RecordMethod`] trait methods.
+/// instance through the `RecordMethod` trait methods.
 ///
 /// # Safe Downcasting (R8 — no `unsafe`)
 ///
@@ -558,7 +558,7 @@ pub struct NewRecordLayerArgs {
 ///   `DtlsRecordMethod` — pure Rust, feature-flag selected.
 /// * **KTLS** — `providers::default::record::KtlsRecordMethod` — uses
 ///   kernel-level TLS off-load when available (Linux, FreeBSD).
-/// * **Custom** — user-installed via [`set_custom_record_layer`].
+/// * **Custom** — user-installed via `set_custom_record_layer`.
 ///
 /// All methods take `&self` (not `&mut self`) so that `Box<dyn RecordMethod>`
 /// can be shared across threads; the stateful record layer lives inside
@@ -724,45 +724,45 @@ pub struct RecordLayerState {
     // --- User-installed custom method -------------------------------------
     /// User-installed custom record-layer method; always selected if set.
     ///
-    /// Write-site: [`set_custom_record_layer`].
-    /// Read-site: `select_next_record_layer` in [`set_new_record_layer`].
+    /// Write-site: `set_custom_record_layer`.
+    /// Read-site: `select_next_record_layer` in `set_new_record_layer`.
     pub custom_rlmethod: Option<Box<dyn RecordMethod>>,
 
     /// Custom-method-specific opaque argument.
     ///
-    /// Write-site: [`set_custom_record_layer`].
+    /// Write-site: `set_custom_record_layer`.
     /// Read-site: passed to `custom_rlmethod.new_record_layer()`.
     pub rlarg: Option<Box<dyn core::any::Any + Send>>,
 
     // --- Active read/write method and instance pair ----------------------
     /// Read-direction method (for checking pending state, release).
     ///
-    /// Write-site: [`set_new_record_layer`].
+    /// Write-site: `set_new_record_layer`.
     /// Read-site: [`RecordLayerState::read_pending`].
     pub rrlmethod: Option<Box<dyn RecordMethod>>,
 
     /// Write-direction method.
     ///
-    /// Write-site: [`set_new_record_layer`].
+    /// Write-site: `set_new_record_layer`.
     /// Read-site: used by write functions in `tls.rs` / `dtls.rs`.
     pub wrlmethod: Option<Box<dyn RecordMethod>>,
 
     /// Read-direction instance (provider-backed state).
     ///
-    /// Write-site: [`set_new_record_layer`].
+    /// Write-site: `set_new_record_layer`.
     /// Read-site: [`RecordLayerState::read_pending`].
     pub rrl: Option<Box<dyn RecordLayerInstance>>,
 
     /// Write-direction instance.
     ///
-    /// Write-site: [`set_new_record_layer`].
+    /// Write-site: `set_new_record_layer`.
     /// Read-site: write path in `tls.rs` / `dtls.rs`.
     pub wrl: Option<Box<dyn RecordLayerInstance>>,
 
     /// Staging BIO for read-direction epoch transitions (DTLS, TLS 1.3
     /// post-handshake key update).
     ///
-    /// Write-site: [`set_new_record_layer`] (created before swap).
+    /// Write-site: `set_new_record_layer` (created before swap).
     /// Read-site: [`RecordLayerState::clear`], post-swap consumption.
     pub rrlnext: Option<Box<dyn Bio>>,
 
@@ -770,14 +770,14 @@ pub struct RecordLayerState {
     /// Default read-buffer length used when provisioning a new read layer.
     ///
     /// Write-site: `SSL_set_default_read_buffer_len` equivalent.
-    /// Read-site: options-parameter construction in [`set_new_record_layer`].
+    /// Read-site: options-parameter construction in `set_new_record_layer`.
     pub default_read_buf_len: usize,
 
     /// Read-ahead mode — when true, read as much as the kernel has buffered
     /// (reduces syscalls at the cost of extra memory).
     ///
     /// Write-site: [`RecordLayerState::set_read_ahead`].
-    /// Read-site: options-parameter construction in [`set_new_record_layer`].
+    /// Read-site: options-parameter construction in `set_new_record_layer`.
     pub read_ahead: bool,
 
     // --- Write-side state --------------------------------------------------
@@ -815,10 +815,10 @@ pub struct RecordLayerState {
 
     // --- Alert DoS counter -------------------------------------------------
     /// Count of consecutive warning alerts received; capped at
-    /// [`MAX_WARN_ALERT_COUNT`].
+    /// `MAX_WARN_ALERT_COUNT`.
     ///
     /// Write-site: alert-handling path in `tls.rs` / `dtls.rs`.
-    /// Read-site: [`MAX_WARN_ALERT_COUNT`] check in alert processing.
+    /// Read-site: `MAX_WARN_ALERT_COUNT` check in alert processing.
     pub alert_count: u32,
 
     // --- Pipeline of fetched records --------------------------------------
@@ -835,7 +835,7 @@ pub struct RecordLayerState {
     pub curr_rec: usize,
 
     /// Pipeline of fetched records. Length capped at
-    /// [`SSL_MAX_PIPELINES`] by construction.
+    /// `SSL_MAX_PIPELINES` by construction.
     ///
     /// Write-site: read path in `tls.rs` / `dtls.rs`.
     /// Read-site: delivery path in `tls.rs` / `dtls.rs`.
@@ -845,25 +845,25 @@ pub struct RecordLayerState {
     /// Block-cipher padding size (non-zero enables block padding).
     ///
     /// Write-site: `SSL_set_block_padding` / config.
-    /// Read-site: options-parameter construction in [`set_new_record_layer`].
+    /// Read-site: options-parameter construction in `set_new_record_layer`.
     pub block_padding: usize,
 
     /// Handshake-padding size for TLS 1.3 handshake messages.
     ///
     /// Write-site: `SSL_set_block_padding_ex` / config.
-    /// Read-site: options-parameter construction in [`set_new_record_layer`].
+    /// Read-site: options-parameter construction in `set_new_record_layer`.
     pub hs_padding: usize,
 
     /// TLS 1.3 record-padding callback.
     ///
     /// Write-site: `SSL_set_record_padding_callback` equivalent.
-    /// Read-site: padding-dispatch wrapper in [`rlayer_padding_wrapper`].
+    /// Read-site: padding-dispatch wrapper in `rlayer_padding_wrapper`.
     pub record_padding_cb: Option<RecordPaddingCallback>,
 
     /// Opaque argument passed to `record_padding_cb`.
     ///
     /// Write-site: `SSL_set_record_padding_callback_arg` equivalent.
-    /// Read-site: [`rlayer_padding_wrapper`] dispatch.
+    /// Read-site: `rlayer_padding_wrapper` dispatch.
     pub record_padding_arg: Option<Box<dyn core::any::Any + Send>>,
 
     /// SSL message callback invoked for every record handled by the record
@@ -871,7 +871,7 @@ pub struct RecordLayerState {
     ///
     /// Write-site: [`RecordLayerState::set_msg_callback`] (translates
     /// `SSL_CTX_set_msg_callback` / `SSL_set_msg_callback`).
-    /// Read-site: [`rlayer_msg_callback_wrapper`] dispatch.
+    /// Read-site: `rlayer_msg_callback_wrapper` dispatch.
     ///
     /// `None` matches upstream C behaviour (no-op, see
     /// `ssl/record/rec_layer_s3.c` line 1138 — `if (s->msg_callback != NULL)`).
@@ -886,7 +886,7 @@ pub struct RecordLayerState {
     ///
     /// Write-site: [`RecordLayerState::set_security_callback`] (translates
     /// `SSL_CTX_set_security_callback` / `SSL_set_security_callback`).
-    /// Read-site: [`rlayer_security_wrapper`] dispatch.
+    /// Read-site: `rlayer_security_wrapper` dispatch.
     ///
     /// `None` matches upstream C default-permit semantics — see
     /// `ssl/record/rec_layer_s3.c` line 1148 (`return ssl_security(s, …)`),
@@ -952,7 +952,7 @@ impl RecordLayerState {
     /// ```
     /// In the Rust rewrite the parent connection is not embedded in the
     /// record layer (to avoid cyclical borrows); instead the connection
-    /// drives the record layer via method calls on [`RecordLayerState`].
+    /// drives the record layer via method calls on `RecordLayerState`.
     #[must_use]
     pub fn new() -> Self {
         // Pre-allocate a small initial pipeline — records are appended as
@@ -1108,7 +1108,7 @@ impl RecordLayerState {
         // Create a new read record layer at PROTECTION_LEVEL_NONE.
         // The state is left `None` here; the actual instantiation happens
         // when the connection attaches a concrete `RecordMethod` via
-        // [`set_new_record_layer`] during handshake setup. This mirrors the
+        // `set_new_record_layer` during handshake setup. This mirrors the
         // C pattern where RECORD_LAYER_reset calls ssl_set_new_record_layer
         // with level NONE; in our crate structure the method is supplied
         // externally, so reset only clears and records the initial version.
@@ -1198,8 +1198,8 @@ impl RecordLayerState {
     /// stores the closure on the `SSL` /`SSL_CTX` and the record-layer
     /// dispatch wrapper consults it). In the Rust translation the
     /// callback is held directly on the per-connection
-    /// [`RecordLayerState`], where the read-site is
-    /// [`rlayer_msg_callback_wrapper`].
+    /// `RecordLayerState`, where the read-site is
+    /// `rlayer_msg_callback_wrapper`.
     ///
     /// Pass `Some(Box::new(closure))` to install a handler;
     /// pass `None` to clear a previously-installed handler. The
@@ -1208,7 +1208,7 @@ impl RecordLayerState {
     /// does not touch the SSL-level message callback.
     ///
     /// Rule R3 — write-site for `msg_callback`. Rule R4 — pair with
-    /// [`rlayer_msg_callback_wrapper`] via the
+    /// `rlayer_msg_callback_wrapper` via the
     /// `record_layer_msg_callback_register_trigger_assert` integration
     /// test. Rule R10 — wires the callback through to actual record
     /// handling rather than leaving it as a no-op stub.
@@ -1238,8 +1238,8 @@ impl RecordLayerState {
     /// `SSL_set_security_callback` from `ssl/ssl_lib.c`. The upstream
     /// callback is consulted by `ssl_security`, which the record-layer
     /// dispatch wrapper invokes; the Rust translation stores the
-    /// callback directly on the per-connection [`RecordLayerState`]
-    /// and consults it in [`rlayer_security_wrapper`].
+    /// callback directly on the per-connection `RecordLayerState`
+    /// and consults it in `rlayer_security_wrapper`.
     ///
     /// Pass `Some(Box::new(closure))` to install a handler;
     /// pass `None` to clear a previously-installed handler (the
@@ -1248,7 +1248,7 @@ impl RecordLayerState {
     /// installed).
     ///
     /// Rule R3 — write-site for `security_callback`. Rule R4 — pair with
-    /// [`rlayer_security_wrapper`] via the
+    /// `rlayer_security_wrapper` via the
     /// `record_layer_security_callback_register_trigger_assert`
     /// integration test. Rule R10 — wires the callback through to
     /// security-policy enforcement rather than leaving it as a
@@ -1312,7 +1312,7 @@ impl Default for RecordLayerState {
 ///
 /// Translates C `ossl_ssl_set_custom_record_layer` (`rec_layer_s3.c`
 /// lines 1170–1176). Once set, the custom method is always chosen by
-/// subsequent [`set_new_record_layer`] calls.
+/// subsequent `set_new_record_layer` calls.
 ///
 /// Passing `None` for both parameters clears any previously-installed
 /// custom handler.
@@ -1336,7 +1336,7 @@ pub fn set_custom_record_layer(
     state.rlarg = arg;
 }
 
-/// Arguments for [`set_new_record_layer`].
+/// Arguments for `set_new_record_layer`.
 ///
 /// Replaces the 20-argument C `ssl_set_new_record_layer` signature
 /// (`rec_layer_s3.c` lines 1237–1483) with a typed struct per Rule R5
@@ -1522,7 +1522,7 @@ fn post_record_layer_select(
 /// Translates C lines 1283–1314 of `rec_layer_s3.c`.
 ///
 /// Reads from both the caller-supplied `args` (SSL options bitmap, SSL mode
-/// bitmap) and the current [`RecordLayerState`] (read-ahead flag, default
+/// bitmap) and the current `RecordLayerState` (read-ahead flag, default
 /// buffer length, block/handshake padding sizes). The emitted parameter set
 /// is intentionally direction-specific: read-direction callers receive
 /// buffer/read-ahead parameters, write-direction callers receive padding
@@ -1585,16 +1585,16 @@ fn build_settings_params(args: &SetNewRecordLayerArgs) -> ParamSet {
 ///
 /// # Algorithm
 ///
-/// 1. Resolve the method to use via [`select_next_record_layer`].
-/// 2. Build options and settings [`ParamSet`]s.
-/// 3. Construct a staging BIO ([`MemBio`]) for the read direction so that
+/// 1. Resolve the method to use via `select_next_record_layer`.
+/// 2. Build options and settings `ParamSet`s.
+/// 3. Construct a staging BIO (`MemBio`) for the read direction so that
 ///    records decrypted under the new keys can be read while the old
 ///    layer is being torn down.
 /// 4. Call `method.new_record_layer(args)`.
 /// 5. On `RlayerReturn::NonFatalError`, if a different method was tried,
 ///    fall back to the previous method and retry.
 /// 6. On success, swap the new instance in and drop the old one.
-/// 7. Call [`post_record_layer_select`] to propagate first-handshake and
+/// 7. Call `post_record_layer_select` to propagate first-handshake and
 ///    pipeline-depth settings.
 ///
 /// # Errors
@@ -1875,8 +1875,8 @@ pub fn set_record_protocol_version(
 }
 
 /// Converts a backend return code from a fallible backend call into an
-/// appropriate [`SslError`] — used when we cannot propagate
-/// [`RlayerReturn`] directly (e.g. during `clear()` where each individual
+/// appropriate `SslError` — used when we cannot propagate
+/// `RlayerReturn` directly (e.g. during `clear()` where each individual
 /// release error just needs to be summarised).
 fn rlayer_return_to_error(rc: RlayerReturn) -> SslError {
     match rc {
@@ -1897,7 +1897,7 @@ fn rlayer_return_to_error(rc: RlayerReturn) -> SslError {
 // (rec_layer_s3.c lines 491–558).
 // ---------------------------------------------------------------------------
 
-/// Options affecting [`handle_rlayer_return`] behaviour.
+/// Options affecting `handle_rlayer_return` behaviour.
 ///
 /// Supplied by the caller because the mod.rs layer does not itself own
 /// the full `SslConnection` options bitmap — this keeps the record layer
@@ -1909,7 +1909,7 @@ pub struct RlayerReturnOptions {
     pub ignore_unexpected_eof: bool,
 }
 
-/// Outcome from [`handle_rlayer_return`].
+/// Outcome from `handle_rlayer_return`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RlayerReturnOutcome {
     /// The operation succeeded — caller should continue normally.
@@ -1931,7 +1931,7 @@ pub enum RlayerReturnOutcome {
 /// Translates C `ossl_tls_handle_rlayer_return` (`rec_layer_s3.c`
 /// lines 491–558). The C function mutates the SSL connection's
 /// `rwstate`, `shutdown`, and error state directly; the Rust version
-/// returns an [`RlayerReturnOutcome`] describing what the caller should
+/// returns an `RlayerReturnOutcome` describing what the caller should
 /// do, plus mutating `state.alert_count` when appropriate. This keeps
 /// the record layer decoupled from the connection-level error queue.
 ///
@@ -2314,6 +2314,10 @@ mod tests {
     // ------------------------------------------------------------------
     // Fixture: minimal RecordMethod implementation for tests.
     // ------------------------------------------------------------------
+    // Fields are populated through `RecordMethod::new_record_layer` to mirror
+    // the production initialization path; they are reserved for upcoming
+    // record-layer state-machine assertions and are intentionally retained.
+    #[allow(dead_code)]
     struct TestInstance {
         processed_pending: bool,
         unprocessed_pending: bool,

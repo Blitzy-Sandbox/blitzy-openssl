@@ -30,6 +30,11 @@ pub use md5::{md5, Md5Context, Md5Sha1Context};
 //   allow silences the warning *only* at the re-export boundary.
 #[allow(deprecated)]
 pub use legacy::{
-    create_legacy_digest, md2, md4, mdc2, ripemd160, sm3, whirlpool, LegacyAlgorithm, Md2Context,
-    Md4Context, Mdc2Context, Ripemd160Context, Sm3Context, WhirlpoolContext,
+    create_legacy_digest, md2, md4, ripemd160, sm3, whirlpool, LegacyAlgorithm, Md2Context,
+    Md4Context, Ripemd160Context, Sm3Context, WhirlpoolContext,
 };
+
+// MDC-2 is constructed from DES; gate its re-exports behind the `des` feature.
+#[cfg(feature = "des")]
+#[allow(deprecated)]
+pub use legacy::{mdc2, Mdc2Context};

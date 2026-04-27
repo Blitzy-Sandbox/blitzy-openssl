@@ -38,14 +38,14 @@
 //!
 //! | Module | Focus | Key Rules |
 //! |--------|-------|-----------|
-//! | [`test_provider_lifecycle`] | Create/register/query/teardown for all providers | R4, R7, R10 |
-//! | [`test_dispatch`] | `MethodStore` operations, concurrent access | R4, R7, R10 |
-//! | [`test_default_provider`] | Default provider algorithm catalog completeness | R10 |
+//! | `test_provider_lifecycle` | Create/register/query/teardown for all providers | R4, R7, R10 |
+//! | `test_dispatch` | `MethodStore` operations, concurrent access | R4, R7, R10 |
+//! | `test_default_provider` | Default provider algorithm catalog completeness | R10 |
 //! | `test_legacy_provider` | Legacy provider with feature gate (`legacy`) | R10 |
-//! | [`test_base_provider`] | Base provider encoder/decoder/store/RAND coverage | R10 |
-//! | [`test_null_provider`] | Null provider metadata-only behaviour | R10 |
-//! | [`test_algorithm_correctness`] | KAT vectors for dispatched algorithms | R10 |
-//! | [`cross_provider`] | Cross-provider integration (multi-provider registration) | R7, R10 |
+//! | `test_base_provider` | Base provider encoder/decoder/store/RAND coverage | R10 |
+//! | `test_null_provider` | Null provider metadata-only behaviour | R10 |
+//! | `test_algorithm_correctness` | KAT vectors for dispatched algorithms | R10 |
+//! | `cross_provider` | Cross-provider integration (multi-provider registration) | R7, R10 |
 //!
 //! ## Rules Enforced
 //!
@@ -74,13 +74,13 @@
 //! This module exposes three `pub(crate)` helper functions for use across
 //! test submodules:
 //!
-//! - [`create_test_store`] — Construct a pre-populated
+//! - `create_test_store` — Construct a pre-populated
 //!   [`MethodStore`](crate::dispatch::MethodStore) with the
 //!   [`DefaultProvider`](crate::default::DefaultProvider) registered, ready
 //!   for algorithm lookup tests without per-test boilerplate.
-//! - [`hex_encode`] — Convert a byte slice into a lowercase hex string for
+//! - `hex_encode` — Convert a byte slice into a lowercase hex string for
 //!   Known Answer Test comparison.
-//! - [`hex_decode`] — Parse a hex string into a byte vector for KAT input
+//! - `hex_decode` — Parse a hex string into a byte vector for KAT input
 //!   loading.
 //!
 //! These helpers are intentionally minimal and panic on invalid input —
@@ -278,7 +278,7 @@ pub(crate) fn create_test_store() -> crate::dispatch::MethodStore {
 /// # Justification for `#[allow(dead_code)]`
 ///
 /// KAT-oriented tests live primarily in
-/// [`test_algorithm_correctness`], which currently maintains a local copy
+/// `test_algorithm_correctness`, which currently maintains a local copy
 /// of this helper for ergonomic reasons (panic-on-error with distinct
 /// wording vs. `unwrap`). Exposing a canonical workspace copy here
 /// enables future test modules to share hex encoding without duplicating
@@ -323,9 +323,9 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
 /// assert_eq!(hex_decode(""), vec![]);
 /// ```
 ///
-/// # Relationship to [`hex_encode`]
+/// # Relationship to `hex_encode`
 ///
-/// This function is the inverse of [`hex_encode`] for canonical inputs:
+/// This function is the inverse of `hex_encode` for canonical inputs:
 ///
 /// ```ignore
 /// use crate::tests::{hex_encode, hex_decode};
@@ -336,7 +336,7 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
 ///
 /// # Justification for `#[allow(dead_code)]`
 ///
-/// Mirrors [`hex_encode`] — KAT tests typically carry a local copy for
+/// Mirrors `hex_encode` — KAT tests typically carry a local copy for
 /// historical reasons, but this canonical copy is exposed for future
 /// test modules.
 ///

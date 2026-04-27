@@ -13,8 +13,8 @@
 //!
 //! # Architecture
 //!
-//! [`DhKeyMgmt`] and [`DhxKeyMgmt`] both implement [`KeyMgmtProvider`].
-//! They share the same [`DhKeyData`] container; the [`DhKeyType`] field
+//! `DhKeyMgmt` and `DhxKeyMgmt` both implement `KeyMgmtProvider`.
+//! They share the same `DhKeyData` container; the `DhKeyType` field
 //! distinguishes the two variants at the protocol-name level but the
 //! internal wire format is identical (compatible with the C code, which
 //! uses a single `DH` struct for both).
@@ -22,24 +22,24 @@
 //! Key material is decomposed into three optional slots matching the C
 //! `DH`/`DHX` representation:
 //!
-//! * [`DhParams`] — domain parameters `(p, g, q, length)` (`DOMAIN_PARAMETERS`)
-//! * [`DhPrivateKey`] — the private exponent `x` (`PRIVATE_KEY`)
-//! * [`DhPublicKey`] — the public value `y = g^x mod p` (`PUBLIC_KEY`)
+//! * `DhParams` — domain parameters `(p, g, q, length)` (`DOMAIN_PARAMETERS`)
+//! * `DhPrivateKey` — the private exponent `x` (`PRIVATE_KEY`)
+//! * `DhPublicKey` — the public value `y = g^x mod p` (`PUBLIC_KEY`)
 //!
-//! Because [`DhKeyPair`] is an opaque unit produced by the crypto layer
+//! Because `DhKeyPair` is an opaque unit produced by the crypto layer
 //! without a public constructor, we decompose it into the private/public
-//! halves on generation and store them as two independent [`Option`] slots.
+//! halves on generation and store them as two independent `Option` slots.
 //! This mirrors the C `DH` struct's independent field population model and
-//! allows partial key import/export for every [`KeySelection`] combination.
+//! allows partial key import/export for every `KeySelection` combination.
 //!
 //! # Security Properties
 //!
-//! * [`DhPrivateKey`] derives [`zeroize::Zeroize`] and `ZeroizeOnDrop`
+//! * `DhPrivateKey` derives [`zeroize::Zeroize`] and `ZeroizeOnDrop`
 //!   so the private exponent is securely wiped on drop — replacing the C
 //!   `BN_clear_free(dh->priv_key)` pattern from `dh_free()`.
-//! * The optional seed in [`DhGenContext`] is also wrapped in [`Zeroizing`]
+//! * The optional seed in `DhGenContext` is also wrapped in `Zeroizing`
 //!   to match the FIPS 186-4 seed sensitivity in `dh_gen_ctx_free()`.
-//! * [`DhParams::new`] rejects undersized primes (`< 512` bits) matching
+//! * `DhParams::new` rejects undersized primes (`< 512` bits) matching
 //!   the C `DH_MIN_MODULUS_BITS` gate from `crypto/dh/dh_check.c`.
 //! * Zero `unsafe` blocks (Rule R8).
 //!
@@ -59,16 +59,16 @@
 //!
 //! | Rust type / fn               | C construct                               | Source                     |
 //! |------------------------------|-------------------------------------------|----------------------------|
-//! | [`DhKeyType`]                | DH / DHX dispatch-table split             | `dh_kmgmt.c:820-960`       |
-//! | [`DhKeyData`]                | `DH` struct (as keydata)                  | `dh_kmgmt.c:87-195`        |
-//! | [`DhKeyData::export_to_params`] | `dh_export()`                          | `dh_kmgmt.c:432-476`       |
-//! | [`DhKeyData::from_params`]   | `dh_import()`                             | `dh_kmgmt.c:375-430`       |
-//! | [`DhKeyData::generate_from_params`] | `dh_gen()`                         | `dh_kmgmt.c:600-880`       |
-//! | [`DhParamGenType`]           | `DH_PARAMGEN_TYPE_*` constants            | `dh_kmgmt.c:42-60`         |
-//! | [`DhGenContext`]             | `struct dh_gen_ctx`                       | `dh_kmgmt.c:61-86`         |
-//! | [`DhKeyMgmt`]                | `ossl_dh_keymgmt_functions`               | `dh_kmgmt.c:820-887`       |
-//! | [`DhxKeyMgmt`]               | `ossl_dhx_keymgmt_functions`              | `dh_kmgmt.c:889-960`       |
-//! | [`dh_descriptors()`]         | `deflt_keymgmt[]` DH/DHX entries          | `defltprov.c:580-696`      |
+//! | `DhKeyType`                | DH / DHX dispatch-table split             | `dh_kmgmt.c:820-960`       |
+//! | `DhKeyData`                | `DH` struct (as keydata)                  | `dh_kmgmt.c:87-195`        |
+//! | `DhKeyData::export_to_params` | `dh_export()`                          | `dh_kmgmt.c:432-476`       |
+//! | `DhKeyData::from_params`   | `dh_import()`                             | `dh_kmgmt.c:375-430`       |
+//! | `DhKeyData::generate_from_params` | `dh_gen()`                         | `dh_kmgmt.c:600-880`       |
+//! | `DhParamGenType`           | `DH_PARAMGEN_TYPE_*` constants            | `dh_kmgmt.c:42-60`         |
+//! | `DhGenContext`             | `struct dh_gen_ctx`                       | `dh_kmgmt.c:61-86`         |
+//! | `DhKeyMgmt`                | `ossl_dh_keymgmt_functions`               | `dh_kmgmt.c:820-887`       |
+//! | `DhxKeyMgmt`               | `ossl_dhx_keymgmt_functions`              | `dh_kmgmt.c:889-960`       |
+//! | `dh_descriptors()`         | `deflt_keymgmt[]` DH/DHX entries          | `defltprov.c:580-696`      |
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -224,7 +224,7 @@ pub enum DhParamGenType {
 }
 
 impl DhParamGenType {
-    /// Parses the `"type"` parameter string from a [`ParamSet`].
+    /// Parses the `"type"` parameter string from a `ParamSet`.
     ///
     /// Accepts the exact tokens used by the C code (see
     /// `dh_gen_common_set_params()` in `dh_kmgmt.c:760-810`).
@@ -249,21 +249,21 @@ impl DhParamGenType {
 /// provider keydata by `dh_kmgmt.c`. The three optional slots mirror the
 /// independent population model of the C `DH` struct fields
 /// (`params.p/g/q`, `priv_key`, `pub_key`) and allow every legitimate
-/// [`KeySelection`] combination at import / export.
+/// `KeySelection` combination at import / export.
 ///
 /// # Security
 ///
-/// The private component ([`DhPrivateKey`]) implements
+/// The private component (`DhPrivateKey`) implements
 /// [`ZeroizeOnDrop`](zeroize::ZeroizeOnDrop), so merely dropping a
-/// [`DhKeyData`] wipes the private exponent from memory without requiring
-/// an explicit [`Drop`] implementation here.
+/// `DhKeyData` wipes the private exponent from memory without requiring
+/// an explicit `Drop` implementation here.
 pub struct DhKeyData {
     /// Domain parameters `(p, g, q, length)`. Present for key pairs,
     /// parameter-only objects, and imported public keys. `None` for an
     /// uninitialised [`new_key`](KeyMgmtProvider::new_key) result.
     params: Option<DhParams>,
     /// Private exponent `x`. Present only when `PRIVATE_KEY` has been
-    /// generated or imported. Zeroed on drop via the inner [`DhPrivateKey`].
+    /// generated or imported. Zeroed on drop via the inner `DhPrivateKey`.
     private_key: Option<DhPrivateKey>,
     /// Public value `y = g^x mod p`. Present when `PUBLIC_KEY` has been
     /// generated, imported, or derived.
@@ -368,7 +368,7 @@ impl DhKeyData {
 /// where the standard mandates a lower strength than `p_bits / 2`.
 ///
 /// Returns `0` only when `p_bits < 512`, which would already have been
-/// rejected by [`DhParams::new`].
+/// rejected by `DhParams::new`.
 fn security_bits_from_prime(params: &DhParams) -> u32 {
     let p_bits = params.p().num_bits();
     match p_bits {
@@ -390,12 +390,12 @@ fn security_bits_from_prime(params: &DhParams) -> u32 {
 /// Parameter-generation context for DH / DHX key generation.
 ///
 /// Replaces `struct dh_gen_ctx` from `dh_kmgmt.c:61-86`. Populated by
-/// [`DhKeyMgmt::generate`] / [`DhxKeyMgmt`] from an input [`ParamSet`]
-/// and consumed by [`DhKeyData::generate_from_params`].
+/// [`DhKeyMgmt::generate`] / `DhxKeyMgmt` from an input `ParamSet`
+/// and consumed by `DhKeyData::generate_from_params`.
 ///
 /// # Rule R5 Compliance
 ///
-/// Every field that carries a conceptual "unset" state uses [`Option`]
+/// Every field that carries a conceptual "unset" state uses `Option`
 /// instead of a sentinel value (e.g. `-1` for "no `priv_len` override").
 pub struct DhGenContext {
     /// Which key components should be generated (parameters only, keypair,
@@ -408,7 +408,7 @@ pub struct DhGenContext {
     /// Subprime order size in bits (default 256 for FIPS 186-4).
     pub qbits: usize,
     /// Optional FIPS 186-4 seed used to make generation reproducible for
-    /// known-answer tests. Zeroed on drop via [`Zeroizing`].
+    /// known-answer tests. Zeroed on drop via `Zeroizing`.
     pub seed: Option<Zeroizing<Vec<u8>>>,
     /// Optional generator index `gindex` for FIPS 186-4 generation.
     pub gindex: Option<i32>,
@@ -496,7 +496,7 @@ impl DhGenContext {
         }
     }
 
-    /// Absorbs generation parameters from an input [`ParamSet`].
+    /// Absorbs generation parameters from an input `ParamSet`.
     ///
     /// Replaces `dh_gen_set_params()` from `dh_kmgmt.c:700-760`.
     fn absorb(&mut self, params: &ParamSet) -> ProviderResult<()> {
@@ -556,9 +556,9 @@ fn param_to_usize(value: &ParamValue, key: &str) -> ProviderResult<usize> {
     parsed.ok_or_else(|| ProviderError::Dispatch(format!("parameter {key} is not a valid usize")))
 }
 
-/// Resolves a named-group string to a [`DhNamedGroup`].
+/// Resolves a named-group string to a `DhNamedGroup`.
 ///
-/// [`DhNamedGroup`] does not expose a public `from_name` helper, so this
+/// `DhNamedGroup` does not expose a public `from_name` helper, so this
 /// function provides the canonical mapping covering RFC 7919 FFDHE groups
 /// and RFC 3526 MODP groups plus common aliases.
 fn named_group_from_name(name: &str) -> Option<DhNamedGroup> {
@@ -582,10 +582,10 @@ fn named_group_from_name(name: &str) -> Option<DhNamedGroup> {
 // =============================================================================
 
 impl DhKeyData {
-    /// Serialises the selected key components into a [`ParamSet`].
+    /// Serialises the selected key components into a `ParamSet`.
     ///
     /// Replaces `dh_export()` / `dh_imexport_types()` from
-    /// `dh_kmgmt.c:432-476`. Honours [`KeySelection`] flags so callers can
+    /// `dh_kmgmt.c:432-476`. Honours `KeySelection` flags so callers can
     /// request any combination of private-key / public-key / domain-
     /// parameter data.
     ///
@@ -641,7 +641,7 @@ impl DhKeyData {
         Ok(ps)
     }
 
-    /// Populates a [`DhKeyData`] from an input [`ParamSet`].
+    /// Populates a `DhKeyData` from an input `ParamSet`.
     ///
     /// Replaces `dh_import()` from `dh_kmgmt.c:375-430`. Respects the
     /// `selection` bitmask so callers can bring in domain parameters and
@@ -723,7 +723,7 @@ impl DhKeyData {
         Ok(result)
     }
 
-    /// Drives DH parameter / key generation from a [`DhGenContext`].
+    /// Drives DH parameter / key generation from a `DhGenContext`.
     ///
     /// Replaces `dh_gen()` from `dh_kmgmt.c:800-880`. Routes to
     /// `from_named_group`, `generate_params`, or `generate_key` based on
@@ -808,7 +808,7 @@ impl DhKeyData {
     /// Replaces `dh_has()` from `dh_kmgmt.c:165-190`. This is the
     /// concrete accessor used by deep introspection; the trait
     /// [`KeyMgmtProvider::has`] uses a Debug-string projection because
-    /// [`KeyData`] does not extend [`std::any::Any`].
+    /// `KeyData` does not extend [`std::any::Any`].
     pub fn has_selection(&self, selection: KeySelection) -> bool {
         if selection.contains(KeySelection::DOMAIN_PARAMETERS) && self.params.is_none() {
             return false;
@@ -831,7 +831,7 @@ impl DhKeyData {
     /// `ossl_dh_check_pairwise()`). Validation has four layers:
     ///
     /// - **Domain parameters**: enforced via
-    ///   [`check_params`][openssl_crypto::dh::check_params] (safe prime,
+    ///   [`check_params`] (safe prime,
     ///   generator range, subgroup order constraints).
     /// - **Public key** `y`: must satisfy `1 < y < p - 1`. The
     ///   non-zero/non-one check is required because `y = 1` would yield
@@ -842,7 +842,7 @@ impl DhKeyData {
     ///   when the selection includes both `PUBLIC_KEY` and
     ///   `PRIVATE_KEY` and domain parameters are present, the
     ///   recomputed `g^x mod p` must equal the stored public value `y`.
-    ///   Performed via [`mod_exp_consttime`] because the private
+    ///   Performed via `mod_exp_consttime` because the private
     ///   exponent `x` is secret material; the limb-level
     ///   non-constant-time behavior of the underlying `num-bigint`
     ///   crate is a documented residual leak that applies
@@ -857,7 +857,7 @@ impl DhKeyData {
     ///
     /// Returns `Ok(true)` when all present components pass validation,
     /// `Ok(false)` when structural or pairwise checks fail, and
-    /// [`ProviderError`] only when the selection is internally
+    /// `ProviderError` only when the selection is internally
     /// inconsistent (e.g., asks to validate a component that is not
     /// present after the `has_selection` guard) or when the
     /// constant-time modular exponentiation reports an internal error.
@@ -929,7 +929,7 @@ impl DhKeyData {
         //
         // Constant-time scalar multiplication is mandatory here because
         // `x` is secret. The Montgomery-ladder-style
-        // [`mod_exp_consttime`] routine has uniform control flow w.r.t.
+        // `mod_exp_consttime` routine has uniform control flow w.r.t.
         // the exponent; underlying limb arithmetic in `num-bigint` is
         // not constant-time at the limb level — a workspace-wide
         // residual leak documented in `bn/montgomery.rs` and tracked
@@ -1202,7 +1202,7 @@ impl KeyMgmtProvider for DhKeyMgmt {
 ///
 /// Replaces the `ossl_dhx_keymgmt_functions` dispatch table from
 /// `dh_kmgmt.c:889-960`. Dispatches through the same key-data struct as
-/// [`DhKeyMgmt`]; the only observable differences are:
+/// `DhKeyMgmt`; the only observable differences are:
 ///
 /// * [`DhxKeyMgmt::name`] returns `"DHX"`.
 /// * [`DhxKeyMgmt::query_operation_name`] returns `"DH"` because DHX
@@ -1390,7 +1390,7 @@ mod tests {
         }
     }
 
-    /// Same as [`fully_populated_ffdhe2048`] but with the DHX variant tag.
+    /// Same as `fully_populated_ffdhe2048` but with the DHX variant tag.
     fn fully_populated_ffdhe2048_dhx() -> DhKeyData {
         let mut data = fully_populated_ffdhe2048();
         data.dh_type = DhKeyType::Dhx;

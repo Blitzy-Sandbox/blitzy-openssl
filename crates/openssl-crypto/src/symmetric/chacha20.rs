@@ -13,19 +13,19 @@
 //! |-----------|----------|-------------|
 //! | [`ChaCha20`] | `crypto/chacha/chacha_enc.c` | `ChaCha20_ctr32`, `chacha20_core`, QUARTERROUND |
 //! | [`ChaCha20Poly1305`] | Provider AEAD layer | RFC 8439 §2.8 construction |
-//! | [`quarter_round`] (private) | `QUARTERROUND` macro, `chacha_enc.c` §57 | 16/12/8/7 rotations |
-//! | [`chacha20_block`] (private) | `chacha20_core`, `chacha_enc.c` §65 | 20 rounds, feed-forward |
+//! | `quarter_round` (private) | `QUARTERROUND` macro, `chacha_enc.c` §57 | 16/12/8/7 rotations |
+//! | `chacha20_block` (private) | `chacha20_core`, `chacha_enc.c` §65 | 20 rounds, feed-forward |
 //!
 //! # Design Notes
 //!
 //! - `ChaCha20` is a stream cipher, not a block cipher — it does NOT implement
-//!   [`SymmetricCipher`](super::SymmetricCipher). Instead it provides a
-//!   streaming XOR API via the [`StreamCipher`] trait.
+//!   `SymmetricCipher`. Instead it provides a
+//!   streaming XOR API via the `StreamCipher` trait.
 //! - The Poly1305 MAC component is imported from the [`crate::mac`] module
-//!   via [`mac_compute`] (`mac::compute`).
+//!   via `mac_compute` (`mac::compute`).
 //! - Key material is zeroed on drop via [`ZeroizeOnDrop`](zeroize::ZeroizeOnDrop).
 //! - Tag comparison in [`ChaCha20Poly1305::open`] uses
-//!   [`ConstantTimeEq`](subtle::ConstantTimeEq) to prevent timing
+//!   [`ConstantTimeEq`] to prevent timing
 //!   side-channel attacks (AAP §0.7.6).
 //! - ZERO `unsafe` blocks — pure Rust implementation (Rule R8).
 //!
@@ -48,7 +48,7 @@ use crate::mac::{compute as mac_compute, MacType};
 /// `ChaCha20` internal block size — 16 × 4 bytes = 64 bytes (512 bits).
 ///
 /// This is the size of one keystream block generated per
-/// [`chacha20_block`] invocation.
+/// `chacha20_block` invocation.
 pub const CHACHA_BLOCK_SIZE: usize = 64;
 
 /// `ChaCha20` key size — 256 bits = 32 bytes.
@@ -476,7 +476,7 @@ impl StreamCipher for ChaCha20 {
 /// - The Poly1305 one-time key is zeroized immediately after tag
 ///   computation.
 /// - Tag verification in [`ChaCha20Poly1305::open`] uses
-///   [`ConstantTimeEq`](subtle::ConstantTimeEq) to prevent timing attacks.
+///   [`ConstantTimeEq`] to prevent timing attacks.
 /// - Partial plaintext is zeroized before returning on authentication
 ///   failure.
 /// - A `(key, nonce)` pair MUST NEVER be reused — nonce reuse breaks the

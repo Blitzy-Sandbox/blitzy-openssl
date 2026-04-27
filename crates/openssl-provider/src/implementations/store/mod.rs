@@ -9,9 +9,9 @@
 //!
 //! | Module          | Source                     | Store Name              | URI Scheme                  |
 //! |-----------------|----------------------------|-------------------------|-----------------------------|
-//! | [`file_store`]  | `file_store.c` (828 lines) | `"file"`                | `file:///path` or plain path |
-//! | [`any2obj`]     | `file_store_any2obj.c` (368 lines) | (internal)      | N/A — used by file_store     |
-//! | [`winstore`]    | `winstore_store.c` (336 lines) | `"org.openssl.winstore"` | `org.openssl.winstore:`  |
+//! | `file_store`  | `file_store.c` (828 lines) | `"file"`                | `file:///path` or plain path |
+//! | `any2obj`     | `file_store_any2obj.c` (368 lines) | (internal)      | N/A — used by file_store     |
+//! | `winstore`    | `winstore_store.c` (336 lines) | `"org.openssl.winstore"` | `org.openssl.winstore:`  |
 //!
 //! ## Architecture
 //!
@@ -29,8 +29,8 @@
 //! open(uri) → set_params() → load() → load() → … → eof() → close()
 //! ```
 //!
-//! The [`any2obj`] module is an internal decoder used by both [`file_store`]
-//! and [`winstore`] as a last-resort decoder for unrecognized binary content.
+//! The `any2obj` module is an internal decoder used by both `file_store`
+//! and `winstore` as a last-resort decoder for unrecognized binary content.
 //!
 //! ## Store Objects
 //!
@@ -47,18 +47,18 @@
 //!
 //! ## Platform Gating Strategy
 //!
-//! - [`any2obj`] — always compiled (used as internal decoder on all platforms).
-//! - [`file_store`] — always compiled (filesystem access is universal).
-//! - [`winstore`] — the Rust module compiles on every platform because it
+//! - `any2obj` — always compiled (used as internal decoder on all platforms).
+//! - `file_store` — always compiled (filesystem access is universal).
+//! - `winstore` — the Rust module compiles on every platform because it
 //!   uses a pluggable certificate-loader registration pattern (the
 //!   `openssl-provider` crate enforces `#![forbid(unsafe_code)]` so the
 //!   module cannot invoke the Windows CryptoAPI directly).  However, its
 //!   algorithm descriptors are only advertised on Windows targets and the
-//!   [`WinStore`] / [`WinStoreContext`] convenience re-exports at this
+//!   `WinStore` / `WinStoreContext` convenience re-exports at this
 //!   module's root are gated with `#[cfg(target_os = "windows")]` to
 //!   surface the public API only where it is expected to be used.
 //!   Non-Windows callers that still need the types can always reach them
-//!   via the fully-qualified path [`winstore::WinStore`] etc.
+//!   via the fully-qualified path `winstore::WinStore` etc.
 //!
 //! ## Wiring (Rule R10)
 //!
@@ -89,9 +89,9 @@ use crate::traits::{AlgorithmDescriptor, KeyData, StoreObject};
 /// Any-to-object decoder chain passthrough.
 ///
 /// Internal "last-resort" decoder that turns unrecognized binary content
-/// (DER, MSBLOB, PVK, RAW) into a typed [`DecodedObject`] for further
-/// processing in the decoder chain.  Used by both [`file_store`] and
-/// [`winstore`] when no more specialized decoder recognizes the data.
+/// (DER, MSBLOB, PVK, RAW) into a typed `DecodedObject` for further
+/// processing in the decoder chain.  Used by both `file_store` and
+/// `winstore` when no more specialized decoder recognizes the data.
 ///
 /// Always compiled — this module is platform-agnostic and is the
 /// building block for all store implementations in this tree.
@@ -182,9 +182,9 @@ pub use any2obj::InputFormat;
 /// Re-export: the Windows certificate store provider struct.
 ///
 /// Only re-exported on Windows targets; non-Windows callers can still
-/// reach this type via [`winstore::WinStore`] if required.
+/// reach this type via `winstore::WinStore` if required.
 ///
-/// See [`winstore::WinStore`] for full documentation.
+/// See `winstore::WinStore` for full documentation.
 #[cfg(target_os = "windows")]
 pub use winstore::WinStore;
 
@@ -259,22 +259,22 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
 // =============================================================================
 
 /// Opaque wrapper used as the payload inside a [`StoreObject::Key`] when
-/// [`classify_store_object`] successfully recognizes key material but
+/// `classify_store_object` successfully recognizes key material but
 /// does not have access to the algorithm-specific key-management
-/// machinery required to build a strongly-typed [`KeyData`] instance.
+/// machinery required to build a strongly-typed `KeyData` instance.
 ///
 /// Consumers such as `OSSL_STORE` receive the full byte slice (via the
-/// [`Debug`] representation or via the existing decoder pipeline in
-/// [`file_store`]) and pass the wrapper down to the next decoder in the
+/// `Debug` representation or via the existing decoder pipeline in
+/// `file_store`) and pass the wrapper down to the next decoder in the
 /// chain, which is responsible for turning the raw bytes into a concrete
-/// key implementation.  Storing the [`ObjectType`] alongside the bytes
+/// key implementation.  Storing the `ObjectType` alongside the bytes
 /// preserves the classification decision made by the any-to-object
 /// decoder so that downstream consumers can distinguish asymmetric
 /// (public/private) from symmetric (raw) material without reparsing the
 /// data.
 ///
 /// The struct is crate-private because its only purpose is to satisfy
-/// the [`KeyData`] trait object requirement of
+/// the `KeyData` trait object requirement of
 /// [`StoreObject::Key`](crate::traits::StoreObject::Key); downstream
 /// decoders work through [`std::any::Any`]-style downcasts and do not
 /// need to name this type.
@@ -306,9 +306,9 @@ struct GenericKeyMaterial {
 
 impl KeyData for GenericKeyMaterial {}
 
-/// Classifies a [`DecodedObject`] into a [`StoreObject`] enum variant.
+/// Classifies a `DecodedObject` into a `StoreObject` enum variant.
 ///
-/// Shared helper used by both [`file_store`] and [`winstore`] decoder
+/// Shared helper used by both `file_store` and `winstore` decoder
 /// callbacks to translate the output of the any-to-object decoder
 /// passthrough into the high-level store-object taxonomy.
 ///
@@ -324,14 +324,14 @@ impl KeyData for GenericKeyMaterial {}
 /// | [`ObjectType::Unknown`]         | anything else (including `None`)                               | `None` (deferred to other decoders)          |
 ///
 /// The returned [`StoreObject::Key`] variant carries a crate-internal
-/// [`KeyData`] wrapper (`GenericKeyMaterial`) that preserves the raw
+/// `KeyData` wrapper (`GenericKeyMaterial`) that preserves the raw
 /// bytes and the decoder's classification decision.  Downstream
 /// consumers (e.g. the `OSSL_STORE` layer) are expected to re-decode the
 /// payload through a type-specific key-management decoder to obtain a
 /// fully-constructed key instance.
 ///
 /// Returns `None` when the decoder produced a generic blob that cannot
-/// be confidently classified into one of the [`StoreObject`] variants;
+/// be confidently classified into one of the `StoreObject` variants;
 /// callers typically continue trying other decoders in the chain rather
 /// than surfacing this as an error.
 ///
@@ -563,7 +563,7 @@ mod tests {
         );
     }
 
-    /// Verifies that [`descriptors()`] includes the file store and any
+    /// Verifies that `descriptors()` includes the file store and any
     /// any-to-object passthrough descriptors on every platform, and the
     /// winstore descriptor on Windows targets.
     #[test]
@@ -591,7 +591,7 @@ mod tests {
         }
     }
 
-    /// Sanity check: the re-exported types from [`file_store`] are
+    /// Sanity check: the re-exported types from `file_store` are
     /// accessible via the crate root module.
     ///
     /// Each assignment uses the `let _: Type = value;` pattern (without a

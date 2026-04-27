@@ -27,7 +27,8 @@
 //!
 //! * `crypto/md2/{md2_dgst.c, md2_local.h}`
 //! * `crypto/md4/{md4_dgst.c, md4_local.h}`
-//! * `crypto/mdc2/{mdc2dgst.c, mdc2.h}` (with DES via [`DesKeySchedule`])
+//! * `crypto/mdc2/{mdc2dgst.c, mdc2.h}` (with DES via `DesKeySchedule`,
+//!   gated by the `"des"` feature)
 //! * `crypto/ripemd/{rmd_dgst.c, rmd_local.h, rmdconst.h}`
 //! * `crypto/sm3/{sm3.c, sm3_local.h}`
 //! * `crypto/whrlpool/{wp_block.c, wp_dgst.c, wp_local.h}`
@@ -50,6 +51,7 @@
 #![allow(clippy::needless_range_loop)]
 
 use super::sha::Digest;
+#[cfg(feature = "des")]
 use crate::symmetric::des::DesKeySchedule;
 use openssl_common::{CryptoError, CryptoResult};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -59,9 +61,11 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 // =============================================================================
 
 /// DES key size (bytes) — local duplicate (upstream constant is module-private).
+#[cfg(feature = "des")]
 const MDC2_DES_KEY_BYTES: usize = 8;
 
 /// DES block size (bytes) — local duplicate (upstream constant is module-private).
+#[cfg(feature = "des")]
 const MDC2_DES_BLOCK_BYTES: usize = 8;
 
 /// Load a little-endian `u32` from `data` at the given byte offset.
@@ -620,18 +624,23 @@ pub fn md4(data: &[u8]) -> CryptoResult<Vec<u8>> {
 // ---------------------------------------------------------------------------
 // MDC-2 — Meyer/Schilling Modification Detection Code (ISO/IEC 10118-2).
 // DEPRECATED: 64-bit pair of DES gives only ~2^55 collision resistance.
+// Gated behind the `"des"` feature: MDC-2 is constructed from DES.
 // ---------------------------------------------------------------------------
 
 /// MDC-2 block size in bytes (equals DES block).
+#[cfg(feature = "des")]
 pub const MDC2_BLOCK_BYTES: usize = MDC2_DES_BLOCK_BYTES;
 
 /// MDC-2 digest size in bytes (two concatenated DES blocks).
+#[cfg(feature = "des")]
 pub const MDC2_DIGEST_BYTES: usize = 2 * MDC2_DES_BLOCK_BYTES;
 
 /// MDC-2 initial value for the first chaining variable `h` (all `0x52`).
+#[cfg(feature = "des")]
 const MDC2_IV_H: [u8; MDC2_DES_KEY_BYTES] = [0x52; MDC2_DES_KEY_BYTES];
 
 /// MDC-2 initial value for the second chaining variable `hh` (all `0x25`).
+#[cfg(feature = "des")]
 const MDC2_IV_HH: [u8; MDC2_DES_KEY_BYTES] = [0x25; MDC2_DES_KEY_BYTES];
 
 /// Streaming MDC-2 digest context.
@@ -639,6 +648,7 @@ const MDC2_IV_HH: [u8; MDC2_DES_KEY_BYTES] = [0x25; MDC2_DES_KEY_BYTES];
 /// **DEPRECATED** — MDC-2 provides only 64-bit collision resistance in the
 /// best case (and ~55-bit in practice due to DES complementation properties).
 /// Retained exclusively for legacy interoperability.
+#[cfg(feature = "des")]
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Mdc2Context {
     /// Upper chaining half (serves as DES key after bit-masking).
@@ -651,6 +661,7 @@ pub struct Mdc2Context {
     num: usize,
 }
 
+#[cfg(feature = "des")]
 impl Mdc2Context {
     /// Creates a new MDC-2 context with the ISO 10118-2 initial values.
     #[deprecated(note = "MDC-2 is deprecated; use SHA-256 or SHA-3")]
@@ -715,6 +726,7 @@ impl Mdc2Context {
     }
 }
 
+#[cfg(feature = "des")]
 impl Default for Mdc2Context {
     fn default() -> Self {
         #[allow(deprecated)]
@@ -722,6 +734,7 @@ impl Default for Mdc2Context {
     }
 }
 
+#[cfg(feature = "des")]
 impl Digest for Mdc2Context {
     fn update(&mut self, data: &[u8]) -> CryptoResult<()> {
         let mut offset = 0;
@@ -802,6 +815,7 @@ impl Digest for Mdc2Context {
 /// # Errors
 ///
 /// Returns [`CryptoError`] only on pathological internal arithmetic overflow.
+#[cfg(feature = "des")]
 #[deprecated(note = "MDC-2 is deprecated; use SHA-256 or SHA-3")]
 pub fn mdc2(data: &[u8]) -> CryptoResult<Vec<u8>> {
     #[allow(deprecated)]
@@ -1050,7 +1064,7 @@ fn ripemd160_compress(state: &mut [u32; 5], block: &[u8; RIPEMD160_BLOCK_BYTES])
 ///
 /// The context holds the 160-bit chaining state, a 512-bit block buffer,
 /// the count of buffered bytes, and the cumulative message length in bits
-/// (updated via the overflow-checked [`add_length`] helper per rule R6).
+/// (updated via the overflow-checked `add_length` helper per rule R6).
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Ripemd160Context {
     h: [u32; 5],
@@ -1415,7 +1429,7 @@ pub struct Sm3Context {
     block: [u8; SM3_BLOCK_BYTES],
     /// Number of bytes currently buffered in `block`.
     num: usize,
-    /// Total message length in bytes (updated via [`add_length`]).
+    /// Total message length in bytes (updated via `add_length`).
     total_len: u64,
 }
 
@@ -2047,6 +2061,7 @@ pub enum LegacyAlgorithm {
     /// MDC-2 (ISO/IEC 10118-2) — 128-bit DES-based Modification Detection
     /// Code. Retained for interoperability with legacy banking and
     /// government protocols. Requires the `DES` symmetric engine.
+    #[cfg(feature = "des")]
     Mdc2,
     /// RIPEMD-160 (RFC 4231 reference; original Bosselaers/Dobbertin/Preneel
     /// design 1996) — 160-bit hash used by Bitcoin address derivation and
@@ -2074,6 +2089,7 @@ impl LegacyAlgorithm {
         match self {
             LegacyAlgorithm::Md2 => "MD2",
             LegacyAlgorithm::Md4 => "MD4",
+            #[cfg(feature = "des")]
             LegacyAlgorithm::Mdc2 => "MDC2",
             LegacyAlgorithm::Ripemd160 => "RIPEMD160",
             LegacyAlgorithm::Sm3 => "SM3",
@@ -2095,6 +2111,7 @@ impl LegacyAlgorithm {
         match self {
             LegacyAlgorithm::Md2 => 16,
             LegacyAlgorithm::Md4 => 16,
+            #[cfg(feature = "des")]
             LegacyAlgorithm::Mdc2 => 16,
             LegacyAlgorithm::Ripemd160 => 20,
             LegacyAlgorithm::Sm3 => 32,
@@ -2117,6 +2134,7 @@ impl LegacyAlgorithm {
         match self {
             LegacyAlgorithm::Md2 => 16,
             LegacyAlgorithm::Md4 => 64,
+            #[cfg(feature = "des")]
             LegacyAlgorithm::Mdc2 => 8,
             LegacyAlgorithm::Ripemd160 => 64,
             LegacyAlgorithm::Sm3 => 64,
@@ -2169,6 +2187,7 @@ pub fn create_legacy_digest(alg: LegacyAlgorithm) -> CryptoResult<Box<dyn Digest
     match alg {
         LegacyAlgorithm::Md2 => Ok(Box::new(Md2Context::new())),
         LegacyAlgorithm::Md4 => Ok(Box::new(Md4Context::new())),
+        #[cfg(feature = "des")]
         LegacyAlgorithm::Mdc2 => Ok(Box::new(Mdc2Context::new())),
         LegacyAlgorithm::Ripemd160 => Ok(Box::new(Ripemd160Context::new())),
         LegacyAlgorithm::Sm3 => Ok(Box::new(Sm3Context::new())),
@@ -2423,6 +2442,7 @@ mod tests {
     // MDC-2 — OpenSSL upstream `test/mdc2test.c` (pad_type 1, the default)
     // -------------------------------------------------------------------------
 
+    #[cfg(feature = "des")]
     #[test]
     fn mdc2_openssl_pad1_reference() {
         // Input: "Now is the time for all " (24 bytes, note trailing space).
@@ -2432,6 +2452,7 @@ mod tests {
         assert_eq!(out.len(), MDC2_DIGEST_BYTES);
     }
 
+    #[cfg(feature = "des")]
     #[test]
     fn mdc2_streaming_matches_oneshot() {
         let input: &[u8] = b"Now is the time for all ";
@@ -2444,6 +2465,7 @@ mod tests {
         assert_eq!(streamed, oneshot);
     }
 
+    #[cfg(feature = "des")]
     #[test]
     fn mdc2_default_matches_new_metadata() {
         // Internal IVs are not externally observable, so compare metadata as
@@ -2455,6 +2477,7 @@ mod tests {
         assert_eq!(a.algorithm_name(), b.algorithm_name());
     }
 
+    #[cfg(feature = "des")]
     #[test]
     fn mdc2_reset_restores_initial_state() {
         let mut ctx = Mdc2Context::new();
@@ -2468,6 +2491,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "des")]
     #[test]
     fn mdc2_context_metadata() {
         let ctx = Mdc2Context::new();
@@ -2731,6 +2755,7 @@ mod tests {
     fn legacy_algorithm_names_match_ossl_canonical() {
         assert_eq!(LegacyAlgorithm::Md2.name(), "MD2");
         assert_eq!(LegacyAlgorithm::Md4.name(), "MD4");
+        #[cfg(feature = "des")]
         assert_eq!(LegacyAlgorithm::Mdc2.name(), "MDC2");
         assert_eq!(LegacyAlgorithm::Ripemd160.name(), "RIPEMD160");
         assert_eq!(LegacyAlgorithm::Sm3.name(), "SM3");
@@ -2741,6 +2766,7 @@ mod tests {
     fn legacy_algorithm_digest_sizes() {
         assert_eq!(LegacyAlgorithm::Md2.digest_size(), MD2_DIGEST_BYTES);
         assert_eq!(LegacyAlgorithm::Md4.digest_size(), MD4_DIGEST_BYTES);
+        #[cfg(feature = "des")]
         assert_eq!(LegacyAlgorithm::Mdc2.digest_size(), MDC2_DIGEST_BYTES);
         assert_eq!(
             LegacyAlgorithm::Ripemd160.digest_size(),
@@ -2757,6 +2783,7 @@ mod tests {
     fn legacy_algorithm_block_sizes() {
         assert_eq!(LegacyAlgorithm::Md2.block_size(), MD2_BLOCK_BYTES);
         assert_eq!(LegacyAlgorithm::Md4.block_size(), MD4_BLOCK_BYTES);
+        #[cfg(feature = "des")]
         assert_eq!(LegacyAlgorithm::Mdc2.block_size(), MDC2_BLOCK_BYTES);
         assert_eq!(
             LegacyAlgorithm::Ripemd160.block_size(),
@@ -2777,6 +2804,7 @@ mod tests {
         assert_eq!(a, b);
         // Distinct variants are unequal.
         assert_ne!(LegacyAlgorithm::Md2, LegacyAlgorithm::Md4);
+        #[cfg(feature = "des")]
         assert_ne!(LegacyAlgorithm::Mdc2, LegacyAlgorithm::Ripemd160);
     }
 
@@ -2802,6 +2830,7 @@ mod tests {
         assert_eq!(out.len(), LegacyAlgorithm::Md4.digest_size());
     }
 
+    #[cfg(feature = "des")]
     #[test]
     fn factory_mdc2_produces_correct_digest() {
         let mut ctx = create_legacy_digest(LegacyAlgorithm::Mdc2).expect("factory must succeed");
@@ -2853,7 +2882,12 @@ mod tests {
         // `Digest::digest()` is a default-provided trait method (it resets,
         // updates, and finalizes in one call). We verify it works correctly
         // through the `Box<dyn Digest>` fat pointer returned by the factory.
-        let variants: [(LegacyAlgorithm, &[u8], &str); 5] = [
+        //
+        // We use a `Vec` (rather than a fixed-size array) and `#[cfg]` on the
+        // MDC-2 element so the MDC-2 entry is included only when the `des`
+        // feature is enabled (MDC-2 is implemented on top of the DES block
+        // cipher and therefore requires the `des` feature to be available).
+        let variants: Vec<(LegacyAlgorithm, &[u8], &str)> = vec![
             (
                 LegacyAlgorithm::Md2,
                 b"abc",
@@ -2864,6 +2898,7 @@ mod tests {
                 b"abc",
                 "a448017aaf21d8525fc10ae87aa6729d",
             ),
+            #[cfg(feature = "des")]
             (
                 LegacyAlgorithm::Mdc2,
                 b"Now is the time for all ",
@@ -2889,14 +2924,20 @@ mod tests {
 
     #[test]
     fn factory_metadata_matches_concrete_contexts() {
-        for alg in [
+        // We use a `Vec` (rather than a fixed-size array) and `#[cfg]` on the
+        // MDC-2 element so the MDC-2 variant is included only when the `des`
+        // feature is enabled (MDC-2 is implemented on top of the DES block
+        // cipher and therefore requires the `des` feature to be available).
+        let algs: Vec<LegacyAlgorithm> = vec![
             LegacyAlgorithm::Md2,
             LegacyAlgorithm::Md4,
+            #[cfg(feature = "des")]
             LegacyAlgorithm::Mdc2,
             LegacyAlgorithm::Ripemd160,
             LegacyAlgorithm::Sm3,
             LegacyAlgorithm::Whirlpool,
-        ] {
+        ];
+        for alg in algs {
             let ctx = create_legacy_digest(alg).expect("factory must succeed");
             assert_eq!(
                 ctx.digest_size(),
@@ -2916,14 +2957,21 @@ mod tests {
         // This test will break compilation if a new `LegacyAlgorithm` variant
         // is added without an accompanying arm in `create_legacy_digest`.
         // Match exhaustiveness is enforced at the call site.
-        for alg in [
+        //
+        // We use a `Vec` (rather than a fixed-size array) and `#[cfg]` on the
+        // MDC-2 element so the MDC-2 variant is included only when the `des`
+        // feature is enabled (MDC-2 is implemented on top of the DES block
+        // cipher and therefore requires the `des` feature to be available).
+        let algs: Vec<LegacyAlgorithm> = vec![
             LegacyAlgorithm::Md2,
             LegacyAlgorithm::Md4,
+            #[cfg(feature = "des")]
             LegacyAlgorithm::Mdc2,
             LegacyAlgorithm::Ripemd160,
             LegacyAlgorithm::Sm3,
             LegacyAlgorithm::Whirlpool,
-        ] {
+        ];
+        for alg in algs {
             assert!(
                 create_legacy_digest(alg).is_ok(),
                 "factory must accept variant {alg:?}"

@@ -1,8 +1,8 @@
 //! AES cipher implementations for ECB, CBC, OFB, CFB, CTR, and CTS modes.
 //!
 //! Supports key sizes: 128, 192, 256 bits across 8 operating modes,
-//! producing 24+ algorithm variants. Implements [`CipherProvider`] and
-//! [`CipherContext`] traits, translating C `cipher_aes.c` / `cipher_aes_hw.c`.
+//! producing 24+ algorithm variants. Implements `CipherProvider` and
+//! `CipherContext` traits, translating C `cipher_aes.c` / `cipher_aes_hw.c`.
 //!
 //! # Modes
 //!
@@ -23,9 +23,9 @@
 //!
 //! | Rust Type             | C Source                                         |
 //! |-----------------------|--------------------------------------------------|
-//! | [`AesCipher`]         | `PROV_AES_CTX` in `providers/cipher_aes.h`       |
-//! | [`AesCipherContext`]  | `PROV_CIPHER_CTX` in `providers/ciphercommon.h`  |
-//! | [`descriptors()`]     | `ossl_aes128ecb_functions[]` etc. in defltprov.c |
+//! | `AesCipher`         | `PROV_AES_CTX` in `providers/cipher_aes.h`       |
+//! | `AesCipherContext`  | `PROV_CIPHER_CTX` in `providers/ciphercommon.h`  |
+//! | `descriptors()`     | `ossl_aes128ecb_functions[]` etc. in defltprov.c |
 //!
 //! # Rules Enforced
 //!

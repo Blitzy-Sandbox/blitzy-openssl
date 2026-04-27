@@ -723,7 +723,7 @@ impl QuicReactor {
 
     /// Enters a blocking section — increments the waiter count.
     ///
-    /// Must be balanced with a corresponding [`leave_blocking_section()`]
+    /// Must be balanced with a corresponding `leave_blocking_section()`
     /// (`Self::leave_blocking_section`) call. The blocking section tracks how
     /// many tasks are waiting in the async `select!` loop, used for shutdown
     /// coordination and observability.

@@ -1,5 +1,5 @@
-//! Unit tests for the FIPS module state machine ([`FipsState`]) and per-test
-//! state tracking ([`TestState`]).
+//! Unit tests for the FIPS module state machine (`FipsState`) and per-test
+//! state tracking (`TestState`).
 //!
 //! These tests complement the inline `#[cfg(test)]` module inside
 //! [`crate::state`] by focusing on **value-added** coverage that cannot be
@@ -7,29 +7,29 @@
 //!
 //! 1. **Cross-module integration** — drives [`crate::self_test::is_running`]
 //!    and [`crate::self_test::is_self_testing`] against every possible
-//!    [`FipsState`] value to confirm the guard functions observe
+//!    `FipsState` value to confirm the guard functions observe
 //!    transitions correctly.
 //! 2. **Sequenced lifecycle scenarios** — executes full `Init → SelfTesting
 //!    → Running` and `Init → SelfTesting → Error` paths under the
-//!    process-wide [`TEST_MUTEX`], verifying that reads at every hop agree
+//!    process-wide `TEST_MUTEX`, verifying that reads at every hop agree
 //!    with the preceding write.
 //! 3. **Rate-limiter correctness under stress** — exercises
-//!    [`ErrorRateLimiter`] and the global [`FIPS_ERROR_LIMITER`] to verify
+//!    `ErrorRateLimiter` and the global `FIPS_ERROR_LIMITER` to verify
 //!    the exact limit semantics and rule R7 lock-granularity guarantees.
 //! 4. **Thread safety** — spawns concurrent reader/writer OS threads against
-//!    [`FIPS_MODULE_STATE`] and [`TEST_STATES`] to detect torn reads, data
+//!    `FIPS_MODULE_STATE` and `TEST_STATES` to detect torn reads, data
 //!    races, or invalid intermediate values.
-//! 5. **API contract with `FipsError`** — confirms the public [`FipsResult`]
-//!    type and every enumerated [`FipsError`] variant compose with FIPS
+//! 5. **API contract with `FipsError`** — confirms the public `FipsResult`
+//!    type and every enumerated `FipsError` variant compose with FIPS
 //!    state-aware call sites.
 //!
 //! # C Source Mapping
 //!
-//! - [`FipsState`] variants ← `FIPS_STATE_*` defines (`self_test.c`
+//! - `FipsState` variants ← `FIPS_STATE_*` defines (`self_test.c`
 //!   lines 36–39).
-//! - [`TestState`] variants ← `enum st_test_state` (`self_test.h`
+//! - `TestState` variants ← `enum st_test_state` (`self_test.h`
 //!   lines 62–69).
-//! - [`TestCategory`] variants ← `enum st_test_category` (`self_test.h`
+//! - `TestCategory` variants ← `enum st_test_category` (`self_test.h`
 //!   lines 48–60).
 //! - Atomic accessors ← `ossl_get/set_self_test_state` (`self_test.c`
 //!   lines 81–91) and `set_fips_state`/`get_fips_state` (lines 267–276).
@@ -40,7 +40,7 @@
 //! # Test Isolation
 //!
 //! Every test that mutates process-wide state must serialise on
-//! [`TEST_MUTEX`] and call [`reset_for_test`] before and after its
+//! `TEST_MUTEX` and call `reset_for_test` before and after its
 //! assertions.  This mirrors the discipline enforced by
 //! [`self_test_tests`](super::self_test_tests).  Tests that only read
 //! immutable data (enum variants, `Display` output) are free to run in
@@ -108,7 +108,7 @@ fn reset_for_test() {
 }
 
 /// Drives an arbitrary [`FipsResult<()>`] and asserts it is `Err` containing
-/// the expected [`FipsError`] variant.  Used in Phase 4 to confirm the
+/// the expected `FipsError` variant.  Used in Phase 4 to confirm the
 /// pub error type composes with state-aware call sites.
 #[track_caller]
 fn assert_fips_err<T>(result: FipsResult<T>, matcher: impl FnOnce(&FipsError) -> bool) {
@@ -371,7 +371,7 @@ fn full_transition_path_can_be_repeated_after_reset() {
 //      would be semantically invalid at a higher layer — this lets us
 //      test error-recovery code paths (e.g., forcibly entering Error).
 //
-// The [`FipsError`] variant set (from `openssl-common`) does NOT include
+// The `FipsError` variant set (from `openssl-common`) does NOT include
 // an `InvalidStateTransition` case — the module's error model treats
 // runtime operations (not state writes) as the fallible boundary.  We
 // verify this by ensuring our error-matching helper only pattern-matches
@@ -651,10 +651,10 @@ fn is_self_testing_transitions_through_lifecycle() {
 // return value (which is always `false` for Error).  Attempting to
 // assert on log output is brittle, so Phase 6 tests focus on:
 //
-//   1. The public [`ErrorRateLimiter`] type — verifiable in isolation.
-//   2. The global [`FIPS_ERROR_LIMITER`] — used by high-level code
+//   1. The public `ErrorRateLimiter` type — verifiable in isolation.
+//   2. The global `FIPS_ERROR_LIMITER` — used by high-level code
 //      (not by is_running()) to gate FIPS-module error reports.
-//   3. The constant [`ERROR_REPORT_LIMIT`] — matches C (10).
+//   3. The constant `ERROR_REPORT_LIMIT` — matches C (10).
 
 #[test]
 fn error_rate_limiter_boundary_is_inclusive_below_limit() {

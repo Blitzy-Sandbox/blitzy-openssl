@@ -36,7 +36,7 @@
 //! CTR, but this Rust port is constrained by the Rust `openssl-crypto`
 //! predefined cipher registry, which defines `AES-128-CTR` and
 //! `AES-256-CTR` only. Attempts to use other ciphers fail with
-//! [`ProviderError::AlgorithmUnavailable`].
+//! `ProviderError::AlgorithmUnavailable`.
 //!
 //! # Translated source
 //!
@@ -152,7 +152,7 @@ const PARAM_INDEX: &str = "info";
 const PARAM_KDR: &str = "kdr";
 
 /// Parameter name for the cipher property query forwarded to
-/// [`Cipher::fetch`] (matches OpenSSL's `OSSL_KDF_PARAM_PROPERTIES`).
+/// `Cipher::fetch` (matches OpenSSL's `OSSL_KDF_PARAM_PROPERTIES`).
 const PARAM_PROPERTIES: &str = "properties";
 
 // =============================================================================
@@ -160,7 +160,7 @@ const PARAM_PROPERTIES: &str = "properties";
 // =============================================================================
 
 /// Converts a [`CryptoError`] raised by the EVP cipher layer into a
-/// provider-layer [`ProviderError::Dispatch`].
+/// provider-layer `ProviderError::Dispatch`.
 ///
 /// Mirrors the pattern used in `kdfs/kbkdf.rs` for MAC errors: every
 /// propagation point applies this function so the dispatch-table origin of
@@ -205,7 +205,7 @@ pub enum SrtpLabel {
 impl SrtpLabel {
     /// Parses an integer label value into a typed [`SrtpLabel`].
     ///
-    /// Returns [`ProviderError::AlgorithmUnavailable`] if the value is
+    /// Returns `ProviderError::AlgorithmUnavailable` if the value is
     /// outside the RFC 3711 range 0x00-0x05.
     ///
     /// Mirrors the validation in C `kdf_srtpkdf_set_ctx_params()`
@@ -215,7 +215,7 @@ impl SrtpLabel {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::AlgorithmUnavailable`] for unsupported
+    /// Returns `ProviderError::AlgorithmUnavailable` for unsupported
     /// label values.
     pub fn from_u32(v: u32) -> ProviderResult<Self> {
         match v {
@@ -290,13 +290,13 @@ impl SrtpLabel {
 ///
 /// Holds the master key, master salt, label, packet index, and key
 /// derivation rate. All cryptographic material (`key`, `salt`, `index`) is
-/// zeroed on drop via [`ZeroizeOnDrop`] to satisfy the secure-erasure
+/// zeroed on drop via `ZeroizeOnDrop` to satisfy the secure-erasure
 /// requirement of AAP §0.7.6.
 ///
 /// Maps to C `KDF_SRTP` in `srtpkdf.c` lines 36-52.
 #[derive(ZeroizeOnDrop)]
 pub struct SrtpKdfContext {
-    /// Library context reference used for [`Cipher::fetch`]. Non-sensitive.
+    /// Library context reference used for `Cipher::fetch`. Non-sensitive.
     #[zeroize(skip)]
     libctx: Arc<LibContext>,
 
@@ -306,7 +306,7 @@ pub struct SrtpKdfContext {
     #[zeroize(skip)]
     cipher: Option<Cipher>,
 
-    /// Optional property query forwarded to [`Cipher::fetch`]. Non-sensitive.
+    /// Optional property query forwarded to `Cipher::fetch`. Non-sensitive.
     #[zeroize(skip)]
     cipher_properties: Option<String>,
 
@@ -377,7 +377,7 @@ impl SrtpKdfContext {
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::AlgorithmUnavailable`] — invalid cipher (not
+    /// - `ProviderError::AlgorithmUnavailable` — invalid cipher (not
     ///   AES-CTR), unsupported label, or invalid KDR (not a power of
     ///   two).
     /// - [`ProviderError::Common(CommonError::InvalidArgument)`] — a
@@ -483,7 +483,7 @@ impl SrtpKdfContext {
     }
 
     /// Accepts an integer-typed label value in any of the typed numeric
-    /// variants the [`ParamSet`] layer admits.
+    /// variants the `ParamSet` layer admits.
     ///
     /// Mirrors the C path where the label is read via `OSSL_PARAM_get_uint32`
     /// at `srtpkdf.c` line 331.
@@ -511,7 +511,7 @@ impl SrtpKdfContext {
     /// The C source accepts all three AES variants, but the current Rust
     /// `openssl-crypto` predefined cipher registry defines only
     /// `AES-128-CTR` and `AES-256-CTR`; unsupported variants raise
-    /// [`ProviderError::AlgorithmUnavailable`] consistent with the C
+    /// `ProviderError::AlgorithmUnavailable` consistent with the C
     /// behaviour when an unknown cipher is referenced.
     fn apply_cipher(&mut self, name: &str) -> ProviderResult<()> {
         let props = self.cipher_properties.as_deref();
@@ -623,7 +623,7 @@ impl SrtpKdfContext {
     ///   configured key does not match the cipher's expected length, if
     ///   the output buffer is too small, or if the provided index length
     ///   does not match what the label requires.
-    /// - [`ProviderError::Dispatch`] if the underlying cipher operation
+    /// - `ProviderError::Dispatch` if the underlying cipher operation
     ///   fails.
     #[instrument(skip(self, output), level = "debug")]
     fn srtp_derive(&self, output: &mut [u8]) -> ProviderResult<usize> {
@@ -906,7 +906,7 @@ impl SrtpKdfProvider {
     }
 
     /// Returns the set of parameters that callers may supply to
-    /// [`KdfContext::set_params`].
+    /// `KdfContext::set_params`.
     ///
     /// Mirrors C `kdf_srtpkdf_settable_ctx_params()` at `srtpkdf.c` lines
     /// 267-281.
@@ -924,7 +924,7 @@ impl SrtpKdfProvider {
     }
 
     /// Returns the set of parameters that may be queried via
-    /// [`KdfContext::get_params`].
+    /// `KdfContext::get_params`.
     ///
     /// Mirrors C `kdf_srtpkdf_gettable_ctx_params()` at `srtpkdf.c` lines
     /// 261-265.

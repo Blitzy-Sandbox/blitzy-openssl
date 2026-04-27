@@ -1,8 +1,8 @@
 //! Null provider implementation for the OpenSSL Rust workspace.
 //!
-//! Implements the [`Provider`] trait returning metadata (name, version, status)
+//! Implements the `Provider` trait returning metadata (name, version, status)
 //! but advertising zero algorithms for all operation classes.
-//! [`NullProvider::query_operation()`] always returns [`None`].
+//! `NullProvider::query_operation()` always returns [`None`].
 //!
 //! The null provider is a minimal, ABI-valid provider used as a
 //! sentinel/placeholder when a valid provider handle is needed but no
@@ -17,12 +17,12 @@
 //!
 //! | C Construct                         | Rust Equivalent                                |
 //! |-------------------------------------|------------------------------------------------|
-//! | `ossl_null_provider_init()`         | [`NullProvider::new()`]                        |
-//! | `null_get_params()` (line 35)       | [`NullProvider::get_params()`]                 |
-//! | `null_gettable_params()` (line 30)  | [`NullProvider::gettable_params()`] (default)  |
-//! | `null_query()` (line 54)            | [`NullProvider::query_operation()`] → `None`   |
+//! | `ossl_null_provider_init()`         | `NullProvider::new()`                        |
+//! | `null_get_params()` (line 35)       | `NullProvider::get_params()`                 |
+//! | `null_gettable_params()` (line 30)  | `NullProvider::gettable_params()` (default)  |
+//! | `null_query()` (line 54)            | `NullProvider::query_operation()` → `None`   |
 //! | `null_dispatch_table[]` (line 63)   | `impl Provider for NullProvider`               |
-//! | `ossl_prov_is_running()` (always 1) | [`NullProvider::is_running()`] → `true`        |
+//! | `ossl_prov_is_running()` (always 1) | `NullProvider::is_running()` → `true`        |
 //!
 //! # Rules Enforced
 //!
@@ -46,12 +46,12 @@ use openssl_common::types::OperationType;
 // NullProvider — Zero-Algorithm Sentinel Provider
 // =============================================================================
 
-/// Null provider — implements the [`Provider`] trait but advertises no
+/// Null provider — implements the `Provider` trait but advertises no
 /// algorithms for any operation class.
 ///
 /// Used as a sentinel/placeholder when a valid provider handle is needed but
 /// no algorithm discovery should succeed.  The defining characteristic is that
-/// [`NullProvider::query_operation()`] **always returns [`None`]** regardless
+/// `NullProvider::query_operation()` **always returns [`None`]** regardless
 /// of the operation type requested.
 ///
 /// Replaces C `ossl_null_provider_init` and the associated
@@ -118,7 +118,7 @@ impl NullProvider {
 }
 
 impl Default for NullProvider {
-    /// Returns the default null provider — delegates to [`NullProvider::new()`].
+    /// Returns the default null provider — delegates to `NullProvider::new()`.
     #[inline]
     fn default() -> Self {
         Self::new()
@@ -183,7 +183,7 @@ impl Provider for NullProvider {
         None
     }
 
-    /// Returns the provider parameters as a typed [`ParamSet`].
+    /// Returns the provider parameters as a typed `ParamSet`.
     ///
     /// The returned parameter set contains the following keys, matching the
     /// C `null_get_params()` output from `nullprov.c` lines 35–51:

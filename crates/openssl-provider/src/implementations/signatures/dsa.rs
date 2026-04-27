@@ -24,8 +24,8 @@
 //!
 //! # Key encoding (provider boundary)
 //!
-//! The provider boundary defined by [`SignatureContext::sign_init`] and
-//! [`SignatureContext::verify_init`] passes key material as a length-prefixed
+//! The provider boundary defined by `SignatureContext::sign_init` and
+//! `SignatureContext::verify_init` passes key material as a length-prefixed
 //! byte blob. Unlike EdDSA (fixed-size keys) or ECDSA (EC-point octet string),
 //! DSA has three variable-size domain parameter components (`p`, `q`, `g`)
 //! plus a private scalar (`x`) or public value (`y`). To carry all of these
@@ -64,36 +64,36 @@
 //!
 //! The C source supports FIPS 186-5 / RFC 6979 deterministic-`k` signing via
 //! the `"nonce-type"` parameter, and the Rust port now matches: setting
-//! [`NonceType::Deterministic`] (raw value `1`) on the context dispatches to
+//! `NonceType::Deterministic` (raw value `1`) on the context dispatches to
 //! [`openssl_crypto::dsa::sign_deterministic`], which derives `k` via the
 //! HMAC-DRBG construction defined in RFC 6979 §3.2 using the digest
-//! configured on the context. The default [`NonceType::Default`] preserves
+//! configured on the context. The default `NonceType::Default` preserves
 //! random-`k` signing per FIPS 186-4 §4.5.
 //!
 //! # C → Rust mapping
 //!
 //! | C symbol (`dsa_sig.c`)                    | Rust symbol                                                                |
 //! |-------------------------------------------|----------------------------------------------------------------------------|
-//! | `PROV_DSA_CTX`                            | [`DsaSignatureContext`]                                                    |
-//! | `OSSL_FUNC_signature_newctx_fn`           | [`DsaSignatureProvider::new_ctx`]                                          |
+//! | `PROV_DSA_CTX`                            | `DsaSignatureContext`                                                    |
+//! | `OSSL_FUNC_signature_newctx_fn`           | `DsaSignatureProvider::new_ctx`                                          |
 //! | `OSSL_FUNC_signature_freectx_fn`          | `Drop for DsaSignatureContext` (zeroizes automatically)                    |
-//! | `OSSL_FUNC_signature_dupctx_fn`           | [`DsaSignatureContext::duplicate`]                                         |
-//! | `OSSL_FUNC_signature_sign_init_fn`        | [`DsaSignatureContext::sign_init`]                                         |
-//! | `OSSL_FUNC_signature_sign_fn`             | [`DsaSignatureContext::sign`]                                              |
-//! | `OSSL_FUNC_signature_verify_init_fn`      | [`DsaSignatureContext::verify_init`]                                       |
-//! | `OSSL_FUNC_signature_verify_fn`           | [`DsaSignatureContext::verify`]                                            |
-//! | `OSSL_FUNC_signature_digest_sign_init_fn` | [`DsaSignatureContext::digest_sign_init`]                                  |
-//! | `OSSL_FUNC_signature_digest_sign_update_fn` | [`DsaSignatureContext::digest_sign_update`]                              |
-//! | `OSSL_FUNC_signature_digest_sign_final_fn`  | [`DsaSignatureContext::digest_sign_final`]                               |
-//! | `OSSL_FUNC_signature_digest_verify_init_fn` | [`DsaSignatureContext::digest_verify_init`]                              |
-//! | `OSSL_FUNC_signature_digest_verify_update_fn` | [`DsaSignatureContext::digest_verify_update`]                          |
-//! | `OSSL_FUNC_signature_digest_verify_final_fn`  | [`DsaSignatureContext::digest_verify_final`]                           |
+//! | `OSSL_FUNC_signature_dupctx_fn`           | `DsaSignatureContext::duplicate`                                         |
+//! | `OSSL_FUNC_signature_sign_init_fn`        | `DsaSignatureContext::sign_init`                                         |
+//! | `OSSL_FUNC_signature_sign_fn`             | `DsaSignatureContext::sign`                                              |
+//! | `OSSL_FUNC_signature_verify_init_fn`      | `DsaSignatureContext::verify_init`                                       |
+//! | `OSSL_FUNC_signature_verify_fn`           | `DsaSignatureContext::verify`                                            |
+//! | `OSSL_FUNC_signature_digest_sign_init_fn` | `DsaSignatureContext::digest_sign_init`                                  |
+//! | `OSSL_FUNC_signature_digest_sign_update_fn` | `DsaSignatureContext::digest_sign_update`                              |
+//! | `OSSL_FUNC_signature_digest_sign_final_fn`  | `DsaSignatureContext::digest_sign_final`                               |
+//! | `OSSL_FUNC_signature_digest_verify_init_fn` | `DsaSignatureContext::digest_verify_init`                              |
+//! | `OSSL_FUNC_signature_digest_verify_update_fn` | `DsaSignatureContext::digest_verify_update`                          |
+//! | `OSSL_FUNC_signature_digest_verify_final_fn`  | `DsaSignatureContext::digest_verify_final`                           |
 //! | `ossl_dsa_signature_functions`            | `dsa_signature_descriptor()`                                               |
 //! | `ossl_dsa_sha1_signature_functions`       | `dsa_sha1_signature_descriptor()` (one per digest)                         |
 //!
 //! # Implementation rules honoured
 //!
-//! * **R5** — All nullable fields use `Option<T>`; [`NonceType`] enumerates
+//! * **R5** — All nullable fields use `Option<T>`; `NonceType` enumerates
 //!   legal values instead of `0`/`1` sentinels.
 //! * **R6** — Numeric length conversions use `try_from`/`checked_*`.
 //! * **R7** — No shared mutable state; each context is per-operation.
@@ -141,9 +141,9 @@ use crate::traits::{AlgorithmDescriptor, SignatureContext, SignatureProvider};
 ///
 /// # Variants
 ///
-/// * [`NonceType::Default`] — FIPS 186-4 §4.5 random-`k` signing.
+/// * `NonceType::Default` — FIPS 186-4 §4.5 random-`k` signing.
 ///   Dispatched to [`openssl_crypto::dsa::sign`].
-/// * [`NonceType::Deterministic`] — FIPS 186-5 / RFC 6979 deterministic
+/// * `NonceType::Deterministic` — FIPS 186-5 / RFC 6979 deterministic
 ///   derivation of `k` from the message and the private key. Dispatched to
 ///   [`openssl_crypto::dsa::sign_deterministic`]; requires that a digest
 ///   has been configured on the context (RFC 6979 §3.2 binds the nonce
@@ -308,14 +308,14 @@ impl DsaVariant {
 /// | `flag_allow_update/final/oneshot` | `allow_*` booleans   | Lifecycle state machine for digest-sign/verify streaming      |
 /// | `md` / `mdname` / `mdnid`    | `md`, `md_name`           | Fetched `MessageDigest` + canonical name                      |
 /// | `mdctx`                      | `md_ctx`                  | `MdContext` for streaming operations                          |
-/// | `nonce_type`                 | `nonce_type`              | [`NonceType`] enum                                            |
+/// | `nonce_type`                 | `nonce_type`              | `NonceType` enum                                            |
 /// | `aid` / `aid_buf` / `aid_len`| `aid_cache`               | Cached DER `AlgorithmIdentifier` bytes                        |
 /// | `sig` / `siglen`             | `cached_signature`        | Pre-computed signature bytes for `VERIFY_MESSAGE` mode        |
 /// | `sig_alg_buf` / `sig_alg_len`| — (handled by `aid_cache`)| Merged into the AID cache                                     |
 ///
 /// # Memory hygiene
 ///
-/// The context implements [`Zeroize`], [`Drop`], and [`ZeroizeOnDrop`] so that
+/// The context implements `Zeroize`, `Drop`, and `ZeroizeOnDrop` so that
 /// the cached private-key reference and the `cached_signature` buffer are
 /// scrubbed deterministically when the context is freed. This mirrors the
 /// explicit `OPENSSL_clear_free` / `DSA_free` sequence at the end of
@@ -328,12 +328,12 @@ pub struct DsaSignatureContext {
     propq: Option<String>,
     /// Variant tag controlling digest flexibility (composable vs sigalg).
     variant: DsaVariant,
-    /// Private DSA key bound during [`SignatureContext::sign_init`] (or
+    /// Private DSA key bound during `SignatureContext::sign_init` (or
     /// [`digest_sign_init`](SignatureContext::digest_sign_init)). Shared
-    /// ownership allows [`DsaSignatureContext::duplicate`] to clone the
+    /// ownership allows `DsaSignatureContext::duplicate` to clone the
     /// context without deep-copying the key material.
     private_key: Option<Arc<DsaPrivateKey>>,
-    /// Public DSA key bound during [`SignatureContext::verify_init`] (or
+    /// Public DSA key bound during `SignatureContext::verify_init` (or
     /// [`digest_verify_init`](SignatureContext::digest_verify_init)).
     public_key: Option<Arc<DsaPublicKey>>,
     /// Current operation mode, `None` before `*_init`.
@@ -432,7 +432,7 @@ impl ZeroizeOnDrop for DsaSignatureContext {}
 impl DsaSignatureContext {
     /// Creates a fresh context bound to the given variant, library context,
     /// and optional property query. Called exclusively from
-    /// [`DsaSignatureProvider::new_ctx`]; not public API.
+    /// `DsaSignatureProvider::new_ctx`; not public API.
     pub(crate) fn new(
         variant: DsaVariant,
         lib_ctx: Arc<LibContext>,
@@ -500,7 +500,7 @@ impl DsaSignatureContext {
 // TLV key-parsing helpers
 // =============================================================================
 
-/// TLV version byte currently understood by [`parse_dsa_key`].
+/// TLV version byte currently understood by `parse_dsa_key`.
 const DSA_KEY_TLV_VERSION: u8 = 0x01;
 
 /// Bit mask for the `has_params` flag.
@@ -510,7 +510,7 @@ const FLAG_HAS_PUBLIC: u8 = 0x02;
 /// Bit mask for the `has_private` flag.
 const FLAG_HAS_PRIVATE: u8 = 0x04;
 
-/// Output of [`parse_dsa_key`] — a decoded key blob.
+/// Output of `parse_dsa_key` — a decoded key blob.
 struct DecodedDsaKey {
     /// Domain parameters (always present in a well-formed blob).
     params: DsaParams,
@@ -592,7 +592,7 @@ fn parse_dsa_key(bytes: &[u8]) -> Result<DecodedDsaKey, ProviderError> {
     })
 }
 
-/// Tiny read-cursor used by [`parse_dsa_key`] — avoids pulling in another
+/// Tiny read-cursor used by `parse_dsa_key` — avoids pulling in another
 /// crate for a handful of length-prefix reads.
 struct Cursor<'a> {
     buf: &'a [u8],
@@ -927,28 +927,28 @@ impl DsaSignatureContext {
     ///
     /// Both nonce strategies are now supported:
     ///
-    /// * [`NonceType::Default`] — random `k` per FIPS 186-4 §4.5, dispatched
-    ///   to [`dsa_sign_primitive`].
-    /// * [`NonceType::Deterministic`] — RFC 6979 deterministic `k`,
-    ///   dispatched to [`dsa_sign_deterministic_primitive`].
+    /// * `NonceType::Default` — random `k` per FIPS 186-4 §4.5, dispatched
+    ///   to `dsa_sign_primitive`.
+    /// * `NonceType::Deterministic` — RFC 6979 deterministic `k`,
+    ///   dispatched to `dsa_sign_deterministic_primitive`.
     ///
     /// The deterministic path additionally requires that a digest has been
     /// configured via `set_ctx_params("digest", …)` (or a `digest_sign_init`
     /// call), because RFC 6979 §3.2 binds `k` derivation to the hash
     /// function. That precondition is verified at sign-time in
-    /// [`Self::sign_digest`] rather than here so this gate remains a
+    /// `Self::sign_digest` rather than here so this gate remains a
     /// pure-state check.
     ///
     /// # `#[allow(clippy::unnecessary_wraps)]` justification
     ///
-    /// Both currently-defined [`NonceType`] variants are supported, so the
+    /// Both currently-defined `NonceType` variants are supported, so the
     /// match arms always return `Ok(())`. The `ProviderResult<()>` return
     /// type is intentionally retained as a forward-compatible gate: future
     /// variants (for example a hypothetical hardware-backed `NonceType`
     /// requiring RNG attestation, or runtime-disabled deterministic mode
     /// when policy forbids hash binding) are expected to surface as
     /// [`ProviderError::Init`] from this gate without rippling the callers
-    /// in [`Self::sign_digest`]. Removing the `Result` would force a
+    /// in `Self::sign_digest`. Removing the `Result` would force a
     /// signature change across the dispatch path the moment such a variant
     /// is added, undermining the gate-as-a-policy-checkpoint design.
     /// Per project rule R9, the `#[allow]` carries this justification
@@ -978,7 +978,7 @@ impl DsaSignatureContext {
 // Error-mapping helpers
 // =============================================================================
 
-/// Converts a [`CryptoError`] returned by the DSA primitive during key
+/// Converts a `CryptoError` returned by the DSA primitive during key
 /// construction into a provider-layer `Init` error.
 fn map_crypto_key_error(err: &CryptoError) -> ProviderError {
     ProviderError::Init(format!("DSA key rejected by crypto layer: {err}"))
@@ -994,7 +994,7 @@ fn map_crypto_digest_error(err: CryptoError) -> ProviderError {
     }
 }
 
-/// Converts a [`CryptoError`] returned by the DSA sign primitive into a
+/// Converts a `CryptoError` returned by the DSA sign primitive into a
 /// provider-layer `Dispatch` error. Verification errors are not routed
 /// through here — the DSA verify primitive distinguishes between
 /// "forgery detected" (`Ok(false)`) and "malformed input" (`Err`).
@@ -1002,7 +1002,7 @@ fn map_crypto_sign_error(err: &CryptoError) -> ProviderError {
     ProviderError::Dispatch(format!("DSA sign primitive failed: {err}"))
 }
 
-/// Converts a [`CryptoError`] returned by the DSA verify primitive into a
+/// Converts a `CryptoError` returned by the DSA verify primitive into a
 /// provider-layer error. Malformed signatures surface as `Dispatch`
 /// errors; the caller still sees a bool for well-formed-but-invalid
 /// signatures.
@@ -1017,24 +1017,24 @@ fn map_crypto_verify_error(err: &CryptoError) -> ProviderError {
 //   * `ossl_dsa_signature_functions` (composable DSA)
 //   * `ossl_dsa_sha1_signature_functions` ... `ossl_dsa_sha3_512_signature_functions`
 // Each of these C tables becomes a distinct `DsaSignatureProvider` instance
-// parameterised by [`DsaVariant`].  The provider is cheap to clone and is
+// parameterised by `DsaVariant`.  The provider is cheap to clone and is
 // expected to outlive the individual signature contexts it spawns.
 // =============================================================================
 
-/// Factory type that constructs [`DsaSignatureContext`] instances bound to a
-/// particular [`DsaVariant`].
+/// Factory type that constructs `DsaSignatureContext` instances bound to a
+/// particular `DsaVariant`.
 ///
 /// A provider owns only the *configuration* required to seed a new signing
 /// or verifying context — the library context handle, the provider property
 /// query string and the DSA variant selector.  It contains no per-operation
-/// state; all mutable state lives on the spawned [`DsaSignatureContext`].
+/// state; all mutable state lives on the spawned `DsaSignatureContext`.
 ///
 /// # C Mapping
 ///
 /// Replaces the per-algorithm static dispatch tables emitted by the
 /// `IMPL_DSA_SIGALG` macro in `providers/implementations/signature/dsa_sig.c`
 /// (lines ~985–1069).  The macro-generated structures are replaced by a
-/// single Rust type whose behaviour is specialised through [`DsaVariant`].
+/// single Rust type whose behaviour is specialised through `DsaVariant`.
 ///
 /// # Examples
 ///
@@ -1065,7 +1065,7 @@ pub struct DsaSignatureProvider {
 }
 
 impl DsaSignatureProvider {
-    /// Creates a new provider bound to the given [`DsaVariant`] using the
+    /// Creates a new provider bound to the given `DsaVariant` using the
     /// process-wide default library context and no explicit property query.
     ///
     /// This is the entry point used by the default-provider algorithm
@@ -1086,9 +1086,9 @@ impl DsaSignatureProvider {
     ///
     /// Callers that operate multiple isolated library contexts (e.g. FIPS
     /// vs. non-FIPS) use this constructor to scope the DSA provider to a
-    /// specific [`LibContext`].  The `propq` argument is forwarded verbatim
+    /// specific `LibContext`.  The `propq` argument is forwarded verbatim
     /// to every spawned signature context and becomes the property query
-    /// passed to [`MessageDigest::fetch`].
+    /// passed to `MessageDigest::fetch`.
     #[must_use]
     pub fn new_with_context(
         variant: DsaVariant,
@@ -1117,7 +1117,7 @@ impl SignatureProvider for DsaSignatureProvider {
         self.variant.name()
     }
 
-    /// Allocates a fresh [`DsaSignatureContext`] bound to this provider's
+    /// Allocates a fresh `DsaSignatureContext` bound to this provider's
     /// variant, library context and property query.
     ///
     /// Each call yields a brand-new context — no state is ever shared
@@ -1144,7 +1144,7 @@ impl SignatureProvider for DsaSignatureProvider {
 // Inherent parameter handling — set_ctx_params / get_ctx_params
 //
 // These are the C-parity names from `dsa_sig.c` (`dsa_set_ctx_params` and
-// `dsa_get_ctx_params` at lines ~770–900).  The [`SignatureContext`] trait
+// `dsa_get_ctx_params` at lines ~770–900).  The `SignatureContext` trait
 // methods [`SignatureContext::set_params`] and [`SignatureContext::get_params`]
 // delegate to these inherent helpers so internal callers can keep using the
 // familiar C-style names while the trait surface remains the external API.
@@ -1166,9 +1166,9 @@ impl DsaSignatureContext {
     ///   when fetching message digests.  The fresh query replaces any
     ///   previously-stored query verbatim.
     /// * `"nonce-type"` — unsigned 64-bit integer (`ParamValue::UInt64`).
-    ///   `0` → [`NonceType::Default`] (random `k` per FIPS 186-4 §4.5),
-    ///   `1` → [`NonceType::Deterministic`] (RFC 6979 deterministic `k` via
-    ///   HMAC-DRBG).  Selecting [`NonceType::Deterministic`] dispatches
+    ///   `0` → `NonceType::Default` (random `k` per FIPS 186-4 §4.5),
+    ///   `1` → `NonceType::Deterministic` (RFC 6979 deterministic `k` via
+    ///   HMAC-DRBG).  Selecting `NonceType::Deterministic` dispatches
     ///   subsequent `sign_digest` calls to
     ///   [`openssl_crypto::dsa::sign_deterministic`].  RFC 6979 §3.2 binds
     ///   the nonce derivation to a specific hash function, so the
@@ -1181,7 +1181,7 @@ impl DsaSignatureContext {
     /// * `"signature"` — octet string.  Cached signature used by the
     ///   verify-message flow so a single context can hold both the
     ///   to-be-verified message and its signature.  Handed to
-    ///   [`DsaSignatureContext::cached_signature`].
+    ///   `DsaSignatureContext::cached_signature`.
     ///
     /// Unknown parameters are ignored — this matches the C behaviour of
     /// iterating over the supplied `OSSL_PARAM` array and silently
@@ -1195,7 +1195,7 @@ impl DsaSignatureContext {
     /// * [`ProviderError::Common`] with
     ///   [`openssl_common::CommonError::InvalidArgument`] if the caller
     ///   asks for a digest incompatible with the active variant.
-    /// * [`ProviderError::Dispatch`] on digest fetch failure.
+    /// * `ProviderError::Dispatch` on digest fetch failure.
     pub fn set_ctx_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         if params.is_empty() {
             return Ok(());
@@ -1306,11 +1306,11 @@ impl DsaSignatureContext {
     /// Builds a parameter set describing the current context state.  This
     /// mirrors `dsa_get_ctx_params()` from `dsa_sig.c` line ~870.
     ///
-    /// The returned [`ParamSet`] contains the following keys:
+    /// The returned `ParamSet` contains the following keys:
     ///
     /// * `"algorithm-id"` — DER-encoded `AlgorithmIdentifier` for the
     ///   current variant (and active digest, for composable DSA).  Cached
-    ///   lazily in [`DsaSignatureContext::aid_cache`] so repeated calls are
+    ///   lazily in `DsaSignatureContext::aid_cache` so repeated calls are
     ///   cheap.
     /// * `"digest"` — the canonical digest name currently bound to the
     ///   context.  Absent until a digest has been selected on composable
@@ -1368,18 +1368,18 @@ impl DsaSignatureContext {
     /// hash of the accumulated streaming buffer).
     ///
     /// The produced signature is cached in
-    /// [`DsaSignatureContext::cached_signature`] so the higher-level
+    /// `DsaSignatureContext::cached_signature` so the higher-level
     /// verify-message flow (TLS 1.3 CertificateVerify-style) can retrieve it
     /// via `get_ctx_params("signature")`.
     ///
     /// # Nonce strategy dispatch
     ///
-    /// The implementation honours the configured [`NonceType`]:
+    /// The implementation honours the configured `NonceType`:
     ///
-    /// * [`NonceType::Default`] — random `k` per FIPS 186-4 §4.5; calls
-    ///   [`dsa_sign_primitive`].
-    /// * [`NonceType::Deterministic`] — RFC 6979 deterministic `k`; calls
-    ///   [`dsa_sign_deterministic_primitive`] using the canonical digest
+    /// * `NonceType::Default` — random `k` per FIPS 186-4 §4.5; calls
+    ///   `dsa_sign_primitive`.
+    /// * `NonceType::Deterministic` — RFC 6979 deterministic `k`; calls
+    ///   `dsa_sign_deterministic_primitive` using the canonical digest
     ///   name stored in `self.md_name`.
     ///
     /// # Errors
@@ -1387,7 +1387,7 @@ impl DsaSignatureContext {
     /// * [`ProviderError::Init`] if no private key is bound, or if
     ///   deterministic-nonce signing is requested without a digest having
     ///   been configured.
-    /// * [`ProviderError::Dispatch`] if the underlying crypto primitive
+    /// * `ProviderError::Dispatch` if the underlying crypto primitive
     ///   reports an error.
     fn sign_digest(&mut self, digest: &[u8]) -> ProviderResult<Vec<u8>> {
         // Honour the nonce-type gate — deterministic nonces are a
@@ -1401,7 +1401,7 @@ impl DsaSignatureContext {
         // Dispatch on the configured nonce strategy. R10 — both branches
         // are reachable from public API callers through the
         // OSSL_SIGNATURE_PARAM_NONCE_TYPE OSSL_PARAM (mapped to
-        // [`NonceType`] in `set_ctx_params`).
+        // `NonceType` in `set_ctx_params`).
         let signature = match self.nonce_type {
             NonceType::Default => {
                 trace!(
@@ -1463,7 +1463,7 @@ impl DsaSignatureContext {
     /// # Errors
     ///
     /// * [`ProviderError::Init`] if no public key is bound.
-    /// * [`ProviderError::Dispatch`] if the underlying crypto primitive
+    /// * `ProviderError::Dispatch` if the underlying crypto primitive
     ///   reports an error.  A well-formed signature that simply fails
     ///   cryptographic verification returns `Ok(false)`, not an error.
     fn verify_digest(&self, digest: &[u8], signature: &[u8]) -> ProviderResult<bool> {
@@ -1703,7 +1703,7 @@ impl SignatureContext for DsaSignatureContext {
     ///
     /// Hashes the accumulated `streaming_buffer` with the bound digest,
     /// securely wipes the raw message bytes, and forwards the hash to the
-    /// DSA signing primitive via [`Self::sign_digest`].  Mirrors
+    /// DSA signing primitive via `Self::sign_digest`.  Mirrors
     /// `dsa_sign_message_final()` in `dsa_sig.c` ~660.
     ///
     /// Closes the update/final gates on success so repeated calls return
@@ -1843,7 +1843,7 @@ impl SignatureContext for DsaSignatureContext {
     // parameter get / set
     // -------------------------------------------------------------------
 
-    /// Returns a [`ParamSet`] describing the current context state.
+    /// Returns a `ParamSet` describing the current context state.
     ///
     /// The `&self` signature prevents this variant from caching the AID
     /// (the inherent [`Self::get_ctx_params`] method does that via
@@ -1884,7 +1884,7 @@ impl SignatureContext for DsaSignatureContext {
         Ok(out)
     }
 
-    /// Applies context parameters from the supplied [`ParamSet`].
+    /// Applies context parameters from the supplied `ParamSet`.
     ///
     /// Delegates to the inherent [`Self::set_ctx_params`] which is the
     /// authoritative implementation — this trait wrapper exists so that
@@ -1980,7 +1980,7 @@ impl DsaSignatureContext {
 // `IMPL_DSA_SIGALG(sha1, NID_sha1, ...)` family of macros in
 // `providers/implementations/signature/dsa_sig.c` lines ~950–1065
 // has a corresponding descriptor here.  The composable DSA dispatch
-// is represented by [`dsa_signature_descriptor`]; the nine fixed
+// is represented by `dsa_signature_descriptor`; the nine fixed
 // digest combinations follow in the exact canonical order used by
 // `providers/implementations/include/prov/names.h` lines ~31–41.
 //
@@ -2228,7 +2228,7 @@ pub fn dsa_sha3_512_signature_descriptor() -> AlgorithmDescriptor {
 /// rely on this ordering for stable provider fingerprints and
 /// algorithm enumeration reproducibility across process restarts.
 ///
-/// Returned [`AlgorithmDescriptor`] values are cheap to clone and
+/// Returned `AlgorithmDescriptor` values are cheap to clone and
 /// bear no lifetime tying them to the library context; they may
 /// be aggregated or filtered freely.
 #[must_use]
@@ -2674,13 +2674,13 @@ mod tests {
     // the corresponding public key.
     //
     // Wire format note: the provider key blob is the strict TLV format
-    // produced by [`encode_dsa_key_blob`] below — see [`parse_dsa_key`]
+    // produced by `encode_dsa_key_blob` below — see `parse_dsa_key`
     // (lines 529–593) for the canonical decoder these tests must match
     // byte-for-byte.
 
     /// Encodes a DSA key blob in the provider's strict TLV format.
     ///
-    /// Layout matches [`parse_dsa_key`]:
+    /// Layout matches `parse_dsa_key`:
     /// ```text
     /// byte 0 = 0x01                      (DSA_KEY_TLV_VERSION)
     /// byte 1 = flags                     (FLAG_HAS_PARAMS=0x01 always set,

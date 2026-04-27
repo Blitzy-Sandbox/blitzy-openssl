@@ -49,8 +49,8 @@
 //! | `X509_PUBKEY` | [`PublicKeyInfo`] |
 //! | `d2i_X509` | [`Certificate::from_der`] |
 //! | `PEM_read_bio_X509` | [`Certificate::from_pem`] |
-//! | `X509_get_issuer_name` | [`Certificate::issuer`] |
-//! | `X509_get_subject_name` | [`Certificate::subject`] |
+//! | `X509_get_issuer_name` | `Certificate::issuer` |
+//! | `X509_get_subject_name` | `Certificate::subject` |
 //! | `X509_get_serialNumber` | [`Certificate::serial_number`] |
 //! | `X509_get_notBefore` | [`CertificateValidity::not_before`] |
 //! | `X509_get_notAfter` | [`CertificateValidity::not_after`] |
@@ -499,7 +499,7 @@ impl Certificate {
 
     /// Returns the inner-TBS signature-algorithm identifier
     /// (`TBSCertificate.signature` field).  Per RFC 5280 §4.1.1.2 this
-    /// MUST equal the outer `signatureAlgorithm` — [`check_sig_alg_consistency`]
+    /// MUST equal the outer `signatureAlgorithm` — `check_sig_alg_consistency`
     /// performs that check.
     pub fn tbs_signature_algorithm(&self) -> CryptoResult<SignatureAlgorithmId> {
         let alg = &self.inner.tbs_certificate.signature;

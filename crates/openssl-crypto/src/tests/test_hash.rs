@@ -88,11 +88,17 @@ use crate::hash::sha::{
     sha3_384, sha3_512, sha384, sha512, sha512_224, sha512_256, shake128, shake256,
 };
 use crate::hash::{
-    create_legacy_digest, create_sha_digest, md2, md4, md5, mdc2, ripemd160, sm3, whirlpool,
-    Digest, LegacyAlgorithm, Md2Context, Md4Context, Md5Context, Md5Sha1Context, Mdc2Context,
-    Ripemd160Context, Sha1Context, Sha256Context, Sha3Context, Sha512Context, ShaAlgorithm,
-    ShakeContext, Sm3Context, WhirlpoolContext,
+    create_legacy_digest, create_sha_digest, md2, md4, md5, ripemd160, sm3, whirlpool, Digest,
+    LegacyAlgorithm, Md2Context, Md4Context, Md5Context, Md5Sha1Context, Ripemd160Context,
+    Sha1Context, Sha256Context, Sha3Context, Sha512Context, ShaAlgorithm, ShakeContext,
+    Sm3Context, WhirlpoolContext,
 };
+// MDC-2 is implemented on top of the DES block cipher and therefore requires
+// the `des` feature. Its symbols are conditionally re-exported from
+// `crate::hash` only when the `des` feature is enabled, so we mirror that
+// gating here to keep the test build clean under `--no-default-features`.
+#[cfg(feature = "des")]
+use crate::hash::{mdc2, Mdc2Context};
 use openssl_common::CryptoError;
 use proptest::prelude::*;
 
@@ -260,6 +266,11 @@ fn phase_01_md4_metadata() {
 
 /// MDC-2 reports `"MDC-2"` (canonical hyphenated form), 16-byte output,
 /// 8-byte block per ISO/IEC 10118-2 §6.
+///
+/// Gated on `feature = "des"` because MDC-2 is implemented on top of the DES
+/// block cipher and `Mdc2Context` is conditionally exported from
+/// `crate::hash` only when DES is available.
+#[cfg(feature = "des")]
 #[test]
 fn phase_01_mdc2_metadata() {
     let ctx = Mdc2Context::new();
@@ -762,17 +773,26 @@ fn phase_08_legacy_oneshot_matches_incremental() {
         ctx_md4.update(input).expect("update");
         assert_eq!(ctx_md4.finalize().expect("finalize"), md4(input).expect("oneshot"));
 
-        let mut ctx_mdc2 = Mdc2Context::new();
-        // MDC-2 requires input length to be a multiple of 8 bytes (its block size).
-        // Pre-pad to the block boundary for the cross-check.
-        let mut padded = input.to_vec();
-        while padded.len() % 8 != 0 {
-            padded.push(0);
+        // MDC-2 oneshot/incremental cross-check is only exercised when the
+        // `des` feature is enabled, since `Mdc2Context` and `mdc2()` are
+        // built on top of DES and conditionally exported from `crate::hash`.
+        // The surrounding Md2/Md4/Ripemd160/Sm3/Whirlpool checks remain
+        // ungated so this test continues to validate them under
+        // `--no-default-features` configurations that disable `des`.
+        #[cfg(feature = "des")]
+        {
+            let mut ctx_mdc2 = Mdc2Context::new();
+            // MDC-2 requires input length to be a multiple of 8 bytes (its block size).
+            // Pre-pad to the block boundary for the cross-check.
+            let mut padded = input.to_vec();
+            while padded.len() % 8 != 0 {
+                padded.push(0);
+            }
+            ctx_mdc2.update(&padded).expect("update");
+            let inc = ctx_mdc2.finalize().expect("finalize");
+            let oneshot = mdc2(&padded).expect("oneshot");
+            assert_eq!(inc, oneshot);
         }
-        ctx_mdc2.update(&padded).expect("update");
-        let inc = ctx_mdc2.finalize().expect("finalize");
-        let oneshot = mdc2(&padded).expect("oneshot");
-        assert_eq!(inc, oneshot);
 
         let mut ctx_ripemd = Ripemd160Context::new();
         ctx_ripemd.update(input).expect("update");
@@ -1073,12 +1093,18 @@ fn phase_12_create_legacy_digest_factory_dispatch() {
     }
 
     // MDC-2 is exercised separately because it requires 8-byte-aligned input.
-    let mdc2_input: &[u8] = b"legacy_t"; // exactly 8 bytes
-    let mut ctx = create_legacy_digest(LegacyAlgorithm::Mdc2).expect("factory must succeed");
-    ctx.update(mdc2_input).expect("update");
-    let factory_digest = ctx.finalize().expect("finalize");
-    let oneshot_digest = mdc2(mdc2_input).expect("oneshot must succeed");
-    assert_eq!(factory_digest, oneshot_digest);
+    // Gated on the `des` feature because MDC-2 is implemented on top of the
+    // DES block cipher and the `LegacyAlgorithm::Mdc2` variant is itself
+    // conditionally compiled.
+    #[cfg(feature = "des")]
+    {
+        let mdc2_input: &[u8] = b"legacy_t"; // exactly 8 bytes
+        let mut ctx = create_legacy_digest(LegacyAlgorithm::Mdc2).expect("factory must succeed");
+        ctx.update(mdc2_input).expect("update");
+        let factory_digest = ctx.finalize().expect("finalize");
+        let oneshot_digest = mdc2(mdc2_input).expect("oneshot must succeed");
+        assert_eq!(factory_digest, oneshot_digest);
+    }
 }
 
 /// Documented discrepancy: `LegacyAlgorithm::name()` returns ALL CAPS / no
@@ -1091,6 +1117,8 @@ fn phase_12_legacy_algorithm_name_versus_digest_name_discrepancy() {
     // LegacyAlgorithm::name() — ALL CAPS / no hyphen
     assert_eq!(LegacyAlgorithm::Md2.name(), "MD2");
     assert_eq!(LegacyAlgorithm::Md4.name(), "MD4");
+    // MDC-2 is gated behind the `des` feature (see legacy.rs).
+    #[cfg(feature = "des")]
     assert_eq!(LegacyAlgorithm::Mdc2.name(), "MDC2");
     assert_eq!(LegacyAlgorithm::Ripemd160.name(), "RIPEMD160");
     assert_eq!(LegacyAlgorithm::Sm3.name(), "SM3");
@@ -1099,6 +1127,8 @@ fn phase_12_legacy_algorithm_name_versus_digest_name_discrepancy() {
     // Digest::algorithm_name() — canonical / hyphenated / mixed-case
     assert_eq!(Md2Context::new().algorithm_name(), "MD2");
     assert_eq!(Md4Context::new().algorithm_name(), "MD4");
+    // `Mdc2Context` is only exported when the `des` feature is enabled.
+    #[cfg(feature = "des")]
     assert_eq!(Mdc2Context::new().algorithm_name(), "MDC-2");
     assert_eq!(Ripemd160Context::new().algorithm_name(), "RIPEMD-160");
     assert_eq!(Sm3Context::new().algorithm_name(), "SM3");
@@ -1109,10 +1139,15 @@ fn phase_12_legacy_algorithm_name_versus_digest_name_discrepancy() {
 /// canonical values for each algorithm.
 #[test]
 fn phase_12_legacy_algorithm_size_metadata() {
-    let cases: &[(LegacyAlgorithm, usize, usize)] = &[
+    // We use a `Vec` (rather than a fixed-size array) and `#[cfg]` on the
+    // MDC-2 element so the MDC-2 entry is included only when the `des`
+    // feature is enabled (MDC-2 is implemented on top of the DES block
+    // cipher and therefore requires the `des` feature to be available).
+    let cases: Vec<(LegacyAlgorithm, usize, usize)> = vec![
         // (algorithm, digest_size, block_size)
         (LegacyAlgorithm::Md2, 16, 16),
         (LegacyAlgorithm::Md4, 16, 64),
+        #[cfg(feature = "des")]
         (LegacyAlgorithm::Mdc2, 16, 8),
         (LegacyAlgorithm::Ripemd160, 20, 64),
         (LegacyAlgorithm::Sm3, 32, 64),
@@ -1120,8 +1155,8 @@ fn phase_12_legacy_algorithm_size_metadata() {
     ];
 
     for (alg, expected_dsize, expected_bsize) in cases {
-        assert_eq!(alg.digest_size(), *expected_dsize, "digest_size for {:?}", alg);
-        assert_eq!(alg.block_size(), *expected_bsize, "block_size for {:?}", alg);
+        assert_eq!(alg.digest_size(), expected_dsize, "digest_size for {:?}", alg);
+        assert_eq!(alg.block_size(), expected_bsize, "block_size for {:?}", alg);
     }
 }
 

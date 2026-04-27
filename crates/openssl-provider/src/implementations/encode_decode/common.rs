@@ -11,12 +11,12 @@
 //!
 //! | C Source                             | Rust Function / Type                  |
 //! |--------------------------------------|---------------------------------------|
-//! | `ossl_prov_import_key()`             | [`import_key`]                        |
-//! | `ossl_prov_free_key()`               | [`free_key`]                          |
-//! | `ossl_read_der()`                    | [`read_der`]                          |
-//! | `OSSL_OBJECT_PKEY` et al.            | [`ObjectType`]                        |
-//! | `OSSL_PARAM` decoder output array    | [`DecodedObject`]                     |
-//! | `PROV_R_*` error codes               | [`EndecoderError`]                    |
+//! | `ossl_prov_import_key()`             | `import_key`                        |
+//! | `ossl_prov_free_key()`               | `free_key`                          |
+//! | `ossl_read_der()`                    | `read_der`                          |
+//! | `OSSL_OBJECT_PKEY` et al.            | `ObjectType`                        |
+//! | `OSSL_PARAM` decoder output array    | `DecodedObject`                     |
+//! | `PROV_R_*` error codes               | `EndecoderError`                    |
 //!
 //! # Rules Enforced
 //!
@@ -258,7 +258,7 @@ pub enum EndecoderError {
     UnsupportedFormat(String),
 }
 
-/// Convert [`EndecoderError`] into [`ProviderError`] for propagation
+/// Convert `EndecoderError` into `ProviderError` for propagation
 /// across the provider boundary.
 ///
 /// Maps encoder/decoder errors to the provider-level dispatch error
@@ -296,8 +296,8 @@ impl From<EndecoderError> for ProviderError {
 /// * `keymgmt` — Key management provider implementing the algorithm-specific
 ///   import.
 /// * `selection` — Bitflags indicating which key components to import
-///   ([`KeySelection::PRIVATE_KEY`], [`KeySelection::PUBLIC_KEY`],
-///   [`KeySelection::DOMAIN_PARAMETERS`], or combinations thereof).
+///   (`KeySelection::PRIVATE_KEY`, `KeySelection::PUBLIC_KEY`,
+///   `KeySelection::DOMAIN_PARAMETERS`, or combinations thereof).
 /// * `params` — Typed parameter set containing the key material fields.
 ///
 /// # Errors
@@ -352,7 +352,7 @@ pub fn import_key(
 
 /// Explicitly release a key object.
 ///
-/// In Rust, this simply drops the key — the [`Drop`] trait handles secure
+/// In Rust, this simply drops the key — the `Drop` trait handles secure
 /// cleanup (including zeroization of key material via `zeroize::Zeroize`
 /// where applicable).
 ///
@@ -397,7 +397,7 @@ pub fn free_key(key: Box<dyn KeyData>) {
 ///
 /// # Errors
 ///
-/// Returns [`ProviderError::Dispatch`] if the input is empty, truncated, or
+/// Returns `ProviderError::Dispatch` if the input is empty, truncated, or
 /// contains an invalid DER TLV header.  Returns [`ProviderError::Common`]
 /// if the parsed DER fails structural validation.  Uses checked arithmetic
 /// throughout per Rule R6.
@@ -557,8 +557,8 @@ fn parse_der_tlv_length(input: &[u8]) -> ProviderResult<usize> {
 ///
 /// Key selection is hierarchical in OpenSSL:
 ///
-/// - [`KeySelection::PRIVATE_KEY`] implies [`KeySelection::PUBLIC_KEY`]
-///   which implies [`KeySelection::DOMAIN_PARAMETERS`]
+/// - `KeySelection::PRIVATE_KEY` implies `KeySelection::PUBLIC_KEY`
+///   which implies `KeySelection::DOMAIN_PARAMETERS`
 /// - A decoder that supports private keys inherently supports public keys
 ///   and domain parameters
 ///

@@ -8,16 +8,16 @@
 //!
 //! | C Concept | Rust Equivalent |
 //! |-----------|-----------------|
-//! | `OSSL_PARAM` array (null-terminated) | [`ParamSet`] (`HashMap`-backed, O(1) lookup) |
+//! | `OSSL_PARAM` array (null-terminated) | `ParamSet` (`HashMap`-backed, O(1) lookup) |
 //! | `OSSL_PARAM_locate()` (linear scan) | [`ParamSet::get()`] (hash lookup) |
 //! | `OSSL_PARAM_BLD` (stack builder) | [`ParamBuilder`] (fluent builder pattern) |
 //! | `OSSL_PARAM_BLD_to_param()` | [`ParamBuilder::build()`] |
 //! | `OSSL_PARAM_INTEGER` / `UNSIGNED_INTEGER` | [`ParamValue::Int32`], [`ParamValue::UInt32`], etc. |
 //! | `OSSL_PARAM_REAL` | [`ParamValue::Real`] |
-//! | `OSSL_PARAM_UTF8_STRING` | [`ParamValue::Utf8String`] |
-//! | `OSSL_PARAM_OCTET_STRING` | [`ParamValue::OctetString`] |
-//! | `ossl_param_construct_*` | [`ParamBuilder::push_*()`] |
-//! | `params_from_text.c` text parsing | [`from_text()`] |
+//! | `OSSL_PARAM_UTF8_STRING` | `ParamValue::Utf8String` |
+//! | `OSSL_PARAM_OCTET_STRING` | `ParamValue::OctetString` |
+//! | `ossl_param_construct_*` | `ParamBuilder::push_*()` |
+//! | `params_from_text.c` text parsing | `from_text()` |
 //! | `params_dup.c` duplication | [`ParamSet::duplicate()`] (leverages `Clone`) |
 //!
 //! # Design Principles
@@ -138,7 +138,7 @@ impl ParamValue {
         }
     }
 
-    /// Extracts a string slice if this value is [`ParamValue::Utf8String`].
+    /// Extracts a string slice if this value is `ParamValue::Utf8String`.
     ///
     /// Returns `None` for any other variant.
     pub fn as_str(&self) -> Option<&str> {
@@ -148,7 +148,7 @@ impl ParamValue {
         }
     }
 
-    /// Extracts a byte slice if this value is [`ParamValue::OctetString`].
+    /// Extracts a byte slice if this value is `ParamValue::OctetString`.
     ///
     /// Returns `None` for any other variant.
     pub fn as_bytes(&self) -> Option<&[u8]> {
@@ -335,7 +335,7 @@ impl ParamSet {
 // ParamBuilder — fluent builder (replaces OSSL_PARAM_BLD)
 // ---------------------------------------------------------------------------
 
-/// A fluent builder for constructing [`ParamSet`] instances.
+/// A fluent builder for constructing `ParamSet` instances.
 ///
 /// Replaces the C `OSSL_PARAM_BLD` API pattern where parameters are pushed
 /// one-by-one and then converted into a flat `OSSL_PARAM` array via
@@ -422,7 +422,7 @@ impl ParamBuilder {
         self
     }
 
-    /// Consumes the builder and produces a [`ParamSet`].
+    /// Consumes the builder and produces a `ParamSet`.
     ///
     /// If duplicate keys were pushed, the last value for each key wins
     /// (matching `HashMap::insert` semantics).
@@ -441,7 +441,7 @@ impl ParamBuilder {
 // FromParam — type-safe extraction trait
 // ---------------------------------------------------------------------------
 
-/// Trait for extracting a typed value from a [`ParamValue`].
+/// Trait for extracting a typed value from a `ParamValue`.
 ///
 /// Implementations handle type checking and safe numeric conversion.
 /// All narrowing conversions use `TryFrom` per Rule R6 — no bare `as` casts.
@@ -583,7 +583,7 @@ impl FromParam for bool {
 // from_text — text-to-ParamValue parser (replaces params_from_text.c)
 // ---------------------------------------------------------------------------
 
-/// Parses a string representation into a [`ParamValue`], associating it with
+/// Parses a string representation into a `ParamValue`, associating it with
 /// the given key.
 ///
 /// Replaces `OSSL_PARAM_allocate_from_text()` from `crypto/params_from_text.c`.

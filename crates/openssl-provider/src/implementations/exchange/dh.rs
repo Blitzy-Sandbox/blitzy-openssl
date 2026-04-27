@@ -4,7 +4,7 @@
 //! key agreement (RFC 3526 MODP groups, RFC 7919 FFDHE groups).
 //!
 //! Supports two derivation modes:
-//! - **Plain DH:** Raw shared secret via [`compute_key`] (padded or unpadded).
+//! - **Plain DH:** Raw shared secret via `compute_key` (padded or unpadded).
 //! - **X9.42 ASN.1 KDF:** Shared secret passed through an X9.42-style KDF
 //!   (ANSI X9.42 / RFC 2631) with configurable digest, optional UKM (User
 //!   Keying Material), and target CEK algorithm identifier.
@@ -15,9 +15,9 @@
 //! [`openssl_crypto::dh`] module while adding:
 //!
 //! - Lifecycle management (`init` → `set_peer` → `derive`)
-//! - Named-group parameter negotiation via [`ParamSet`]
+//! - Named-group parameter negotiation via `ParamSet`
 //! - State validation (cannot derive without peer key)
-//! - Secure zeroing of all private key material via [`zeroize`]
+//! - Secure zeroing of all private key material via `zeroize`
 //! - Optional X9.42 ASN.1 KDF post-processing of the shared secret
 //!
 //! # Wiring Path (Rule R10)
@@ -39,16 +39,16 @@
 //! - User Keying Material (UKM) held in [`Zeroizing<Vec<u8>>`] to prevent
 //!   leaks after KDF completion.
 //! - Shared secret (`Z`) scratch buffer zeroed after KDF processing.
-//! - Shared secret validated by [`compute_key`]: rejects `0`, `1`, and `p−1`.
+//! - Shared secret validated by `compute_key`: rejects `0`, `1`, and `p−1`.
 //! - Zero `unsafe` blocks (Rule R8).
 //!
 //! # C Source Mapping
 //!
 //! | Rust construct | C construct | Source (`dh_exch.c`) |
 //! |----------------|-------------|--------------------|
-//! | [`DhExchange`]                        | `ossl_dh_keyexch_functions` dispatch | lines 514-528 |
-//! | [`DhExchangeContext`]                 | `PROV_DH_CTX`                         | lines 65-83   |
-//! | [`DhKdfType`]                         | `enum kdf_type`                       | lines 54-57   |
+//! | `DhExchange`                        | `ossl_dh_keyexch_functions` dispatch | lines 514-528 |
+//! | `DhExchangeContext`                 | `PROV_DH_CTX`                         | lines 65-83   |
+//! | `DhKdfType`                         | `enum kdf_type`                       | lines 54-57   |
 //! | [`DhExchange::new_ctx`]               | `dh_newctx()`                         | lines 85-98   |
 //! | [`DhExchangeContext::init`]           | `dh_init()`                           | lines 131-152 |
 //! | [`DhExchangeContext::set_peer`]       | `dh_set_peer()` + `dh_match_params()` | lines 155-182 |
@@ -57,7 +57,7 @@
 //! | X9.42 KDF derive                      | `dh_X9_42_kdf_derive()`               | lines 220-260 |
 //! | [`DhExchangeContext::get_params`]     | `dh_get_ctx_params()`                 | lines 467-512 |
 //! | [`DhExchangeContext::set_params`]     | `dh_set_ctx_params()`                 | lines 349-453 |
-//! | [`descriptors`]                       | `ossl_dh_keyexch_functions` table     | lines 514-528 |
+//! | `descriptors`                       | `ossl_dh_keyexch_functions` table     | lines 514-528 |
 //!
 //! Replaces `providers/implementations/exchange/dh_exch.c` (~529 lines).
 
@@ -186,7 +186,7 @@ impl DhKdfType {
 /// `Drop`.
 ///
 /// All sensitive material (private key bytes, UKM) is held in
-/// [`Zeroizing<Vec<u8>>`] or scrubbed explicitly in [`Drop`], so no
+/// [`Zeroizing<Vec<u8>>`] or scrubbed explicitly in `Drop`, so no
 /// secret remains in memory after the context is dropped.
 ///
 /// Replaces the C struct `PROV_DH_CTX` (dh_exch.c:65-83):
@@ -209,7 +209,7 @@ impl DhKdfType {
 pub struct DhExchangeContext {
     /// Local private key material (big-endian bytes).
     ///
-    /// Zeroed on drop via [`Zeroizing`]. Corresponds to the private
+    /// Zeroed on drop via `Zeroizing`. Corresponds to the private
     /// component of C `pdhctx->dh`.
     our_private: Option<Zeroizing<Vec<u8>>>,
     /// Peer's public key (big-endian bytes). Corresponds to the public
@@ -308,7 +308,7 @@ impl DhExchangeContext {
     /// `DH_compute_key_padded` (fixed-size, zero-padded output) or
     /// `DH_compute_key` (stripped leading zeros).
     ///
-    /// The Rust [`compute_key`] always returns the padded form; if
+    /// The Rust `compute_key` always returns the padded form; if
     /// `self.pad == false` this method strips leading zero bytes to match
     /// the unpadded semantics.
     ///
@@ -316,10 +316,10 @@ impl DhExchangeContext {
     ///
     /// # Errors
     ///
-    /// - [`ProviderError::Dispatch`] — missing key/peer (C: `PROV_R_MISSING_KEY`)
+    /// - `ProviderError::Dispatch` — missing key/peer (C: `PROV_R_MISSING_KEY`)
     /// - [`ProviderError::Common`] with [`CommonError::InvalidArgument`]
     ///   — output buffer too small (C: `PROV_R_OUTPUT_BUFFER_TOO_SMALL`)
-    /// - [`ProviderError::Dispatch`] — wrapping any crypto-layer failure
+    /// - `ProviderError::Dispatch` — wrapping any crypto-layer failure
     fn plain_derive(&self, secret: &mut [u8]) -> ProviderResult<usize> {
         // Compute the raw padded shared secret first.
         let shared = self.compute_padded_shared()?;
@@ -372,7 +372,7 @@ impl DhExchangeContext {
     /// The Rust translation retains identical semantics:
     /// - Scratch `Z` is stored in [`Zeroizing<Vec<u8>>`] so it is zeroed
     ///   on drop.
-    /// - The KDF is implemented inline using [`digest_one_shot`] for each
+    /// - The KDF is implemented inline using `digest_one_shot` for each
     ///   hash-chain block (matching the algorithm used by the in-tree
     ///   `X942KdfProvider`), avoiding a cross-crate dependency.
     ///
@@ -505,7 +505,7 @@ impl DhExchangeContext {
     /// Internal helper: computes the padded DH shared secret using the
     /// currently stored private and peer keys.
     ///
-    /// Returns the raw padded output from [`compute_key`] — callers are
+    /// Returns the raw padded output from `compute_key` — callers are
     /// responsible for stripping leading zeros or applying a KDF.
     fn compute_padded_shared(&self) -> ProviderResult<Vec<u8>> {
         let priv_bytes = self.our_private.as_ref().ok_or_else(|| {
@@ -782,8 +782,8 @@ impl KeyExchangeContext for DhExchangeContext {
 
     /// Derives the shared secret, optionally applying the configured KDF.
     ///
-    /// Dispatches on [`DhKdfType`] to either [`plain_derive`](Self::plain_derive)
-    /// or [`x942_kdf_derive`](Self::x942_kdf_derive). Matches C `dh_derive()`
+    /// Dispatches on `DhKdfType` to either `plain_derive`
+    /// or `x942_kdf_derive`. Matches C `dh_derive()`
     /// at `dh_exch.c:262-280`.
     fn derive(&mut self, secret: &mut [u8]) -> ProviderResult<usize> {
         trace!(kdf_type = ?self.kdf_type, out_buf_len = secret.len(), "DH exchange: derive");
@@ -884,7 +884,7 @@ impl Drop for DhExchangeContext {
     /// The private key and UKM are held in [`Zeroizing<Vec<u8>>`], which
     /// scrubs memory on its own drop. This explicit pass ensures any
     /// future field additions that hold secret material get scrubbed
-    /// even before their own [`Drop`] runs.
+    /// even before their own `Drop` runs.
     fn drop(&mut self) {
         if let Some(ref mut priv_key) = self.our_private {
             priv_key.zeroize();
@@ -901,7 +901,7 @@ impl Drop for DhExchangeContext {
 
 /// Finite-field Diffie-Hellman key exchange provider.
 ///
-/// Implements [`KeyExchangeProvider`]. Creates [`DhExchangeContext`]
+/// Implements `KeyExchangeProvider`. Creates `DhExchangeContext`
 /// instances via [`new_ctx`](KeyExchangeProvider::new_ctx).
 ///
 /// Replaces the C `ossl_dh_keyexch_functions` dispatch table at
@@ -924,7 +924,7 @@ impl KeyExchangeProvider for DhExchange {
         "DH"
     }
 
-    /// Creates a fresh, uninitialised [`DhExchangeContext`].
+    /// Creates a fresh, uninitialised `DhExchangeContext`.
     ///
     /// Boxed as `Box<dyn KeyExchangeContext>` to integrate with the
     /// provider trait-object dispatch framework. C equivalent:

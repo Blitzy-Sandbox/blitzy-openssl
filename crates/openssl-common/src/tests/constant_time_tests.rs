@@ -18,16 +18,16 @@
 //!
 //! # Coverage
 //!
-//! - MSB extraction: [`constant_time_msb`], [`constant_time_msb_64`]
-//! - Less-than: [`constant_time_lt`], [`constant_time_lt_8`], [`constant_time_lt_64`]
-//! - Greater-or-equal: [`constant_time_ge`], [`constant_time_ge_8`]
-//! - Zero check: [`constant_time_is_zero`], [`constant_time_is_zero_8`]
-//! - Equality: [`constant_time_eq`], [`constant_time_eq_8`], [`constant_time_eq_int`],
-//!   [`constant_time_eq_int_8`]
-//! - Selection: [`constant_time_select`], [`constant_time_select_8`],
-//!   [`constant_time_select_64`], [`constant_time_select_int`]
-//! - Memory comparison: [`memcmp`], [`memcmp_choice`]
-//! - Conditional copy: [`constant_time_copy_if_choice`]
+//! - MSB extraction: `constant_time_msb`, `constant_time_msb_64`
+//! - Less-than: `constant_time_lt`, `constant_time_lt_8`, `constant_time_lt_64`
+//! - Greater-or-equal: `constant_time_ge`, `constant_time_ge_8`
+//! - Zero check: `constant_time_is_zero`, `constant_time_is_zero_8`
+//! - Equality: `constant_time_eq`, `constant_time_eq_8`, `constant_time_eq_int`,
+//!   `constant_time_eq_int_8`
+//! - Selection: `constant_time_select`, `constant_time_select_8`,
+//!   `constant_time_select_64`, `constant_time_select_int`
+//! - Memory comparison: `memcmp`, `memcmp_choice`
+//! - Conditional copy: `constant_time_copy_if_choice`
 //! - Bitmask pattern validation (all-ones or all-zeros invariant)
 //!
 //! # Rules Enforced

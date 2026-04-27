@@ -789,7 +789,7 @@ const HMAC_EMPTY_HEX: &str = "27dbd7d1cc8b90af090eeb8257ac3bc2b8cdfe63d680f81c15
 /// correctly-computed HMAC-SHA-256 checksum.  The production code must:
 /// - Accept the checksum via constant-time comparison (`subtle::ConstantTimeEq`)
 /// - Zero-wipe the computed MAC buffer on drop (via `zeroize`)
-/// - Return `Ok(())` with no side effects on [`FIPS_MODULE_STATE`]
+/// - Return `Ok(())` with no side effects on `FIPS_MODULE_STATE`
 #[test]
 fn verify_integrity_succeeds_with_valid_checksum() {
     let _serial = TEST_MUTEX.lock().unwrap();
@@ -1034,7 +1034,7 @@ fn is_running_rate_limited_does_not_panic_past_threshold() {
 ///
 /// Success criteria (all observable from this test):
 /// - [`run()`] returns `Ok(())`.
-/// - [`FIPS_MODULE_STATE`] transitions to [`FipsState::Running`].
+/// - `FIPS_MODULE_STATE` transitions to [`FipsState::Running`].
 /// - No per-test slot is in [`TestState::Failed`] (proves the DRBG was
 ///   correctly swapped in — KATs rely on deterministic DRBG output).
 ///
@@ -1163,7 +1163,7 @@ fn run_verifies_rng_restoration_after_successful_post() {
 ///   Error state and returns [`FipsError::NotOperational`] without
 ///   re-running the pipeline (or their pre-lock check sees Error first).
 /// - All three threads return `Err` — no deadlock, no panic.
-/// - Final [`FIPS_MODULE_STATE`] is Error.
+/// - Final `FIPS_MODULE_STATE` is Error.
 ///
 /// This test MUST NOT acquire `SELF_TEST_LOCK.write()` directly then call
 /// `run()` — that would deadlock because `run()` acquires the same lock

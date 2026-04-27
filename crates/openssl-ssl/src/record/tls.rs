@@ -1,6 +1,6 @@
 //! TLS-specific implementation of [`RecordMethod`].
 //!
-//! This module provides [`TlsRecordMethod`] — the production implementation
+//! This module provides `TlsRecordMethod` — the production implementation
 //! of the record-layer backend for TLS 1.0 / 1.1 / 1.2 / 1.3 connections.
 //! It is a direct translation of the stream-record path in
 //! `ssl/record/rec_layer_s3.c` and the TLS-specific helpers in
@@ -10,9 +10,9 @@
 //!
 //! # Architecture
 //!
-//! [`TlsRecordMethod`] is a zero-sized singleton implementing the
+//! `TlsRecordMethod` is a zero-sized singleton implementing the
 //! [`RecordMethod`] trait. Per-connection state is carried by
-//! [`TlsRecordInstance`], which owns:
+//! `TlsRecordInstance`, which owns:
 //!
 //! * cryptographic material (encryption key, IV, MAC key, cipher name);
 //! * record sequencing (wire-format sequence number, pipelining counters);
@@ -33,13 +33,13 @@
 //!   or `usize::try_from`; no bare `as` narrowing appears outside the
 //!   explicit truncation points annotated with `// TRUNCATION:`.
 //! * **R7 — Concurrency:** `TlsRecordInstance` is per-connection and owned
-//!   by its [`SslConnection`](crate::ssl::Ssl); no shared mutation exists.
+//!   by its `SslConnection`; no shared mutation exists.
 //!   `LOCK-SCOPE: none — per-connection state, single owner.`
 //! * **R8 — No unsafe:** zero `unsafe` blocks. The crate root declares
 //!   `#![forbid(unsafe_code)]`.
 //! * **R9 — Warning-free:** documented public API, no warnings.
 //! * **R10 — Wiring:** every public item is reachable from
-//!   [`TlsRecordMethod::new_record_layer`] and exercised in the test module.
+//!   `TlsRecordMethod::new_record_layer` and exercised in the test module.
 //!
 //! # Security
 //!
@@ -124,8 +124,8 @@ impl TlsProtocolMode {
 ///
 /// This type is a unit struct and is safe to construct repeatedly; a single
 /// instance can be shared across all TLS connections in the process. Per-
-/// connection state is stored in [`TlsRecordInstance`] values created by
-/// [`TlsRecordMethod::new_record_layer`].
+/// connection state is stored in `TlsRecordInstance` values created by
+/// `TlsRecordMethod::new_record_layer`.
 ///
 /// # Translation Note
 ///
@@ -240,8 +240,8 @@ pub struct TlsRecordInstance {
 }
 
 impl TlsRecordInstance {
-    /// Constructs a [`TlsRecordInstance`] from the arguments accepted by
-    /// [`TlsRecordMethod::new_record_layer`]. The caller must have already
+    /// Constructs a `TlsRecordInstance` from the arguments accepted by
+    /// `TlsRecordMethod::new_record_layer`. The caller must have already
     /// validated the argument semantics (e.g. that `tag_len == 0` implies
     /// non-AEAD) — this constructor performs only structural population
     /// and is therefore infallible.
@@ -530,7 +530,7 @@ impl RecordLayerInstance for TlsRecordInstance {
 
     /// Returns a `&dyn Any` view of `self` for safe downcasting.
     ///
-    /// Used by [`as_tls_instance`] to recover the concrete type without
+    /// Used by `as_tls_instance` to recover the concrete type without
     /// resorting to `unsafe`. Per R8 the entire crate compiles under
     /// `#![forbid(unsafe_code)]`.
     fn as_any(&self) -> &dyn Any {
@@ -566,7 +566,7 @@ impl Drop for TlsRecordInstance {
 /// missing or unrepresentable.
 ///
 /// Delegates to the canonical [`super::param_get_bool`] helper. The
-/// [`ParamValue`] enum has no native `Bool` variant — booleans are encoded
+/// `ParamValue` enum has no native `Bool` variant — booleans are encoded
 /// as `UInt32` with non-zero meaning `true`.
 fn param_bool(set: &ParamSet, key: &str) -> bool {
     super::param_get_bool(set, key)
@@ -627,7 +627,7 @@ fn as_tls_instance(
         .ok_or(RlayerReturn::Fatal)
 }
 
-/// Mutable variant of [`as_tls_instance`].
+/// Mutable variant of `as_tls_instance`.
 fn as_tls_instance_mut(
     rl: &mut dyn RecordLayerInstance,
 ) -> Result<&mut TlsRecordInstance, RlayerReturn> {

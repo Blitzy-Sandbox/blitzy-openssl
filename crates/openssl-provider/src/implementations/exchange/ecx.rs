@@ -31,7 +31,7 @@
 //! - Private key material is held in a `Zeroizing<Vec<u8>>` wrapper and
 //!   explicitly zeroed on drop via [`zeroize::Zeroize`] (Rule R8).
 //! - Key-length mismatches are rejected before any cryptographic work.
-//! - All cryptographic errors surface as [`ProviderError`]; none silently
+//! - All cryptographic errors surface as `ProviderError`; none silently
 //!   succeed.
 //! - Zero `unsafe` blocks — the crate enforces `#![forbid(unsafe_code)]`.
 //!
@@ -39,20 +39,20 @@
 //!
 //! | Rust construct                        | C construct                                  | Source (`ecx_exch.c`) |
 //! |---------------------------------------|----------------------------------------------|------------------------|
-//! | [`X25519Exchange`]                    | `ossl_x25519_keyexch_functions` dispatch     | lines 215–226          |
-//! | [`X448Exchange`]                      | `ossl_x448_keyexch_functions` dispatch       | lines 228–239          |
+//! | `X25519Exchange`                    | `ossl_x25519_keyexch_functions` dispatch     | lines 215–226          |
+//! | `X448Exchange`                      | `ossl_x448_keyexch_functions` dispatch       | lines 228–239          |
 //! | [`X25519Exchange::new_ctx`]           | `x25519_newctx` → `ecx_newctx(_, 32)`        | lines 49–64            |
 //! | [`X448Exchange::new_ctx`]             | `x448_newctx` → `ecx_newctx(_, 56)`          | lines 66–72            |
-//! | [`EcxExchangeContext`]                | `PROV_ECX_CTX`                               | lines 43–47            |
+//! | `EcxExchangeContext`                | `PROV_ECX_CTX`                               | lines 43–47            |
 //! | [`EcxExchangeContext::init`]          | `ecx_init` / `x25519_init` / `x448_init`     | lines 75–111           |
 //! | [`EcxExchangeContext::set_peer`]      | `ecx_set_peer`                               | lines 113–132          |
 //! | [`EcxExchangeContext::derive`]        | `ecx_derive` → `ossl_ecx_compute_key`        | lines 134–143          |
 //! | [`EcxExchangeContext::get_params`]    | `ecx_get_ctx_params`                         | lines 200–213          |
 //! | [`EcxExchangeContext::set_params`]    | (no dispatch entry)                          | n/a                    |
-//! | [`EcxAlgorithm`]                      | `keylen` + algorithm discriminator           | inline constants       |
+//! | `EcxAlgorithm`                      | `keylen` + algorithm discriminator           | inline constants       |
 //! | `Drop for EcxExchangeContext`         | `ecx_freectx` → `ossl_ecx_key_free`          | lines 145–153          |
 //! | `Clone for EcxExchangeContext`        | `ecx_dupctx`                                 | lines 155–182          |
-//! | [`descriptors`]                       | two dispatch tables registered by provider   | lines 215–239          |
+//! | `descriptors`                       | two dispatch tables registered by provider   | lines 215–239          |
 //!
 //! Replaces C `providers/implementations/exchange/ecx_exch.c`.
 
@@ -123,8 +123,8 @@ impl EcxAlgorithm {
         }
     }
 
-    /// Maps this algorithm variant to the crypto-layer [`EcxKeyType`]
-    /// discriminant used by [`EcxPrivateKey`] / [`EcxPublicKey`].
+    /// Maps this algorithm variant to the crypto-layer `EcxKeyType`
+    /// discriminant used by `EcxPrivateKey` / `EcxPublicKey`.
     ///
     /// Takes `self` by value because `EcxAlgorithm` is `Copy` — clippy
     /// flags `&self` as unnecessary for a trivially-copyable type.
@@ -149,7 +149,7 @@ impl std::fmt::Display for EcxAlgorithm {
 /// X25519 key exchange provider.
 ///
 /// Zero-sized handle that, when fetched from the provider framework,
-/// creates new [`EcxExchangeContext`] instances configured for X25519
+/// creates new `EcxExchangeContext` instances configured for X25519
 /// (32-byte private/public keys, 32-byte shared secrets).
 ///
 /// Replaces the C `ossl_x25519_keyexch_functions` dispatch table from
@@ -184,7 +184,7 @@ impl KeyExchangeProvider for X25519Exchange {
 /// X448 key exchange provider.
 ///
 /// Zero-sized handle that, when fetched from the provider framework,
-/// creates new [`EcxExchangeContext`] instances configured for X448
+/// creates new `EcxExchangeContext` instances configured for X448
 /// (56-byte private/public keys, 56-byte shared secrets).
 ///
 /// Replaces the C `ossl_x448_keyexch_functions` dispatch table from
@@ -220,11 +220,11 @@ impl KeyExchangeProvider for X448Exchange {
 ///
 /// Holds:
 ///
-/// - The configured [`EcxAlgorithm`] variant (determines expected key length
+/// - The configured `EcxAlgorithm` variant (determines expected key length
 ///   and output size).
-/// - The local private key bytes (populated by [`init`]); stored inside a
-///   [`Zeroizing`] wrapper so the material is reliably erased on drop.
-/// - The peer's public key bytes (populated by [`set_peer`]).
+/// - The local private key bytes (populated by `init`); stored inside a
+///   `Zeroizing` wrapper so the material is reliably erased on drop.
+/// - The peer's public key bytes (populated by `set_peer`).
 ///
 /// Typical lifecycle:
 ///
@@ -238,7 +238,7 @@ impl KeyExchangeProvider for X448Exchange {
 ///
 /// Replaces C `PROV_ECX_CTX` from `ecx_exch.c` lines 43–47. The C struct
 /// carries `keylen`, `key` (an `ECX_KEY *` reference-counted handle) and
-/// `peerkey`; our representation folds `keylen` into the [`EcxAlgorithm`]
+/// `peerkey`; our representation folds `keylen` into the `EcxAlgorithm`
 /// discriminator and stores keys directly as byte vectors.
 ///
 /// [`init`]: EcxExchangeContext::init
@@ -246,13 +246,13 @@ impl KeyExchangeProvider for X448Exchange {
 pub struct EcxExchangeContext {
     /// Which algorithm this context is configured for.
     algorithm: EcxAlgorithm,
-    /// Local private-key bytes. `None` until [`init`] has been called.
-    /// Wrapped in [`Zeroizing`] so the material is erased when the option
+    /// Local private-key bytes. `None` until `init` has been called.
+    /// Wrapped in `Zeroizing` so the material is erased when the option
     /// is overwritten or the context is dropped.
     ///
     /// [`init`]: EcxExchangeContext::init
     key: Option<Zeroizing<Vec<u8>>>,
-    /// Peer public-key bytes. `None` until [`set_peer`] has been called.
+    /// Peer public-key bytes. `None` until `set_peer` has been called.
     ///
     /// Peer material is public, so it is held as a plain `Vec<u8>`. It is
     /// nevertheless explicitly zeroed on drop for defence in depth.
@@ -262,10 +262,10 @@ pub struct EcxExchangeContext {
 }
 
 impl EcxExchangeContext {
-    /// Creates a new context for the specified [`EcxAlgorithm`].
+    /// Creates a new context for the specified `EcxAlgorithm`.
     ///
     /// The returned context has no private key and no peer key installed;
-    /// [`init`] and [`set_peer`] must be called before [`derive`] will
+    /// `init` and `set_peer` must be called before `derive` will
     /// succeed.
     ///
     /// Replaces the C `ecx_newctx()` helper from `ecx_exch.c` lines 49–59.
@@ -281,7 +281,7 @@ impl EcxExchangeContext {
         }
     }
 
-    /// Returns the [`EcxAlgorithm`] this context was created for.
+    /// Returns the `EcxAlgorithm` this context was created for.
     pub fn algorithm(&self) -> EcxAlgorithm {
         self.algorithm
     }
@@ -293,7 +293,7 @@ impl EcxExchangeContext {
     }
 
     /// Internal helper — returns `true` once a private key has been installed
-    /// via [`init`].
+    /// via `init`.
     ///
     /// [`init`]: EcxExchangeContext::init
     fn has_key(&self) -> bool {
@@ -301,7 +301,7 @@ impl EcxExchangeContext {
     }
 
     /// Internal helper — returns `true` once a peer key has been installed
-    /// via [`set_peer`].
+    /// via `set_peer`.
     ///
     /// [`set_peer`]: EcxExchangeContext::set_peer
     fn has_peer(&self) -> bool {
@@ -314,8 +314,8 @@ impl std::fmt::Debug for EcxExchangeContext {
     ///
     /// Only reports which algorithm the context is configured for and
     /// whether each key slot is populated. The actual key bytes in
-    /// [`self.key`](EcxExchangeContext::key) and
-    /// [`self.peer_key`](EcxExchangeContext::peer_key) are deliberately
+    /// `self.key` and
+    /// `self.peer_key` are deliberately
     /// omitted — we call [`std::fmt::DebugStruct::finish_non_exhaustive`]
     /// to signal that the omission is intentional.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -448,9 +448,9 @@ impl KeyExchangeContext for EcxExchangeContext {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Init`] if [`init`] has not been called
-    /// (no private key installed) or if [`set_peer`] has not been called
-    /// (no peer key installed). Returns [`ProviderError::Dispatch`] if the
+    /// Returns [`ProviderError::Init`] if `init` has not been called
+    /// (no private key installed) or if `set_peer` has not been called
+    /// (no peer key installed). Returns `ProviderError::Dispatch` if the
     /// underlying scalar multiplication reports an error (for example,
     /// an internal invariant violation in the crypto layer).
     ///
@@ -547,7 +547,7 @@ impl KeyExchangeContext for EcxExchangeContext {
     /// ECX key exchange exposes no settable parameters in non-FIPS builds —
     /// the C dispatch tables at `ecx_exch.c` lines 215–239 deliberately
     /// omit `OSSL_FUNC_KEYEXCH_SET_CTX_PARAMS`. We honour this by
-    /// accepting any [`ParamSet`] (including the empty set) without error,
+    /// accepting any `ParamSet` (including the empty set) without error,
     /// which preserves forward compatibility should callers pre-emptively
     /// supply parameters intended for other algorithm families.
     fn set_params(&mut self, _params: &ParamSet) -> ProviderResult<()> {
@@ -568,7 +568,7 @@ impl Drop for EcxExchangeContext {
     /// deallocated.
     ///
     /// The private-key storage (`self.key`) is already wrapped in
-    /// [`Zeroizing`], which performs the wipe automatically when the
+    /// `Zeroizing`, which performs the wipe automatically when the
     /// `Option` is dropped. We additionally zero `self.peer_key` (a plain
     /// `Vec<u8>`) for defence in depth — peer keys are public material and
     /// therefore not strictly secret, but the cost of wiping them is
@@ -598,7 +598,7 @@ impl Drop for EcxExchangeContext {
 // descriptors — algorithm registration for the provider framework
 // =============================================================================
 
-/// Returns the set of [`AlgorithmDescriptor`] values this module registers
+/// Returns the set of `AlgorithmDescriptor` values this module registers
 /// with the provider framework.
 ///
 /// Exposes two entries — X25519 and X448 — both under the default provider

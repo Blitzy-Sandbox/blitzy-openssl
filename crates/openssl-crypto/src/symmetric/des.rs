@@ -12,11 +12,11 @@
 //! |----------------------|------------------|-------|
 //! | [`Des`]              | `crypto/des/des_enc.c` (block primitive), `crypto/des/set_key.c` (key schedule) | Single-DES |
 //! | [`TripleDes`]        | `crypto/des/ecb3_enc.c`, `crypto/des/des_enc.c` (`DES_encrypt3`/`DES_decrypt3`) | EDE2/EDE3 |
-//! | [`DesKeySchedule`]   | `crypto/des/set_key.c` (`DES_set_key*`, `DES_is_weak_key`) | 16 round subkey pairs |
+//! | `DesKeySchedule`     | `crypto/des/set_key.c` (`DES_set_key*`, `DES_is_weak_key`) | 16 round subkey pairs |
 //! | `DES_SPTRANS`        | `crypto/des/spr.h` | 8×64 precomputed S-box/P-permutation table |
 //! | `DES_SKB`            | `crypto/des/set_key.c` (`des_skb`) | 8×64 PC-1/PC-2 key schedule tables |
-//! | [`des_cbc_encrypt`]  | `crypto/des/ncbc_enc.c` | Delegates to generic [`cbc_encrypt`](crate::symmetric::cbc_encrypt) |
-//! | [`triple_des_cbc_encrypt`] | `crypto/des/cbc_enc.c` (3DES CBC) | Delegates to generic [`cbc_encrypt`](crate::symmetric::cbc_encrypt) |
+//! | `des_cbc_encrypt`    | `crypto/des/ncbc_enc.c` | Delegates to generic [`cbc_encrypt`](crate::symmetric::cbc_encrypt) |
+//! | `triple_des_cbc_encrypt` | `crypto/des/cbc_enc.c` (3DES CBC) | Delegates to generic [`cbc_encrypt`](crate::symmetric::cbc_encrypt) |
 //!
 //! ## Security Warning
 //!
@@ -37,7 +37,7 @@
 //!
 //! | Site | Table | Lookups per block | Lookups per encryption |
 //! |------|-------|-------------------|------------------------|
-//! | [`d_encrypt_round`] (Feistel round) | `DES_SPTRANS` | 8 × 16 rounds = 128 | 128 (DES) / 384 (3DES) |
+//! | `d_encrypt_round` (Feistel round) | `DES_SPTRANS` | 8 × 16 rounds = 128 | 128 (DES) / 384 (3DES) |
 //! | DES key schedule (`des_set_key`)    | `DES_SKB`     | up to 64 per key   | once per key load |
 //!
 //! Each indexed lookup `DES_SPTRANS[i][idx]` and `DES_SKB[i][idx]` is a
@@ -172,7 +172,7 @@
 //! ## Key Material Security
 //!
 //! All structures holding DES key material (`DesKeySchedule`, `Des`,
-//! `TripleDes`) derive [`Zeroize`] and [`ZeroizeOnDrop`] to ensure round
+//! `TripleDes`) derive [`Zeroize`] and `ZeroizeOnDrop` to ensure round
 //! subkeys and key bytes are securely erased from memory when dropped. This
 //! replaces the C `OPENSSL_cleanse()` call pattern per AAP §0.7.6.
 //!

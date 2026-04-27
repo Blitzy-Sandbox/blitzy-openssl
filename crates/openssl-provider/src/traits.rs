@@ -1,11 +1,11 @@
 //! Provider trait definitions that replace C `OSSL_DISPATCH` function pointer tables.
 //!
 //! Defines the full trait hierarchy for all algorithm categories:
-//! [`DigestProvider`], [`CipherProvider`], [`SignatureProvider`], [`KemProvider`],
-//! [`KdfProvider`], [`MacProvider`], [`KeyMgmtProvider`], [`KeyExchangeProvider`],
-//! [`RandProvider`], [`EncoderProvider`], [`DecoderProvider`], [`StoreProvider`].
+//! `DigestProvider`, `CipherProvider`, `SignatureProvider`, `KemProvider`,
+//! `KdfProvider`, `MacProvider`, `KeyMgmtProvider`, `KeyExchangeProvider`,
+//! `RandProvider`, `EncoderProvider`, `DecoderProvider`, `StoreProvider`.
 //!
-//! Also defines the master [`Provider`] trait with methods for metadata,
+//! Also defines the master `Provider` trait with methods for metadata,
 //! gettable parameters, and operation querying.
 //!
 //! # Architecture
@@ -16,7 +16,7 @@
 //! tables and matching function IDs.
 //!
 //! In the Rust workspace, each `OSSL_DISPATCH` table is replaced by a Rust
-//! trait.  Each algorithm category becomes a trait (e.g. [`DigestProvider`]),
+//! trait.  Each algorithm category becomes a trait (e.g. `DigestProvider`),
 //! and providers implement the relevant traits.  Algorithm selection uses
 //! dynamic dispatch via `Box<dyn AlgorithmProvider>`, preserving runtime
 //! selection while eliminating function-pointer unsafety.
@@ -185,7 +185,7 @@ pub trait Provider: Send + Sync + fmt::Debug {
     /// Replaces `OSSL_FUNC_provider_query_operation` (ID 1027).
     fn query_operation(&self, op: OperationType) -> Option<Vec<AlgorithmDescriptor>>;
 
-    /// Returns provider parameters as a typed [`ParamSet`].
+    /// Returns provider parameters as a typed `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_provider_get_params` (ID 1026).
     fn get_params(&self) -> ProviderResult<ParamSet>;
@@ -225,7 +225,7 @@ pub trait Provider: Send + Sync + fmt::Debug {
 /// Used for type-erasure in the [`MethodStore`](crate::dispatch) when
 /// heterogeneous algorithm implementations need to be stored in a single
 /// collection.  Every algorithm-specific provider trait
-/// ([`DigestProvider`], [`CipherProvider`], etc.) is an implicit sub-concept
+/// (`DigestProvider`, `CipherProvider`, etc.) is an implicit sub-concept
 /// of this marker.
 ///
 /// # Thread Safety
@@ -299,12 +299,12 @@ pub trait DigestContext: Send + Sync {
     /// Replaces `OSSL_FUNC_digest_dupctx` (ID 7).
     fn duplicate(&self) -> ProviderResult<Box<dyn DigestContext>>;
 
-    /// Retrieves context parameters as a typed [`ParamSet`].
+    /// Retrieves context parameters as a typed `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_digest_get_ctx_params` (ID 10).
     fn get_params(&self) -> ProviderResult<ParamSet>;
 
-    /// Sets context parameters from a typed [`ParamSet`].
+    /// Sets context parameters from a typed `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_digest_set_ctx_params` (ID 9).
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()>;
@@ -387,12 +387,12 @@ pub trait CipherContext: Send + Sync {
     /// Replaces `OSSL_FUNC_cipher_final` (ID 5).
     fn finalize(&mut self, output: &mut Vec<u8>) -> ProviderResult<usize>;
 
-    /// Retrieves context parameters as a typed [`ParamSet`].
+    /// Retrieves context parameters as a typed `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_cipher_get_ctx_params` (ID 10).
     fn get_params(&self) -> ProviderResult<ParamSet>;
 
-    /// Sets context parameters from a typed [`ParamSet`].
+    /// Sets context parameters from a typed `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_cipher_set_ctx_params` (ID 11).
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()>;
@@ -451,12 +451,12 @@ pub trait MacContext: Send + Sync {
     /// Replaces `OSSL_FUNC_mac_final` (ID 6).
     fn finalize(&mut self) -> ProviderResult<Vec<u8>>;
 
-    /// Retrieves context parameters as a typed [`ParamSet`].
+    /// Retrieves context parameters as a typed `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_mac_get_ctx_params` (ID 8).
     fn get_params(&self) -> ProviderResult<ParamSet>;
 
-    /// Sets context parameters from a typed [`ParamSet`].
+    /// Sets context parameters from a typed `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_mac_set_ctx_params` (ID 9).
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()>;
@@ -498,7 +498,7 @@ pub trait KdfProvider: Send + Sync {
 pub trait KdfContext: Send + Sync {
     /// Derives key material, writing the result into `key`.
     ///
-    /// The `params` [`ParamSet`] carries algorithm-specific inputs (e.g.
+    /// The `params` `ParamSet` carries algorithm-specific inputs (e.g.
     /// salt, info, password, iteration count).  Returns the number of
     /// bytes written to `key`.
     ///
@@ -511,12 +511,12 @@ pub trait KdfContext: Send + Sync {
     /// Replaces `OSSL_FUNC_kdf_reset` (ID 4).
     fn reset(&mut self) -> ProviderResult<()>;
 
-    /// Retrieves context parameters as a typed [`ParamSet`].
+    /// Retrieves context parameters as a typed `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_kdf_get_ctx_params` (ID 10).
     fn get_params(&self) -> ProviderResult<ParamSet>;
 
-    /// Sets context parameters from a typed [`ParamSet`].
+    /// Sets context parameters from a typed `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_kdf_settable_ctx_params` (ID 8).
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()>;
@@ -616,10 +616,10 @@ pub trait SignatureContext: Send + Sync {
     /// Returns `true` if the signature is valid, `false` otherwise.
     fn digest_verify_final(&mut self, signature: &[u8]) -> ProviderResult<bool>;
 
-    /// Retrieves context parameters as a typed [`ParamSet`].
+    /// Retrieves context parameters as a typed `ParamSet`.
     fn get_params(&self) -> ProviderResult<ParamSet>;
 
-    /// Sets context parameters from a typed [`ParamSet`].
+    /// Sets context parameters from a typed `ParamSet`.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()>;
 }
 
@@ -670,10 +670,10 @@ pub trait KemContext: Send + Sync {
     /// Decapsulates `ciphertext`, returning the shared secret.
     fn decapsulate(&mut self, ciphertext: &[u8]) -> ProviderResult<Vec<u8>>;
 
-    /// Retrieves context parameters as a typed [`ParamSet`].
+    /// Retrieves context parameters as a typed `ParamSet`.
     fn get_params(&self) -> ProviderResult<ParamSet>;
 
-    /// Sets context parameters from a typed [`ParamSet`].
+    /// Sets context parameters from a typed `ParamSet`.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()>;
 }
 
@@ -774,13 +774,13 @@ pub trait KeyMgmtProvider: Send + Sync {
     /// `gen` (IDs 3–6).
     fn generate(&self, params: &ParamSet) -> ProviderResult<Box<dyn KeyData>>;
 
-    /// Imports key material from a [`ParamSet`], selecting the components
+    /// Imports key material from a `ParamSet`, selecting the components
     /// indicated by `selection`.
     ///
     /// Replaces `OSSL_FUNC_keymgmt_import` (ID 8).
     fn import(&self, selection: KeySelection, data: &ParamSet) -> ProviderResult<Box<dyn KeyData>>;
 
-    /// Exports the selected key components as a [`ParamSet`].
+    /// Exports the selected key components as a `ParamSet`.
     ///
     /// Replaces `OSSL_FUNC_keymgmt_export` (ID 9).
     fn export(&self, key: &dyn KeyData, selection: KeySelection) -> ProviderResult<ParamSet>;
@@ -840,10 +840,10 @@ pub trait KeyExchangeContext: Send + Sync {
     /// Returns the number of bytes written.
     fn derive(&mut self, secret: &mut [u8]) -> ProviderResult<usize>;
 
-    /// Retrieves context parameters as a typed [`ParamSet`].
+    /// Retrieves context parameters as a typed `ParamSet`.
     fn get_params(&self) -> ProviderResult<ParamSet>;
 
-    /// Sets context parameters from a typed [`ParamSet`].
+    /// Sets context parameters from a typed `ParamSet`.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()>;
 }
 
@@ -917,7 +917,7 @@ pub trait RandContext: Send + Sync {
     fn enable_locking(&mut self) -> ProviderResult<()>;
 
     /// Retrieves context parameters (e.g. state, `max_request`) as a
-    /// typed [`ParamSet`].
+    /// typed `ParamSet`.
     fn get_params(&self) -> ProviderResult<ParamSet>;
 }
 
@@ -939,7 +939,7 @@ pub trait EncoderProvider: Send + Sync {
     /// Encodes the selected key components into `output`.
     ///
     /// `selection` indicates which key components to include
-    /// (e.g. [`KeySelection::PUBLIC_KEY`] for `SubjectPublicKeyInfo`).
+    /// (e.g. `KeySelection::PUBLIC_KEY` for `SubjectPublicKeyInfo`).
     fn encode(
         &self,
         key: &dyn KeyData,
@@ -1017,7 +1017,7 @@ pub trait StoreContext: Send + Sync {
 /// An object loaded from a cryptographic object store.
 ///
 /// Each variant carries the raw representation of the object type.
-/// The [`Params`](StoreObject::Params) variant uses [`ParamSet`] for
+/// The [`Params`](StoreObject::Params) variant uses `ParamSet` for
 /// provider-defined metadata associated with the loaded object.
 ///
 /// Replaces the C `OSSL_STORE_INFO_*` type constants and associated
@@ -1038,11 +1038,11 @@ pub enum StoreObject {
 // Re-exports — Satisfy schema members_accessed requirements
 // =============================================================================
 
-/// Re-export of [`ParamValue`] for downstream consumers that need to
+/// Re-export of `ParamValue` for downstream consumers that need to
 /// construct or inspect individual parameter values when interacting
 /// with provider trait methods.
 pub use openssl_common::param::ParamValue as ProviderParamValue;
 
-/// Re-export of [`Nid`] for downstream consumers that need numeric
+/// Re-export of `Nid` for downstream consumers that need numeric
 /// algorithm identifiers alongside provider trait operations.
 pub use openssl_common::types::Nid as AlgorithmNid;

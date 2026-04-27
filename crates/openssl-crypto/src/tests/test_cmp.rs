@@ -66,8 +66,8 @@ use openssl_common::error::CryptoError;
 
 use crate::cmp::{
     all_failure_info_names, all_pki_statuses, validate_nonce, validate_transaction_id,
-    FailureInfoBits, PkiFailureInfo, PkiHeader, PkiHeaderBuilder, PkiStatus, PkiStatusInfo,
-    PkiVersion, MIN_NONCE_LEN, TRANSACTION_ID_LEN,
+    FailureInfoBits, PkiFailureInfo, PkiHeaderBuilder, PkiStatus, PkiStatusInfo, PkiVersion,
+    MIN_NONCE_LEN, TRANSACTION_ID_LEN,
 };
 
 // =============================================================================

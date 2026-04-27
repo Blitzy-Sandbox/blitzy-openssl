@@ -1,6 +1,6 @@
 //! Shared type definitions for the OpenSSL Rust workspace.
 //!
-//! Provides newtype wrappers, algorithm identifiers ([`Nid`]), protocol version
+//! Provides newtype wrappers, algorithm identifiers (`Nid`), protocol version
 //! constants ([`ProtocolVersion`]), padding modes ([`PaddingMode`]), key types
 //! ([`KeyType`]), cipher modes ([`CipherMode`]), operation types
 //! ([`OperationType`]), and the [`AlgorithmName`] trait — all foundational types
@@ -16,7 +16,7 @@
 //!
 //! - **Rule R5 (Nullability):** Every fallible conversion returns
 //!   [`Option<T>`] instead of a sentinel value such as `0`, `-1`, or `""`.
-//! - **Rule R6 (Lossless Casts):** The [`Nid`] newtype preserves the raw
+//! - **Rule R6 (Lossless Casts):** The `Nid` newtype preserves the raw
 //!   `i32` from C but all conversions use explicit methods (`as_raw`,
 //!   `from_raw`), never bare `as` casts.
 //! - **Rule R8 (Zero Unsafe):** This module contains zero `unsafe` blocks.
@@ -41,7 +41,7 @@
 //!
 //! | C Construct                        | Rust Equivalent                 |
 //! |------------------------------------|---------------------------------|
-//! | `NID_*` integer `#define` (obj_mac.h) | [`Nid`] newtype constants   |
+//! | `NID_*` integer `#define` (obj_mac.h) | `Nid` newtype constants   |
 //! | `SSL3_VERSION` / `TLS1_3_VERSION`  | [`ProtocolVersion`] enum        |
 //! | `RSA_PKCS1_PADDING` etc.           | [`PaddingMode`] enum            |
 //! | `EVP_PKEY_RSA` / `EVP_PKEY_EC`     | [`KeyType`] enum                |
@@ -138,7 +138,7 @@ impl Nid {
         self.0
     }
 
-    /// Constructs a [`Nid`] from a raw `i32` value.
+    /// Constructs a `Nid` from a raw `i32` value.
     ///
     /// No validation is performed — any `i32` is accepted.  Use the
     /// associated constants for well-known NIDs.
@@ -420,7 +420,7 @@ const NID_HMAC: Nid = Nid(855);
 const NID_CMAC: Nid = Nid(894);
 
 impl KeyType {
-    /// Maps this key type to its canonical [`Nid`].
+    /// Maps this key type to its canonical `Nid`.
     ///
     /// The mapping matches the C `EVP_PKEY_*` → `NID_*` correspondence
     /// defined across `include/openssl/evp.h` and `include/openssl/obj_mac.h`.
@@ -449,7 +449,7 @@ impl KeyType {
         }
     }
 
-    /// Attempts to determine the [`KeyType`] from a [`Nid`].
+    /// Attempts to determine the [`KeyType`] from a `Nid`.
     ///
     /// Returns [`None`] if the NID does not correspond to any known key type
     /// (Rule R5 — no sentinel values).
@@ -720,7 +720,7 @@ impl fmt::Display for OperationType {
 /// Trait for types that represent a named cryptographic algorithm.
 ///
 /// Implementors provide a human-readable algorithm name and its
-/// corresponding [`Nid`].  This is used by the provider framework
+/// corresponding `Nid`.  This is used by the provider framework
 /// to register and look up algorithm implementations by name.
 ///
 /// # Examples
@@ -746,7 +746,7 @@ pub trait AlgorithmName {
     /// `OSSL_ALGORITHM` registration tables (e.g. `"SHA2-256"`, `"AES-128-GCM"`).
     fn algorithm_name(&self) -> &'static str;
 
-    /// Returns the numeric identifier ([`Nid`]) for this algorithm.
+    /// Returns the numeric identifier (`Nid`) for this algorithm.
     fn nid(&self) -> Nid;
 }
 

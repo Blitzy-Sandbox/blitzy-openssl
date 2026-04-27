@@ -33,7 +33,7 @@
 //! ## MAC template cloning
 //!
 //! The initialised MAC template is stored on the context and cloned per
-//! block via [`MacCtx::dup`]. This matches the C `EVP_MAC_CTX_dup(ctx_init)`
+//! block via `MacCtx::dup`. This matches the C `EVP_MAC_CTX_dup(ctx_init)`
 //! pattern (`kbkdf.c` line 229) without re-keying on every block, which is
 //! both more efficient and semantically required by KMAC (whose custom
 //! string is set at init time).
@@ -95,13 +95,13 @@ const PARAM_SEED: &str = "seed";
 /// `"KMAC128"`, or `"KMAC256"`. `Utf8String`.
 const PARAM_MAC: &str = "mac";
 /// `OSSL_KDF_PARAM_DIGEST` — digest sub-algorithm (for HMAC). Forwarded
-/// to [`MacCtx::init`] as an init-time parameter.
+/// to `MacCtx::init` as an init-time parameter.
 const PARAM_DIGEST: &str = "digest";
 /// `OSSL_KDF_PARAM_CIPHER` — cipher sub-algorithm (for CMAC). Forwarded to
-/// [`MacCtx::init`].
+/// `MacCtx::init`.
 const PARAM_CIPHER: &str = "cipher";
 /// `OSSL_KDF_PARAM_PROPERTIES` — optional property query string passed to
-/// [`Mac::fetch`] (e.g. `"fips=yes"`).
+/// `Mac::fetch` (e.g. `"fips=yes"`).
 const PARAM_PROPERTIES: &str = "properties";
 /// `OSSL_KDF_PARAM_KBKDF_USE_L` — whether to append the `[L]` suffix.
 /// `Int32`, `0` disables; defaults to `1`.
@@ -118,7 +118,7 @@ const PARAM_USE_SEPARATOR: &str = "use-separator";
 // =============================================================================
 
 /// Converts a [`CryptoError`] raised by the MAC dispatch into a
-/// [`ProviderError::Dispatch`].
+/// `ProviderError::Dispatch`.
 ///
 /// This is the canonical mapping between the EVP-layer error enum and the
 /// provider-layer error enum. The pattern mirrors `kdfs/ecx.rs` and other
@@ -247,7 +247,7 @@ pub struct KbkdfContext {
     #[zeroize(skip)]
     mac_name: Option<String>,
 
-    /// Optional property query string forwarded to [`Mac::fetch`].
+    /// Optional property query string forwarded to `Mac::fetch`.
     #[zeroize(skip)]
     mac_properties: Option<String>,
 
@@ -259,7 +259,7 @@ pub struct KbkdfContext {
     #[zeroize(skip)]
     mac_cipher: Option<String>,
 
-    /// Initialised MAC template — cloned per block via [`MacCtx::dup`].
+    /// Initialised MAC template — cloned per block via `MacCtx::dup`.
     /// Maps directly to C `ctx->ctx_init` (`kbkdf.c` line 33). Only set
     /// once both `mac_name` and `ki` have been configured.
     #[zeroize(skip)]
@@ -298,12 +298,12 @@ impl KbkdfContext {
     /// `kbkdf.c` lines 143–175.
     ///
     /// All buffers are cloned and the MAC template is duplicated via
-    /// [`MacCtx::dup`], which mirrors C `EVP_MAC_CTX_dup(src->ctx_init)`
+    /// `MacCtx::dup`, which mirrors C `EVP_MAC_CTX_dup(src->ctx_init)`
     /// at line 158.
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Dispatch`] if cloning the MAC template
+    /// Returns `ProviderError::Dispatch` if cloning the MAC template
     /// fails inside the EVP layer.
     pub fn dup(&self) -> ProviderResult<Self> {
         let mac_ctx_template = match &self.mac_ctx_template {
@@ -559,7 +559,7 @@ impl KbkdfContext {
         Ok(())
     }
 
-    /// Fetches the MAC, builds a [`MacCtx`], pre-applies init-time
+    /// Fetches the MAC, builds a `MacCtx`, pre-applies init-time
     /// sub-algorithm parameters (digest for HMAC, cipher for CMAC), and
     /// initialises the template with the current KI.
     ///
@@ -901,7 +901,7 @@ impl KbkdfContext {
 
     /// Validates that info segment count never exceeds [`MAX_INFO_SEGMENTS`].
     ///
-    /// The [`ParamSet`] API only surfaces a single `"info"` key so, in
+    /// The `ParamSet` API only surfaces a single `"info"` key so, in
     /// practice, only one pre-concatenated segment arrives at this layer.
     /// The assertion is retained for parity with the C layout which caps
     /// the array at [`MAX_INFO_SEGMENTS`] (`kbkdf.c` macro `KBKDF_MAX_INFOS

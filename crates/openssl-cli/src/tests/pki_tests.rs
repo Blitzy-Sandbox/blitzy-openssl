@@ -18,7 +18,7 @@
 //!
 //! ## Gate Compliance
 //!
-//! - **Gate 1 (E2E Boundary)**: [`test_e2e_pki_workflow`] processes the
+//! - **Gate 1 (E2E Boundary)**: `test_e2e_pki_workflow` processes the
 //!   full certificate lifecycle dispatch chain — key generation, CSR
 //!   creation, certificate signing, and chain verification.
 //! - **Gate 4 (Real-World Artifacts)**: Tests exercise real X.509
@@ -56,7 +56,7 @@ const DISPATCH_MSG: &str = "Command dispatched successfully. Full handler implem
 
 /// Creates a fresh temporary directory for PKI test artifacts.
 ///
-/// Returns a [`TempDir`] that is automatically removed when dropped,
+/// Returns a `TempDir` that is automatically removed when dropped,
 /// ensuring test isolation and no leftover files on disk.
 fn create_temp_dir() -> TempDir {
     TempDir::new().expect("failed to create temporary directory for PKI tests")
@@ -71,7 +71,7 @@ fn create_temp_dir() -> TempDir {
 ///
 /// # Returns
 ///
-/// An absolute [`PathBuf`] pointing to the file inside `dir`.
+/// An absolute `PathBuf` pointing to the file inside `dir`.
 fn temp_path(dir: &TempDir, filename: &str) -> PathBuf {
     dir.path().join(filename)
 }
@@ -730,7 +730,7 @@ fn test_ca_without_args_dispatches() {
 // Temp Directory Lifecycle Test
 // ===========================================================================
 
-/// Verifies that [`TempDir`] provides proper lifecycle management for
+/// Verifies that `TempDir` provides proper lifecycle management for
 /// PKI test artifacts.
 ///
 /// This test creates a temp directory, writes multiple PKI artifact files,

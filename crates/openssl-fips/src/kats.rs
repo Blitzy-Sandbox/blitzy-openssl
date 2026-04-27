@@ -15,7 +15,7 @@
 //!    replacing the C union-based `ST_DEFINITION`.
 //!
 //! 2. **Test vector catalog** — Compiled `const` test vectors from NIST
-//!    CAVP/ACVP references, lazily assembled into the [`ALL_TESTS`] catalog.
+//!    CAVP/ACVP references, lazily assembled into the `ALL_TESTS` catalog.
 //!
 //! 3. **Per-category executors** — Functions that exercise each algorithm
 //!    against its KAT vector and compare the output with the expected result.
@@ -37,15 +37,15 @@
 //!
 //! | Rust construct       | C source                                    |
 //! |----------------------|---------------------------------------------|
-//! | [`KatDigest`]        | `self_test_digest()` + digest vectors       |
-//! | [`KatCipher`]        | `ST_KAT_CIPHER` + `self_test_cipher()`      |
-//! | [`KatDrbg`]          | `ST_KAT_DRBG` + `self_test_drbg()`          |
-//! | [`KatSignature`]     | `ST_KAT_SIGN` + `self_test_digest_sign()`   |
-//! | [`TestDefinition`]   | `ST_DEFINITION`                             |
-//! | [`ALL_TESTS`]        | `st_all_tests[ST_ID_MAX]`                   |
-//! | [`run_all_kats`]     | `SELF_TEST_kats()`                          |
-//! | [`execute_kats`]     | `SELF_TEST_kats_execute()`                  |
-//! | [`resolve_dependencies`] | `SELF_TEST_kat_deps()`                  |
+//! | `KatDigest`        | `self_test_digest()` + digest vectors       |
+//! | `KatCipher`        | `ST_KAT_CIPHER` + `self_test_cipher()`      |
+//! | `KatDrbg`          | `ST_KAT_DRBG` + `self_test_drbg()`          |
+//! | `KatSignature`     | `ST_KAT_SIGN` + `self_test_digest_sign()`   |
+//! | `TestDefinition`   | `ST_DEFINITION`                             |
+//! | `ALL_TESTS`        | `st_all_tests[ST_ID_MAX]`                   |
+//! | `run_all_kats`     | `SELF_TEST_kats()`                          |
+//! | `execute_kats`     | `SELF_TEST_kats_execute()`                  |
+//! | `resolve_dependencies` | `SELF_TEST_kat_deps()`                  |
 
 use once_cell::sync::Lazy;
 use tracing::{debug, error, info, instrument, warn};
@@ -516,7 +516,7 @@ pub type CorruptionCallback = Box<dyn Fn(&mut [u8]) + Send + Sync>;
 /// RAII guard for the deterministic DRBG swap mechanism.
 ///
 /// When deterministic signature/keygen tests require controlled random output,
-/// [`set_kat_drbg`] replaces the library context DRBG with a TEST-RAND
+/// `set_kat_drbg` replaces the library context DRBG with a TEST-RAND
 /// seeded with known entropy. This guard restores the original DRBG when
 /// dropped.
 ///
@@ -532,7 +532,7 @@ pub type CorruptionCallback = Box<dyn Fn(&mut [u8]) + Send + Sync>;
 /// 1. Restores the original DRBG to the library context
 /// 2. Uninstantiates the test DRBG
 /// 3. Verifies zeroization of the test DRBG state (per rule R7 memory safety)
-/// 4. Zeroes the internal entropy buffer via [`Zeroize`]
+/// 4. Zeroes the internal entropy buffer via `Zeroize`
 pub struct DrbgSwapGuard {
     /// Entropy data used for the deterministic DRBG, zeroed on drop.
     entropy: Vec<u8>,
@@ -913,7 +913,7 @@ const KBKDF_KMAC_PARAMS: &[KatParam] = &[KatParam {
 // Helper: Convert KatParams to ParamSet
 // =============================================================================
 
-/// Converts a slice of static [`KatParam`] entries into a runtime [`ParamSet`].
+/// Converts a slice of static `KatParam` entries into a runtime `ParamSet`.
 ///
 /// This replaces the C `add_params()` / `kat_params_to_ossl_params()` helper
 /// functions from `self_test_kats.c` lines 171–257.
@@ -924,7 +924,7 @@ const KBKDF_KMAC_PARAMS: &[KatParam] = &[KatParam {
 ///
 /// # Returns
 ///
-/// A [`ParamSet`] containing all parameters, ready for passing to crypto APIs.
+/// A `ParamSet` containing all parameters, ready for passing to crypto APIs.
 fn kat_params_to_param_set(params: &[KatParam]) -> ParamSet {
     let mut builder = ParamBuilder::new();
     for p in params {

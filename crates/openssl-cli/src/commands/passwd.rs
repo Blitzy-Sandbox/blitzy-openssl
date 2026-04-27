@@ -18,10 +18,10 @@
 //! | `passwd_modes` enum                     | `PasswdMode` enum                          |
 //! | `cov_2char[64]`                         | `COV_2CHAR: [u8; 64]`                      |
 //! | `ascii_dollar[]`                        | inline `b'$'`                              |
-//! | `md5crypt()`                            | [`md5crypt`]                               |
-//! | `shacrypt()`                            | [`shacrypt`]                               |
-//! | `do_passwd()`                           | [`PasswdArgs::do_passwd`]                  |
-//! | `passwd_main()`                         | [`PasswdArgs::execute`]                    |
+//! | `md5crypt()`                            | `md5crypt`                               |
+//! | `shacrypt()`                            | `shacrypt`                               |
+//! | `do_passwd()`                           | `PasswdArgs::do_passwd`                  |
+//! | `passwd_main()`                         | `PasswdArgs::execute`                    |
 //! | `RAND_bytes()`                          | `openssl_crypto::rand::rand_bytes()`       |
 //! | `EVP_md5()`/`EVP_sha256()`/`EVP_sha512()` | `MessageDigest::fetch(MD5/SHA256/SHA512)` |
 //! | `EVP_DigestInit_ex/Update/Final_ex`     | `MdContext::init/update/finalize`          |
@@ -392,7 +392,7 @@ impl PasswdArgs {
     // Private helpers
     // -----------------------------------------------------------------------
 
-    /// Resolves the user's mode flags to a single [`PasswdMode`].
+    /// Resolves the user's mode flags to a single `PasswdMode`.
     ///
     /// When no flag is provided the default is MD5, matching
     /// `apps/passwd.c` line 210–213.
@@ -418,7 +418,7 @@ impl PasswdArgs {
     /// 1. Positional arguments (`self.passwords`).
     /// 2. `-in <file>` — one password per line, newline terminated.
     /// 3. `-stdin` — one password per line, newline terminated.
-    /// 4. Interactive prompt via [`PasswordHandler`].
+    /// 4. Interactive prompt via `PasswordHandler`.
     ///
     /// Return type uses [`Zeroizing<String>`] so plaintext passwords are
     /// zeroed on drop (AAP §0.7.6).
@@ -470,7 +470,7 @@ impl PasswdArgs {
         Ok(vec![pw])
     }
 
-    /// Reads one password per line from an arbitrary [`BufRead`] source.
+    /// Reads one password per line from an arbitrary `BufRead` source.
     ///
     /// Translates the `BIO_gets` loop in `apps/passwd.c` lines 279–298.
     /// Empty lines are skipped (matches `r <= 0` break in C).
@@ -495,8 +495,8 @@ impl PasswdArgs {
     /// Translates `do_passwd()` from `apps/passwd.c` lines 781–851.
     ///
     /// * Generates a salt if one is not provided.
-    /// * Truncates passwords longer than [`PW_MAXLEN`] with a warning.
-    /// * Dispatches to [`md5crypt`] or [`shacrypt`].
+    /// * Truncates passwords longer than `PW_MAXLEN` with a warning.
+    /// * Dispatches to `md5crypt` or `shacrypt`.
     /// * Emits the hash in the requested output format.
     fn do_passwd(
         &self,
@@ -549,7 +549,7 @@ impl PasswdArgs {
         };
 
         // -- Compute the hash --------------------------------------------
-        // Dispatch via the [`PasswdMode`] enum: each mode provides its magic
+        // Dispatch via the `PasswdMode` enum: each mode provides its magic
         // prefix string through [`PasswdMode::magic`] and then routes to the
         // appropriate crypt primitive (MD5 family or SHA family).
         let magic = mode.magic();
@@ -580,7 +580,7 @@ impl PasswdArgs {
 // Free-standing helpers — pure algorithmic translations
 // ---------------------------------------------------------------------------
 
-/// Generates `n` random salt bytes and maps each through [`COV_2CHAR`].
+/// Generates `n` random salt bytes and maps each through `COV_2CHAR`.
 ///
 /// Translates the per-byte mapping loop from `apps/passwd.c` lines 805–810:
 /// ```c
@@ -624,7 +624,7 @@ fn take_bytes_up_to(s: &str, max: usize) -> String {
 
 /// Fetches a digest handle for the given algorithm name.
 ///
-/// Convenience wrapper over [`MessageDigest::fetch`].
+/// Convenience wrapper over `MessageDigest::fetch`.
 fn fetch_digest(
     ctx: &Arc<LibContext>,
     algorithm: &'static str,
@@ -683,7 +683,7 @@ fn md5_digest_chunks(
 ///
 /// * [`CryptoError::AlgorithmNotFound`] if MD5 is not available from any
 ///   loaded provider.
-/// * Any [`CryptoError`] produced by the internal digest operations.
+/// * Any `CryptoError` produced by the internal digest operations.
 fn md5crypt(
     ctx: &Arc<LibContext>,
     passwd: &[u8],
@@ -912,7 +912,7 @@ fn md5crypt(
 ///
 /// * [`CryptoError::Key`] — invalid magic or malformed `rounds=` prefix.
 /// * [`CryptoError::AlgorithmNotFound`] — SHA-256/SHA-512 unavailable.
-/// * Any [`CryptoError`] produced by digest operations.
+/// * Any `CryptoError` produced by digest operations.
 fn shacrypt(
     ctx: &Arc<LibContext>,
     passwd: &[u8],
@@ -1315,7 +1315,7 @@ mod tests {
         assert_ne!(a, b, "consecutive random salts must differ");
     }
 
-    /// Mode resolution: each CLI flag maps to the correct [`PasswdMode`].
+    /// Mode resolution: each CLI flag maps to the correct `PasswdMode`.
     #[test]
     fn passwd_mode_resolution() {
         let make = |md5, sha256, sha512, apr1, aixmd5| PasswdArgs {

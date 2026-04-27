@@ -21,8 +21,8 @@
 //! 2. Extract the [`der::asn1::ObjectIdentifier`] from
 //!    [`AlgorithmIdentifier::oid`](spki::AlgorithmIdentifier::oid).
 //! 3. Map the OID to a human-readable algorithm name via
-//!    [`oid_to_algorithm_name`].
-//! 4. Construct a [`DecodedObject`] carrying the original DER bytes annotated
+//!    `oid_to_algorithm_name`.
+//! 4. Construct a `DecodedObject` carrying the original DER bytes annotated
 //!    with `data_type = <algorithm_name>`, `input_type = "DER"`,
 //!    `data_structure = "SubjectPublicKeyInfo"`, and  
 //!    `object_type = ObjectType::Pkey`.
@@ -30,7 +30,7 @@
 //! # SM2 Special Case
 //!
 //! SM2 "abuses" the EC OID (`1.2.840.10045.2.1`) but uses the SM2 curve
-//! parameter OID (`1.2.156.10197.1.301`).  The function [`is_sm2_key`]
+//! parameter OID (`1.2.156.10197.1.301`).  The function `is_sm2_key`
 //! detects this case by examining the
 //! `AlgorithmIdentifier.parameters`
 //! field.  This is feature-gated behind `cfg(feature = "sm2")`.
@@ -183,7 +183,7 @@ const OID_LMS: ObjectIdentifier =
 
 /// SM2 named curve OID: `1.2.156.10197.1.301`
 ///
-/// Used by [`is_sm2_key`] to detect SM2 keys that use the generic EC
+/// Used by `is_sm2_key` to detect SM2 keys that use the generic EC
 /// `AlgorithmIdentifier` OID but carry the SM2 curve as a parameter.
 #[cfg(feature = "sm2")]
 const OID_SM2_CURVE: ObjectIdentifier =
@@ -214,7 +214,7 @@ pub struct SpkiDecoderContext {
     /// Optional property query string for algorithm lookup.
     ///
     /// Corresponds to the C `propq` field in `spki2typespki_ctx_st`.
-    /// Bounded to [`MAX_PROPQUERY_SIZE`] characters. Uses `Option<String>`
+    /// Bounded to `MAX_PROPQUERY_SIZE` characters. Uses `Option<String>`
     /// per Rule R5 — `None` means "no property query", not empty string.
     pub propq: Option<String>,
 }
@@ -230,7 +230,7 @@ impl SpkiDecoderContext {
 
     /// Creates a new SPKI decoder context with the given property query.
     ///
-    /// The property query string is truncated to [`MAX_PROPQUERY_SIZE`]
+    /// The property query string is truncated to `MAX_PROPQUERY_SIZE`
     /// characters if it exceeds the limit, matching the C behaviour where
     /// `propq` is a fixed-size `char[OSSL_MAX_PROPQUERY_SIZE]` buffer.
     ///
@@ -261,7 +261,7 @@ impl Default for SpkiDecoderContext {
 ///
 /// Parses a DER-encoded `SubjectPublicKeyInfo` structure, extracts the
 /// `AlgorithmIdentifier` OID, resolves it to an algorithm name string, and
-/// re-emits the original DER bytes wrapped in a [`DecodedObject`] annotated
+/// re-emits the original DER bytes wrapped in a `DecodedObject` annotated
 /// with:
 ///
 /// - `data_type` = resolved algorithm name (e.g., `"RSA"`, `"EC"`, `"Ed25519"`)
@@ -284,7 +284,7 @@ impl Default for SpkiDecoderContext {
 #[derive(Debug, Clone, Copy)]
 pub struct SpkiTaggingDecoder;
 
-/// Wrapper around [`DecodedObject`] that implements [`KeyData`] so it can
+/// Wrapper around `DecodedObject` that implements `KeyData` so it can
 /// be returned from [`DecoderProvider::decode`].
 ///
 /// The provider dispatch system expects decoders to return `Box<dyn KeyData>`.
@@ -320,7 +320,7 @@ impl DecoderProvider for SpkiTaggingDecoder {
 
     /// Decodes a DER-encoded `SubjectPublicKeyInfo`, extracts the algorithm
     /// OID, resolves it to an algorithm name, and returns a tagged
-    /// [`DecodedObject`] wrapped as [`KeyData`].
+    /// `DecodedObject` wrapped as `KeyData`.
     ///
     /// # Empty-Handed Success (Rule R5)
     ///
@@ -337,7 +337,7 @@ impl DecoderProvider for SpkiTaggingDecoder {
     /// OpenSSL 4.0:
     ///
     /// - RSA, RSA-PSS
-    /// - EC (including SM2 detection via [`is_sm2_key`])
+    /// - EC (including SM2 detection via `is_sm2_key`)
     /// - X25519, X448, Ed25519, Ed448
     /// - DH, DHX, DSA
     /// - ML-KEM (FIPS 203): 512, 768, 1024
@@ -347,9 +347,9 @@ impl DecoderProvider for SpkiTaggingDecoder {
     ///
     /// # Errors
     ///
-    /// Returns [`ProviderError::Dispatch`] wrapping [`EndecoderError::BadEncoding`]
+    /// Returns `ProviderError::Dispatch` wrapping [`EndecoderError::BadEncoding`]
     /// if the DER does not parse as valid SPKI. Returns
-    /// [`ProviderError::Dispatch`] if the algorithm OID is unrecognised.
+    /// `ProviderError::Dispatch` if the algorithm OID is unrecognised.
     fn decode(&self, input: &[u8]) -> ProviderResult<Box<dyn KeyData>> {
         trace!(input_len = input.len(), "SPKI type-tagging decoder: starting");
 
@@ -555,7 +555,7 @@ pub fn oid_to_algorithm_name(oid: &ObjectIdentifier) -> Option<&'static str> {
 /// field.
 ///
 /// This function examines the raw DER bytes of the parameters field and
-/// attempts to decode them as an [`ObjectIdentifier`]. If the decoded OID
+/// attempts to decode them as an `ObjectIdentifier`. If the decoded OID
 /// matches the SM2 curve OID, the function returns `true`.
 ///
 /// # Arguments
@@ -612,7 +612,7 @@ pub fn is_sm2_key(oid: &ObjectIdentifier, params: Option<&[u8]>) -> bool {
     }
 }
 
-/// Stub implementation of [`is_sm2_key`] when the `sm2` feature is disabled.
+/// Stub implementation of `is_sm2_key` when the `sm2` feature is disabled.
 ///
 /// Always returns `false` since SM2 detection is not available without the
 /// feature flag. This provides a consistent API surface regardless of

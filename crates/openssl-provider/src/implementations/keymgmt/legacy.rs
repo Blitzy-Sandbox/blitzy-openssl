@@ -15,7 +15,7 @@
 //!
 //! These are shim/adapter key management implementations that allow legacy
 //! `EVP_PKEY`-based KDF and MAC operations to participate in the provider
-//! dispatch system. They implement the [`KeyMgmtProvider`] trait from
+//! dispatch system. They implement the `KeyMgmtProvider` trait from
 //! [`crate::traits`].
 //!
 //! - **KDF keymgmt** (`KdfLegacyKeyMgmt`) — A "dummy" adapter. KDF keys have
@@ -36,7 +36,7 @@
 //! The [`KeyData`] trait is a marker trait without `Any`-based downcasting.
 //! The `export` and `has` trait methods receive `&dyn KeyData` and cannot
 //! recover the concrete type. The inherent methods on the concrete structs
-//! (e.g., [`MacKeyData::to_params()`], [`MacKeyData::has_private_key()`])
+//! (e.g., `MacKeyData::to_params()`, `MacKeyData::has_private_key()`)
 //! provide full access when the concrete type is available.
 //!
 //! # Wiring Path (Rule R10)
@@ -53,10 +53,10 @@
 //!
 //! # Security Properties
 //!
-//! - Secret key material in [`MacKeyData`] uses [`zeroize::Zeroizing`] for
+//! - Secret key material in `MacKeyData` uses [`zeroize::Zeroizing`] for
 //!   automatic secure zeroing on drop (replaces C `OPENSSL_secure_clear_free`).
-//! - Key comparison in [`MacLegacyKeyMgmt::match_keys()`] and
-//!   [`CmacLegacyKeyMgmt::match_keys()`] uses constant-time comparison via
+//! - Key comparison in `MacLegacyKeyMgmt::match_keys()` and
+//!   `CmacLegacyKeyMgmt::match_keys()` uses constant-time comparison via
 //!   [`subtle::ConstantTimeEq`] (replaces C `CRYPTO_memcmp`).
 //! - Zero `unsafe` blocks (Rule R8).
 //!
@@ -64,12 +64,12 @@
 //!
 //! | Rust type | C construct | Source |
 //! |-----------|------------|--------|
-//! | [`KdfKeyData`] | `KDF_DATA` | `kdf_legacy_kmgmt.c:25` |
-//! | [`KdfLegacyKeyMgmt`] | `ossl_kdf_keymgmt_functions` | `kdf_legacy_kmgmt.c:92-101` |
-//! | [`MacKeyData`] | `MAC_KEY` | `mac_legacy_kmgmt.c:30-42` |
-//! | [`MacLegacyKeyMgmt`] | `ossl_mac_legacy_keymgmt_functions` | `mac_legacy_kmgmt.c:543-576` |
-//! | [`CmacLegacyKeyMgmt`] | `ossl_cmac_legacy_keymgmt_functions` | `mac_legacy_kmgmt.c:543-576` |
-//! | [`legacy_descriptors()`] | `deflt_keymgmt[]` entries | `defltprov.c:617-634` |
+//! | `KdfKeyData` | `KDF_DATA` | `kdf_legacy_kmgmt.c:25` |
+//! | `KdfLegacyKeyMgmt` | `ossl_kdf_keymgmt_functions` | `kdf_legacy_kmgmt.c:92-101` |
+//! | `MacKeyData` | `MAC_KEY` | `mac_legacy_kmgmt.c:30-42` |
+//! | `MacLegacyKeyMgmt` | `ossl_mac_legacy_keymgmt_functions` | `mac_legacy_kmgmt.c:543-576` |
+//! | `CmacLegacyKeyMgmt` | `ossl_cmac_legacy_keymgmt_functions` | `mac_legacy_kmgmt.c:543-576` |
+//! | `legacy_descriptors()` | `deflt_keymgmt[]` entries | `defltprov.c:617-634` |
 
 use std::fmt;
 use std::sync::Arc;
@@ -146,7 +146,7 @@ impl KeyData for KdfKeyData {}
 
 /// Key management provider for KDF-backed signature operations.
 ///
-/// This is a "dummy" key manager: it allocates and frees [`KdfKeyData`]
+/// This is a "dummy" key manager: it allocates and frees `KdfKeyData`
 /// handles, and `has()` always returns `true` (nothing is ever missing
 /// from a KDF key). Generate, import, and export are not meaningful for
 /// KDF keys — in the C dispatch table, only `KEYMGMT_NEW`, `KEYMGMT_FREE`,
@@ -204,7 +204,7 @@ impl KeyMgmtProvider for KdfLegacyKeyMgmt {
     }
 
     /// KDF keys cannot be generated — returns
-    /// [`ProviderError::AlgorithmUnavailable`].
+    /// `ProviderError::AlgorithmUnavailable`.
     ///
     /// The C dispatch table has no `KEYMGMT_GEN*` entries, so generation
     /// is fundamentally unsupported. The KDF parameters are supplied
@@ -217,7 +217,7 @@ impl KeyMgmtProvider for KdfLegacyKeyMgmt {
     }
 
     /// KDF keys cannot be imported — returns
-    /// [`ProviderError::AlgorithmUnavailable`].
+    /// `ProviderError::AlgorithmUnavailable`.
     ///
     /// There is no key material to import. The C dispatch table has no
     /// `KEYMGMT_IMPORT` entry.
@@ -233,7 +233,7 @@ impl KeyMgmtProvider for KdfLegacyKeyMgmt {
     }
 
     /// KDF keys have no exportable material — returns
-    /// [`ProviderError::AlgorithmUnavailable`].
+    /// `ProviderError::AlgorithmUnavailable`.
     ///
     /// The C dispatch table has no `KEYMGMT_EXPORT` entry.
     fn export(&self, _key: &dyn KeyData, _selection: KeySelection) -> ProviderResult<ParamSet> {
@@ -262,7 +262,7 @@ impl KeyMgmtProvider for KdfLegacyKeyMgmt {
 
 /// Key data for legacy MAC operations.
 ///
-/// Stores the secret key with secure memory ([`Zeroizing`] on drop).
+/// Stores the secret key with secure memory (`Zeroizing` on drop).
 /// Optionally stores a cipher name for CMAC keys and a property query
 /// string for algorithm fetch operations.
 ///
@@ -290,7 +290,7 @@ impl KeyMgmtProvider for KdfLegacyKeyMgmt {
 pub struct MacKeyData {
     /// Secret key bytes (securely zeroized on drop).
     ///
-    /// Replaces C `priv_key` + `priv_key_len` fields. Uses [`Zeroizing`]
+    /// Replaces C `priv_key` + `priv_key_len` fields. Uses `Zeroizing`
     /// instead of manual `OPENSSL_secure_clear_free()`.
     pub secret: Zeroizing<Vec<u8>>,
 
@@ -352,9 +352,9 @@ impl MacKeyData {
     /// Creates a MAC key data from a parameter set.
     ///
     /// Extracts the following parameters:
-    /// - `"priv"` ([`ParamValue::OctetString`]) — secret key bytes
-    /// - `"cipher"` ([`ParamValue::Utf8String`]) — cipher name (CMAC only)
-    /// - `"properties"` ([`ParamValue::Utf8String`]) — property query string
+    /// - `"priv"` (`ParamValue::OctetString`) — secret key bytes
+    /// - `"cipher"` (`ParamValue::Utf8String`) — cipher name (CMAC only)
+    /// - `"properties"` (`ParamValue::Utf8String`) — property query string
     ///
     /// Replaces C `mac_key_fromdata()` from `mac_legacy_kmgmt.c`
     /// (lines 122–160).
@@ -420,14 +420,14 @@ impl MacKeyData {
         !self.secret.is_empty()
     }
 
-    /// Exports the key data into a [`ParamSet`].
+    /// Exports the key data into a `ParamSet`.
     ///
     /// Replaces C `key_to_params()` from `mac_legacy_kmgmt.c` (lines 290–320).
     ///
     /// # Parameters
     ///
     /// - `selection`: Controls which components to export. Only exports the
-    ///   secret key when [`KeySelection::PRIVATE_KEY`] is requested.
+    ///   secret key when `KeySelection::PRIVATE_KEY` is requested.
     pub fn to_params(&self, selection: KeySelection) -> ParamSet {
         let mut params = ParamSet::new();
 
@@ -455,7 +455,7 @@ impl MacKeyData {
 /// `Poly1305`).
 ///
 /// Supports full key lifecycle: creation, generation from parameters,
-/// import from [`ParamSet`], presence checking, validation, constant-time
+/// import from `ParamSet`, presence checking, validation, constant-time
 /// key comparison, and parameter get/set.
 ///
 /// Replaces `ossl_mac_legacy_keymgmt_functions` dispatch table from
@@ -540,7 +540,7 @@ impl MacLegacyKeyMgmt {
         params
     }
 
-    /// Sets key parameters from a [`ParamSet`].
+    /// Sets key parameters from a `ParamSet`.
     ///
     /// Replaces C `mac_set_params()` from `mac_legacy_kmgmt.c`
     /// (lines 375–400) which delegates to `mac_key_fromdata()`.
@@ -609,7 +609,7 @@ impl KeyMgmtProvider for MacLegacyKeyMgmt {
         Ok(Box::new(key))
     }
 
-    /// Imports MAC key data from a [`ParamSet`].
+    /// Imports MAC key data from a `ParamSet`.
     ///
     /// Reads `OSSL_PKEY_PARAM_PRIV_KEY` (`"priv"`) and
     /// `OSSL_PKEY_PARAM_PROPERTIES` (`"properties"`) from the data set.
@@ -628,13 +628,13 @@ impl KeyMgmtProvider for MacLegacyKeyMgmt {
         Ok(Box::new(key))
     }
 
-    /// Exports MAC key components to a [`ParamSet`].
+    /// Exports MAC key components to a `ParamSet`.
     ///
     /// Returns an empty parameter set when receiving an opaque
     /// `&dyn KeyData` reference because the [`KeyData`] marker trait does
     /// not currently support `Any`-based downcasting. Callers that hold a
     /// concrete `&MacKeyData` reference should use
-    /// [`MacKeyData::to_params()`] directly for full key material export.
+    /// `MacKeyData::to_params()` directly for full key material export.
     ///
     /// Replaces C `mac_export()` from `mac_legacy_kmgmt.c` (lines 280–320).
     fn export(&self, _key: &dyn KeyData, _selection: KeySelection) -> ProviderResult<ParamSet> {
@@ -673,7 +673,7 @@ impl KeyMgmtProvider for MacLegacyKeyMgmt {
 
 /// Key management provider for CMAC-based signing operations.
 ///
-/// Similar to [`MacLegacyKeyMgmt`] but additionally tracks a cipher name
+/// Similar to `MacLegacyKeyMgmt` but additionally tracks a cipher name
 /// for the underlying block cipher (e.g., `"AES-128-CBC"`). CMAC keys
 /// require both a symmetric key and a cipher selection.
 ///
@@ -743,7 +743,7 @@ impl CmacLegacyKeyMgmt {
         params
     }
 
-    /// Sets key parameters from a [`ParamSet`].
+    /// Sets key parameters from a `ParamSet`.
     ///
     /// CMAC-specific: accepts `"cipher"` parameter in addition to `"priv"`
     /// and `"properties"`. Replaces C `mac_set_params()` /
@@ -823,10 +823,10 @@ impl KeyMgmtProvider for CmacLegacyKeyMgmt {
         Ok(Box::new(key))
     }
 
-    /// Exports CMAC key components to a [`ParamSet`].
+    /// Exports CMAC key components to a `ParamSet`.
     ///
     /// Returns an empty parameter set due to the [`KeyData`] trait not
-    /// supporting `Any`-based downcasting. Use [`MacKeyData::to_params()`]
+    /// supporting `Any`-based downcasting. Use `MacKeyData::to_params()`
     /// directly when the concrete type is available.
     fn export(&self, _key: &dyn KeyData, _selection: KeySelection) -> ProviderResult<ParamSet> {
         Ok(ParamSet::new())
@@ -911,7 +911,7 @@ pub fn legacy_descriptors() -> Vec<AlgorithmDescriptor> {
 // Private Helpers
 // =============================================================================
 
-/// Returns a human-readable type name for a [`ParamValue`] variant.
+/// Returns a human-readable type name for a `ParamValue` variant.
 ///
 /// Used in error messages when parameter type validation fails.
 fn param_value_type_name(value: &ParamValue) -> &'static str {

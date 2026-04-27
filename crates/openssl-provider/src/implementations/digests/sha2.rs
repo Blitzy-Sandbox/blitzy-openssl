@@ -32,14 +32,14 @@
 //!
 //! Two distinct provider structs mirror the two underlying cores:
 //!
-//! * [`Sha256Provider`] — dispatches to SHA-256 core (SHA-224, SHA-256, SHA-256/192)
-//! * [`Sha512Provider`] — dispatches to SHA-512 core (SHA-384, SHA-512, SHA-512/224, SHA-512/256)
+//! * `Sha256Provider` — dispatches to SHA-256 core (SHA-224, SHA-256, SHA-256/192)
+//! * `Sha512Provider` — dispatches to SHA-512 core (SHA-384, SHA-512, SHA-512/224, SHA-512/256)
 //!
-//! Each provider holds a [`Sha256Variant`] or [`Sha512Variant`] selector and
+//! Each provider holds a `Sha256Variant` or `Sha512Variant` selector and
 //! creates fresh hashing contexts via `new_ctx()`. The contexts wrap the
 //! corresponding [`openssl_crypto::hash::sha::Sha256Context`] or
 //! [`openssl_crypto::hash::sha::Sha512Context`] and implement the provider
-//! [`DigestContext`] trait by delegating to the [`Digest`]
+//! `DigestContext` trait by delegating to the `Digest`
 //! (`openssl_crypto::hash::sha::Digest`) supertrait.
 //!
 //! ## C Mapping
@@ -64,14 +64,14 @@
 //! the algorithm's ASN.1 `AlgorithmIdentifier` encoding is a bare OID
 //! with no `NULL` parameters field, per RFC 5754 §2.1. In the Rust
 //! rewrite the flag is expressed at the algorithm-registration level via
-//! [`descriptors()`] rather than as a per-context queryable parameter;
+//! `descriptors()` rather than as a per-context queryable parameter;
 //! sibling digest providers (`sha1.rs`, `sha3.rs`) follow the same
 //! convention.
 //!
 //! ## Rules Enforced
 //!
 //! * **Rule R5 (Nullability over sentinels):** Context state uses a typed
-//!   [`Option`]-friendly [`bool`] (`finalized`) rather than signed sentinel
+//!   `Option`-friendly `bool` (`finalized`) rather than signed sentinel
 //!   returns. Variant selection is a dedicated enum, not an integer code.
 //! * **Rule R6 (Lossless casts):** All size conversions are explicit
 //!   `usize` arithmetic with no bare `as` narrowing. Parameter values cast
@@ -92,7 +92,7 @@
 //! Rust rewrite, this functionality is not part of the public provider
 //! surface (no `members_exposed` entry in the provider schema); partial
 //! context transfer is instead expressed via the Rust-native
-//! [`DigestContext::duplicate`] operation backed by [`Clone`].
+//! `DigestContext::duplicate` operation backed by `Clone`.
 
 use crate::traits::{AlgorithmDescriptor, DigestContext, DigestProvider};
 use openssl_common::error::{ProviderError, ProviderResult};
@@ -153,7 +153,7 @@ pub enum Sha256Variant {
 impl Sha256Variant {
     /// Returns the digest output size in bytes for this variant.
     ///
-    /// This is the number of bytes that [`DigestContext::finalize`] will
+    /// This is the number of bytes that `DigestContext::finalize` will
     /// produce for a context initialised for this variant.
     #[inline]
     const fn digest_size(self) -> usize {
@@ -178,12 +178,12 @@ impl Sha256Variant {
         }
     }
 
-    /// Constructs a fresh [`CryptoSha256Context`] initialised for this variant.
+    /// Constructs a fresh `CryptoSha256Context` initialised for this variant.
     ///
     /// For [`Sha256Variant::Sha224`], the SHA-224 IV is installed. For the
     /// other two variants, the canonical SHA-256 IV is used; the distinction
     /// between [`Sha256Variant::Sha256`] and [`Sha256Variant::Sha256_192`]
-    /// is handled entirely at [`DigestContext::finalize`] time via
+    /// is handled entirely at `DigestContext::finalize` time via
     /// output truncation.
     #[inline]
     fn new_crypto_ctx(self) -> CryptoSha256Context {
@@ -201,7 +201,7 @@ impl Sha256Variant {
 /// Handles the three SHA-256-core variants: SHA-224, SHA-256, and
 /// SHA-256/192. The target variant is selected at construction time via
 /// [`Sha256Provider::new`] and controls the IV and output truncation of
-/// the [`DigestContext`] returned from [`DigestProvider::new_ctx`].
+/// the `DigestContext` returned from [`DigestProvider::new_ctx`].
 ///
 /// # C Mapping
 ///
@@ -278,9 +278,9 @@ impl DigestProvider for Sha256Provider {
 
     /// Creates a fresh hashing context initialised for this provider's variant.
     ///
-    /// The returned context is ready to receive [`DigestContext::update`]
+    /// The returned context is ready to receive `DigestContext::update`
     /// calls and will produce a digest of [`Self::digest_size`] bytes when
-    /// [`DigestContext::finalize`] is invoked.
+    /// `DigestContext::finalize` is invoked.
     fn new_ctx(&self) -> ProviderResult<Box<dyn DigestContext>> {
         Ok(Box::new(Sha256Context::new(self.variant)))
     }
@@ -288,14 +288,14 @@ impl DigestProvider for Sha256Provider {
 
 /// SHA-256 family hashing context.
 ///
-/// Wraps a [`CryptoSha256Context`] from `openssl-crypto` together with
+/// Wraps a `CryptoSha256Context` from `openssl-crypto` together with
 /// variant-aware truncation logic. All cryptographic computation is
-/// delegated to the core [`CryptoDigest`] trait implementation; this type
+/// delegated to the core `CryptoDigest` trait implementation; this type
 /// only adds the provider-level state machine (variant selector,
 /// finalised flag, output truncation for SHA-256/192).
 ///
-/// [`Debug`] is implemented manually — the inner crypto context does not
-/// implement [`Debug`] to prevent accidental logging of sensitive hashing
+/// `Debug` is implemented manually — the inner crypto context does not
+/// implement `Debug` to prevent accidental logging of sensitive hashing
 /// state (partial block buffer, chaining variables).
 #[derive(Clone)]
 struct Sha256Context {
@@ -303,7 +303,7 @@ struct Sha256Context {
     variant: Sha256Variant,
     /// Delegated core context performing the actual SHA-256 compression.
     inner: CryptoSha256Context,
-    /// Set to `true` after [`DigestContext::finalize`] completes; gates
+    /// Set to `true` after `DigestContext::finalize` completes; gates
     /// further updates to prevent producing silently-incorrect output.
     finalized: bool,
 }
@@ -330,11 +330,11 @@ impl Sha256Context {
     }
 
     /// Converts a lower-level `CryptoError` from [`openssl-crypto`] into a
-    /// [`ProviderError::Dispatch`] preserving diagnostic detail.
+    /// `ProviderError::Dispatch` preserving diagnostic detail.
     ///
     /// Provider-layer error surfaces do not expose `CryptoError` directly;
     /// this helper ensures the crate-local error taxonomy is respected
-    /// (provider layer speaks [`ProviderError`], not [`openssl_common::error::CryptoError`]).
+    /// (provider layer speaks `ProviderError`, not [`openssl_common::error::CryptoError`]).
     #[inline]
     fn map_crypto_err(variant: Sha256Variant, err: impl core::fmt::Debug) -> ProviderError {
         ProviderError::Dispatch(format!(
@@ -530,7 +530,7 @@ impl Sha512Variant {
         }
     }
 
-    /// Constructs a fresh [`CryptoSha512Context`] initialised for this variant.
+    /// Constructs a fresh `CryptoSha512Context` initialised for this variant.
     ///
     /// Each variant maps to its own dedicated constructor on the core
     /// context type, installing the appropriate IV per FIPS 180-4 §5.3.
@@ -632,13 +632,13 @@ impl DigestProvider for Sha512Provider {
 
 /// SHA-512 family hashing context.
 ///
-/// Wraps a [`CryptoSha512Context`] from `openssl-crypto` together with
+/// Wraps a `CryptoSha512Context` from `openssl-crypto` together with
 /// the variant selector. Each variant's output size is determined by the
 /// underlying crypto context, so (unlike SHA-256/192) no provider-layer
 /// truncation is required.
 ///
-/// [`Debug`] is implemented manually — the inner crypto context does not
-/// implement [`Debug`] to prevent accidental logging of sensitive hashing
+/// `Debug` is implemented manually — the inner crypto context does not
+/// implement `Debug` to prevent accidental logging of sensitive hashing
 /// state.
 #[derive(Clone)]
 struct Sha512Context {
@@ -647,7 +647,7 @@ struct Sha512Context {
     variant: Sha512Variant,
     /// Delegated core context performing the actual SHA-512 compression.
     inner: CryptoSha512Context,
-    /// Set to `true` after [`DigestContext::finalize`] completes.
+    /// Set to `true` after `DigestContext::finalize` completes.
     finalized: bool,
 }
 
@@ -672,7 +672,7 @@ impl Sha512Context {
         }
     }
 
-    /// Converts a lower-level `CryptoError` into a [`ProviderError::Dispatch`].
+    /// Converts a lower-level `CryptoError` into a `ProviderError::Dispatch`.
     #[inline]
     fn map_crypto_err(variant: Sha512Variant, err: impl core::fmt::Debug) -> ProviderError {
         ProviderError::Dispatch(format!(
@@ -768,7 +768,7 @@ impl DigestContext for Sha512Context {
 /// Returns algorithm descriptors for all SHA-2 family variants exposed
 /// by the default provider.
 ///
-/// Produces exactly seven [`AlgorithmDescriptor`] entries, one per SHA-2
+/// Produces exactly seven `AlgorithmDescriptor` entries, one per SHA-2
 /// algorithm, each listing the canonical name and common aliases used by
 /// applications and the OpenSSL name-map:
 ///
@@ -1367,7 +1367,7 @@ mod tests {
         assert_eq!(v, c);
     }
 
-    /// Ensures the [`CryptoDigest`] trait re-export is used (Rule R10 wiring).
+    /// Ensures the `CryptoDigest` trait re-export is used (Rule R10 wiring).
     /// The [`Sha256Context::init`] implementation calls [`CryptoDigest::reset`]
     /// through the trait; this test verifies the trait is in scope by naming it.
     #[test]

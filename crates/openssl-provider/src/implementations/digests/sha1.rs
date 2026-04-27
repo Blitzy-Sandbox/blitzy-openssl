@@ -26,11 +26,11 @@
 //! see `sha2_prov.c` lines 38–51 and `doc/man7/EVP_MD-SHA1.pod`.
 //!
 //! The master-secret bytes are *captured* verbatim by
-//! [`DigestContext::set_params`] on this module's context.  Per the
+//! `DigestContext::set_params` on this module's context.  Per the
 //! C implementation (see `sha1_settable_ctx_params` at `sha2_prov.c`
 //! lines 53–57), the master secret is *only* a settable parameter —
 //! it is *not* gettable and is *not* reported through
-//! [`DigestContext::get_params`].
+//! `DigestContext::get_params`.
 //!
 //! ## Parameters Reported via `get_params`
 //!
@@ -49,8 +49,8 @@
 //! `sha2_prov.c` line 31) describes the *algorithm*-level ASN.1
 //! `AlgorithmIdentifier` encoding (SHA-1 omits `parameters` entirely
 //! rather than encoding `NULL`), not the per-context state.  It is
-//! therefore surfaced through the [`AlgorithmDescriptor`] registration
-//! path ([`descriptors`]) rather than through [`DigestContext::get_params`],
+//! therefore surfaced through the `AlgorithmDescriptor` registration
+//! path (`descriptors`) rather than through `DigestContext::get_params`,
 //! matching the pattern used by the sibling SHA-2 and MD5 providers.
 //!
 //! ## Algorithm Parameters
@@ -65,14 +65,14 @@
 //!
 //! | C Symbol / Construct                         | Rust Equivalent              |
 //! |----------------------------------------------|------------------------------|
-//! | `SHA_CTX` (dispatch-macro expansion)         | [`Sha1Context`] (this file)  |
-//! | `SHA1_Init`                                  | [`DigestContext::init`]      |
-//! | `SHA1_Update_thunk`                          | [`DigestContext::update`]    |
-//! | `SHA1_Final`                                 | [`DigestContext::finalize`]  |
-//! | `sha1_set_ctx_params`                        | [`DigestContext::set_params`]|
+//! | `SHA_CTX` (dispatch-macro expansion)         | `Sha1Context` (this file)  |
+//! | `SHA1_Init`                                  | `DigestContext::init`      |
+//! | `SHA1_Update_thunk`                          | `DigestContext::update`    |
+//! | `SHA1_Final`                                 | `DigestContext::finalize`  |
+//! | `sha1_set_ctx_params`                        | `DigestContext::set_params`|
 //! | `sha1_settable_ctx_params`                   | (implicit in `set_params`)   |
-//! | `ossl_sha1_functions` (dispatch table)       | [`Sha1Provider`]             |
-//! | `IMPLEMENT_digest_functions_with_settable_ctx` | [`DigestProvider`] impl    |
+//! | `ossl_sha1_functions` (dispatch table)       | `Sha1Provider`             |
+//! | `IMPLEMENT_digest_functions_with_settable_ctx` | `DigestProvider` impl    |
 //!
 //! ## Wiring Path (Rule R10)
 //!
@@ -146,7 +146,7 @@ const PARAM_KEY_SSL3_MS: &str = "ssl3-ms";
 ///
 /// This is the provider-layer entry point: it advertises the
 /// algorithm's metadata (name, block size, digest size) and
-/// manufactures fresh [`DigestContext`] instances via
+/// manufactures fresh `DigestContext` instances via
 /// [`DigestProvider::new_ctx`].
 ///
 /// # Characteristics
@@ -184,7 +184,7 @@ impl DigestProvider for Sha1Provider {
     /// Returns the canonical algorithm name `"SHA1"`.
     ///
     /// This matches the schema-required primary name and the first
-    /// entry in [`descriptors`].  The alias `"SHA-1"` (hyphenated) is
+    /// entry in `descriptors`.  The alias `"SHA-1"` (hyphenated) is
     /// also recognised by the provider registry — see
     /// `implementations::digests::mod` `create_core_provider`.
     fn name(&self) -> &'static str {
@@ -204,7 +204,7 @@ impl DigestProvider for Sha1Provider {
     /// Constructs a fresh SHA-1 hashing context.
     ///
     /// The returned context is in the *initialised* state, ready to
-    /// accept [`DigestContext::update`] calls.  Replaces the C
+    /// accept `DigestContext::update` calls.  Replaces the C
     /// `OSSL_FUNC_DIGEST_NEWCTX` dispatch entry (function ID 1) in
     /// the `ossl_sha1_functions` table.
     fn new_ctx(&self) -> ProviderResult<Box<dyn DigestContext>> {
@@ -224,7 +224,7 @@ impl DigestProvider for Sha1Provider {
 ///
 /// - `ssl3_ms`: an optional byte buffer set via the
 ///   `OSSL_DIGEST_PARAM_SSL3_MS` context parameter (see
-///   [`DigestContext::set_params`]).  Unset by default; once
+///   `DigestContext::set_params`).  Unset by default; once
 ///   captured, it participates in SSL 3.0-compatible MAC
 ///   computations performed by the calling protocol layer.
 /// - `finalized`: a one-shot guard matching the C provider's
@@ -257,7 +257,7 @@ struct Sha1Context {
     /// than an empty `Vec<u8>`.
     ssl3_ms: Option<Vec<u8>>,
 
-    /// Has the caller already invoked [`DigestContext::finalize`]?
+    /// Has the caller already invoked `DigestContext::finalize`?
     ///
     /// Matches the C dispatch-table contract: after `finalize` the
     /// context may no longer accept `update` or `finalize`.  Use
@@ -282,7 +282,7 @@ impl core::fmt::Debug for Sha1Context {
 impl Sha1Context {
     /// Creates a fresh SHA-1 context in the initialised state.
     ///
-    /// The wrapped [`CryptoSha1Context`] is instantiated via its
+    /// The wrapped `CryptoSha1Context` is instantiated via its
     /// (deprecated) constructor — the deprecation is intentional at
     /// the crypto layer to discourage new SHA-1 usage, but at the
     /// provider layer we *must* expose SHA-1 for TLS/PKI backwards
@@ -298,7 +298,7 @@ impl Sha1Context {
     }
 
     /// Maps a `CryptoError` (or any `Debug`-able value) from the
-    /// `openssl-crypto` layer into a [`ProviderError::Dispatch`].
+    /// `openssl-crypto` layer into a `ProviderError::Dispatch`.
     ///
     /// Mirrors the pattern used by the sibling
     /// [`crate::implementations::digests::sha2`] module so that all
@@ -357,7 +357,7 @@ impl DigestContext for Sha1Context {
     ///
     /// After a successful call, the context is marked finalised and
     /// must not be updated or finalised again without an intervening
-    /// [`DigestContext::init`].  Replaces the C
+    /// `DigestContext::init`.  Replaces the C
     /// `OSSL_FUNC_DIGEST_FINAL` dispatch entry (function ID 4).
     fn finalize(&mut self) -> ProviderResult<Vec<u8>> {
         if self.finalized {
@@ -403,7 +403,7 @@ impl DigestContext for Sha1Context {
     /// The `PROV_DIGEST_FLAG_ALGID_ABSENT` flag is deliberately *not*
     /// reported here: it is an algorithm-level (ASN.1 encoding) trait
     /// rather than per-context state, and is instead surfaced through
-    /// the [`AlgorithmDescriptor`] registration path ([`descriptors`]).
+    /// the `AlgorithmDescriptor` registration path (`descriptors`).
     /// This matches the sibling `sha2.rs` implementation.
     fn get_params(&self) -> ProviderResult<ParamSet> {
         let mut params = ParamSet::new();
@@ -425,13 +425,13 @@ impl DigestContext for Sha1Context {
     /// `sha2_prov.c` lines 38-51.  The only recognised parameter is
     /// `"ssl3-ms"` (= `OSSL_DIGEST_PARAM_SSL3_MS`), whose payload
     /// must be an `OctetString`.  Unknown parameter keys are rejected
-    /// with [`ProviderError::Dispatch`] so callers cannot silently
+    /// with `ProviderError::Dispatch` so callers cannot silently
     /// mis-configure the context — this matches the sibling
     /// `sha2.rs` strictness and exceeds the C implementation's
     /// permissive behaviour (which silently ignores unknown
     /// parameters).
     ///
-    /// An empty [`ParamSet`] is treated as a successful no-op,
+    /// An empty `ParamSet` is treated as a successful no-op,
     /// matching the C provider dispatch-table contract where
     /// `params[0].key == NULL` (end-of-list) is valid input.
     fn set_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
@@ -471,7 +471,7 @@ impl DigestContext for Sha1Context {
 // `implementations::digests::descriptors()`
 // ============================================================================
 
-/// Returns the [`AlgorithmDescriptor`] entries exposed by this module.
+/// Returns the `AlgorithmDescriptor` entries exposed by this module.
 ///
 /// Called from `implementations::digests::descriptors()` (via
 /// `descs.extend(sha1::descriptors())`) during default-provider

@@ -11,7 +11,7 @@
 //! The module is split into two files:
 //! - `mod.rs` (this file): Core ASN.1 types, low-level TLV operations, string
 //!   handling, time types, OID handling, signing/verification helpers, I/O.
-//! - [`template`]: Template system for structured types (SEQUENCE, SET, CHOICE)
+//! - `template`: Template system for structured types (SEQUENCE, SET, CHOICE)
 //!   including the `Asn1Item` trait, encode/decode engine, and SET OF sorter.
 //!
 //! # DER Encoding/Decoding
@@ -24,26 +24,26 @@
 //!
 //! | C Type              | Rust Type                 | Notes                         |
 //! |---------------------|---------------------------|-------------------------------|
-//! | `ASN1_INTEGER`      | [`Asn1Integer`]           | Arbitrary-precision, signed   |
-//! | `ASN1_ENUMERATED`   | [`Asn1Enumerated`]        | Like INTEGER, ENUMERATED tag  |
-//! | `ASN1_BIT_STRING`   | [`Asn1BitString`]         | With unused-bits tracking     |
-//! | `ASN1_OCTET_STRING` | [`Asn1OctetString`]       | Raw byte buffer               |
-//! | `ASN1_OBJECT`       | [`Asn1Object`]            | OID with NID mapping          |
-//! | `ASN1_STRING`       | [`Asn1String`]            | Tagged string (IA5, UTF8, …)  |
-//! | `ASN1_TIME`         | [`Asn1Time`]              | CHOICE(UTCTime, `GeneralTime`)  |
-//! | `ASN1_TYPE`         | [`Asn1Type`]              | ANY type — tagged union       |
-//! | `ASN1_NULL`         | [`Asn1Null`]              | NULL value                    |
-//! | `ASN1_BOOLEAN`      | [`Asn1Boolean`]           | Boolean with DEFAULT support  |
-//! | `X509_ALGOR`        | [`AlgorithmIdentifier`]   | `AlgorithmIdentifier`           |
-//! | `X509_SIG`          | [`DigestInfo`]            | `DigestInfo` (PKCS#1)           |
-//! | `X509_VAL`          | [`Validity`]              | Certificate validity period   |
-//! | `PBEPARAM`          | [`PbeParam`]              | PKCS#5 PBE parameters         |
-//! | `PBE2PARAM`         | [`Pbes2Param`]            | PKCS#5 v2 PBES2 parameters    |
-//! | `PBKDF2PARAM`       | [`Pbkdf2Param`]           | PKCS#5 PBKDF2 parameters      |
-//! | `SCRYPT_PARAMS`     | [`ScryptParam`]           | scrypt parameters (RFC 7914)  |
-//! | `PKCS8_PRIV_KEY_INFO` | [`Pkcs8PrivateKeyInfo`] | PKCS#8 `PrivateKeyInfo`         |
-//! | `NETSCAPE_SPKI`     | [`NetscapeSpki`]          | Signed Public Key & Challenge |
-//! | `NETSCAPE_SPKAC`    | [`Spkac`]                 | Public Key & Challenge inner  |
+//! | `ASN1_INTEGER`      | `Asn1Integer`             | Arbitrary-precision, signed   |
+//! | `ASN1_ENUMERATED`   | `Asn1Enumerated`          | Like INTEGER, ENUMERATED tag  |
+//! | `ASN1_BIT_STRING`   | `Asn1BitString`           | With unused-bits tracking     |
+//! | `ASN1_OCTET_STRING` | `Asn1OctetString`         | Raw byte buffer               |
+//! | `ASN1_OBJECT`       | `Asn1Object`              | OID with NID mapping          |
+//! | `ASN1_STRING`       | `Asn1String`              | Tagged string (IA5, UTF8, …)  |
+//! | `ASN1_TIME`         | `Asn1Time`                | CHOICE(UTCTime, `GeneralTime`)  |
+//! | `ASN1_TYPE`         | `Asn1Type`                | ANY type — tagged union       |
+//! | `ASN1_NULL`         | `Asn1Null`                | NULL value                    |
+//! | `ASN1_BOOLEAN`      | `Asn1Boolean`             | Boolean with DEFAULT support  |
+//! | `X509_ALGOR`        | `AlgorithmIdentifier`     | `AlgorithmIdentifier`         |
+//! | `X509_SIG`          | `DigestInfo`              | `DigestInfo` (PKCS#1)         |
+//! | `X509_VAL`          | `Validity`                | Certificate validity period   |
+//! | `PBEPARAM`          | `PbeParam`                | PKCS#5 PBE parameters         |
+//! | `PBE2PARAM`         | `Pbes2Param`              | PKCS#5 v2 PBES2 parameters    |
+//! | `PBKDF2PARAM`       | `Pbkdf2Param`             | PKCS#5 PBKDF2 parameters      |
+//! | `SCRYPT_PARAMS`     | `ScryptParam`             | scrypt parameters (RFC 7914)  |
+//! | `PKCS8_PRIV_KEY_INFO` | `Pkcs8PrivateKeyInfo`   | PKCS#8 `PrivateKeyInfo`       |
+//! | `NETSCAPE_SPKI`     | `NetscapeSpki`            | Signed Public Key & Challenge |
+//! | `NETSCAPE_SPKAC`    | `Spkac`                   | Public Key & Challenge inner  |
 //!
 //! # Design Principles
 //!
@@ -57,7 +57,7 @@
 //! # Rules Enforced
 //!
 //! - **R5 (Nullability):** All C sentinel returns (NULL, 0, -1, -2) converted
-//!   to `Option<T>` or [`CryptoResult<T>`].
+//!   to `Option<T>` or `CryptoResult<T>`.
 //! - **R6 (Lossless Casts):** All narrowing conversions use `usize::try_from()`
 //!   or saturating arithmetic; no bare `as` casts in public APIs.
 //! - **R7 (Lock Granularity):** No shared mutable state in core ASN.1 types.

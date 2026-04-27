@@ -1,10 +1,10 @@
 //! Tests for overflow-checked arithmetic primitives in openssl-common.
 //!
 //! Comprehensive unit tests for the [`crate::safe_math`] module, verifying
-//! [`SafeResult`] overflow detection, all six C macro families
+//! `SafeResult` overflow detection, all six C macro families
 //! (`ADD`/`SUB`/`MUL`/`DIV`/`MOD`/`NEG`) for both signed and unsigned types,
-//! [`safe_muldiv_u64`] with `u128` intermediate, saturating convenience
-//! functions, and Rule R6 [`checked_cast`]/[`saturating_cast_u64_to_u32`]
+//! `safe_muldiv_u64` with `u128` intermediate, saturating convenience
+//! functions, and Rule R6 `checked_cast`/`saturating_cast_u64_to_u32`
 //! enforcement.
 //!
 //! Derived from C `include/internal/safe_math.h` macro-generated inline
@@ -12,7 +12,7 @@
 //!
 //! # Coverage
 //!
-//! - [`SafeResult`] constructors and conversion: `ok`, `overflow`, `into_result`
+//! - `SafeResult` constructors and conversion: `ok`, `overflow`, `into_result`
 //! - Unsigned 64-bit: `safe_add_u64`, `safe_sub_u64`, `safe_mul_u64`,
 //!   `safe_div_u64`, `safe_mod_u64`
 //! - Unsigned 32-bit: `safe_add_u32`, `safe_sub_u32`, `safe_mul_u32`

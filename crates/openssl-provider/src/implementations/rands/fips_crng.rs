@@ -574,7 +574,7 @@ impl Drop for CrngTest {
 
 /// Provider factory for creating [`CrngTest`] instances.
 ///
-/// Implements the [`RandProvider`] trait, serving as the entry point for
+/// Implements the `RandProvider` trait, serving as the entry point for
 /// the CRNG health test algorithm in the provider dispatch system.
 ///
 /// Replaces the `ossl_crng_test_functions[]` dispatch table from

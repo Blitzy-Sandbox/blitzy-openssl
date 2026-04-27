@@ -11,7 +11,7 @@
 //! Two modes are supported, selected automatically by the digest name:
 //!
 //! * **TLS 1.0 / TLS 1.1** — selected when the digest name equals
-//!   [`MD5_SHA1`] ("MD5-SHA1"). The secret is split into two halves
+//!   `MD5_SHA1` ("MD5-SHA1"). The secret is split into two halves
 //!   `S1` and `S2` of equal length `L = ceil(slen / 2)` (which overlap by
 //!   exactly one byte when `slen` is odd), and the output is
 //!
@@ -42,16 +42,16 @@
 //! `set_ctx_params` accepts the following parameters (mirrors C
 //! `kdf_tls1_prf_set_ctx_params`, `tls1_prf.c` lines 296–420):
 //!
-//! * `"digest"` ([`ParamValue::Utf8String`]) — digest algorithm name. Setting
+//! * `"digest"` (`ParamValue::Utf8String`) — digest algorithm name. Setting
 //!   this name to `"MD5-SHA1"` automatically switches the context to TLS
 //!   1.0/1.1 combined mode; any other non-XOF digest selects TLS 1.2 mode.
 //!   XOF digests (SHAKE128, SHAKE256, …) are rejected with
 //!   `PROV_R_XOF_DIGESTS_NOT_ALLOWED`.
-//! * `"properties"` ([`ParamValue::Utf8String`]) — property query string for
+//! * `"properties"` (`ParamValue::Utf8String`) — property query string for
 //!   digest and MAC fetch.
-//! * `"secret"` ([`ParamValue::OctetString`]) — PRF secret (pre-master or
+//! * `"secret"` (`ParamValue::OctetString`) — PRF secret (pre-master or
 //!   master secret). Replaces any previously-set secret.
-//! * `"seed"` ([`ParamValue::OctetString`]) — label concatenated with the
+//! * `"seed"` (`ParamValue::OctetString`) — label concatenated with the
 //!   seed material. **Multiple `"seed"` assignments in a single call, and
 //!   across multiple calls, are concatenated** (not replaced). This mirrors
 //!   the C behaviour in `tls1_prf.c` lines 376–417.
@@ -59,7 +59,7 @@
 //! # Security
 //!
 //! All sensitive buffers (`secret`, concatenated `seed`) are stored in
-//! [`Zeroize`]-enabled fields and are cleared on drop, `reset()` and before
+//! `Zeroize`-enabled fields and are cleared on drop, `reset()` and before
 //! being replaced. MAC templates and digest metadata are marked
 //! `#[zeroize(skip)]` because they contain no key material.
 //!
@@ -67,9 +67,9 @@
 //!
 //! * The C file allocates two `EVP_MAC_CTX` templates (`P_hash` and
 //!   `P_sha1`). The Rust translation mirrors this by caching two
-//!   [`MacCtx`] templates; each P_hash expansion block [`MacCtx::dup`]s a
+//!   `MacCtx` templates; each P_hash expansion block `MacCtx::dup`s a
 //!   template, avoiding the cost of re-hashing the secret each block.
-//! * Error codes are mapped to [`ProviderError`] variants; reason strings
+//! * Error codes are mapped to `ProviderError` variants; reason strings
 //!   preserve the semantic names used by the C error stack.
 //! * FIPS policy hooks (`fips_digest_check_passed`, `fips_ems_check_passed`,
 //!   `fips_key_check_passed`) from the C source live in
@@ -111,7 +111,7 @@ const PARAM_SEED: &str = "seed";
 // =============================================================================
 
 /// Maps a [`CryptoError`] produced by the `openssl-crypto` crate into a
-/// [`ProviderError`]. Mirrors the ERR-stack hoisting performed by the C
+/// `ProviderError`. Mirrors the ERR-stack hoisting performed by the C
 /// `ERR_raise_data` calls in `tls1_prf.c`.
 #[inline]
 #[allow(clippy::needless_pass_by_value)]
@@ -129,8 +129,8 @@ fn dispatch_err(e: CryptoError) -> ProviderError {
 /// lines 83–99. Holds the fetched digest metadata, cached MAC templates,
 /// the PRF secret and the accumulated seed.
 ///
-/// All sensitive fields implement [`Zeroize`] and are wiped on drop thanks
-/// to [`ZeroizeOnDrop`]; non-sensitive metadata is marked
+/// All sensitive fields implement `Zeroize` and are wiped on drop thanks
+/// to `ZeroizeOnDrop`; non-sensitive metadata is marked
 /// `#[zeroize(skip)]`.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Tls1PrfContext {
@@ -146,7 +146,7 @@ pub struct Tls1PrfContext {
     /// `memcpy`.
     seed: Vec<u8>,
 
-    /// Primary HMAC template. For TLS 1.2 this is HMAC-<digest>; for TLS
+    /// Primary HMAC template. For TLS 1.2 this is `HMAC-<digest>`; for TLS
     /// 1.0/1.1 (digest == "MD5-SHA1") this is HMAC-MD5. `None` until
     /// a digest has been installed via `set_params`.
     #[zeroize(skip)]
@@ -473,10 +473,10 @@ impl Tls1PrfContext {
         Ok(())
     }
 
-    /// Fetches the HMAC MAC method, creates an [`MacCtx`] and
+    /// Fetches the HMAC MAC method, creates an `MacCtx` and
     /// initialises it with the given secret slice and digest parameter.
     /// The resulting context has the HMAC inner/outer hash state
-    /// pre-computed so that [`MacCtx::dup`] can be used in the `P_hash`
+    /// pre-computed so that `MacCtx::dup` can be used in the `P_hash`
     /// loop to avoid re-hashing the secret per block.
     fn make_initialised_hmac(
         libctx: &Arc<LibContext>,
@@ -709,8 +709,8 @@ impl KdfContext for Tls1PrfContext {
     ///
     ///   1. Apply the parameter bag (digest/secret/seed/properties).
     ///   2. Validate that every required component is present.
-    ///   3. Dispatch into [`Self::tls1_prf_alg`] which performs either
-    ///      P_<hash>(secret, seed) or P_MD5(S1, seed) XOR P_SHA1(S2,
+    ///   3. Dispatch into `Self::tls1_prf_alg` which performs either
+    ///      `P_<hash>(secret, seed)` or P_MD5(S1, seed) XOR P_SHA1(S2,
     ///      seed) depending on the selected digest.
     ///
     /// All output bytes are written to a scratch buffer first so that
@@ -775,7 +775,7 @@ impl KdfContext for Tls1PrfContext {
         Ok(())
     }
 
-    /// Returns a [`ParamSet`] describing the current configuration.
+    /// Returns a `ParamSet` describing the current configuration.
     ///
     /// Parallels C `kdf_tls1_prf_get_ctx_params` (`tls1_prf.c` lines
     /// 566–585), which returns `SIZE_MAX` for `"size"` to indicate that
@@ -1323,7 +1323,7 @@ mod tests {
     #[test]
     fn different_digests_all_derive_successfully() {
         // Liveness test for multiple TLS 1.2 PRF digest choices.  The
-        // stubbed [`MacCtx::finalize`] in `openssl-crypto` does not yet
+        // stubbed `MacCtx::finalize` in `openssl-crypto` does not yet
         // differentiate digest algorithms cryptographically, so we test
         // only that each code path completes without error and returns a
         // non-zero output of the requested length.  Cryptographic

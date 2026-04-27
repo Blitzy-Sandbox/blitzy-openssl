@@ -23,7 +23,7 @@
 //! | Rust Construct | C Construct | Location |
 //! |----------------|-------------|----------|
 //! | [`TestRng`] | `PROV_TEST_RNG` struct | `test_rng.c:30` |
-//! | [`TestRng::gen_byte()`](TestRng::gen_byte) | `gen_byte()` | `test_rng.c:100` |
+//! | `TestRng::gen_byte()`(TestRng::gen_byte) | `gen_byte()` | `test_rng.c:100` |
 //! | [`TestRng::new()`] | `test_rng_new()` | `test_rng.c:51` |
 //! | [`TestRng::instantiate()`] | `test_rng_instantiate()` | `test_rng.c:77` |
 //! | [`TestRng::generate()`] | `test_rng_generate()` | `test_rng.c:115` |
@@ -36,7 +36,7 @@
 //!
 //! - **R5 (Nullability):** All methods return `ProviderResult<T>` — no sentinel
 //!   values (`0`, `-1`).
-//! - **R6 (Lossless Casts):** Single `as u8` truncation in [`gen_byte()`](TestRng::gen_byte)
+//! - **R6 (Lossless Casts):** Single `as u8` truncation in `gen_byte()`
 //!   documented with `// TRUNCATION:` justification.
 //! - **R7 (Lock Granularity):** Optional `Mutex` field with `// LOCK-SCOPE:` annotation.
 //! - **R8 (Zero Unsafe):** No `unsafe` code in this module.
@@ -84,7 +84,7 @@ const DEFAULT_MAX_REQUEST: usize = 2_147_483_647;
 ///   Returns an error when the buffer is exhausted.
 ///
 /// - **Generate mode** (`generate = true`): Uses an internal 32-bit xorshift
-///   PRNG (Marsaglia's algorithm) seeded with [`TEST_RNG_SEED`] on
+///   PRNG (Marsaglia's algorithm) seeded with `TEST_RNG_SEED` on
 ///   [`instantiate()`](Self::instantiate).
 ///
 /// # Security Warning
@@ -103,7 +103,7 @@ pub struct TestRng {
 
     /// Operation mode flag.
     ///
-    /// - `true` — xorshift PRNG mode (generate bytes via [`gen_byte()`](Self::gen_byte))
+    /// - `true` — xorshift PRNG mode (generate bytes via `gen_byte()`)
     /// - `false` — buffer mode (stream from pre-loaded entropy)
     generate: bool,
 
@@ -137,7 +137,7 @@ pub struct TestRng {
 
     /// 32-bit xorshift PRNG state (Marsaglia algorithm).
     ///
-    /// Initialised to [`TEST_RNG_SEED`] on [`instantiate()`](Self::instantiate).
+    /// Initialised to `TEST_RNG_SEED` on [`instantiate()`](Self::instantiate).
     seed: u32,
 
     /// Optional per-instance mutex for thread-safe access.
@@ -215,7 +215,7 @@ impl TestRng {
     /// - Validates that the requested `strength` does not exceed the
     ///   configured [`self.strength`].
     /// - Resets the entropy buffer read position to zero.
-    /// - Seeds the xorshift PRNG with [`TEST_RNG_SEED`] (`221953166`).
+    /// - Seeds the xorshift PRNG with `TEST_RNG_SEED` (`221953166`).
     ///
     /// # Errors
     ///
@@ -268,7 +268,7 @@ impl TestRng {
     /// Generates random bytes into `output`.
     ///
     /// In **generate mode** (`self.generate == true`), fills `output` with
-    /// bytes from the xorshift PRNG via [`gen_byte()`](Self::gen_byte).
+    /// bytes from the xorshift PRNG via `gen_byte()`.
     ///
     /// In **buffer mode** (`self.generate == false`), copies bytes from the
     /// pre-loaded entropy buffer, advancing the internal read position.
@@ -354,7 +354,7 @@ impl TestRng {
     /// Generates a nonce from the xorshift PRNG or pre-loaded nonce buffer.
     ///
     /// In **generate mode**, fills `min_len` bytes via
-    /// [`gen_byte()`](Self::gen_byte).
+    /// `gen_byte()`.
     ///
     /// In **buffer mode**, returns up to `max_len` bytes from the pre-loaded
     /// nonce buffer.
@@ -421,7 +421,7 @@ impl TestRng {
     /// # Errors
     ///
     /// Returns a type-mismatch error (via `get_typed`) if a recognised key
-    /// has the wrong [`ParamValue`] variant.
+    /// has the wrong `ParamValue` variant.
     ///
     /// # C Mapping
     ///
@@ -487,7 +487,7 @@ impl TestRng {
 
     /// Retrieves context parameters (state, strength, `max_request`, generate).
     ///
-    /// Returns a [`ParamSet`] containing:
+    /// Returns a `ParamSet` containing:
     ///
     /// | Key | Type | Value |
     /// |-----|------|-------|
@@ -668,7 +668,7 @@ impl RandContext for TestRng {
 
 /// Provider factory for deterministic test RNG instances.
 ///
-/// Implements [`RandProvider`] to create [`TestRng`] contexts on demand.
+/// Implements `RandProvider` to create [`TestRng`] contexts on demand.
 /// The provider is registered with algorithm name `"TEST-RAND"`, matching
 /// the C `ossl_test_rng_functions[]` dispatch table entry.
 ///
