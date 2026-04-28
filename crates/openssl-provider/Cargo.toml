@@ -341,7 +341,12 @@ aria = []
 # SM4 Chinese national standard cipher (GB/T 32907-2016) including GCM/CCM/XTS.
 # Source: providers/implementations/ciphers/cipher_sm4*.c (8 files)
 # C guard: OPENSSL_NO_SM4
-sm4 = []
+#
+# Activates the upstream `openssl-crypto/legacy` feature so the `Sm4` block
+# primitive (gated behind the `legacy` feature in openssl-crypto's symmetric
+# module per AAP §0.6.1 cache-timing notice) is available for the provider
+# layer to wrap with mode/AEAD/XTS state machines.
+sm4 = ["openssl-crypto/legacy"]
 
 # Digest provider implementations: SHA-1, SHA-2, SHA-3, SHAKE, SM3.
 # Maps to providers/implementations/digests/ (17 C files).
