@@ -331,7 +331,12 @@ des = []
 # Camellia block cipher (RFC 3713).
 # Source: providers/implementations/ciphers/cipher_camellia*.c (3 files)
 # C guard: OPENSSL_NO_CAMELLIA
-camellia = []
+#
+# Activates the upstream `openssl-crypto/legacy` feature so the `Camellia`
+# block primitive (gated behind the `legacy` feature in openssl-crypto's
+# symmetric module per AAP §0.6.1) is available for the provider layer to
+# wrap with mode state machines (ECB/CBC/OFB/CFB/CTR/CBC-CTS).
+camellia = ["openssl-crypto/legacy"]
 
 # ARIA block cipher (RFC 5794) including GCM/CCM modes.
 # Source: providers/implementations/ciphers/cipher_aria*.c (6 files)
