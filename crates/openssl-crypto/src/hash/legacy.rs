@@ -2026,6 +2026,232 @@ pub fn whirlpool(data: &[u8]) -> CryptoResult<Vec<u8>> {
 
 
 // =============================================================================
+// BLAKE2 — RFC 7693 (cross-crate type markers)
+// =============================================================================
+//
+// Per AAP §0.5.1, the actual BLAKE2 round function and streaming context
+// implementation reside in the `openssl-provider` crate at
+// `openssl-provider::implementations::digests::blake2`. The reason BLAKE2 is
+// *not* implemented inline alongside MD2 / MD4 / RIPEMD-160 / SM3 / Whirlpool
+// is that BLAKE2 in upstream OpenSSL is exclusively reached through the
+// provider dispatch path — it never had a dedicated `crypto/blake2/`
+// directory the way the other legacy hashes do. The provider-side symbols
+// `Blake2bProvider`, `Blake2sProvider`, `Blake2bContext`, and `Blake2sContext`
+// hold the full streaming compression code.
+//
+// However, several downstream crates (the FFI layer, the CLI `dgst`
+// subcommand, and any future TLS extension wanting to negotiate BLAKE2-based
+// AEAD / signature suites) need a stable public type to refer to BLAKE2
+// variants without taking a dependency on `openssl-provider`. That role is
+// filled by the [`Blake2Algorithm`] discriminant and the [`Blake2Context`]
+// type marker below.
+//
+// To compute an actual BLAKE2 digest, callers should use one of:
+//
+//   1. `openssl-provider::implementations::digests::Blake2bProvider` directly
+//      (when the `"blake2"` feature is enabled), OR
+//   2. The EVP fetch layer with the algorithm name
+//      [`Blake2Algorithm::name`] yields ("BLAKE2B-256" / "BLAKE2B-512" /
+//      "BLAKE2S-256"), OR
+//   3. The provider's [`DigestProvider::new_context`] factory.
+//
+// =============================================================================
+
+/// BLAKE2 algorithm variant identifier (RFC 7693).
+///
+/// This enum names the three BLAKE2 variants that OpenSSL exposes through the
+/// `EVP_blake2*` family of accessors. It is the type-level identifier used by
+/// downstream crates (FFI, CLI, future TLS extensions) to refer to a specific
+/// BLAKE2 algorithm by value rather than by string name. Algorithm metadata
+/// — output digest length and compression-function block size — is exposed
+/// through the [`Self::digest_size`] and [`Self::block_size`] accessors so
+/// callers can pre-allocate output buffers without instantiating a context.
+///
+/// # Variants
+///
+/// * [`Self::Blake2b256`] — `BLAKE2b` truncated to 256 bits (32-byte digest);
+///   uses the `BLAKE2b` 128-byte block compression function.
+/// * [`Self::Blake2b512`] — `BLAKE2b` at full 512-bit output (64-byte digest);
+///   the canonical `BLAKE2b` configuration; used as the default when no length
+///   parameter is supplied.
+/// * [`Self::Blake2s256`] — `BLAKE2s` at full 256-bit output (32-byte digest);
+///   the 64-byte-block, 32-bit-word variant designed for 8- to 32-bit
+///   platforms.
+///
+/// # Rule compliance
+///
+/// * **R5** — every variant is a distinct discriminant; no sentinel overloads.
+/// * **R6** — accessors return `usize` with no narrowing casts.
+/// * **R8** — pure safe Rust; no `unsafe` code path.
+/// * **R9** — all variants and methods carry doc comments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Blake2Algorithm {
+    /// `BLAKE2b` with output truncated to 256 bits (32-byte digest).
+    ///
+    /// Uses the `BLAKE2b` 128-byte compression-function block. Suitable as a
+    /// drop-in replacement for SHA-256 in performance-sensitive code paths
+    /// when MD-style length-extension protection is not required.
+    Blake2b256,
+    /// `BLAKE2b` at full 512-bit output (64-byte digest).
+    ///
+    /// The canonical `BLAKE2b` configuration. Uses the 128-byte block
+    /// compression function and produces a 64-byte digest. Equivalent to
+    /// `EVP_blake2b512()` in upstream OpenSSL.
+    Blake2b512,
+    /// `BLAKE2s` at full 256-bit output (32-byte digest).
+    ///
+    /// The 64-byte-block, 32-bit-word variant. Designed for 8- to 32-bit
+    /// platforms where 64-bit arithmetic is expensive. Equivalent to
+    /// `EVP_blake2s256()` in upstream OpenSSL.
+    Blake2s256,
+}
+
+impl Blake2Algorithm {
+    /// Returns the canonical OpenSSL algorithm name for this variant.
+    ///
+    /// The returned string matches the value produced by
+    /// `EVP_MD_get0_name()` in upstream C and the `OSSL_DIGEST_NAME_*`
+    /// macro values used by the provider dispatch tables, so it can serve
+    /// as an `OSSL_PARAM` lookup key without any further translation.
+    ///
+    /// | Variant         | Returned name |
+    /// |-----------------|---------------|
+    /// | `Blake2b256`    | `"BLAKE2B-256"` |
+    /// | `Blake2b512`    | `"BLAKE2B-512"` |
+    /// | `Blake2s256`    | `"BLAKE2S-256"` |
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        match self {
+            Blake2Algorithm::Blake2b256 => "BLAKE2B-256",
+            Blake2Algorithm::Blake2b512 => "BLAKE2B-512",
+            Blake2Algorithm::Blake2s256 => "BLAKE2S-256",
+        }
+    }
+
+    /// Returns the digest output size in bytes.
+    ///
+    /// This mirrors `EVP_MD_get_size()` in upstream C and lets callers
+    /// pre-allocate output buffers prior to instantiating a context in
+    /// `openssl-provider`.
+    ///
+    /// | Variant       | Output size |
+    /// |---------------|-------------|
+    /// | `Blake2b256`  | 32 bytes    |
+    /// | `Blake2b512`  | 64 bytes    |
+    /// | `Blake2s256`  | 32 bytes    |
+    // R9 justification: `Blake2b256` and `Blake2s256` happen to share the
+    // 32-byte output length, but they are *distinct algorithms* with
+    // independent compression functions and security parameters. Merging the
+    // arms via `|` would obscure the per-algorithm dispatch and complicate
+    // any future divergence (e.g., a hardware-backed `BLAKE2b` returning a
+    // different truncated length). The exhaustive per-variant arm is the
+    // architecturally honest representation; the equality of the body is a
+    // numerical coincidence, not a semantic identity.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub fn digest_size(&self) -> usize {
+        match self {
+            Blake2Algorithm::Blake2b256 => 32,
+            Blake2Algorithm::Blake2b512 => 64,
+            Blake2Algorithm::Blake2s256 => 32,
+        }
+    }
+
+    /// Returns the compression-function block size in bytes.
+    ///
+    /// `BLAKE2b` operates on 128-byte blocks, `BLAKE2s` on 64-byte blocks.
+    /// This mirrors `EVP_MD_get_block_size()` in upstream C.
+    ///
+    /// | Variant       | Block size |
+    /// |---------------|------------|
+    /// | `Blake2b256`  | 128 bytes  |
+    /// | `Blake2b512`  | 128 bytes  |
+    /// | `Blake2s256`  | 64 bytes   |
+    #[must_use]
+    pub fn block_size(&self) -> usize {
+        match self {
+            Blake2Algorithm::Blake2b256 | Blake2Algorithm::Blake2b512 => 128,
+            Blake2Algorithm::Blake2s256 => 64,
+        }
+    }
+}
+
+/// BLAKE2 hash context — public type marker for cross-crate identification.
+///
+/// `Blake2Context` carries the [`Blake2Algorithm`] discriminant so that
+/// downstream code (FFI layer, CLI `dgst` subcommand, future TLS extensions)
+/// can name a specific BLAKE2 variant without depending on the
+/// `openssl-provider` crate.
+///
+/// # Why a type marker, not a streaming context
+///
+/// Unlike the other context types in this module ([`Md2Context`],
+/// [`Md4Context`], [`Mdc2Context`], [`Ripemd160Context`], [`Sm3Context`],
+/// [`WhirlpoolContext`]), `Blake2Context` does **not** implement [`Digest`].
+/// The streaming compression and finalization for BLAKE2 live in
+/// `openssl-provider::implementations::digests::blake2`, which is the
+/// canonical entry point for callers who need to actually compute a BLAKE2
+/// digest. This type exists solely to provide a stable, public, no-dependency
+/// algorithm reference for the rest of the workspace.
+///
+/// # Example
+///
+/// ```rust
+/// use openssl_crypto::hash::legacy::{Blake2Algorithm, Blake2Context};
+///
+/// let marker = Blake2Context::new(Blake2Algorithm::Blake2b512);
+/// assert_eq!(marker.algorithm, Blake2Algorithm::Blake2b512);
+/// assert_eq!(marker.algorithm.digest_size(), 64);
+/// assert_eq!(marker.algorithm.block_size(), 128);
+/// assert_eq!(marker.algorithm.name(), "BLAKE2B-512");
+/// ```
+///
+/// # Rule compliance
+///
+/// * **R5** — `algorithm` is always a valid [`Blake2Algorithm`] variant; there
+///   is no "unset" sentinel state.
+/// * **R8** — pure safe Rust; no `unsafe` code path.
+/// * **R9** — all fields and methods carry doc comments.
+///
+/// # Note on `Zeroize`
+///
+/// Unlike the other context types in this module, `Blake2Context` carries no
+/// cryptographic state — it holds only an algorithm discriminant — and so it
+/// does *not* derive [`Zeroize`] or [`ZeroizeOnDrop`]. The discriminant is
+/// public information; no secret key material flows through this type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Blake2Context {
+    /// The BLAKE2 algorithm variant this marker refers to.
+    ///
+    /// Public to allow downstream consumers to pattern-match on the variant
+    /// without going through an accessor. The field is marked `pub` rather
+    /// than gated behind a getter because it carries no cryptographic
+    /// state — the variant is part of the public type's identity.
+    pub algorithm: Blake2Algorithm,
+}
+
+impl Blake2Context {
+    /// Construct a new BLAKE2 type marker for the given algorithm variant.
+    ///
+    /// This is a `const fn` so callers in `openssl-ffi` can build static
+    /// algorithm-id tables at compile time.
+    #[must_use]
+    pub const fn new(alg: Blake2Algorithm) -> Self {
+        Self { algorithm: alg }
+    }
+
+    /// Returns the [`Blake2Algorithm`] variant this context refers to.
+    ///
+    /// This accessor mirrors the field-level getter pattern used by the
+    /// streaming context types in this module and lets callers retrieve the
+    /// variant without needing to import [`Blake2Algorithm`] explicitly.
+    #[must_use]
+    pub const fn algorithm(&self) -> Blake2Algorithm {
+        self.algorithm
+    }
+}
+
+// =============================================================================
 // LegacyAlgorithm Enum + Factory
 // =============================================================================
 
@@ -2977,6 +3203,119 @@ mod tests {
                 "factory must accept variant {alg:?}"
             );
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // BLAKE2 — type-marker metadata tests (RFC 7693)
+    //
+    // These tests do not exercise the BLAKE2 compression function (which lives
+    // in `openssl-provider::implementations::digests::blake2`). Instead they
+    // verify that the `Blake2Algorithm` discriminant and the `Blake2Context`
+    // type marker correctly report metadata that downstream crates rely on
+    // (FFI layer, CLI `dgst` subcommand, etc.). Per AAP §0.4.1 the BLAKE2
+    // variants exposed are: Blake2b256, Blake2b512, Blake2s256.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn blake2_algorithm_canonical_names_match_evp_md_get0_name() {
+        // Names must match the upstream `OSSL_DIGEST_NAME_BLAKE2*` macro
+        // values so they can serve directly as `OSSL_PARAM` lookup keys
+        // and `EVP_MD_fetch()` selectors without further translation.
+        assert_eq!(Blake2Algorithm::Blake2b256.name(), "BLAKE2B-256");
+        assert_eq!(Blake2Algorithm::Blake2b512.name(), "BLAKE2B-512");
+        assert_eq!(Blake2Algorithm::Blake2s256.name(), "BLAKE2S-256");
+    }
+
+    #[test]
+    fn blake2_algorithm_digest_sizes_match_rfc7693() {
+        // RFC 7693 §2.1 fixes the maximum digest sizes; the truncated 256-bit
+        // BLAKE2b variant produces 32 bytes; full BLAKE2b produces 64 bytes;
+        // BLAKE2s at 256-bit output produces 32 bytes.
+        assert_eq!(Blake2Algorithm::Blake2b256.digest_size(), 32);
+        assert_eq!(Blake2Algorithm::Blake2b512.digest_size(), 64);
+        assert_eq!(Blake2Algorithm::Blake2s256.digest_size(), 32);
+    }
+
+    #[test]
+    fn blake2_algorithm_block_sizes_match_rfc7693() {
+        // RFC 7693 §3.1: BLAKE2b uses 128-byte blocks; BLAKE2s uses 64-byte
+        // blocks. These constants are required by the FFI layer to populate
+        // `EVP_MD->block_size`.
+        assert_eq!(Blake2Algorithm::Blake2b256.block_size(), 128);
+        assert_eq!(Blake2Algorithm::Blake2b512.block_size(), 128);
+        assert_eq!(Blake2Algorithm::Blake2s256.block_size(), 64);
+    }
+
+    #[test]
+    fn blake2_algorithm_is_copy_and_eq() {
+        // The marker enum must be `Copy + Eq` so it can be embedded in
+        // FFI handle structs and compared cheaply without taking ownership.
+        let a = Blake2Algorithm::Blake2b512;
+        let b = a; // Copy
+        assert_eq!(a, b);
+        assert_eq!(a, Blake2Algorithm::Blake2b512);
+        assert_ne!(a, Blake2Algorithm::Blake2s256);
+    }
+
+    #[test]
+    fn blake2_context_construction_via_new() {
+        // `new()` is `const fn` so callers in `openssl-ffi` can build
+        // static algorithm-id tables at compile time.
+        let ctx = Blake2Context::new(Blake2Algorithm::Blake2b256);
+        assert_eq!(ctx.algorithm, Blake2Algorithm::Blake2b256);
+    }
+
+    #[test]
+    fn blake2_context_algorithm_accessor() {
+        // The `algorithm()` accessor is the AAP §0.5 schema-level entry
+        // point exposed by `Blake2Context::algorithm`. It must agree with
+        // direct field access (the field is also `pub` for ergonomics).
+        let ctx = Blake2Context::new(Blake2Algorithm::Blake2s256);
+        assert_eq!(ctx.algorithm(), Blake2Algorithm::Blake2s256);
+        assert_eq!(ctx.algorithm(), ctx.algorithm);
+    }
+
+    #[test]
+    fn blake2_context_propagates_metadata_via_algorithm_field() {
+        // Demonstrate the full cross-crate use case: a downstream crate can
+        // build a `Blake2Context` and recover digest_size + block_size from
+        // it without depending on `openssl-provider`.
+        for &(alg, expected_digest, expected_block) in &[
+            (Blake2Algorithm::Blake2b256, 32usize, 128usize),
+            (Blake2Algorithm::Blake2b512, 64, 128),
+            (Blake2Algorithm::Blake2s256, 32, 64),
+        ] {
+            let ctx = Blake2Context::new(alg);
+            assert_eq!(ctx.algorithm.digest_size(), expected_digest);
+            assert_eq!(ctx.algorithm.block_size(), expected_block);
+        }
+    }
+
+    #[test]
+    // R9 justification: this test deliberately calls `.clone()` on a `Copy`
+    // type to *verify* that the explicit `Clone` trait method is wired up
+    // correctly. clippy's `clone_on_copy` lint is normally helpful, but the
+    // entire point of this test is to exercise both the implicit `Copy` and
+    // the explicit `Clone` paths so a future change that drops `#[derive(Clone)]`
+    // (e.g., via overriding to a custom `Clone` impl) is caught immediately.
+    #[allow(clippy::clone_on_copy)]
+    fn blake2_context_clone_and_copy() {
+        // Copy semantics are required by FFI use; verify that cloning and
+        // copying both yield equal markers without mutating the source.
+        let original = Blake2Context::new(Blake2Algorithm::Blake2b512);
+        let cloned = original; // Copy
+        let cloned_explicit = original.clone();
+        assert_eq!(original, cloned);
+        assert_eq!(original, cloned_explicit);
+        assert_eq!(cloned.algorithm, Blake2Algorithm::Blake2b512);
+    }
+
+    #[test]
+    fn blake2_const_construction_is_zero_overhead() {
+        // Smoke test that `Blake2Context::new` is callable in a const
+        // context. If this compiles, the `const fn` contract holds.
+        const MARKER: Blake2Context = Blake2Context::new(Blake2Algorithm::Blake2b512);
+        assert_eq!(MARKER.algorithm, Blake2Algorithm::Blake2b512);
     }
 }
 

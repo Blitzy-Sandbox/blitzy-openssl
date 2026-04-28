@@ -38,3 +38,14 @@ pub use legacy::{
 #[cfg(feature = "des")]
 #[allow(deprecated)]
 pub use legacy::{mdc2, Mdc2Context};
+
+// Re-export BLAKE2 type markers (RFC 7693).
+//
+// `Blake2Algorithm` and `Blake2Context` are public type-level identifiers used
+// by downstream crates (FFI, CLI `dgst`, future TLS suites) to refer to BLAKE2
+// variants without depending on the `openssl-provider` crate. The streaming
+// compression and finalization for BLAKE2 reside in `openssl-provider::
+// implementations::digests::blake2` per AAP §0.5.1 — this is a deliberate
+// architectural separation to allow downstream code to name the algorithm
+// without pulling in the full provider stack.
+pub use legacy::{Blake2Algorithm, Blake2Context};
