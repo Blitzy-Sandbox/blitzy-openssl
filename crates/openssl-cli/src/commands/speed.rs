@@ -1183,7 +1183,7 @@ fn bench_kem(
 
     let kem_alg = Kem::fetch(ctx, alg, None)?;
     let mut encaps_ctx = KemContext::new(&kem_alg);
-    encaps_ctx.encapsulate_init(&key)?;
+    encaps_ctx.encapsulate_init(&key, None)?;
     let sample = encaps_ctx.encapsulate()?;
     let encaps_result = timer_driven_loop(duration, || {
         let _ = encaps_ctx.encapsulate()?;
@@ -1191,7 +1191,7 @@ fn bench_kem(
     })?;
 
     let mut decaps_ctx = KemContext::new(&kem_alg);
-    decaps_ctx.decapsulate_init(&key)?;
+    decaps_ctx.decapsulate_init(&key, None)?;
     let decaps_result = timer_driven_loop(duration, || {
         let _ = decaps_ctx.decapsulate(&sample.ciphertext)?;
         Ok(())

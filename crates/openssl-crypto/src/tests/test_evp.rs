@@ -631,7 +631,7 @@ fn test_evp_kem_encap_decap() -> CryptoResult<()> {
 
     // --- Encapsulate ---
     let mut enc_ctx = KemContext::new(&kem);
-    enc_ctx.encapsulate_init(&pkey)?;
+    enc_ctx.encapsulate_init(&pkey, None)?;
     let result = enc_ctx.encapsulate()?;
     assert!(
         !result.ciphertext.is_empty(),
@@ -644,7 +644,7 @@ fn test_evp_kem_encap_decap() -> CryptoResult<()> {
 
     // --- Decapsulate ---
     let mut dec_ctx = KemContext::new(&kem);
-    dec_ctx.decapsulate_init(&pkey)?;
+    dec_ctx.decapsulate_init(&pkey, None)?;
     let recovered_secret = dec_ctx.decapsulate(&result.ciphertext)?;
 
     assert_eq!(
