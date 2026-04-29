@@ -17,6 +17,9 @@ pub mod util;
 /// HPKE DHKEM over ECX curves (X25519, X448) — RFC 9180.
 pub mod ecx;
 
+/// ML-KEM (Module-Lattice KEM) — FIPS 203, security levels 512/768/1024.
+pub mod ml_kem;
+
 // Re-export commonly used items from util for convenience.
 pub use util::{kem_mode_to_name, kem_modename_to_id, KemMode};
 
@@ -26,6 +29,10 @@ pub use util::{kem_mode_to_name, kem_modename_to_id, KemMode};
 /// is enabled. Returns descriptors for every KEM variant supported
 /// by the default provider.
 ///
+/// The ML-KEM suites (`ML-KEM-512`, `ML-KEM-768`, `ML-KEM-1024`) are
+/// obtained from [`ml_kem::descriptors()`] — the canonical FIPS 203
+/// names registered under `provider=default`.
+///
 /// The ECX DHKEM suites (X25519-HKDF-SHA256 and X448-HKDF-SHA512) are
 /// obtained from [`ecx::descriptors()`] and registered under their RFC 9180
 /// canonical names `"X25519"` and `"X448"`. The generic `"DHKEM"` entry is
@@ -33,21 +40,6 @@ pub use util::{kem_mode_to_name, kem_modename_to_id, KemMode};
 #[must_use]
 pub fn descriptors() -> Vec<AlgorithmDescriptor> {
     let mut out = vec![
-        algorithm(
-            &["ML-KEM-512"],
-            "provider=default",
-            "Module-Lattice KEM 512-bit security (FIPS 203)",
-        ),
-        algorithm(
-            &["ML-KEM-768"],
-            "provider=default",
-            "Module-Lattice KEM 768-bit security (FIPS 203)",
-        ),
-        algorithm(
-            &["ML-KEM-1024"],
-            "provider=default",
-            "Module-Lattice KEM 1024-bit security (FIPS 203)",
-        ),
         algorithm(
             &["DHKEM"],
             "provider=default",
@@ -59,6 +51,13 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
             "RSA Key Encapsulation Mechanism",
         ),
     ];
+    // ML-KEM-512/768/1024 are owned by `ml_kem.rs` per the FIPS 203
+    // implementation crate.  Routing through `ml_kem::descriptors()`
+    // (instead of inline `algorithm(...)` entries) prevents duplicate
+    // registrations and ensures every descriptor’s lifecycle is
+    // reachable from the real implementation module — satisfying
+    // Rule R10 (wiring before done).
+    out.extend(ml_kem::descriptors());
     // Append the concrete ECX DHKEM suites (X25519, X448) to the generic
     // dispatch table so that `OSSL_PROVIDER` lookups by canonical curve
     // name succeed. R10: ensures `ecx.rs` is reachable from the provider
