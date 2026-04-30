@@ -347,14 +347,17 @@ impl SlhDsaVariant {
     ///
     /// Looked up via the canonical algorithm name; the table is
     /// guaranteed to contain an entry for every named variant by the
-    /// crypto crate's own internal consistency tests, so the
-    /// `expect` is unreachable in normal operation.
+    /// crypto crate's own internal consistency tests, so this lookup
+    /// is unreachable-on-`None` in normal operation.
     #[must_use]
     pub fn params(self) -> &'static SlhDsaParams {
-        slh_dsa_params_get(self.name()).expect(
-            "SLH-DSA parameter table is missing an entry for a known variant; \
-             this indicates a bug in openssl_crypto::pqc::slh_dsa::SLH_DSA_PARAMS_TABLE",
-        )
+        match slh_dsa_params_get(self.name()) {
+            Some(params) => params,
+            None => unreachable!(
+                "SLH-DSA parameter table is missing an entry for a known variant; \
+                 this indicates a bug in openssl_crypto::pqc::slh_dsa::SLH_DSA_PARAMS_TABLE"
+            ),
+        }
     }
 
     /// Returns the per-variant security parameter `n` in bytes.
@@ -899,13 +902,11 @@ impl SlhDsaSignatureContext {
         })?;
 
         // Materialise add_random per FIPS 205 §10.2.1 (Algorithm 19):
-        //   - Caller-supplied bytes win.
-        //   - Otherwise, deterministic mode skips randomness.
+        //   - Caller-supplied bytes win (skip fresh draw).
+        //   - Deterministic mode skips randomness (skip fresh draw).
         //   - Otherwise, draw `n` fresh bytes from the library RNG.
         let n = self.variant.n();
-        let owned_random: Option<Vec<u8>> = if self.add_random.is_some() {
-            None
-        } else if self.deterministic {
+        let owned_random: Option<Vec<u8>> = if self.add_random.is_some() || self.deterministic {
             None
         } else {
             let mut buf = vec![0u8; n];
@@ -1024,13 +1025,13 @@ impl SlhDsaSignatureContext {
     /// Direct translation of `slh_dsa_set_ctx_params` (line 274 of
     /// `slh_dsa_sig.c`). Recognised parameters:
     ///
-    /// | Name              | Type         | Effect                                                |
-    /// |-------------------|--------------|-------------------------------------------------------|
-    /// | `context-string`  | OctetString  | Replace the per-signature context (≤ 255 bytes).      |
-    /// | `deterministic`   | Integer      | Toggle deterministic signing.                         |
-    /// | `add-random`      | OctetString  | Override the per-signature randomness (≤ 32 bytes).   |
-    /// | `message-encoding`| Integer      | Select pure (1) or raw (0) message domain.            |
-    /// | `signature`       | OctetString  | Replace the cached signature (used by FIPS testers).  |
+    /// | Name              | Type           | Effect                                                |
+    /// |-------------------|----------------|-------------------------------------------------------|
+    /// | `context-string`  | `OctetString`  | Replace the per-signature context (≤ 255 bytes).      |
+    /// | `deterministic`   | Integer        | Toggle deterministic signing.                         |
+    /// | `add-random`      | `OctetString`  | Override the per-signature randomness (≤ 32 bytes).   |
+    /// | `message-encoding`| Integer        | Select pure (1) or raw (0) message domain.            |
+    /// | `signature`       | `OctetString`  | Replace the cached signature (used by FIPS testers).  |
     ///
     /// Unlike ML-DSA, SLH-DSA has **no** `mu` parameter — the spec
     /// does not define a μ-mode for SLH-DSA.  Unknown parameters are
@@ -1157,7 +1158,7 @@ impl SlhDsaSignatureContext {
             };
             trace!(
                 algorithm = self.variant.name(),
-                cached_len = self.cached_signature.as_ref().map(Vec::len).unwrap_or(0),
+                cached_len = self.cached_signature.as_ref().map_or(0, Vec::len),
                 "slh-dsa: applied cached signature"
             );
         }
@@ -1169,7 +1170,7 @@ impl SlhDsaSignatureContext {
     ///
     /// Direct translation of `slh_dsa_get_ctx_params` (line 252 of
     /// `slh_dsa_sig.c`). Surfaces the lazily-built
-    /// AlgorithmIdentifier DER, the canonical instance name, the
+    /// `AlgorithmIdentifier` DER, the canonical instance name, the
     /// deterministic flag, the message-encoding selector, and the
     /// security level (in bits).  No `mu` parameter is emitted — the
     /// SLH-DSA spec does not define a μ-mode.
@@ -1294,7 +1295,7 @@ impl fmt::Debug for SlhDsaSignatureContext {
 /// `csor`/`sigAlgs` arc) and differ only in the trailing arc: 0x14
 /// through 0x1F maps to `.20` through `.31`.  The encoding is a
 /// minimal `SEQUENCE { OID }` — SLH-DSA carries no parameters in its
-/// AlgorithmIdentifier per FIPS 205 §10.4.
+/// `AlgorithmIdentifier` per FIPS 205 §10.4.
 ///
 /// Mirrors `MAKE_SIGNATURE_FUNCTIONS` macro expansion in
 /// `slh_dsa_sig.c` (lines 372–390) which selects between the
@@ -1430,7 +1431,7 @@ impl SignatureContext for SlhDsaSignatureContext {
     /// the supplied byte string must contain a private encoding for
     /// the variant; the streaming buffer and any cached signature are
     /// reset; supplied parameters are applied last so they can
-    /// overwrite per-call defaults (deterministic / add_random /
+    /// overwrite per-call defaults (deterministic / `add_random` /
     /// context-string / message-encoding).
     fn sign_init(&mut self, key: &[u8], params: Option<&ParamSet>) -> ProviderResult<()> {
         debug!(
@@ -1645,7 +1646,7 @@ impl SignatureContext for SlhDsaSignatureContext {
     /// Builds a [`ParamSet`] view of the context.
     ///
     /// Because the trait constrains us to `&self`, the
-    /// AlgorithmIdentifier DER is rebuilt from scratch instead of
+    /// `AlgorithmIdentifier` DER is rebuilt from scratch instead of
     /// being lazily cached on the context.  The caller can drive the
     /// caching variant via [`Self::get_ctx_params`] when mutation is
     /// available.
