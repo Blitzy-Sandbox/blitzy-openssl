@@ -121,7 +121,7 @@ fn bn_from_i64_handles_negative() {
 #[test]
 fn bn_from_bytes_be_basic() {
     let bn = BigNum::from_bytes_be(&[0x01, 0x02, 0x03, 0x04]);
-    assert_eq!(bn.to_u64(), Some(0x01020304));
+    assert_eq!(bn.to_u64(), Some(0x0102_0304));
     assert_eq!(bn.num_bits(), 25);
 }
 
@@ -326,6 +326,84 @@ fn bn_div_by_zero_errors() {
     assert!(div_rem(&a, &zero).is_err());
     assert!(div(&a, &zero).is_err());
     assert!(rem(&a, &zero).is_err());
+}
+
+#[test]
+fn bn_division_by_zero_returns_error_per_r5() {
+    // Rule R5 — division by zero MUST return CryptoResult::Err, not a
+    // sentinel value. Verify the error variant maps correctly through
+    // the BigNumError → CryptoError conversion.
+    let a = BigNum::from_u64(42);
+    let zero = BigNum::zero();
+    let err = div(&a, &zero).expect_err("division by zero must error");
+    let msg = format!("{err}");
+    assert!(
+        msg.to_lowercase().contains("zero") || msg.to_lowercase().contains("division"),
+        "error message must reference division-by-zero, got {msg:?}"
+    );
+}
+
+#[test]
+fn bn_mod_zero_returns_error_per_r5() {
+    // Rule R5 — mod-by-zero MUST return CryptoResult::Err.
+    let a = BigNum::from_u64(42);
+    let zero = BigNum::zero();
+    assert!(rem(&a, &zero).is_err(), "rem by zero must error");
+    assert!(nnmod(&a, &zero).is_err(), "nnmod by zero must error");
+    assert!(mod_word(&a, 0).is_err(), "mod_word by zero must error");
+}
+
+#[test]
+fn bn_zero_operations_multiplication_and_addition() {
+    // Multiply by zero: any BigNum * 0 = 0.
+    let a = BigNum::from_u64(123_456_789);
+    let zero = BigNum::zero();
+    let prod = mul(&a, &zero);
+    assert!(prod.is_zero(), "x * 0 must equal 0");
+
+    // Square of zero is zero.
+    let z_sq = sqr(&zero);
+    assert!(z_sq.is_zero(), "0^2 must equal 0");
+
+    // Add zero: any BigNum + 0 = self.
+    let sum = add(&a, &zero);
+    assert_eq!(sum.cmp(&a), Ordering::Equal, "x + 0 must equal x");
+
+    // Subtract zero: any BigNum - 0 = self.
+    let diff = sub(&a, &zero);
+    assert_eq!(diff.cmp(&a), Ordering::Equal, "x - 0 must equal x");
+
+    // Subtract self: x - x = 0.
+    let self_diff = sub(&a, &a);
+    assert!(self_diff.is_zero(), "x - x must equal 0");
+
+    // Zero raised to a positive exponent (with a valid modulus): 0^k mod m = 0.
+    let exp_val = BigNum::from_u64(5);
+    let modulus = BigNum::from_u64(13);
+    let zero_pow = mod_exp(&zero, &exp_val, &modulus).expect("ok");
+    assert!(zero_pow.is_zero(), "0^k mod m must equal 0 for k > 0");
+}
+
+#[test]
+fn bn_one_operations() {
+    // x * 1 = x and 1 * x = x (multiplicative identity).
+    let a = BigNum::from_u64(987_654_321);
+    let one = BigNum::one();
+    let r1 = mul(&a, &one);
+    let r2 = mul(&one, &a);
+    assert_eq!(r1.cmp(&a), Ordering::Equal, "x * 1 must equal x");
+    assert_eq!(r2.cmp(&a), Ordering::Equal, "1 * x must equal x");
+
+    // x^0 = 1 for any positive modulus (per mod_exp contract).
+    let zero_exp = BigNum::zero();
+    let modulus = BigNum::from_u64(13);
+    let r = mod_exp(&a, &zero_exp, &modulus).expect("ok");
+    assert!(r.is_one(), "x^0 mod m must equal 1 (m > 1)");
+
+    // 1^n = 1 for any n (and any modulus > 1).
+    let exp_val = BigNum::from_u64(12345);
+    let r = mod_exp(&one, &exp_val, &modulus).expect("ok");
+    assert!(r.is_one(), "1^n mod m must equal 1");
 }
 
 #[test]
@@ -547,6 +625,35 @@ fn bn_mod_exp_zero_modulus_errors() {
     let exp_val = BigNum::from_u64(10);
     let zero = BigNum::zero();
     assert!(mod_exp(&base, &exp_val, &zero).is_err());
+}
+
+#[test]
+fn bn_mod_exp_known_vector_2_256_mod_65537() {
+    // Known vector: 2^256 mod 65537 = 1.
+    //
+    // Derivation: 65537 is the Fermat prime F_4 = 2^16 + 1. By Fermat's
+    // little theorem, 2^(p-1) ≡ 1 (mod p) for gcd(2, p) = 1. Specifically,
+    // 2^16 = 65536 ≡ -1 (mod 65537), so 2^256 = (2^16)^16 ≡ (-1)^16 = 1
+    // (mod 65537). This vector is a well-known identity used in many
+    // crypto test suites and validates Montgomery modular exponentiation
+    // against an analytically derived ground truth.
+    let base = BigNum::from_u64(2);
+    let exp_val = BigNum::from_u64(256);
+    let modulus = BigNum::from_u64(65537);
+    let r = mod_exp(&base, &exp_val, &modulus).expect("ok");
+    assert_eq!(r.to_u64(), Some(1));
+}
+
+#[test]
+fn bn_mod_exp_known_vector_3_500_mod_7() {
+    // Additional known vector via Fermat's little theorem.
+    // For prime p = 7, 3^6 ≡ 1 (mod 7).
+    // 500 = 6*83 + 2, so 3^500 ≡ 3^2 = 9 ≡ 2 (mod 7).
+    let base = BigNum::from_u64(3);
+    let exp_val = BigNum::from_u64(500);
+    let modulus = BigNum::from_u64(7);
+    let r = mod_exp(&base, &exp_val, &modulus).expect("ok");
+    assert_eq!(r.to_u64(), Some(2));
 }
 
 #[test]
