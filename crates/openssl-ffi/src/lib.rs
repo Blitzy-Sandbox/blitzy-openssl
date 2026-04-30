@@ -8,3 +8,4 @@
 
 pub mod bio;
 pub mod crypto;
+pub mod evp;
