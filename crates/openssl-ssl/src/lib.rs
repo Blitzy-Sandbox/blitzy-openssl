@@ -8,6 +8,7 @@
 pub mod cipher;
 pub mod method;
 pub mod record;
+pub mod tls13;
 
 #[cfg(feature = "quic")]
 pub mod quic;
