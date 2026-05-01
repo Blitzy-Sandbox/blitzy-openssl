@@ -464,10 +464,7 @@ impl EcKeyData {
     /// `ec_has(key, OSSL_KEYMGMT_SELECT_PUBLIC_KEY)` in the C
     /// reference (lines 156–167).
     pub fn has_public_key(&self) -> bool {
-        self.key
-            .as_ref()
-            .and_then(|k| k.public_key())
-            .is_some()
+        self.key.as_ref().and_then(|k| k.public_key()).is_some()
     }
 
     /// Whether the key carries a private scalar.  Equivalent to
@@ -715,7 +712,6 @@ impl EcGenContext {
     }
 }
 
-
 // =============================================================================
 // EcKeyData — import / export / generate / validate / match
 // =============================================================================
@@ -729,10 +725,7 @@ impl EcKeyData {
     /// Always pads the private scalar to the curve's field byte length
     /// to prevent length side-channels — this is the Rule R5 / R8
     /// equivalent of the C `BN_bn2binpad` pattern.
-    pub fn export_to_params(
-        &self,
-        selection: KeySelection,
-    ) -> ProviderResult<ParamSet> {
+    pub fn export_to_params(&self, selection: KeySelection) -> ProviderResult<ParamSet> {
         let mut params = ParamSet::new();
 
         let Some(key) = self.key.as_ref() else {
@@ -758,7 +751,10 @@ impl EcKeyData {
                         "SM2"
                     }
                 };
-                params.set(PARAM_GROUP_NAME, ParamValue::Utf8String(curve_label.to_string()));
+                params.set(
+                    PARAM_GROUP_NAME,
+                    ParamValue::Utf8String(curve_label.to_string()),
+                );
                 params.set(
                     PARAM_EC_ENCODING,
                     ParamValue::Utf8String(EcEncoding::NamedCurve.name().to_string()),
@@ -775,13 +771,10 @@ impl EcKeyData {
             if let Some(public) = key.public_key() {
                 let bytes = public
                     .to_bytes(group, group.conversion_form())
-                    .map_err(|e| ProviderError::Dispatch(format!(
-                        "EC: failed to encode public key: {e}"
-                    )))?;
-                trace!(
-                    bytes_len = bytes.len(),
-                    "EC: exporting public key bytes"
-                );
+                    .map_err(|e| {
+                        ProviderError::Dispatch(format!("EC: failed to encode public key: {e}"))
+                    })?;
+                trace!(bytes_len = bytes.len(), "EC: exporting public key bytes");
                 params.set(PARAM_PUB_KEY, ParamValue::OctetString(bytes));
             }
         }
@@ -844,8 +837,8 @@ impl EcKeyData {
         let field_len = group
             .curve_name()
             .map_or_else(|| (bits as usize).div_ceil(8), field_size_bytes);
-        let max_size = u32::try_from(field_len.saturating_mul(2).saturating_add(16))
-            .map_err(|_| {
+        let max_size =
+            u32::try_from(field_len.saturating_mul(2).saturating_add(16)).map_err(|_| {
                 ProviderError::Dispatch(
                     "EC: max signature size exceeds u32 range — corrupt curve?".to_string(),
                 )
@@ -966,9 +959,7 @@ impl EcKeyData {
             };
             if let Some(bytes) = pub_bytes {
                 let imported_point = EcPoint::from_bytes(&group, bytes).map_err(|e| {
-                    ProviderError::Dispatch(format!(
-                        "EC: failed to decode public key bytes: {e}"
-                    ))
+                    ProviderError::Dispatch(format!("EC: failed to decode public key bytes: {e}"))
                 })?;
                 if let Some(existing) = data.key() {
                     // Private key was imported first — verify the
@@ -1033,23 +1024,18 @@ impl EcKeyData {
     /// captured by an [`EcGenContext`].  Mirrors the C `ec_gen`
     /// (lines 1240–1340) and `ec_generate_key` in `crypto/ec/ec_key.c`.
     fn generate_from_params(ctx: &EcGenContext) -> ProviderResult<Self> {
-        let curve_name = ctx
-            .group_name
-            .as_deref()
-            .ok_or_else(|| {
-                ProviderError::Init(
-                    "EC: generation requires the \"group\" parameter to be set".to_string(),
-                )
-            })?;
+        let curve_name = ctx.group_name.as_deref().ok_or_else(|| {
+            ProviderError::Init(
+                "EC: generation requires the \"group\" parameter to be set".to_string(),
+            )
+        })?;
         let curve = named_curve_from_name(curve_name).ok_or_else(|| {
             ProviderError::AlgorithmUnavailable(format!(
                 "EC: unsupported curve name {curve_name:?}"
             ))
         })?;
         let group = EcGroup::from_curve_name(curve).map_err(|e| {
-            ProviderError::Dispatch(format!(
-                "EC: failed to construct group {curve_name:?}: {e}"
-            ))
+            ProviderError::Dispatch(format!("EC: failed to construct group {curve_name:?}: {e}"))
         })?;
         let key = EcKey::generate(&group)
             .map_err(|e| ProviderError::Dispatch(format!("EC: keygen failed: {e}")))?;
@@ -1103,9 +1089,10 @@ impl EcKeyData {
         // Domain parameters are always validated when present — the
         // group itself is checked via `EcGroup::check`.
         if selection.contains(KeySelection::DOMAIN_PARAMETERS) {
-            let group_ok = key.group().check().map_err(|e| {
-                ProviderError::Dispatch(format!("EC: group check failed: {e}"))
-            })?;
+            let group_ok = key
+                .group()
+                .check()
+                .map_err(|e| ProviderError::Dispatch(format!("EC: group check failed: {e}")))?;
             if !group_ok {
                 debug!("EC: validate_selection: group check failed");
                 return Ok(false);
@@ -1116,9 +1103,9 @@ impl EcKeyData {
         if selection.contains(KeySelection::PUBLIC_KEY)
             || selection.contains(KeySelection::PRIVATE_KEY)
         {
-            let key_ok = key.check_key().map_err(|e| {
-                ProviderError::Dispatch(format!("EC: key check failed: {e}"))
-            })?;
+            let key_ok = key
+                .check_key()
+                .map_err(|e| ProviderError::Dispatch(format!("EC: key check failed: {e}")))?;
             if !key_ok {
                 debug!("EC: validate_selection: key check failed");
                 return Ok(false);
@@ -1209,17 +1196,13 @@ fn extract_bignum_bytes(value: &ParamValue) -> Option<&[u8]> {
 /// here and would clutter the call sites, so we silence the
 /// `clippy::option_option` lint locally.
 #[allow(dead_code, clippy::option_option)]
-fn extract_bignum_bytes_optional<'a>(
-    params: &'a ParamSet,
-    key: &str,
-) -> Option<Option<&'a [u8]>> {
+fn extract_bignum_bytes_optional<'a>(params: &'a ParamSet, key: &str) -> Option<Option<&'a [u8]>> {
     match params.get(key) {
         None => Some(None),
         Some(ParamValue::BigNum(b) | ParamValue::OctetString(b)) => Some(Some(b.as_slice())),
         Some(_) => None,
     }
 }
-
 
 // =============================================================================
 // EcKeyMgmt — generic EC key-management dispatch
@@ -1338,20 +1321,12 @@ impl KeyMgmtProvider for EcKeyMgmt {
         Ok(Box::new(data))
     }
 
-    fn import(
-        &self,
-        selection: KeySelection,
-        data: &ParamSet,
-    ) -> ProviderResult<Box<dyn KeyData>> {
+    fn import(&self, selection: KeySelection, data: &ParamSet) -> ProviderResult<Box<dyn KeyData>> {
         let key = EcKeyData::from_params(data, selection, EcKeyType::Ec, None)?;
         Ok(Box::new(key))
     }
 
-    fn export(
-        &self,
-        key: &dyn KeyData,
-        selection: KeySelection,
-    ) -> ProviderResult<ParamSet> {
+    fn export(&self, key: &dyn KeyData, selection: KeySelection) -> ProviderResult<ParamSet> {
         // The trait-object boundary forces us to recover the concrete
         // type via debug formatting — the same pattern used by every
         // other keymgmt provider in this module (see `dh.rs`,
@@ -1397,11 +1372,7 @@ impl KeyMgmtProvider for EcKeyMgmt {
         ok
     }
 
-    fn validate(
-        &self,
-        key: &dyn KeyData,
-        selection: KeySelection,
-    ) -> ProviderResult<bool> {
+    fn validate(&self, key: &dyn KeyData, selection: KeySelection) -> ProviderResult<bool> {
         // Without downcast, structural validation is the best we can
         // offer through the trait object; this matches the C
         // `ec_validate` short-circuit when `eckey == NULL`.
@@ -1505,12 +1476,8 @@ impl KeyMgmtProvider for Sm2KeyMgmt {
     }
 
     fn generate(&self, params: &ParamSet) -> ProviderResult<Box<dyn KeyData>> {
-        let mut ctx = EcGenContext::from_params(
-            params,
-            KeySelection::KEYPAIR,
-            EcKeyType::Sm2,
-            None,
-        )?;
+        let mut ctx =
+            EcGenContext::from_params(params, KeySelection::KEYPAIR, EcKeyType::Sm2, None)?;
         // SM2 uses Prime256v1 backing parameters when no curve was
         // specified by the caller — the algorithm name "SM2" is not a
         // recognised curve identifier on its own outside this module,
@@ -1522,20 +1489,12 @@ impl KeyMgmtProvider for Sm2KeyMgmt {
         Ok(Box::new(data))
     }
 
-    fn import(
-        &self,
-        selection: KeySelection,
-        data: &ParamSet,
-    ) -> ProviderResult<Box<dyn KeyData>> {
+    fn import(&self, selection: KeySelection, data: &ParamSet) -> ProviderResult<Box<dyn KeyData>> {
         let key = EcKeyData::from_params(data, selection, EcKeyType::Sm2, None)?;
         Ok(Box::new(key))
     }
 
-    fn export(
-        &self,
-        key: &dyn KeyData,
-        selection: KeySelection,
-    ) -> ProviderResult<ParamSet> {
+    fn export(&self, key: &dyn KeyData, selection: KeySelection) -> ProviderResult<ParamSet> {
         // Same trait-object limitation as `EcKeyMgmt::export`.
         let dbg = format!("{key:?}");
         if !dbg.starts_with("EcKeyData") {
@@ -1572,11 +1531,7 @@ impl KeyMgmtProvider for Sm2KeyMgmt {
         ok
     }
 
-    fn validate(
-        &self,
-        key: &dyn KeyData,
-        selection: KeySelection,
-    ) -> ProviderResult<bool> {
+    fn validate(&self, key: &dyn KeyData, selection: KeySelection) -> ProviderResult<bool> {
         Ok(self.has(key, selection))
     }
 }
@@ -1592,6 +1547,12 @@ impl KeyMgmtProvider for Sm2KeyMgmt {
 /// Mirrors the C `ec_keymgmt_functions[]` and `sm2_keymgmt_functions[]`
 /// entries in `providers/defltprov.c`; the SM2 entry is feature-gated
 /// because SM2 is non-FIPS.
+//
+// `vec_init_then_push` is intentionally permitted here: the second push
+// is `#[cfg(feature = "sm2")]`-gated, so a `vec![..]` literal with a
+// pre-baked entry list cannot express the conditional inclusion without
+// duplicating the function body across two `cfg_if!`-style branches.
+#[allow(clippy::vec_init_then_push)]
 pub fn ec_descriptors() -> Vec<AlgorithmDescriptor> {
     let mut out = Vec::with_capacity(2);
 
@@ -1610,7 +1571,6 @@ pub fn ec_descriptors() -> Vec<AlgorithmDescriptor> {
 
     out
 }
-
 
 // =============================================================================
 // Tests
@@ -1646,8 +1606,7 @@ mod tests {
     fn generated_ec_keydata(curve: NamedCurve, ec_type: EcKeyType) -> EcKeyData {
         let group = EcGroup::from_curve_name(curve)
             .expect("EC: from_curve_name must succeed for known curves");
-        let ec_key =
-            EcKey::generate(&group).expect("EC: keygen must succeed on known curves");
+        let ec_key = EcKey::generate(&group).expect("EC: keygen must succeed on known curves");
         let mut data = EcKeyData::new_with_type(ec_type, None);
         data.set_key(ec_key);
         data
@@ -1685,7 +1644,9 @@ mod tests {
     fn generate_p256_key_pair() {
         let mgmt = EcKeyMgmt::new();
         let params = group_params("P-256");
-        let key = mgmt.generate(&params).expect("EC P-256 keygen must succeed");
+        let key = mgmt
+            .generate(&params)
+            .expect("EC P-256 keygen must succeed");
         assert!(mgmt.has(&*key, KeySelection::PRIVATE_KEY));
         assert!(mgmt.has(&*key, KeySelection::PUBLIC_KEY));
         assert!(mgmt.has(&*key, KeySelection::DOMAIN_PARAMETERS));
@@ -1696,7 +1657,9 @@ mod tests {
     fn generate_p384_key_pair() {
         let mgmt = EcKeyMgmt::new();
         let params = group_params("P-384");
-        let key = mgmt.generate(&params).expect("EC P-384 keygen must succeed");
+        let key = mgmt
+            .generate(&params)
+            .expect("EC P-384 keygen must succeed");
         assert!(mgmt.has(&*key, KeySelection::PRIVATE_KEY));
         assert!(mgmt.has(&*key, KeySelection::PUBLIC_KEY));
         assert!(mgmt.has(&*key, KeySelection::DOMAIN_PARAMETERS));
@@ -1707,7 +1670,9 @@ mod tests {
     fn generate_p521_key_pair() {
         let mgmt = EcKeyMgmt::new();
         let params = group_params("P-521");
-        let key = mgmt.generate(&params).expect("EC P-521 keygen must succeed");
+        let key = mgmt
+            .generate(&params)
+            .expect("EC P-521 keygen must succeed");
         assert!(mgmt.has(&*key, KeySelection::PRIVATE_KEY));
         assert!(mgmt.has(&*key, KeySelection::PUBLIC_KEY));
         assert!(mgmt.has(&*key, KeySelection::DOMAIN_PARAMETERS));
@@ -1860,9 +1825,7 @@ mod tests {
             "EC descriptor must be present"
         );
         assert!(
-            descs
-                .iter()
-                .any(|d| d.names.contains(&"id-ecPublicKey")),
+            descs.iter().any(|d| d.names.contains(&"id-ecPublicKey")),
             "id-ecPublicKey alias must be present"
         );
         for d in &descs {
@@ -1920,7 +1883,10 @@ mod tests {
         // Round-trip the exported parameters back into a key.
         let mgmt = EcKeyMgmt::new();
         let reimported = mgmt
-            .import(KeySelection::KEYPAIR | KeySelection::DOMAIN_PARAMETERS, &exported)
+            .import(
+                KeySelection::KEYPAIR | KeySelection::DOMAIN_PARAMETERS,
+                &exported,
+            )
             .expect("re-import must succeed");
         assert!(mgmt.has(&*reimported, KeySelection::KEYPAIR));
     }
@@ -1979,18 +1945,9 @@ mod tests {
     #[test]
     fn named_curve_from_name_aliases() {
         // The standard NIST curve aliases.
-        assert_eq!(
-            named_curve_from_name("P-256"),
-            Some(NamedCurve::Prime256v1)
-        );
-        assert_eq!(
-            named_curve_from_name("P-384"),
-            Some(NamedCurve::Secp384r1)
-        );
-        assert_eq!(
-            named_curve_from_name("P-521"),
-            Some(NamedCurve::Secp521r1)
-        );
+        assert_eq!(named_curve_from_name("P-256"), Some(NamedCurve::Prime256v1));
+        assert_eq!(named_curve_from_name("P-384"), Some(NamedCurve::Secp384r1));
+        assert_eq!(named_curve_from_name("P-521"), Some(NamedCurve::Secp521r1));
         assert_eq!(
             named_curve_from_name("secp256k1"),
             Some(NamedCurve::Secp256k1)
@@ -2083,8 +2040,8 @@ mod tests {
 
     #[test]
     fn ec_key_data_set_key_then_inspect() {
-        let group = EcGroup::from_curve_name(NamedCurve::Prime256v1)
-            .expect("from_curve_name must succeed");
+        let group =
+            EcGroup::from_curve_name(NamedCurve::Prime256v1).expect("from_curve_name must succeed");
         let ec_key = EcKey::generate(&group).expect("EcKey::generate must succeed");
 
         let mut data = EcKeyData::new(None);
@@ -2153,9 +2110,8 @@ mod tests {
         );
         params.set(PARAM_USE_COFACTOR_FLAG, ParamValue::Int32(1));
 
-        let ctx =
-            EcGenContext::from_params(&params, KeySelection::KEYPAIR, EcKeyType::Ec, None)
-                .expect("from_params must succeed for valid input");
+        let ctx = EcGenContext::from_params(&params, KeySelection::KEYPAIR, EcKeyType::Ec, None)
+            .expect("from_params must succeed for valid input");
 
         assert_eq!(ctx.group_name.as_deref(), Some("P-384"));
         assert_eq!(ctx.encoding, EcEncoding::NamedCurve);
@@ -2173,9 +2129,8 @@ mod tests {
         );
         params.set(PARAM_USE_COFACTOR_FLAG, ParamValue::Int32(0));
 
-        let ctx =
-            EcGenContext::from_params(&params, KeySelection::KEYPAIR, EcKeyType::Ec, None)
-                .expect("from_params must succeed");
+        let ctx = EcGenContext::from_params(&params, KeySelection::KEYPAIR, EcKeyType::Ec, None)
+            .expect("from_params must succeed");
         assert_eq!(ctx.use_cofactor, Some(false));
     }
 
@@ -2385,4 +2340,3 @@ mod tests {
         }
     }
 }
-
