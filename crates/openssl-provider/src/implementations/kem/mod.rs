@@ -17,6 +17,9 @@ pub mod util;
 /// HPKE DHKEM over ECX curves (X25519, X448) — RFC 9180.
 pub mod ecx;
 
+/// HPKE DHKEM over NIST EC curves (P-256, P-384, P-521) — RFC 9180.
+pub mod ec;
+
 /// ML-KEM (Module-Lattice KEM) — FIPS 203, security levels 512/768/1024.
 pub mod ml_kem;
 
@@ -71,6 +74,10 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
     // name succeed. R10: ensures `ecx.rs` is reachable from the provider
     // entry point via `implementations::all_kem_descriptors()`.
     out.extend(ecx::descriptors());
+    // Append the concrete NIST EC DHKEM suites (P-256, P-384, P-521).
+    // R10: ensures `ec.rs` is reachable from the provider entry point
+    // via `implementations::all_kem_descriptors()`.
+    out.extend(ec::descriptors());
     // Append the hybrid MLX KEM suites (ML-KEM-768 + {P-256, X25519},
     // ML-KEM-1024 + {P-384, X448}, ML-KEM-768 + SM2). R10: ensures
     // `mlx.rs` is reachable from the provider entry point via
