@@ -54,6 +54,21 @@ pub use crl::{
     CrlMethod, DefaultCrlMethod, IssuingDistPoint, RevocationReason, RevokedEntry, X509Crl,
 };
 pub use store::{TrustAnchor, X509Store};
+// Original `Verifier`-centric API (pre-schema) — preserved for downstream
+// callers (notably `crate::x509::store` and the `tests::test_x509`
+// integration suite) until the schema-driven API below is fully adopted.
 pub use verify::{
-    VerificationError, VerificationOptions, VerificationResult, VerifiedChain, Verifier,
+    Purpose, VerificationError, VerificationOptions, VerificationResult, VerifiedChain, Verifier,
+};
+
+// Schema-driven RFC 5280 verification API exported by
+// `crates/openssl-crypto/src/x509/verify.rs`.  These items are listed as
+// the assigned exports for the verification module per the Agent Action
+// Plan and must be reachable from the crate root for downstream
+// consumers (`openssl-ssl`, `openssl-cli`, `openssl-ffi`).
+pub use verify::{
+    check_email, check_host, check_ip, check_ip_asc, check_purpose, check_trust, self_signed,
+    verify, verify_cert, DaneVerification, HostFlags, InheritanceFlags, PolicyTree, SuiteBError,
+    TrustLevel, TrustResult, TrustSetting, VerifyCallback, VerifyContext, VerifyError, VerifyFlags,
+    VerifyParams,
 };

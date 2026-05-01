@@ -191,10 +191,7 @@ impl X509Store {
     /// Adds a CRL to the store.
     pub fn add_crl(&mut self, crl: X509Crl) {
         let issuer_der = crl.issuer().as_der().to_vec();
-        self.crls_by_issuer
-            .entry(issuer_der)
-            .or_default()
-            .push(crl);
+        self.crls_by_issuer.entry(issuer_der).or_default().push(crl);
     }
 
     /// Looks up trust anchors by subject-DN DER.  Returns an empty slice

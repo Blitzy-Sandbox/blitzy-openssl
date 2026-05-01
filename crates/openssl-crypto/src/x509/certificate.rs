@@ -174,14 +174,12 @@ impl CertificateValidity {
 /// operational tracing without polluting the warning stream.
 fn time_to_system_time(t: &x509_cert::time::Time) -> SystemTime {
     let dur: Duration = t.to_unix_duration();
-    UNIX_EPOCH
-        .checked_add(dur)
-        .unwrap_or_else(|| {
-            debug!(
-                "x509::certificate: pre-epoch validity boundary encountered; clamping to UNIX_EPOCH"
-            );
-            UNIX_EPOCH
-        })
+    UNIX_EPOCH.checked_add(dur).unwrap_or_else(|| {
+        debug!(
+            "x509::certificate: pre-epoch validity boundary encountered; clamping to UNIX_EPOCH"
+        );
+        UNIX_EPOCH
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -346,17 +344,17 @@ impl Certificate {
     /// Returns [`CryptoError::Encoding`] wrapping the underlying
     /// `der` error if the bytes do not parse as an RFC 5280 certificate.
     pub fn from_der(bytes: &[u8]) -> CryptoResult<Self> {
-        let inner = DerCertificate::from_der(bytes).map_err(|e| {
-            CryptoError::Encoding(format!("X509: DER decode failed: {e}"))
-        })?;
+        let inner = DerCertificate::from_der(bytes)
+            .map_err(|e| CryptoError::Encoding(format!("X509: DER decode failed: {e}")))?;
         // Re-encode TBS so that callers doing signature verification can
         // use `tbs_der_bytes` verbatim.  The round-trip must be
         // byte-identical for a correctly-parsed certificate — this is
         // guaranteed by the SEQUENCE encoding rules for the types the
         // decoder produces.
-        let tbs_der_bytes = inner.tbs_certificate.to_der().map_err(|e| {
-            CryptoError::Encoding(format!("X509: TBS re-encode failed: {e}"))
-        })?;
+        let tbs_der_bytes = inner
+            .tbs_certificate
+            .to_der()
+            .map_err(|e| CryptoError::Encoding(format!("X509: TBS re-encode failed: {e}")))?;
         Ok(Self {
             inner,
             der_bytes: bytes.to_vec(),
@@ -368,18 +366,18 @@ impl Certificate {
     ///
     /// Corresponds to OpenSSL `PEM_read_bio_X509`.
     pub fn from_pem(pem: &[u8]) -> CryptoResult<Self> {
-        let inner: DerCertificate = DerCertificate::from_pem(pem).map_err(|e| {
-            CryptoError::Encoding(format!("X509: PEM decode failed: {e}"))
-        })?;
+        let inner: DerCertificate = DerCertificate::from_pem(pem)
+            .map_err(|e| CryptoError::Encoding(format!("X509: PEM decode failed: {e}")))?;
         // Recover the inner DER bytes by re-encoding.  This is lossless
         // for standards-compliant input because RFC 5280 mandates DER
         // (a canonical BER subset).
-        let der_bytes = inner.to_der().map_err(|e| {
-            CryptoError::Encoding(format!("X509: DER re-encode failed: {e}"))
-        })?;
-        let tbs_der_bytes = inner.tbs_certificate.to_der().map_err(|e| {
-            CryptoError::Encoding(format!("X509: TBS re-encode failed: {e}"))
-        })?;
+        let der_bytes = inner
+            .to_der()
+            .map_err(|e| CryptoError::Encoding(format!("X509: DER re-encode failed: {e}")))?;
+        let tbs_der_bytes = inner
+            .tbs_certificate
+            .to_der()
+            .map_err(|e| CryptoError::Encoding(format!("X509: TBS re-encode failed: {e}")))?;
         Ok(Self {
             inner,
             der_bytes,
@@ -393,9 +391,8 @@ impl Certificate {
     /// non-certificate blocks are rejected.  Corresponds to repeatedly
     /// calling `PEM_read_bio_X509`.
     pub fn load_pem_chain(pem: &[u8]) -> CryptoResult<Vec<Self>> {
-        let raw: Vec<DerCertificate> = DerCertificate::load_pem_chain(pem).map_err(|e| {
-            CryptoError::Encoding(format!("X509: PEM chain decode failed: {e}"))
-        })?;
+        let raw: Vec<DerCertificate> = DerCertificate::load_pem_chain(pem)
+            .map_err(|e| CryptoError::Encoding(format!("X509: PEM chain decode failed: {e}")))?;
         raw.into_iter()
             .map(|c| {
                 let der = c.to_der().map_err(|e| {
@@ -486,9 +483,10 @@ impl Certificate {
     pub fn signature_algorithm(&self) -> CryptoResult<SignatureAlgorithmId> {
         let alg = &self.inner.signature_algorithm;
         let params_der = match alg.parameters.as_ref() {
-            Some(any) => Some(any.to_der().map_err(|e| {
-                CryptoError::Encoding(format!("X509: sig params encode: {e}"))
-            })?),
+            Some(any) => Some(
+                any.to_der()
+                    .map_err(|e| CryptoError::Encoding(format!("X509: sig params encode: {e}")))?,
+            ),
             None => None,
         };
         Ok(SignatureAlgorithmId {
@@ -503,12 +501,13 @@ impl Certificate {
     /// performs that check.
     pub fn tbs_signature_algorithm(&self) -> CryptoResult<SignatureAlgorithmId> {
         let alg = &self.inner.tbs_certificate.signature;
-        let params_der = match alg.parameters.as_ref() {
-            Some(any) => Some(any.to_der().map_err(|e| {
-                CryptoError::Encoding(format!("X509: tbs sig params encode: {e}"))
-            })?),
-            None => None,
-        };
+        let params_der =
+            match alg.parameters.as_ref() {
+                Some(any) => Some(any.to_der().map_err(|e| {
+                    CryptoError::Encoding(format!("X509: tbs sig params encode: {e}"))
+                })?),
+                None => None,
+            };
         Ok(SignatureAlgorithmId {
             oid: alg.oid.to_string(),
             parameters_der: params_der,
@@ -542,9 +541,10 @@ impl Certificate {
     pub fn public_key(&self) -> CryptoResult<PublicKeyInfo> {
         let spki = &self.inner.tbs_certificate.subject_public_key_info;
         let params_der = match spki.algorithm.parameters.as_ref() {
-            Some(any) => Some(any.to_der().map_err(|e| {
-                CryptoError::Encoding(format!("X509: spki params encode: {e}"))
-            })?),
+            Some(any) => Some(
+                any.to_der()
+                    .map_err(|e| CryptoError::Encoding(format!("X509: spki params encode: {e}")))?,
+            ),
             None => None,
         };
         let full_der = spki
@@ -823,9 +823,11 @@ EwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSAAwRQIhAKJ1D9ek1+wEjzsw7M4lhXe+\n\
     #[test]
     fn load_pem_chain_rejects_garbage() {
         // Not a PEM block at all.
-        assert!(Certificate::load_pem_chain(b"garbage garbage garbage").is_err()
-            || Certificate::load_pem_chain(b"garbage garbage garbage")
-                .map(|v| v.is_empty())
-                .unwrap_or(false));
+        assert!(
+            Certificate::load_pem_chain(b"garbage garbage garbage").is_err()
+                || Certificate::load_pem_chain(b"garbage garbage garbage")
+                    .map(|v| v.is_empty())
+                    .unwrap_or(false)
+        );
     }
 }

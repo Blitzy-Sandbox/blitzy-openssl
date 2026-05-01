@@ -1970,9 +1970,7 @@ impl CrlMethod for DefaultCrlMethod {
             .algorithm
             .to_oid_string()
             .map_err(|e| {
-                CryptoError::Verification(format!(
-                    "CRL outer signatureAlgorithm OID decode: {e}"
-                ))
+                CryptoError::Verification(format!("CRL outer signatureAlgorithm OID decode: {e}"))
             })?;
         let inner_oid = crl
             .info
@@ -1993,9 +1991,7 @@ impl CrlMethod for DefaultCrlMethod {
         // Encode outer parameters back to DER for SignatureAlgorithmId.
         let parameters_der = match crl.signature_algorithm.parameters.as_ref() {
             Some(asn1_type) => Some(asn1_type.encode_der().map_err(|e| {
-                CryptoError::Verification(format!(
-                    "CRL signatureAlgorithm parameters encode: {e}"
-                ))
+                CryptoError::Verification(format!("CRL signatureAlgorithm parameters encode: {e}"))
             })?),
             None => None,
         };
@@ -2009,15 +2005,11 @@ impl CrlMethod for DefaultCrlMethod {
         // RSA / ECDSA / EdDSA branches consistently with the certificate
         // verification path in `crate::x509::verify`.
         let spki = SubjectPublicKeyInfoRef::from_der(issuer_key).map_err(|e| {
-            CryptoError::Verification(format!(
-                "CRL issuer SubjectPublicKeyInfo decode: {e}"
-            ))
+            CryptoError::Verification(format!("CRL issuer SubjectPublicKeyInfo decode: {e}"))
         })?;
         let alg_params_der = match spki.algorithm.parameters.as_ref() {
             Some(any) => Some(any.to_der().map_err(|e| {
-                CryptoError::Verification(format!(
-                    "CRL issuer SPKI parameters encode: {e}"
-                ))
+                CryptoError::Verification(format!("CRL issuer SPKI parameters encode: {e}"))
             })?),
             None => None,
         };
@@ -2325,9 +2317,8 @@ fn crl_curve_oid_from_spki_params(pk: &PublicKeyInfo) -> CryptoResult<String> {
     let params = pk.algorithm_parameters_der.as_ref().ok_or_else(|| {
         CryptoError::Verification("ECDSA SPKI missing algorithm parameters".into())
     })?;
-    let oid = der::asn1::ObjectIdentifier::from_der(params).map_err(|e| {
-        CryptoError::Verification(format!("ECDSA SPKI params not an OID: {e}"))
-    })?;
+    let oid = der::asn1::ObjectIdentifier::from_der(params)
+        .map_err(|e| CryptoError::Verification(format!("ECDSA SPKI params not an OID: {e}")))?;
     Ok(oid.to_string())
 }
 
@@ -2338,9 +2329,8 @@ fn crl_curve_oid_from_spki_params(pk: &PublicKeyInfo) -> CryptoResult<String> {
 fn crl_parse_rsa_public_key(der_bytes: &[u8]) -> CryptoResult<(BigNum, BigNum)> {
     use der::{Reader, SliceReader};
 
-    let mut root = SliceReader::new(der_bytes).map_err(|e| {
-        CryptoError::Verification(format!("RSA SPKI outer read: {e}"))
-    })?;
+    let mut root = SliceReader::new(der_bytes)
+        .map_err(|e| CryptoError::Verification(format!("RSA SPKI outer read: {e}")))?;
     let mut inner = root
         .sequence(|r| {
             let n = crl_decode_unsigned_integer(r)?;
@@ -2454,9 +2444,8 @@ fn crl_parse_emsa_pkcs1_v1_5(em: &[u8], expected_hash_oid: &str) -> Option<Vec<u
 fn crl_parse_digest_info(bytes: &[u8]) -> CryptoResult<(String, Vec<u8>)> {
     use der::{Reader, SliceReader};
 
-    let mut r = SliceReader::new(bytes).map_err(|e| {
-        CryptoError::Verification(format!("DigestInfo outer read: {e}"))
-    })?;
+    let mut r = SliceReader::new(bytes)
+        .map_err(|e| CryptoError::Verification(format!("DigestInfo outer read: {e}")))?;
     let (oid, digest): (String, Vec<u8>) = r
         .sequence(|r| {
             let (oid, _params) = r.sequence(|ai| {
@@ -2467,9 +2456,7 @@ fn crl_parse_digest_info(bytes: &[u8]) -> CryptoResult<(String, Vec<u8>)> {
             let octets = der::asn1::OctetStringRef::decode(r)?;
             Ok((oid.to_string(), octets.as_bytes().to_vec()))
         })
-        .map_err(|e| {
-            CryptoError::Verification(format!("DigestInfo decode: {e}"))
-        })?;
+        .map_err(|e| CryptoError::Verification(format!("DigestInfo decode: {e}")))?;
     Ok((oid, digest))
 }
 
@@ -5574,10 +5561,8 @@ mod tests {
             crate::asn1::Asn1Object::from_oid_string(OID_ECDSA_SHA256)?,
             None,
         ));
-        crl.info.signature_algorithm = AlgorithmIdentifier::new(
-            crate::asn1::Asn1Object::from_oid_string(OID_ED25519)?,
-            None,
-        );
+        crl.info.signature_algorithm =
+            AlgorithmIdentifier::new(crate::asn1::Asn1Object::from_oid_string(OID_ED25519)?, None);
 
         let method = DefaultCrlMethod::default();
         match method.verify(&crl, &[0x10, 0x20]) {
@@ -5991,10 +5976,8 @@ mod tests {
             crate::asn1::Asn1Object::from_oid_string(OID_ED25519)?,
             None,
         ));
-        crl.info.signature_algorithm = AlgorithmIdentifier::new(
-            crate::asn1::Asn1Object::from_oid_string(OID_ED25519)?,
-            None,
-        );
+        crl.info.signature_algorithm =
+            AlgorithmIdentifier::new(crate::asn1::Asn1Object::from_oid_string(OID_ED25519)?, None);
 
         // -----------------------------------------------------------------
         // 5. Verify — must return `Ok(true)`.
