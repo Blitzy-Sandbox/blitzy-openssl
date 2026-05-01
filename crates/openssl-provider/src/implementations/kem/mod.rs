@@ -20,6 +20,14 @@ pub mod ecx;
 /// ML-KEM (Module-Lattice KEM) — FIPS 203, security levels 512/768/1024.
 pub mod ml_kem;
 
+/// Hybrid MLX (ML-KEM + ECDH) — composite post-quantum/classical KEM.
+///
+/// Combines ML-KEM-768 / ML-KEM-1024 with classical ECDH (P-256, P-384,
+/// X25519, X448) using a "classical-first" composite layout for both
+/// keys, ciphertexts, and shared secrets. The construction follows
+/// `providers/implementations/kem/mlx_kem.c` from the C reference.
+pub mod mlx;
+
 // Re-export commonly used items from util for convenience.
 pub use util::{kem_mode_to_name, kem_modename_to_id, KemMode};
 
@@ -63,5 +71,10 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
     // name succeed. R10: ensures `ecx.rs` is reachable from the provider
     // entry point via `implementations::all_kem_descriptors()`.
     out.extend(ecx::descriptors());
+    // Append the hybrid MLX KEM suites (ML-KEM-768 + {P-256, X25519},
+    // ML-KEM-1024 + {P-384, X448}, ML-KEM-768 + SM2). R10: ensures
+    // `mlx.rs` is reachable from the provider entry point via
+    // `implementations::all_kem_descriptors()`.
+    out.extend(mlx::descriptors());
     out
 }
