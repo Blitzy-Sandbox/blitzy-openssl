@@ -109,7 +109,18 @@ pub struct Asn1parseArgs {
     /// Mirrors the C `-inform` flag (default `PEM`).  When `--strictpem` is
     /// given this value is forced to `PEM` regardless of what the user
     /// supplied.
-    #[arg(long = "inform", value_enum, default_value_t = Format::Pem)]
+    ///
+    /// `default_value = "PEM"` (string literal) plus `ignore_case = true` is
+    /// required because clap's [`ValueEnum`](clap::ValueEnum) derive on
+    /// [`Format`] generates lowercase variant names (`pem`, `der`, `base64`,
+    /// …) as the canonical wire format, while the default literal `"PEM"`
+    /// and the C tool's user input (`apps/lib/opt.c:opt_format`) are
+    /// uppercase.  Using `default_value_t = Format::Pem` would feed the
+    /// `Display` output (`"PEM"`) back through the auto-derived parser,
+    /// which only accepts lowercase, and every invocation of
+    /// `openssl asn1parse` without an explicit `-inform` would fail to
+    /// parse with `invalid value 'PEM' for '--inform <INFORM>'`.
+    #[arg(long = "inform", value_enum, default_value = "PEM", ignore_case = true)]
     inform: Format,
 
     /// Path of the input file (defaults to stdin when omitted).
@@ -504,12 +515,18 @@ impl Asn1parseArgs {
     // Associated function: the synthesis logic is a pure function of the
     // input expression and does not depend on any field of `Asn1parseArgs`.
     fn synthesize_from_string(expr: &str) -> Result<Vec<u8>, CryptoError> {
-        debug!(expr_len = expr.len(), "asn1parse: synthesizing from --genstr");
+        debug!(
+            expr_len = expr.len(),
+            "asn1parse: synthesizing from --genstr"
+        );
         let bytes = generate_from_config(expr).map_err(|e| {
             error!(error = %e, "asn1parse: ASN.1 generation failed");
             e
         })?;
-        debug!(synthesized_bytes = bytes.len(), "asn1parse: synthesis complete");
+        debug!(
+            synthesized_bytes = bytes.len(),
+            "asn1parse: synthesis complete"
+        );
         Ok(bytes)
     }
 
@@ -1021,8 +1038,7 @@ mod tests {
         writeln!(tmp, "# comment").unwrap();
         writeln!(tmp, "[default]").unwrap();
         writeln!(tmp, "asn1 = INTEGER:42").unwrap();
-        let value =
-            Asn1parseArgs::read_genconf_expression(tmp.path()).expect("expression");
+        let value = Asn1parseArgs::read_genconf_expression(tmp.path()).expect("expression");
         assert_eq!(value, "INTEGER:42");
     }
 
@@ -1030,8 +1046,7 @@ mod tests {
     fn read_genconf_expression_strips_quotes() {
         let mut tmp = NamedTempFile::new().expect("tmpfile");
         writeln!(tmp, "asn1 = \"NULL\"").unwrap();
-        let value =
-            Asn1parseArgs::read_genconf_expression(tmp.path()).expect("expression");
+        let value = Asn1parseArgs::read_genconf_expression(tmp.path()).expect("expression");
         assert_eq!(value, "NULL");
     }
 
@@ -1039,8 +1054,7 @@ mod tests {
     fn read_genconf_expression_errors_when_missing() {
         let mut tmp = NamedTempFile::new().expect("tmpfile");
         writeln!(tmp, "other = ignored").unwrap();
-        let err = Asn1parseArgs::read_genconf_expression(tmp.path())
-            .expect_err("must error");
+        let err = Asn1parseArgs::read_genconf_expression(tmp.path()).expect_err("must error");
         match err {
             CryptoError::Encoding(_) => (),
             other => panic!("expected Encoding, got {other:?}"),
@@ -1051,8 +1065,7 @@ mod tests {
     fn read_genconf_expression_errors_on_empty_value() {
         let mut tmp = NamedTempFile::new().expect("tmpfile");
         writeln!(tmp, "asn1 =   ").unwrap();
-        let err = Asn1parseArgs::read_genconf_expression(tmp.path())
-            .expect_err("must error");
+        let err = Asn1parseArgs::read_genconf_expression(tmp.path()).expect_err("must error");
         match err {
             CryptoError::Encoding(_) => (),
             other => panic!("expected Encoding, got {other:?}"),
@@ -1062,19 +1075,16 @@ mod tests {
     #[test]
     fn synthesize_from_string_produces_der() {
         // BOOLEAN:TRUE wraps a full TLV (`01 01 FF`) per X.690 §8.2.
-        let bytes =
-            Asn1parseArgs::synthesize_from_string("BOOLEAN:TRUE").expect("synthesis");
+        let bytes = Asn1parseArgs::synthesize_from_string("BOOLEAN:TRUE").expect("synthesis");
         assert_eq!(bytes, &[0x01, 0x01, 0xFF]);
         // NULL produces a header-only TLV (`05 00`).
-        let null_bytes =
-            Asn1parseArgs::synthesize_from_string("NULL").expect("null synthesis");
+        let null_bytes = Asn1parseArgs::synthesize_from_string("NULL").expect("null synthesis");
         assert_eq!(null_bytes, &[0x05, 0x00]);
     }
 
     #[test]
     fn synthesize_from_string_propagates_errors() {
-        let err = Asn1parseArgs::synthesize_from_string("BOGUS:42")
-            .expect_err("must error");
+        let err = Asn1parseArgs::synthesize_from_string("BOGUS:42").expect_err("must error");
         // Any error variant is acceptable as long as it propagates.
         assert!(matches!(
             err,

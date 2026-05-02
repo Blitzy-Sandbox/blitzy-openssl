@@ -465,17 +465,12 @@ impl EcparamArgs {
                 format = ?key_format,
                 "emitting generated EC key pair"
             );
-            encode_to_writer(
-                &key,
-                key_format,
-                KeySelection::KeyPair,
-                None,
-                &mut writer,
-            )
-            .map_err(|err| {
-                error!(target: "openssl_cli::ecparam", error = %err, "key emission failed");
-                err
-            })?;
+            encode_to_writer(&key, key_format, KeySelection::KeyPair, None, &mut writer).map_err(
+                |err| {
+                    error!(target: "openssl_cli::ecparam", error = %err, "key emission failed");
+                    err
+                },
+            )?;
         }
 
         writer
@@ -496,10 +491,7 @@ impl EcparamArgs {
     /// library context. Keeping it `Self::`-scoped preserves the affinity
     /// to [`EcparamArgs`] without taking an unused `&self` argument
     /// (`clippy::unused_self`).
-    fn synthesise_params(
-        arc_ctx: Arc<LibContext>,
-        curve_name: &str,
-    ) -> Result<PKey, CryptoError> {
+    fn synthesise_params(arc_ctx: Arc<LibContext>, curve_name: &str) -> Result<PKey, CryptoError> {
         debug!(
             target: "openssl_cli::ecparam",
             curve = curve_name,
@@ -515,9 +507,7 @@ impl EcparamArgs {
                 curve = curve_name,
                 "unknown EC curve"
             );
-            CryptoError::AlgorithmNotFound(format!(
-                "unknown EC curve: {curve_name}"
-            ))
+            CryptoError::AlgorithmNotFound(format!("unknown EC curve: {curve_name}"))
         })?;
 
         // Construct the group eagerly so the operator sees curve-construction
@@ -553,10 +543,7 @@ impl EcparamArgs {
             error!(target: "openssl_cli::ecparam", error = %err, "paramgen_init failed");
             err
         })?;
-        pctx.set_param(
-            "group",
-            &ParamValue::Utf8String(named.name().to_string()),
-        )?;
+        pctx.set_param("group", &ParamValue::Utf8String(named.name().to_string()))?;
 
         // Surface the bit-size of the curve as the canonical "bits"
         // parameter so downstream consumers can introspect it without
@@ -605,10 +592,7 @@ impl EcparamArgs {
         pkey: &mut PKey,
         arc_ctx: Arc<LibContext>,
     ) -> Result<(), CryptoError> {
-        if self.param_enc.is_none()
-            && self.conv_form.is_none()
-            && !self.no_seed
-        {
+        if self.param_enc.is_none() && self.conv_form.is_none() && !self.no_seed {
             return Ok(());
         }
 
@@ -667,10 +651,7 @@ impl EcparamArgs {
     ///
     /// Associated function (no `&self`) because the operation is fully
     /// determined by `arc_ctx` and `params` — `clippy::unused_self`.
-    fn generate_keypair(
-        arc_ctx: Arc<LibContext>,
-        params: &PKey,
-    ) -> Result<PKey, CryptoError> {
+    fn generate_keypair(arc_ctx: Arc<LibContext>, params: &PKey) -> Result<PKey, CryptoError> {
         debug!(target: "openssl_cli::ecparam", "generating EC key pair via PKeyCtx::keygen");
 
         let arc_params = Arc::new(params.clone());
@@ -727,16 +708,14 @@ fn run_param_check(
     match pctx.param_check() {
         Ok(true) => {
             let label = if named_only { "EC name" } else { "EC group" };
-            writeln!(writer, "{label} is valid").map_err(|err| {
-                CryptoError::Common(CommonError::Io(err))
-            })?;
+            writeln!(writer, "{label} is valid")
+                .map_err(|err| CryptoError::Common(CommonError::Io(err)))?;
             Ok(())
         }
         Ok(false) => {
             let label = if named_only { "EC name" } else { "EC group" };
-            writeln!(writer, "{label} validation failed").map_err(|err| {
-                CryptoError::Common(CommonError::Io(err))
-            })?;
+            writeln!(writer, "{label} validation failed")
+                .map_err(|err| CryptoError::Common(CommonError::Io(err)))?;
             Err(CryptoError::Verification(format!(
                 "{label} validation failed"
             )))
@@ -859,7 +838,8 @@ mod tests {
     #[test]
     fn validate_args_accepts_default_pem() {
         let args = default_args();
-        args.validate_args().expect("default PEM args must validate");
+        args.validate_args()
+            .expect("default PEM args must validate");
     }
 
     #[test]
@@ -1068,7 +1048,9 @@ mod tests {
             ..Default::default()
         };
         let ctx = LibContext::default();
-        args.execute(&ctx).await.expect("ecparam -name must succeed");
+        args.execute(&ctx)
+            .await
+            .expect("ecparam -name must succeed");
 
         let body = std::fs::read_to_string(&outpath).expect("outfile readable");
         assert!(
@@ -1140,7 +1122,9 @@ mod tests {
             ..default_args()
         };
         let ctx = LibContext::default();
-        args.execute(&ctx).await.expect("-check on a named curve must succeed");
+        args.execute(&ctx)
+            .await
+            .expect("-check on a named curve must succeed");
     }
 
     #[tokio::test]
@@ -1155,7 +1139,9 @@ mod tests {
             ..default_args()
         };
         let ctx = LibContext::default();
-        args.execute(&ctx).await.expect("-check_named on a named curve must succeed");
+        args.execute(&ctx)
+            .await
+            .expect("-check_named on a named curve must succeed");
     }
 
     // ---- conv_form / param_enc / no_seed acceptance ----------------------

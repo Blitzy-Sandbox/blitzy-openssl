@@ -91,8 +91,7 @@ const DEFAULT_DIGEST: &str = "SHA256";
 /// Hex-encoded HMAC key used for FIPS module integrity calculation. This
 /// constant matches `FIPS_KEY_STRING` from `Configure` lines 295-296 and
 /// is the well-known, FIPS-published 256-bit fixed key.
-const FIPS_KEY_STRING: &str =
-    "f4556650ac31d35461610bac4ed81b1a181b2d8a43ea2854cbae22ca74560813";
+const FIPS_KEY_STRING: &str = "f4556650ac31d35461610bac4ed81b1a181b2d8a43ea2854cbae22ca74560813";
 
 /// Install version key written to the FIPS config section. Matches
 /// `OSSL_PROV_FIPS_PARAM_INSTALL_VERSION`.
@@ -336,8 +335,9 @@ pub struct FipsinstallArgs {
     pub no_short_mac: bool,
 
     /// Provider name(s) to load before running tests. Maps to C option
-    /// `-provider`.
-    #[arg(long = "provider", value_name = "NAME")]
+    /// `-provider`. Renamed to `--load-provider` to avoid clap conflict with
+    /// the global `--provider` flag from the top-level `Cli` struct.
+    #[arg(long = "load-provider", value_name = "NAME")]
     pub provider: Vec<String>,
 
     /// Provider search path. Maps to C option `-provider_path`.
@@ -487,7 +487,11 @@ impl FipsOptions {
 /// Encode a [`bool`] as `"1"` / `"0"` for config-file emission. The FIPS
 /// provider parses these as integer-valued `OSSL_PARAMs`.
 fn bool_to_int_string(value: bool) -> String {
-    if value { "1".to_string() } else { "0".to_string() }
+    if value {
+        "1".to_string()
+    } else {
+        "0".to_string()
+    }
 }
 
 /// Decode `"1"` / `"0"` (or `"true"` / `"false"`) into a bool. Returns
@@ -506,8 +510,6 @@ fn parse_bool_value(raw: &str) -> Option<bool> {
         _ => None,
     }
 }
-
-
 
 // ---------------------------------------------------------------------------
 // FipsinstallArgs — implementation
@@ -549,10 +551,7 @@ impl FipsinstallArgs {
             self.provider_name.as_deref().unwrap_or(DEFAULT_PROVIDER),
             String::as_str,
         );
-        let section_name = self
-            .section_name
-            .as_deref()
-            .unwrap_or(DEFAULT_SECTION);
+        let section_name = self.section_name.as_deref().unwrap_or(DEFAULT_SECTION);
 
         let mut opts = self.build_initial_options();
         self.apply_explicit_overrides(&mut opts);
@@ -722,8 +721,6 @@ impl FipsinstallArgs {
     }
 }
 
-
-
 // ---------------------------------------------------------------------------
 // FipsinstallArgs — MAC helpers
 // ---------------------------------------------------------------------------
@@ -737,13 +734,11 @@ impl FipsinstallArgs {
         let mut hexkey: Option<String> = None;
 
         for opt in &self.mac_opts {
-            let (key, value) = opt
-                .split_once(':')
-                .ok_or_else(|| {
-                    CryptoError::Common(CommonError::InvalidArgument(format!(
-                        "-macopt must be KEY:VALUE, got '{opt}'"
-                    )))
-                })?;
+            let (key, value) = opt.split_once(':').ok_or_else(|| {
+                CryptoError::Common(CommonError::InvalidArgument(format!(
+                    "-macopt must be KEY:VALUE, got '{opt}'"
+                )))
+            })?;
             match key.trim() {
                 "digest" => digest = value.to_string(),
                 "hexkey" => hexkey = Some(value.to_string()),
@@ -753,9 +748,9 @@ impl FipsinstallArgs {
                     hexkey = Some(hex::encode(value.as_bytes()));
                 }
                 other => {
-                    return Err(CryptoError::Common(CommonError::InvalidArgument(
-                        format!("unsupported -macopt key '{other}'"),
-                    )));
+                    return Err(CryptoError::Common(CommonError::InvalidArgument(format!(
+                        "unsupported -macopt key '{other}'"
+                    ))));
                 }
             }
         }
@@ -795,9 +790,8 @@ impl FipsinstallArgs {
         let mut reader = BufReader::new(file);
 
         let (params, _key) = self.build_mac_params()?;
-        let mut ctx = MacCtx::new(mac).map_err(|e| {
-            CryptoError::Provider(format!("create MAC context: {e}"))
-        })?;
+        let mut ctx = MacCtx::new(mac)
+            .map_err(|e| CryptoError::Provider(format!("create MAC context: {e}")))?;
         // Init takes the key (empty == use param-supplied hexkey), then
         // streams the module file.
         ctx.init(&[], Some(&params))
@@ -830,9 +824,8 @@ impl FipsinstallArgs {
     /// and feed it the literal string `INSTALL_SELF_TEST_KATS_RUN`.
     fn compute_install_mac(&self, mac: &Mac) -> Result<Vec<u8>, CryptoError> {
         let (params, _key) = self.build_mac_params()?;
-        let mut ctx = MacCtx::new(mac).map_err(|e| {
-            CryptoError::Provider(format!("create MAC context: {e}"))
-        })?;
+        let mut ctx = MacCtx::new(mac)
+            .map_err(|e| CryptoError::Provider(format!("create MAC context: {e}")))?;
         ctx.init(&[], Some(&params))
             .map_err(|e| CryptoError::Provider(format!("init MAC (install): {e}")))?;
         ctx.update(INSTALL_STATUS_VAL.as_bytes())
@@ -884,21 +877,19 @@ impl FipsinstallArgs {
             "verifying FIPS config"
         );
 
-        let config: Config = ConfigParser::parse_file(in_path)
-            .map_err(CryptoError::Common)?;
+        let config: Config = ConfigParser::parse_file(in_path).map_err(CryptoError::Common)?;
 
         // Read recorded module MAC.
-        let recorded_mac_hex = config
-            .get_string(section_name, KEY_MODULE_MAC)
-            .ok_or_else(|| {
-                CryptoError::Verification(format!(
-                    "config section '{section_name}' missing '{KEY_MODULE_MAC}'"
-                ))
-            })?;
+        let recorded_mac_hex =
+            config
+                .get_string(section_name, KEY_MODULE_MAC)
+                .ok_or_else(|| {
+                    CryptoError::Verification(format!(
+                        "config section '{section_name}' missing '{KEY_MODULE_MAC}'"
+                    ))
+                })?;
         let recorded_mac = hex::decode(recorded_mac_hex.trim_start_matches("hex:"))
-            .map_err(|e| {
-                CryptoError::Verification(format!("invalid recorded module MAC: {e}"))
-            })?;
+            .map_err(|e| CryptoError::Verification(format!("invalid recorded module MAC: {e}")))?;
 
         if !constant_time_eq(&recorded_mac, module_mac) {
             error!(
@@ -916,19 +907,14 @@ impl FipsinstallArgs {
         // matching install-mac. The C code skips this branch when
         // `self_test_onload == 1` (i.e. the install MAC is intentionally
         // empty in the config because tests deferred to load-time).
-        if let Some(recorded_install_hex) =
-            config.get_string(section_name, KEY_INSTALL_MAC)
-        {
-            let recorded_install = hex::decode(
-                recorded_install_hex.trim_start_matches("hex:"),
-            )
-            .map_err(|e| {
-                CryptoError::Verification(format!("invalid recorded install MAC: {e}"))
-            })?;
+        if let Some(recorded_install_hex) = config.get_string(section_name, KEY_INSTALL_MAC) {
+            let recorded_install = hex::decode(recorded_install_hex.trim_start_matches("hex:"))
+                .map_err(|e| {
+                    CryptoError::Verification(format!("invalid recorded install MAC: {e}"))
+                })?;
             let expected = install_mac.ok_or_else(|| {
                 CryptoError::Verification(
-                    "config carries install-mac but verify did not recompute one"
-                        .to_string(),
+                    "config carries install-mac but verify did not recompute one".to_string(),
                 )
             })?;
             if !constant_time_eq(&recorded_install, expected) {
@@ -962,12 +948,8 @@ impl FipsinstallArgs {
         mut opts: FipsOptions,
     ) -> Result<(), CryptoError> {
         // Generate the in-memory config and load the FIPS provider.
-        let (mut config, is_fips_140_2_prov) = self.generate_config_and_load(
-            provider_name,
-            section_name,
-            module_mac,
-            &opts,
-        )?;
+        let (mut config, is_fips_140_2_prov) =
+            self.generate_config_and_load(provider_name, section_name, module_mac, &opts)?;
 
         // Run the FIPS POST self-tests (Power-On Self-Test).
         self.load_provider_and_run_self_test(&mut config, section_name)?;
@@ -1029,8 +1011,6 @@ impl FipsinstallArgs {
         }
     }
 }
-
-
 
 // ---------------------------------------------------------------------------
 // FipsinstallArgs — config + provider integration
@@ -1103,8 +1083,8 @@ impl FipsinstallArgs {
         // identification. The Rust FIPS provider currently reports its
         // own name/version; if a future build advertises "fips" and the
         // version starts with "140-2" this branch fires.
-        let is_fips_140_2 = openssl_fips::NAME.contains("140-2")
-            || openssl_fips::BUILD_INFO.contains("140-2");
+        let is_fips_140_2 =
+            openssl_fips::NAME.contains("140-2") || openssl_fips::BUILD_INFO.contains("140-2");
 
         // Mark the deferred-tests configuration into the in-memory config
         // for downstream callers that need to introspect it.
@@ -1201,11 +1181,8 @@ impl FipsinstallArgs {
         writeln!(writer, "[{section_name}]").map_err(CryptoError::Io)?;
 
         // install-version = 1
-        writeln!(
-            writer,
-            "{KEY_INSTALL_VERSION} = {INSTALL_VERSION_VAL}"
-        )
-        .map_err(CryptoError::Io)?;
+        writeln!(writer, "{KEY_INSTALL_VERSION} = {INSTALL_VERSION_VAL}")
+            .map_err(CryptoError::Io)?;
 
         // The 31 indicator + meta keys, in the exact C source order. Each
         // boolean is rendered as "1" or "0" so the file round-trips through
@@ -1387,12 +1364,8 @@ impl FipsinstallArgs {
 
         // Module integrity MAC — encoded as `hex:` prefix to match the
         // `OSSL_PROV_PARAM_HEX_STRING` format expected by `_CONF_add_string`.
-        writeln!(
-            writer,
-            "{KEY_MODULE_MAC} = hex:{}",
-            hex::encode(module_mac)
-        )
-        .map_err(CryptoError::Io)?;
+        writeln!(writer, "{KEY_MODULE_MAC} = hex:{}", hex::encode(module_mac))
+            .map_err(CryptoError::Io)?;
 
         // Defer-tests row.
         writeln!(
@@ -1406,11 +1379,8 @@ impl FipsinstallArgs {
         // path computed an install MAC (i.e. when self-test ran at install
         // time, not at load time).
         if let Some(install_mac_bytes) = install_mac {
-            writeln!(
-                writer,
-                "{KEY_INSTALL_STATUS} = {INSTALL_STATUS_VAL}"
-            )
-            .map_err(CryptoError::Io)?;
+            writeln!(writer, "{KEY_INSTALL_STATUS} = {INSTALL_STATUS_VAL}")
+                .map_err(CryptoError::Io)?;
             writeln!(
                 writer,
                 "{KEY_INSTALL_MAC} = hex:{}",
@@ -1437,17 +1407,16 @@ impl FipsinstallArgs {
     ) -> Result<(), CryptoError> {
         let config = ConfigParser::parse_file(in_path).map_err(CryptoError::Common)?;
 
-        let recorded_module_hex = config
-            .get_string(section_name, KEY_MODULE_MAC)
-            .ok_or_else(|| {
-                CryptoError::Verification(format!(
-                    "config section '{section_name}' missing '{KEY_MODULE_MAC}'"
-                ))
-            })?;
-        let recorded_module = hex::decode(
-            recorded_module_hex.trim_start_matches("hex:"),
-        )
-        .map_err(|e| CryptoError::Verification(format!("invalid hex MAC: {e}")))?;
+        let recorded_module_hex =
+            config
+                .get_string(section_name, KEY_MODULE_MAC)
+                .ok_or_else(|| {
+                    CryptoError::Verification(format!(
+                        "config section '{section_name}' missing '{KEY_MODULE_MAC}'"
+                    ))
+                })?;
+        let recorded_module = hex::decode(recorded_module_hex.trim_start_matches("hex:"))
+            .map_err(|e| CryptoError::Verification(format!("invalid hex MAC: {e}")))?;
         if !constant_time_eq(&recorded_module, module_mac) {
             return Err(CryptoError::Provider(format!(
                 "FIPS: {}",
@@ -1459,12 +1428,8 @@ impl FipsinstallArgs {
             config.get_string(section_name, KEY_INSTALL_MAC),
             install_mac,
         ) {
-            let recorded_install = hex::decode(
-                recorded_install_hex.trim_start_matches("hex:"),
-            )
-            .map_err(|e| {
-                CryptoError::Verification(format!("invalid hex install MAC: {e}"))
-            })?;
+            let recorded_install = hex::decode(recorded_install_hex.trim_start_matches("hex:"))
+                .map_err(|e| CryptoError::Verification(format!("invalid hex install MAC: {e}")))?;
             if !constant_time_eq(&recorded_install, expected_install) {
                 return Err(CryptoError::Provider(format!(
                     "FIPS: {}",
@@ -1552,8 +1517,7 @@ pub(crate) fn self_test_events_callback(phase: &str, desc: &str, kind: &str) -> 
             .corrupt_type
             .as_deref()
             .map_or(true, |target| target == kind);
-        let any_set =
-            snapshot.corrupt_desc.is_some() || snapshot.corrupt_type.is_some();
+        let any_set = snapshot.corrupt_desc.is_some() || snapshot.corrupt_type.is_some();
         if any_set && desc_match && type_match {
             warn!(
                 target: "openssl::fipsinstall",
@@ -1706,9 +1670,7 @@ mod tests {
         let text = String::from_utf8(buf).expect("UTF-8 output");
 
         assert!(text.contains(&format!("[{DEFAULT_SECTION}]")));
-        assert!(text.contains(&format!(
-            "{KEY_INSTALL_VERSION} = {INSTALL_VERSION_VAL}"
-        )));
+        assert!(text.contains(&format!("{KEY_INSTALL_VERSION} = {INSTALL_VERSION_VAL}")));
         assert!(text.contains("module-mac = hex:"));
         // Without an install MAC the install-status row is omitted.
         assert!(!text.contains(KEY_INSTALL_STATUS));
@@ -1755,9 +1717,7 @@ mod tests {
     #[test]
     fn build_mac_params_decodes_default_fips_key() {
         let args = default_args();
-        let (params, key_bytes) = args
-            .build_mac_params()
-            .expect("default key must decode");
+        let (params, key_bytes) = args.build_mac_params().expect("default key must decode");
         // FIPS_KEY_STRING is 64 hex chars → 32 bytes.
         assert_eq!(key_bytes.len(), 32);
         // The ParamSet must contain our digest entry.
@@ -1802,7 +1762,11 @@ mod tests {
         // No corrupt_desc / corrupt_type set: every phase must succeed.
         assert!(self_test_events_callback("Start", "AES_GCM", "KAT_Cipher"));
         assert!(self_test_events_callback("Pass", "AES_GCM", "KAT_Cipher"));
-        assert!(self_test_events_callback("Corrupt", "AES_GCM", "KAT_Cipher"));
+        assert!(self_test_events_callback(
+            "Corrupt",
+            "AES_GCM",
+            "KAT_Cipher"
+        ));
     }
 
     #[test]
@@ -1825,9 +1789,17 @@ mod tests {
         }
 
         // The CORRUPT phase with matching desc must return false.
-        assert!(!self_test_events_callback("Corrupt", "AES_GCM", "KAT_Cipher"));
+        assert!(!self_test_events_callback(
+            "Corrupt",
+            "AES_GCM",
+            "KAT_Cipher"
+        ));
         // A CORRUPT phase with a non-matching desc must return true.
-        assert!(self_test_events_callback("Corrupt", "SHA_256", "KAT_Digest"));
+        assert!(self_test_events_callback(
+            "Corrupt",
+            "SHA_256",
+            "KAT_Digest"
+        ));
 
         // Reset state for other tests (defensive — the serializer + leading
         // reset on the next test would also handle this).
@@ -1857,7 +1829,9 @@ mod tests {
         if let Some(prev_value) = prev {
             std::env::set_var("OPENSSL_MODULES", prev_value);
         }
-        assert!(res.is_err(), "should error without -module / OPENSSL_MODULES");
+        assert!(
+            res.is_err(),
+            "should error without -module / OPENSSL_MODULES"
+        );
     }
 }
-

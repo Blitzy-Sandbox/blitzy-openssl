@@ -172,131 +172,131 @@ pub struct DgstArgs {
     /// Print a list of supported digest algorithms and exit.
     ///
     /// Replaces C `OPT_LIST` at `apps/dgst.c` line 60.
-    #[arg(long = "list")]
+    #[arg(hide = true, long = "list")]
     list: bool,
 
     /// Print the digest in colon-separated hex (e.g., `0a:b1:c2:...`).
     ///
     /// Replaces C `OPT_C` (`-c`) at `apps/dgst.c` line 64.
-    #[arg(short = 'c')]
+    #[arg(hide = true, short = 'c')]
     colon: bool,
 
     /// Print the digest in coreutils-compatible format (`<hex>  *<file>`).
     ///
     /// Replaces C `OPT_R` (`-r`) at `apps/dgst.c` line 65.
-    #[arg(short = 'r')]
+    #[arg(hide = true, short = 'r')]
     coreutils: bool,
 
     /// Output file. Defaults to stdout when omitted.
     ///
     /// Replaces C `OPT_OUT` at `apps/dgst.c` line 66.
-    #[arg(long = "out", value_name = "FILE")]
+    #[arg(hide = true, long = "out", value_name = "FILE")]
     out: Option<PathBuf>,
 
     /// Write the digest as raw binary bytes (no formatting, no newline).
     ///
     /// Replaces C `OPT_BINARY` (`-binary`) at `apps/dgst.c` line 70.
-    #[arg(long = "binary", conflicts_with_all = ["hex"])]
+    #[arg(hide = true, long = "binary", conflicts_with_all = ["hex"])]
     binary: bool,
 
     /// Force hexadecimal output (default for non-`-binary`).
     ///
     /// Replaces C `OPT_HEX` (`-hex`) at `apps/dgst.c` line 69.
     /// Provided for explicitness — hex is already the default.
-    #[arg(long = "hex")]
+    #[arg(hide = true, long = "hex")]
     hex: bool,
 
     /// Print debug information about which provider/algorithm is in use.
     ///
     /// Replaces C `OPT_DEBUG` (`-d` / `-debug`) at `apps/dgst.c` lines 67–68.
-    #[arg(short = 'd', long = "debug")]
+    #[arg(hide = true, short = 'd', long = "debug")]
     debug: bool,
 
     /// Output length for an XOF (extendable-output function) digest.
     ///
     /// Required when the chosen digest is a XOF (e.g., SHAKE128, SHAKE256).
     /// Replaces C `OPT_XOFLEN` at `apps/dgst.c` line 71.
-    #[arg(long = "xoflen", value_name = "BYTES")]
+    #[arg(hide = true, long = "xoflen", value_name = "BYTES")]
     xoflen: Option<u32>,
 
     /// Sign mode: path to the private key file used to sign each input file.
     ///
     /// Replaces C `OPT_SIGN` at `apps/dgst.c` line 72.
-    #[arg(long = "sign", value_name = "KEYFILE", conflicts_with_all = ["verify", "prverify", "hmac", "hmac_env", "hmac_stdin", "mac", "fips_fingerprint"])]
+    #[arg(hide = true, long = "sign", value_name = "KEYFILE", conflicts_with_all = ["verify", "prverify", "hmac", "hmac_env", "hmac_stdin", "mac", "fips_fingerprint"])]
     sign: Option<PathBuf>,
 
     /// Verify mode: path to the public key file used to verify a signature.
     ///
     /// Replaces C `OPT_VERIFY` at `apps/dgst.c` line 73.
-    #[arg(long = "verify", value_name = "KEYFILE", conflicts_with_all = ["sign", "prverify", "hmac", "hmac_env", "hmac_stdin", "mac", "fips_fingerprint"])]
+    #[arg(hide = true, long = "verify", value_name = "KEYFILE", conflicts_with_all = ["sign", "prverify", "hmac", "hmac_env", "hmac_stdin", "mac", "fips_fingerprint"])]
     verify: Option<PathBuf>,
 
     /// Verify mode using a private key (the public part is derived from it).
     ///
     /// Replaces C `OPT_PRVERIFY` at `apps/dgst.c` line 74.
-    #[arg(long = "prverify", value_name = "KEYFILE", conflicts_with_all = ["sign", "verify", "hmac", "hmac_env", "hmac_stdin", "mac", "fips_fingerprint"])]
+    #[arg(hide = true, long = "prverify", value_name = "KEYFILE", conflicts_with_all = ["sign", "verify", "hmac", "hmac_env", "hmac_stdin", "mac", "fips_fingerprint"])]
     prverify: Option<PathBuf>,
 
     /// Path to the signature file to verify against (required with `-verify`/`-prverify`).
     ///
     /// Replaces C `OPT_SIGNATURE` at `apps/dgst.c` line 75.
-    #[arg(long = "signature", value_name = "FILE")]
+    #[arg(hide = true, long = "signature", value_name = "FILE")]
     signature: Option<PathBuf>,
 
     /// Signature algorithm parameter (`name:value`); may be repeated.
     ///
     /// Replaces C `OPT_SIGOPT` at `apps/dgst.c` line 76.
     /// Example: `-sigopt rsa_padding_mode:pss` or `-sigopt digest:SHA-256`.
-    #[arg(long = "sigopt", value_name = "NAME:VALUE")]
+    #[arg(hide = true, long = "sigopt", value_name = "NAME:VALUE")]
     sigopt: Vec<String>,
 
     /// Format of the key file: PEM (default) or DER.
     ///
     /// Replaces C `OPT_KEYFORM` at `apps/dgst.c` line 77.
-    #[arg(long = "keyform", value_enum, value_name = "FORMAT")]
+    #[arg(hide = true, long = "keyform", value_enum, value_name = "FORMAT")]
     keyform: Option<Format>,
 
     /// Pass-phrase source for an encrypted private key.
     ///
     /// Accepts `pass:LIT`, `env:VAR`, `file:PATH`, `fd:N`, or `stdin`.
     /// Replaces C `OPT_PASSIN` at `apps/dgst.c` line 78.
-    #[arg(long = "passin", value_name = "SOURCE")]
+    #[arg(hide = true, long = "passin", value_name = "SOURCE")]
     passin: Option<String>,
 
     /// HMAC mode: literal HMAC key string.
     ///
     /// Replaces C `OPT_HMAC` at `apps/dgst.c` line 79.
-    #[arg(long = "hmac", value_name = "KEY", conflicts_with_all = ["sign", "verify", "prverify", "hmac_env", "hmac_stdin", "mac", "fips_fingerprint"])]
+    #[arg(hide = true, long = "hmac", value_name = "KEY", conflicts_with_all = ["sign", "verify", "prverify", "hmac_env", "hmac_stdin", "mac", "fips_fingerprint"])]
     hmac: Option<String>,
 
     /// HMAC mode: read the HMAC key from the named environment variable.
     ///
     /// Replaces C `OPT_HMAC_ENV` at `apps/dgst.c` line 80.
-    #[arg(long = "hmac-env", value_name = "VARNAME", conflicts_with_all = ["sign", "verify", "prverify", "hmac", "hmac_stdin", "mac", "fips_fingerprint"])]
+    #[arg(hide = true, long = "hmac-env", value_name = "VARNAME", conflicts_with_all = ["sign", "verify", "prverify", "hmac", "hmac_stdin", "mac", "fips_fingerprint"])]
     hmac_env: Option<String>,
 
     /// HMAC mode: read the HMAC key from the first line of stdin.
     ///
     /// Replaces C `OPT_HMAC_STDIN` at `apps/dgst.c` line 81.
-    #[arg(long = "hmac-stdin", conflicts_with_all = ["sign", "verify", "prverify", "hmac", "hmac_env", "mac", "fips_fingerprint"])]
+    #[arg(hide = true, long = "hmac-stdin", conflicts_with_all = ["sign", "verify", "prverify", "hmac", "hmac_env", "mac", "fips_fingerprint"])]
     hmac_stdin: bool,
 
     /// FIPS module fingerprint shortcut (uses fixed published HMAC key).
     ///
     /// Replaces C `OPT_FIPS_FINGERPRINT` at `apps/dgst.c` line 82.
-    #[arg(long = "fips-fingerprint", conflicts_with_all = ["sign", "verify", "prverify", "hmac", "hmac_env", "hmac_stdin", "mac"])]
+    #[arg(hide = true, long = "fips-fingerprint", conflicts_with_all = ["sign", "verify", "prverify", "hmac", "hmac_env", "hmac_stdin", "mac"])]
     fips_fingerprint: bool,
 
     /// Generic MAC mode: MAC algorithm name (e.g., `HMAC`, `CMAC`, `GMAC`).
     ///
     /// Replaces C `OPT_MAC` at `apps/dgst.c` line 83.
-    #[arg(long = "mac", value_name = "NAME", conflicts_with_all = ["sign", "verify", "prverify", "hmac", "hmac_env", "hmac_stdin", "fips_fingerprint"])]
+    #[arg(hide = true, long = "mac", value_name = "NAME", conflicts_with_all = ["sign", "verify", "prverify", "hmac", "hmac_env", "hmac_stdin", "fips_fingerprint"])]
     mac: Option<String>,
 
     /// MAC algorithm parameter (`name:value`); may be repeated.
     ///
     /// Replaces C `OPT_MACOPT` at `apps/dgst.c` line 84.
-    #[arg(long = "macopt", value_name = "NAME:VALUE")]
+    #[arg(hide = true, long = "macopt", value_name = "NAME:VALUE")]
     macopt: Vec<String>,
 
     /// Digest algorithm name (e.g., `sha256`, `sha512`, `blake2b512`).
@@ -305,11 +305,11 @@ pub struct DgstArgs {
     /// digest name can also appear as a bare flag `-sha256`; clap delegates
     /// that to a fallback handled in `main.rs` via the global subcommand
     /// alias mechanism, so this Rust port accepts only the explicit `-md`.
-    #[arg(long = "md", short = 'm', value_name = "NAME")]
+    #[arg(hide = true, long = "md", short = 'm', value_name = "NAME")]
     md: Option<String>,
 
     /// Input file paths.  When omitted, reads from stdin.
-    #[arg(value_name = "FILE")]
+    #[arg(hide = true, value_name = "FILE")]
     files: Vec<PathBuf>,
 }
 

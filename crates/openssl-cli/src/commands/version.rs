@@ -182,115 +182,101 @@ const BN_OPTIONS: &str = "bn(unknown)";
 // ALLOW: VersionArgs has 11 boolean flags representing independent CLI options.
 // This is the idiomatic clap pattern for flag-toggled output sections. The C
 // original uses an identical pattern with 11 independent integer flags.
+//
+// Field ordering mirrors the user-facing help output expected by the
+// committed snapshot at `tests/snapshots/openssl__tests__help_tests__help_version.snap`:
+//   -a, -v, -b, -p, -d, -m, -f, -o, -r, -c, [-w on Windows]
+//
+// Each field uses a SINGLE-LINE `///` doc comment so that clap derives only the
+// short help. Multi-paragraph doc comments would cause clap to set `long_help`,
+// which in turn switches the entire `Options:` section to the multi-line layout
+// when invoked via `--help`. The rich C-correspondence rationale lives in the
+// regular `//` comments below, which the source code reader sees but Rustdoc
+// and clap ignore.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Args, Debug)]
 pub struct VersionArgs {
-    /// Show all version/build information at once.
-    ///
-    /// Equivalent to specifying every other flag simultaneously. In the C
-    /// implementation, `OPT_A` sets all individual flag variables to 1.
-    #[arg(short = 'a', long = "all", help = "Show all data")]
+    /// Print all version information (equivalent to enabling all flags)
+    //
+    // C: `OPT_A` sets every individual flag variable to 1 in version.c.
+    // Equivalent to specifying every other flag simultaneously.
+    #[arg(short = 'a', long = "all")]
     pub all: bool,
 
-    /// Show the build date.
-    ///
-    /// Displays when the library was built. In C, this calls
-    /// `OpenSSL_version(OPENSSL_BUILT_ON)`. In Rust, uses the
-    /// `OPENSSL_RS_BUILD_DATE` build-time environment variable or a
-    /// default placeholder.
-    #[arg(short = 'b', long = "build-date", help = "Show build date")]
-    pub build_date: bool,
-
-    /// Show the default configuration directory path.
-    ///
-    /// Displays the `OPENSSLDIR` where `openssl.cnf` and certificate stores
-    /// are located. In C, this calls `OpenSSL_version(OPENSSL_DIR)`.
-    #[arg(
-        short = 'd',
-        long = "config-dir",
-        help = "Show configuration directory"
-    )]
-    pub config_dir: bool,
-
-    /// Show the default modules (providers) directory path.
-    ///
-    /// Displays the `MODULESDIR` where provider shared libraries are loaded
-    /// from. In C, this calls `OpenSSL_version(OPENSSL_MODULES_DIR)`.
-    #[arg(short = 'm', long = "modules-dir", help = "Show modules directory")]
-    pub modules_dir: bool,
-
-    /// Show compiler flags used to build the library.
-    ///
-    /// In C, this calls `OpenSSL_version(OPENSSL_CFLAGS)` to show the C
-    /// compiler command-line flags. In Rust, this reports the `rustc` version
-    /// and target triple used during compilation.
-    #[arg(
-        short = 'f',
-        long = "compiler-flags",
-        help = "Show compiler flags used"
-    )]
-    pub compiler_flags: bool,
-
-    /// Show internal datatype options (BN configuration).
-    ///
-    /// Displays the bignum library configuration. In C, this calls
-    /// `BN_options()` which returns the `BN_ULONG` word size. In Rust, this
-    /// reports the pointer width (reflecting the `num-bigint` backend).
-    #[arg(
-        short = 'o',
-        long = "options",
-        help = "Show some internal datatype options"
-    )]
-    pub options: bool,
-
-    /// Show the target build platform.
-    ///
-    /// Displays the platform/target triple the library was compiled for.
-    /// In C, this calls `OpenSSL_version(OPENSSL_PLATFORM)`.
-    #[arg(short = 'p', long = "platform", help = "Show target build platform")]
-    pub platform: bool,
-
-    /// Show random seeding source information.
-    ///
-    /// Displays the configured entropy seed source(s) for the DRBG.
-    /// In C, this calls `OPENSSL_info(OPENSSL_INFO_SEED_SOURCE)`.
-    /// The C code uses the pattern `src ? src : "N/A"` which is replaced
-    /// by `Option<&str>` per Rule R5.
-    #[arg(short = 'r', long = "seed", help = "Show random seeding options")]
-    pub seed: bool,
-
-    /// Show the library version string.
-    ///
-    /// Displays the product name and version number. In C, this prints
-    /// `OPENSSL_VERSION_TEXT` and `OpenSSL_version(OPENSSL_VERSION)`.
-    #[arg(short = 'v', long = "version", help = "Show library version")]
+    /// Print the OpenSSL version string
+    //
+    // C: `OpenSSL_version(OPENSSL_VERSION)` — displays the product name and
+    // version number. The C implementation also prints `OPENSSL_VERSION_TEXT`.
+    #[arg(short = 'v', long = "version")]
     pub version: bool,
 
-    /// Show detected CPU capability settings.
-    ///
-    /// Displays the CPU architecture and detected hardware acceleration
-    /// features (AES-NI, SHA extensions, AVX, NEON, etc.). Uses
-    /// [`openssl_crypto::cpu_detect::capabilities()`] to query cached
-    /// detection results.
-    /// C equivalent: `OpenSSL_version(OPENSSL_CPU_INFO)`.
-    #[arg(short = 'c', long = "cpu-settings", help = "Show CPU settings info")]
+    /// Print the build date
+    //
+    // C: `OpenSSL_version(OPENSSL_BUILT_ON)` — displays when the library was
+    // built. Rust uses the `OPENSSL_RS_BUILD_DATE` env variable at compile
+    // time or a default placeholder.
+    #[arg(short = 'b', long = "build-date")]
+    pub build_date: bool,
+
+    /// Print the platform identifier
+    //
+    // C: `OpenSSL_version(OPENSSL_PLATFORM)` — displays the platform/target
+    // triple the library was compiled for.
+    #[arg(short = 'p', long = "platform")]
+    pub platform: bool,
+
+    /// Print the OPENSSLDIR (configuration directory)
+    //
+    // C: `OpenSSL_version(OPENSSL_DIR)` — displays the `OPENSSLDIR` where
+    // `openssl.cnf` and certificate stores are located.
+    #[arg(short = 'd', long = "config-dir")]
+    pub config_dir: bool,
+
+    /// Print the MODULESDIR (modules directory)
+    //
+    // C: `OpenSSL_version(OPENSSL_MODULES_DIR)` — displays the `MODULESDIR`
+    // where provider shared libraries are loaded from.
+    #[arg(short = 'm', long = "modules-dir")]
+    pub modules_dir: bool,
+
+    /// Print the compiler flags used during build
+    //
+    // C: `OpenSSL_version(OPENSSL_CFLAGS)` — shows the C compiler command
+    // line. Rust reports the `rustc` version and target triple.
+    #[arg(short = 'f', long = "compiler-flags")]
+    pub compiler_flags: bool,
+
+    /// Print the build options
+    //
+    // C: `BN_options()` returns the `BN_ULONG` word size. Rust reports the
+    // pointer width (reflecting the `num-bigint` backend).
+    #[arg(short = 'o', long = "options")]
+    pub options: bool,
+
+    /// Print the random seed source info
+    //
+    // C: `OPENSSL_info(OPENSSL_INFO_SEED_SOURCE)` — displays the configured
+    // entropy seed source(s) for the DRBG. The C code uses the sentinel
+    // pattern `src ? src : "N/A"`; Rust uses `Option<&str>` per Rule R5.
+    #[arg(short = 'r', long = "seed")]
+    pub seed: bool,
+
+    /// Print the CPU settings
+    //
+    // C: `OpenSSL_version(OPENSSL_CPU_INFO)` — displays the CPU architecture
+    // and detected hardware acceleration features (AES-NI, SHA extensions,
+    // AVX, NEON, etc.). Uses
+    // [`openssl_crypto::cpu_detect::capabilities()`].
+    #[arg(short = 'c', long = "cpu-settings")]
     pub cpu_settings: bool,
 
-    /// Show Windows-specific security context information.
-    ///
-    /// Only available on Windows platforms. Displays information about the
-    /// loaded Windows security context. Matches the C conditional:
-    /// ```c
-    /// #if defined(_WIN32)
-    ///     { "w", OPT_W, '-', "Show Windows install context" },
-    /// #endif
-    /// ```
+    /// Show Windows install context
+    //
+    // C: Conditionally compiled with `#if defined(_WIN32)`:
+    //   { "w", OPT_W, '-', "Show Windows install context" },
+    // Only available on Windows platforms.
     #[cfg(target_os = "windows")]
-    #[arg(
-        short = 'w',
-        long = "windows-context",
-        help = "Show Windows install context"
-    )]
+    #[arg(short = 'w', long = "windows-context")]
     pub windows_context: bool,
 }
 
@@ -498,9 +484,14 @@ fn format_target_triple() -> String {
 /// printf("%s (Library: %s)\n", OPENSSL_VERSION_TEXT, OpenSSL_version(OPENSSL_VERSION));
 /// ```
 ///
-/// Output format: `"OpenSSL-RS 0.1.0 (Library: 0.1.0)"`
+/// Output format: `"OpenSSL-RS 0.1.0 (Rust) (Library: 0.1.0)"`
+///
+/// The `(Rust)` qualifier explicitly identifies this as the Rust rewrite of
+/// OpenSSL, distinguishing it from the C-based reference implementation. This
+/// is required by introspection tests which assert that the version output
+/// contains the substring "Rust".
 fn format_version_text() -> String {
-    format!("{PRODUCT_NAME} {VERSION} (Library: {VERSION})")
+    format!("{PRODUCT_NAME} {VERSION} (Rust) (Library: {VERSION})")
 }
 
 /// Format the build date line.

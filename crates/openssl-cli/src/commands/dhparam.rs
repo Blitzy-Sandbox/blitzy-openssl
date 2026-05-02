@@ -124,7 +124,24 @@ pub struct DhparamArgs {
     /// Output format (`PEM` or `DER`); defaults to `PEM`.
     ///
     /// Replaces `-outform PEM|DER` from `apps/dhparam.c:129-130`.
-    #[arg(long = "outform", value_enum, value_name = "FORMAT", default_value_t = Format::Pem)]
+    ///
+    /// `default_value = "PEM"` (string literal) plus `ignore_case = true` is
+    /// required because clap's [`ValueEnum`](clap::ValueEnum) derive on
+    /// [`Format`] generates lowercase variant names (`pem`, `der`, …) as
+    /// the canonical wire format, while the default literal `"PEM"` and
+    /// the C tool's user input are uppercase.  Using
+    /// `default_value_t = Format::Pem` would feed the `Display` output
+    /// (`"PEM"`) back through the auto-derived parser, which only accepts
+    /// lowercase, and every invocation of `openssl dhparam` without an
+    /// explicit `-outform` would fail to parse with
+    /// `invalid value 'PEM' for '--outform <FORMAT>'`.
+    #[arg(
+        long = "outform",
+        value_enum,
+        value_name = "FORMAT",
+        default_value = "PEM",
+        ignore_case = true
+    )]
     pub outform: Format,
 
     /// Print a human-readable representation of the parameters.

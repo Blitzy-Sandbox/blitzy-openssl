@@ -110,12 +110,19 @@ fn test_genrsa_generates_key() {
     );
 }
 
-/// Verifies the `genpkey` subcommand dispatches for algorithm-generic
-/// key generation.
+/// Verifies the `genpkey` subcommand generates a PEM-encoded RSA key.
 ///
-/// When the full handler is implemented this test will verify:
-///   `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out key.pem`
-///   → key file created with correct algorithm parameters.
+/// The full handler in `crates/openssl-cli/src/commands/genpkey.rs` is
+/// implemented (unlike the stub commands such as `genrsa`/`req`/`x509`),
+/// so this test exercises the documented end-to-end invocation:
+///   `openssl genpkey --algorithm RSA --pkeyopt rsa_keygen_bits:2048 --out key.pem`
+///
+/// and verifies the output file is created with PEM framing.
+///
+/// NOTE on flag style: clap's derive parser uses idiomatic Rust long-option
+/// syntax (`--algorithm`).  The C tool accepted single-dash long options
+/// (`-algorithm`); the Rust CLI requires the double-dash form to avoid
+/// ambiguity with bundled short flags.
 #[test]
 fn test_genpkey_rsa() {
     let dir = create_temp_dir();
@@ -123,15 +130,31 @@ fn test_genpkey_rsa() {
 
     openssl_cmd()
         .arg("genpkey")
+        .arg("--algorithm")
+        .arg("RSA")
+        .arg("--pkeyopt")
+        .arg("rsa_keygen_bits:2048")
+        .arg("--out")
+        .arg(&key_path)
         .assert()
-        .success()
-        .stderr(predicate::str::contains(DISPATCH_MSG));
+        .success();
 
     // PathBuf::from demonstrates path construction for full handler tests.
     let explicit_path = PathBuf::from(key_path.as_os_str());
     assert!(
         explicit_path.to_string_lossy().contains("key.pem"),
         "PathBuf round-trip should preserve filename"
+    );
+    assert!(
+        explicit_path.exists(),
+        "genpkey should create the requested output file at {explicit_path:?}"
+    );
+
+    let pem = fs::read_to_string(&key_path)
+        .expect("genpkey output file should be readable as UTF-8 text");
+    assert!(
+        pem.contains("-----BEGIN") && pem.contains("PRIVATE KEY-----"),
+        "genpkey output should be a PEM-encoded private key, got: {pem:?}"
     );
 }
 

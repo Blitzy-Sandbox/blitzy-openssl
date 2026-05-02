@@ -103,7 +103,7 @@ pub struct ConfigutlArgs {
     /// Corresponds to the C `-provider` option. Currently accepted for
     /// CLI compatibility; provider loading is handled by the library
     /// context initialization chain.
-    #[arg(long = "provider", value_name = "NAME")]
+    #[arg(long = "provider-name", value_name = "NAME")]
     provider: Option<String>,
 
     /// Provider module search path.

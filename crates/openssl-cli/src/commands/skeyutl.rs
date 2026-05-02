@@ -194,7 +194,7 @@ pub struct SkeyutlArgs {
     ///
     /// Accepted for API compatibility; provider loading is handled by the
     /// library context initialisation in `main.rs`.
-    #[arg(long = "provider", value_name = "NAME")]
+    #[arg(long = "provider-name", value_name = "NAME")]
     provider: Option<String>,
 
     /// Provider search path.

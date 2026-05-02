@@ -1105,9 +1105,7 @@ zvgjVS0e70pIqH6bSXDgPc8mKtSs9Zi26Q==\n\
         let ctx = make_lib_context();
         match args.execute(&ctx).await {
             Err(
-                CryptoError::Encoding(_)
-                | CryptoError::Key(_)
-                | CryptoError::AlgorithmNotFound(_),
+                CryptoError::Encoding(_) | CryptoError::Key(_) | CryptoError::AlgorithmNotFound(_),
             ) => {}
             other => panic!("expected Encoding/Key/AlgorithmNotFound error, got {other:?}"),
         }
@@ -1263,14 +1261,11 @@ zvgjVS0e70pIqH6bSXDgPc8mKtSs9Zi26Q==\n\
                 );
             }
             Err(
-                CryptoError::Encoding(_)
-                | CryptoError::Key(_)
-                | CryptoError::AlgorithmNotFound(_),
+                CryptoError::Encoding(_) | CryptoError::Key(_) | CryptoError::AlgorithmNotFound(_),
             ) => {}
-            Err(other) => panic!(
-                "expected Ok or Encoding/Key/AlgorithmNotFound error, got {other:?}",
-            ),
+            Err(other) => {
+                panic!("expected Ok or Encoding/Key/AlgorithmNotFound error, got {other:?}",)
+            }
         }
     }
 }
-

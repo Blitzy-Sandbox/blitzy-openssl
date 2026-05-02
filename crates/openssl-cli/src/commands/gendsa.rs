@@ -604,9 +604,7 @@ z0kq
         let tmp = NamedTempFile::new().expect("tempfile must succeed");
         let mut args = default_args(PathBuf::from("/dev/null"));
         args.out = Some(tmp.path().to_path_buf());
-        let mut writer = args
-            .open_output_writer()
-            .expect("file writer must open");
+        let mut writer = args.open_output_writer().expect("file writer must open");
         writer.write_all(b"hello").expect("write must succeed");
         writer.flush().expect("flush must succeed");
         drop(writer);
@@ -689,10 +687,12 @@ z0kq
         // or `Key`.  What we reject is a panic or an unrelated
         // variant such as `Provider(...)`.
         match args.execute(&ctx).await {
-            Err(CryptoError::Encoding(_)
-            | CryptoError::AlgorithmNotFound(_)
-            | CryptoError::Key(_)
-            | CryptoError::Common(_)) => {}
+            Err(
+                CryptoError::Encoding(_)
+                | CryptoError::AlgorithmNotFound(_)
+                | CryptoError::Key(_)
+                | CryptoError::Common(_),
+            ) => {}
             Ok(()) => {
                 panic!("garbage paramfile should not succeed");
             }
@@ -734,11 +734,13 @@ z0kq
                 // benign for this smoke test.
                 assert!(written.is_empty() || written.starts_with(b"-----BEGIN"));
             }
-            Err(CryptoError::Encoding(_)
-            | CryptoError::AlgorithmNotFound(_)
-            | CryptoError::Key(_)
-            | CryptoError::Common(_)
-            | CryptoError::Io(_)) => {}
+            Err(
+                CryptoError::Encoding(_)
+                | CryptoError::AlgorithmNotFound(_)
+                | CryptoError::Key(_)
+                | CryptoError::Common(_)
+                | CryptoError::Io(_),
+            ) => {}
             other => panic!("unexpected error variant: {other:?}"),
         }
     }
@@ -759,11 +761,13 @@ z0kq
         // the decoder fails first that's also fine because the
         // cipher would never be used anyway.
         match args.execute(&ctx).await {
-            Err(CryptoError::AlgorithmNotFound(_)
-            | CryptoError::Encoding(_)
-            | CryptoError::Provider(_)
-            | CryptoError::Key(_)
-            | CryptoError::Common(_)) => {}
+            Err(
+                CryptoError::AlgorithmNotFound(_)
+                | CryptoError::Encoding(_)
+                | CryptoError::Provider(_)
+                | CryptoError::Key(_)
+                | CryptoError::Common(_),
+            ) => {}
             Ok(()) => panic!("unknown cipher should be rejected"),
             other => panic!("unexpected error variant: {other:?}"),
         }

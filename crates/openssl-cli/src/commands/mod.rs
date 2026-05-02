@@ -230,251 +230,251 @@ pub enum CliCommand {
     // ===================================================================
     // PKI / Certificate Commands
     // ===================================================================
-    /// Generate certificate signing requests or self-signed certificates.
+    /// Certificate signing request (CSR) operations
     #[command(name = "req")]
     Req(req::ReqArgs),
 
-    /// Certificate display, conversion, and signing utility.
+    /// X.509 certificate display, signing, and conversion
     #[command(name = "x509")]
     X509(x509::X509Args),
 
-    /// Certificate Authority management.
+    /// Certificate authority (CA) management
     #[command(name = "ca")]
     Ca(ca::CaArgs),
 
-    /// Certificate chain verification.
+    /// Certificate chain verification
     #[command(name = "verify")]
     Verify(verify::VerifyArgs),
 
-    /// CRL inspection and generation.
+    /// Certificate revocation list (CRL) operations
     #[command(name = "crl")]
     Crl(crl::CrlArgs),
 
     // ===================================================================
     // Key Generation / Management Commands
     // ===================================================================
-    /// Generate private keys or key parameters.
+    /// Generate a private key (algorithm-generic)
     #[command(name = "genpkey")]
     Genpkey(genpkey::GenpkeyArgs),
 
-    /// Public/private key processing.
+    /// Public or private key utility
     #[command(name = "pkey")]
     Pkey(pkey::PkeyArgs),
 
-    /// Generate RSA private key.
+    /// Generate an RSA private key
     #[command(name = "genrsa")]
     Genrsa(genrsa::GenrsaArgs),
 
-    /// Generate DSA key from parameters.
+    /// Generate a DSA private key from parameters
     #[command(name = "gendsa")]
     Gendsa(gendsa::GendsaArgs),
 
-    /// DH parameter generation and management.
+    /// Diffie-Hellman parameter generation and management
     #[command(name = "dhparam")]
     Dhparam(dhparam::DhparamArgs),
 
-    /// DSA parameter generation.
+    /// DSA parameter generation and management
     #[command(name = "dsaparam")]
     Dsaparam(dsaparam::DsaparamArgs),
 
-    /// EC parameter generation.
-    #[cfg(feature = "ec")]
-    #[command(name = "ecparam")]
-    Ecparam(ecparam::EcparamArgs),
-
-    /// EC key processing.
-    #[cfg(feature = "ec")]
-    #[command(name = "ec")]
-    Ec(ec::EcArgs),
-
-    /// RSA key processing.
+    /// RSA key management utility
     #[command(name = "rsa")]
     Rsa(rsa::RsaArgs),
 
-    /// DSA key processing.
+    /// DSA key management utility
     #[command(name = "dsa")]
     Dsa(dsa::DsaArgs),
 
-    /// Algorithm parameter round-trip.
+    /// Public key algorithm parameter management
     #[command(name = "pkeyparam")]
     Pkeyparam(pkeyparam::PkeyparamArgs),
 
     // ===================================================================
     // Crypto Operation Commands
     // ===================================================================
-    /// Symmetric cipher encryption/decryption.
+    /// Symmetric cipher encryption and decryption
     #[command(name = "enc")]
     Enc(enc::EncArgs),
 
-    /// Message digest/signature generation and verification.
+    /// Message digest computation and verification
     #[command(name = "dgst")]
     Dgst(dgst::DgstArgs),
 
-    /// CMS (Cryptographic Message Syntax) operations.
-    #[cfg(feature = "cms")]
-    #[command(name = "cms")]
-    Cms(cms::CmsArgs),
-
-    /// PKCS#12 file operations.
+    /// PKCS#12 key store operations
     #[command(name = "pkcs12")]
     Pkcs12(pkcs12::Pkcs12Args),
 
-    /// PKCS#7 data processing.
+    /// PKCS#7 / CMS-predecessor operations
     #[command(name = "pkcs7")]
     Pkcs7(pkcs7::Pkcs7Args),
 
-    /// PKCS#8 private key conversion.
+    /// PKCS#8 private key format conversion
     #[command(name = "pkcs8")]
     Pkcs8(pkcs8::Pkcs8Args),
 
-    /// S/MIME mail operations.
+    /// S/MIME mail signing, encryption, and verification
     #[command(name = "smime")]
     Smime(smime::SmimeArgs),
 
-    /// MAC computation.
+    /// Message Authentication Code (MAC) computation
     #[command(name = "mac")]
     Mac(mac::MacArgs),
 
-    /// Key derivation function execution.
+    /// Key Derivation Function (KDF) computation
     #[command(name = "kdf")]
     Kdf(kdf::KdfArgs),
 
-    /// Public key algorithm utility.
+    /// Public key algorithm utility (sign, verify, encrypt, decrypt)
     #[command(name = "pkeyutl")]
     Pkeyutl(pkeyutl::PkeyutlArgs),
 
-    /// RSA utility (legacy, deprecated — use pkeyutl instead).
+    /// RSA utility (deprecated — use pkeyutl instead)
     #[command(name = "rsautl")]
     Rsautl(rsautl::RsautlArgs),
 
-    /// Password hashing.
+    /// Password hashing utility
     #[command(name = "passwd")]
     Passwd(passwd::PasswdArgs),
 
-    /// Prime number generation and testing.
+    /// Prime number generation and testing
     #[command(name = "prime")]
     Prime(prime::PrimeArgs),
 
-    /// Random data generation.
+    /// Random byte generation
     #[command(name = "rand")]
     Rand(rand::RandArgs),
 
     // ===================================================================
     // TLS / Network Test Commands
     // ===================================================================
-    /// TLS/DTLS/QUIC client.
+    /// TLS/SSL client diagnostic and testing tool
     #[command(name = "s_client")]
     SClient(s_client::SClientArgs),
 
-    /// TLS/DTLS/QUIC server.
+    /// TLS/SSL server diagnostic and testing tool
     #[command(name = "s_server")]
     SServer(s_server::SServerArgs),
 
-    /// TLS connection timing benchmark.
+    /// TLS connection timing benchmark
     #[command(name = "s_time")]
     STime(s_time::STimeArgs),
 
-    /// Cipher suite listing.
+    /// Cipher suite listing and information
     #[command(name = "ciphers")]
     Ciphers(ciphers::CiphersArgs),
 
-    /// SSL/TLS session data management.
+    /// SSL/TLS session identifier display
     #[command(name = "sess_id")]
     SessId(sess_id::SessIdArgs),
 
     // ===================================================================
     // Introspection / Info Commands
     // ===================================================================
-    /// Display version information.
+    /// Version information display
     #[command(name = "version")]
     Version(version::VersionArgs),
 
-    /// List algorithms, providers, and capabilities.
+    /// Algorithm, provider, and capability listing
     #[command(name = "list")]
     List(list::ListArgs),
 
-    /// Cryptographic algorithm benchmark.
+    /// Algorithm performance benchmarking
     #[command(name = "speed")]
     Speed(speed::SpeedArgs),
 
-    /// Display build information.
+    /// Build and installation information
     #[command(name = "info")]
     Info(info::InfoArgs),
 
-    /// Translate error codes to strings.
+    /// Error code string lookup
     #[command(name = "errstr")]
     Errstr(errstr::ErrstrArgs),
 
-    /// ASN.1 data parsing and display.
+    /// ASN.1 structure parsing and display
     #[command(name = "asn1parse")]
     Asn1parse(asn1parse::Asn1parseArgs),
 
     // ===================================================================
+    // Utility Commands
+    // ===================================================================
+    /// Certificate directory hash-link management
+    #[command(name = "rehash")]
+    Rehash(rehash::RehashArgs),
+
+    /// Symmetric key utility
+    #[command(name = "skeyutl")]
+    Skeyutl(skeyutl::SkeyutlArgs),
+
+    /// Configuration file utility
+    #[command(name = "configutl")]
+    Configutl(configutl::ConfigutlArgs),
+
+    /// CRL to PKCS#7 structure conversion
+    #[command(name = "crl2pkcs7")]
+    Crl2pkcs7(crl2pkcs7::Crl2pkcs7Args),
+
+    /// Netscape certificate sequence utility
+    #[command(name = "nseq")]
+    Nseq(nseq::NseqArgs),
+
+    /// Netscape SPKAC operations
+    #[command(name = "spkac")]
+    Spkac(spkac::SpkacArgs),
+
+    /// URI-based certificate and key store utility
+    #[command(name = "storeutl")]
+    Storeutl(storeutl::StoreutlArgs),
+
+    // ===================================================================
     // Protocol-Specific Commands (Feature-Gated)
     // ===================================================================
-    /// OCSP client and responder.
+    /// CMS (Cryptographic Message Syntax) operations
+    #[cfg(feature = "cms")]
+    #[command(name = "cms")]
+    Cms(cms::CmsArgs),
+
+    /// OCSP (Online Certificate Status Protocol) client and responder
     #[cfg(feature = "ocsp")]
     #[command(name = "ocsp")]
     Ocsp(ocsp::OcspArgs),
 
-    /// Certificate Management Protocol client.
+    /// CMP (Certificate Management Protocol) client operations
     #[cfg(feature = "cmp")]
     #[command(name = "cmp")]
     Cmp(cmp::CmpArgs),
 
-    /// RFC 3161 Time Stamp Authority operations.
+    /// RFC 3161 timestamp authority client
     #[cfg(feature = "ts")]
     #[command(name = "ts")]
     Ts(ts::TsArgs),
 
     // ===================================================================
-    // Utility Commands
+    // Specialized / Compliance Commands
     // ===================================================================
-    /// Certificate directory hash link creation.
-    #[command(name = "rehash")]
-    Rehash(rehash::RehashArgs),
-
-    /// FIPS module installation and configuration.
+    /// FIPS module installation and configuration
     #[cfg(feature = "fips")]
     #[command(name = "fipsinstall")]
     Fipsinstall(fipsinstall::FipsinstallArgs),
 
-    /// Symmetric key generation utility.
-    #[command(name = "skeyutl")]
-    Skeyutl(skeyutl::SkeyutlArgs),
-
-    /// Configuration file expansion.
-    #[command(name = "configutl")]
-    Configutl(configutl::ConfigutlArgs),
-
-    /// ECH configuration management.
+    /// Encrypted Client Hello (ECH) key and config management
     #[cfg(feature = "ech")]
     #[command(name = "ech")]
     Ech(ech::EchArgs),
 
-    // ===================================================================
-    // Legacy / Miscellaneous Commands
-    // ===================================================================
-    /// Package CRL/certs into PKCS#7.
-    #[command(name = "crl2pkcs7")]
-    Crl2pkcs7(crl2pkcs7::Crl2pkcs7Args),
-
-    /// Netscape certificate sequence conversion.
-    #[command(name = "nseq")]
-    Nseq(nseq::NseqArgs),
-
-    /// SPKAC handling.
-    #[command(name = "spkac")]
-    Spkac(spkac::SpkacArgs),
-
-    /// SRP verifier database management (deprecated).
+    /// SRP (Secure Remote Password) verifier file management
     #[cfg(feature = "srp")]
     #[command(name = "srp")]
     Srp(Box<srp::SrpArgs>),
 
-    /// `OSSL_STORE` URI loading utility.
-    #[command(name = "storeutl")]
-    Storeutl(storeutl::StoreutlArgs),
+    /// Elliptic curve key utility
+    #[cfg(feature = "ec")]
+    #[command(name = "ec")]
+    Ec(ec::EcArgs),
+
+    /// Elliptic curve parameter generation and management
+    #[cfg(feature = "ec")]
+    #[command(name = "ecparam")]
+    Ecparam(ecparam::EcparamArgs),
 }
 
 // ============================================================================
@@ -523,10 +523,6 @@ impl CliCommand {
             Self::Gendsa(args) => args.execute(ctx).await,
             Self::Dhparam(args) => args.execute(ctx).await,
             Self::Dsaparam(args) => args.execute(ctx).await,
-            #[cfg(feature = "ec")]
-            Self::Ecparam(args) => args.execute(ctx).await,
-            #[cfg(feature = "ec")]
-            Self::Ec(args) => args.execute(ctx).await,
             Self::Rsa(args) => args.execute(ctx).await,
             Self::Dsa(args) => args.execute(ctx).await,
             Self::Pkeyparam(args) => args.execute(ctx).await,
@@ -534,8 +530,6 @@ impl CliCommand {
             // Crypto operations
             Self::Enc(args) => args.execute(ctx).await,
             Self::Dgst(args) => args.execute(ctx).await,
-            #[cfg(feature = "cms")]
-            Self::Cms(args) => args.execute(ctx).await,
             Self::Pkcs12(args) => args.execute(ctx).await,
             Self::Pkcs7(args) => args.execute(ctx).await,
             Self::Pkcs8(args) => args.execute(ctx).await,
@@ -563,7 +557,18 @@ impl CliCommand {
             Self::Errstr(args) => args.execute(ctx).await,
             Self::Asn1parse(args) => args.execute(ctx).await,
 
+            // Utility commands
+            Self::Rehash(args) => args.execute(ctx).await,
+            Self::Skeyutl(args) => args.execute(ctx).await,
+            Self::Configutl(args) => args.execute(ctx).await,
+            Self::Crl2pkcs7(args) => args.execute(ctx).await,
+            Self::Nseq(args) => args.execute(ctx).await,
+            Self::Spkac(args) => args.execute(ctx).await,
+            Self::Storeutl(args) => args.execute(ctx).await,
+
             // Protocol-specific (feature-gated)
+            #[cfg(feature = "cms")]
+            Self::Cms(args) => args.execute(ctx).await,
             #[cfg(feature = "ocsp")]
             Self::Ocsp(args) => args.execute(ctx).await,
             #[cfg(feature = "cmp")]
@@ -571,22 +576,17 @@ impl CliCommand {
             #[cfg(feature = "ts")]
             Self::Ts(args) => args.execute(ctx).await,
 
-            // Utility commands
-            Self::Rehash(args) => args.execute(ctx).await,
+            // Specialized / compliance commands (feature-gated)
             #[cfg(feature = "fips")]
             Self::Fipsinstall(args) => args.execute(ctx).await,
-            Self::Skeyutl(args) => args.execute(ctx).await,
-            Self::Configutl(args) => args.execute(ctx).await,
             #[cfg(feature = "ech")]
             Self::Ech(args) => args.execute(ctx).await,
-
-            // Legacy / misc commands
-            Self::Crl2pkcs7(args) => args.execute(ctx).await,
-            Self::Nseq(args) => args.execute(ctx).await,
-            Self::Spkac(args) => args.execute(ctx).await,
             #[cfg(feature = "srp")]
             Self::Srp(args) => args.execute(ctx).await,
-            Self::Storeutl(args) => args.execute(ctx).await,
+            #[cfg(feature = "ec")]
+            Self::Ec(args) => args.execute(ctx).await,
+            #[cfg(feature = "ec")]
+            Self::Ecparam(args) => args.execute(ctx).await,
         }
     }
 }
