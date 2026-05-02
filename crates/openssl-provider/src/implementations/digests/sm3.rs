@@ -16,7 +16,7 @@
 //!
 //! All code in this module is 100% safe Rust (Rule R8).
 
-use crate::traits::{AlgorithmDescriptor, DigestProvider, DigestContext};
+use crate::traits::{AlgorithmDescriptor, DigestContext, DigestProvider};
 use openssl_common::error::ProviderResult;
 use openssl_common::param::{ParamSet, ParamValue};
 
@@ -120,13 +120,11 @@ impl DigestContext for Sm3Context {
 
 /// Returns algorithm descriptors for SM3.
 pub fn descriptors() -> Vec<AlgorithmDescriptor> {
-    vec![
-        AlgorithmDescriptor {
-            names: vec!["SM3", "1.2.156.10197.1.401"],
-            property: "provider=default",
-            description: "SM3 message digest (GB/T 32905-2016, 256-bit output)",
-        },
-    ]
+    vec![AlgorithmDescriptor {
+        names: vec!["SM3", "1.2.156.10197.1.401"],
+        property: "provider=default",
+        description: "SM3 message digest (GB/T 32905-2016, 256-bit output)",
+    }]
 }
 
 #[cfg(test)]

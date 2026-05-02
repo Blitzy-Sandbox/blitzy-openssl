@@ -186,12 +186,7 @@ impl SipHashState {
     /// responsible for validating length before calling this constructor.
     ///
     /// Translates `SipHash_Init()` from `crypto/siphash/siphash.c`.
-    fn new(
-        key: &[u8],
-        hash_size: usize,
-        c_rounds: u32,
-        d_rounds: u32,
-    ) -> ProviderResult<Self> {
+    fn new(key: &[u8], hash_size: usize, c_rounds: u32, d_rounds: u32) -> ProviderResult<Self> {
         let k0 = le_u64(&key[0..8])?;
         let k1 = le_u64(&key[8..16])?;
 
@@ -584,8 +579,7 @@ impl SipHashContext {
     /// `c_rounds`, and `d_rounds` configuration, and saves a snapshot
     /// copy for subsequent keyless re-initialization.
     fn init_with_key(&mut self, key: &[u8]) -> ProviderResult<()> {
-        let sip_state =
-            SipHashState::new(key, self.hash_size, self.c_rounds, self.d_rounds)?;
+        let sip_state = SipHashState::new(key, self.hash_size, self.c_rounds, self.d_rounds)?;
         self.snapshot = Some(sip_state.clone());
         self.state = ContextState::Active(sip_state);
         Ok(())
@@ -870,7 +864,11 @@ mod tests {
             ctx.update(&msg).unwrap();
             let tag = ctx.finalize().unwrap();
             let expected = expected_u64.to_le_bytes();
-            assert_eq!(tag, expected, "SipHash-2-4-64 vector {} (len={}) failed", i, i);
+            assert_eq!(
+                tag, expected,
+                "SipHash-2-4-64 vector {} (len={}) failed",
+                i, i
+            );
         }
     }
 
@@ -913,9 +911,7 @@ mod tests {
 
     #[test]
     fn test_output_size_8() {
-        let params = ParamBuilder::new()
-            .push_u64(PARAM_SIZE, 8)
-            .build();
+        let params = ParamBuilder::new().push_u64(PARAM_SIZE, 8).build();
         let mut ctx = SipHashContext::new();
         ctx.init(&test_key(), Some(&params)).unwrap();
         ctx.update(b"hello").unwrap();
@@ -925,9 +921,7 @@ mod tests {
 
     #[test]
     fn test_output_size_invalid_rejected() {
-        let params = ParamBuilder::new()
-            .push_u64(PARAM_SIZE, 12)
-            .build();
+        let params = ParamBuilder::new().push_u64(PARAM_SIZE, 12).build();
         let mut ctx = SipHashContext::new();
         let result = ctx.init(&test_key(), Some(&params));
         assert!(result.is_err(), "Size 12 should be rejected");
@@ -1066,9 +1060,7 @@ mod tests {
     #[test]
     fn test_set_params_changes_output_size() {
         let mut ctx = SipHashContext::new();
-        let params = ParamBuilder::new()
-            .push_u64(PARAM_SIZE, 8)
-            .build();
+        let params = ParamBuilder::new().push_u64(PARAM_SIZE, 8).build();
         ctx.set_params(&params).unwrap();
 
         let got = ctx.get_params().unwrap();
@@ -1193,9 +1185,7 @@ mod tests {
         assert_eq!(tag.len(), 8);
 
         // Verify it differs from SipHash-2-4.
-        let params24 = ParamBuilder::new()
-            .push_u64(PARAM_SIZE, 8)
-            .build();
+        let params24 = ParamBuilder::new().push_u64(PARAM_SIZE, 8).build();
         let mut ctx24 = SipHashContext::new();
         ctx24.init(&test_key(), Some(&params24)).unwrap();
         ctx24.update(b"test").unwrap();
@@ -1261,9 +1251,7 @@ mod tests {
         // Init with 16-byte output, change to 8-byte mid-session.
         let mut ctx = SipHashContext::new();
         ctx.init(&test_key(), None).unwrap();
-        let params = ParamBuilder::new()
-            .push_u64(PARAM_SIZE, 8)
-            .build();
+        let params = ParamBuilder::new().push_u64(PARAM_SIZE, 8).build();
         ctx.set_params(&params).unwrap();
         let got = ctx.get_params().unwrap();
         assert_eq!(got.get(PARAM_SIZE).and_then(|v| v.as_u64()), Some(8));

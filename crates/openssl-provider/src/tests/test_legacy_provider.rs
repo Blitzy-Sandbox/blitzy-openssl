@@ -447,7 +447,8 @@ fn test_legacy_provider_algorithm_names_are_valid() {
                     assert!(
                         !name.is_empty(),
                         "Empty algorithm name string found in descriptor {:?} for op {:?}",
-                        desc.names, op
+                        desc.names,
+                        op
                     );
                 }
             }

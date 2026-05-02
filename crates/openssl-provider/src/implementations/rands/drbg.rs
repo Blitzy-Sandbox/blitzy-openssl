@@ -266,7 +266,6 @@ impl Default for DrbgConfig {
     }
 }
 
-
 // =============================================================================
 // Drbg — Core DRBG Wrapper
 // =============================================================================
@@ -677,9 +676,7 @@ impl Drbg {
         }
 
         // Check reseed policy: fork detection, interval, time, prediction resistance
-        let force_reseed = prediction_resistance
-            || self.check_fork()
-            || self.needs_reseed();
+        let force_reseed = prediction_resistance || self.check_fork() || self.needs_reseed();
 
         if force_reseed {
             debug!("DRBG auto-reseed triggered before generate");
@@ -727,17 +724,13 @@ impl Drbg {
         );
         params.set(
             "reseed_counter",
-            ParamValue::UInt64(u64::from(
-                self.reseed_counter.load(Ordering::Relaxed),
-            )),
+            ParamValue::UInt64(u64::from(self.reseed_counter.load(Ordering::Relaxed))),
         );
         params.set(
             "max_request",
             // Saturating conversion: usize -> u64 is lossless on 64-bit,
             // but we use try_from with fallback for portability (Rule R6).
-            ParamValue::UInt64(
-                u64::try_from(self.config.max_request).unwrap_or(u64::MAX),
-            ),
+            ParamValue::UInt64(u64::try_from(self.config.max_request).unwrap_or(u64::MAX)),
         );
         params.set(
             "generate_counter",
@@ -758,10 +751,7 @@ impl Drbg {
             .reseed_time
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map_or(0u64, |d: Duration| d.as_secs());
-        params.set(
-            "reseed_time",
-            ParamValue::UInt64(reseed_time_secs),
-        );
+        params.set("reseed_time", ParamValue::UInt64(reseed_time_secs));
 
         Ok(params)
     }
@@ -777,18 +767,17 @@ impl Drbg {
         // Falls back to get() + pattern match for optional parameters that may
         // not be present in the ParamSet.
         if params.get("reseed_interval").is_some() {
-            let interval: u64 = params.get_typed("reseed_interval").map_err(|e| {
-                ProviderError::Common(e)
-            })?;
+            let interval: u64 = params
+                .get_typed("reseed_interval")
+                .map_err(ProviderError::Common)?;
             trace!(reseed_interval = interval, "Setting reseed interval");
             self.config.reseed_interval = interval;
         }
 
         if params.get("reseed_time_interval").is_some() {
-            let time_interval: u64 =
-                params.get_typed("reseed_time_interval").map_err(|e| {
-                    ProviderError::Common(e)
-                })?;
+            let time_interval: u64 = params
+                .get_typed("reseed_time_interval")
+                .map_err(ProviderError::Common)?;
             trace!(
                 reseed_time_interval = time_interval,
                 "Setting reseed time interval"
@@ -933,11 +922,7 @@ impl Drbg {
     /// - `max_len`: Maximum nonce length in bytes
     ///
     /// Replaces C `prov_drbg_get_nonce()` from `drbg.c`.
-    fn acquire_nonce(
-        &self,
-        min_len: usize,
-        max_len: usize,
-    ) -> ProviderResult<Vec<u8>> {
+    fn acquire_nonce(&self, min_len: usize, max_len: usize) -> ProviderResult<Vec<u8>> {
         // Validate range
         if min_len > max_len {
             return Err(ProviderError::Init(format!(
@@ -986,19 +971,11 @@ impl Drbg {
                 self.generate_counter = 0;
                 self.reseed_time = None;
 
-                self.instantiate(
-                    self.config.strength,
-                    false,
-                    DEFAULT_PERS_STRING.as_bytes(),
-                )
+                self.instantiate(self.config.strength, false, DEFAULT_PERS_STRING.as_bytes())
             }
             RandState::Uninitialised => {
                 warn!("Attempting DRBG instantiation from Uninitialised state");
-                self.instantiate(
-                    self.config.strength,
-                    false,
-                    DEFAULT_PERS_STRING.as_bytes(),
-                )
+                self.instantiate(self.config.strength, false, DEFAULT_PERS_STRING.as_bytes())
             }
         }
     }
@@ -1158,7 +1135,6 @@ impl Drop for Drbg {
     }
 }
 
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -1213,18 +1189,16 @@ mod tests {
             Ok(())
         }
 
-        fn generate(
-            &mut self,
-            output: &mut [u8],
-            _additional: &[u8],
-        ) -> ProviderResult<()> {
+        fn generate(&mut self, output: &mut [u8], _additional: &[u8]) -> ProviderResult<()> {
             if !self.instantiated {
                 return Err(ProviderError::Init("not instantiated".into()));
             }
             // Fill with deterministic pattern for testing
             for (i, byte) in output.iter_mut().enumerate() {
                 #[allow(clippy::cast_possible_truncation)]
-                { *byte = (i & 0xFF) as u8; }
+                {
+                    *byte = (i & 0xFF) as u8;
+                }
             }
             self.generate_count += 1;
             Ok(())
@@ -1348,7 +1322,8 @@ mod tests {
     #[test]
     fn test_drbg_instantiate_already_instantiated() {
         let mut drbg = make_test_drbg();
-        drbg.instantiate(256, false, b"").expect("first instantiate");
+        drbg.instantiate(256, false, b"")
+            .expect("first instantiate");
         let result = drbg.instantiate(256, false, b"");
         assert!(result.is_err());
     }
@@ -1421,7 +1396,11 @@ mod tests {
         let mut drbg = make_test_drbg();
         assert_eq!(drbg.state(), RandState::Uninitialised);
         let result = drbg.reseed(false, None, b"");
-        assert!(result.is_ok(), "Expected auto-recovery, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Expected auto-recovery, got: {:?}",
+            result.err()
+        );
         assert_eq!(drbg.state(), RandState::Ready);
     }
 
@@ -1518,7 +1497,11 @@ mod tests {
         drbg.instantiate(256, false, b"").expect("instantiate");
         let mut output = vec![0u8; 32];
         let result = drbg.generate(&mut output, 128, false, b"");
-        assert!(result.is_ok(), "generate with lock failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "generate with lock failed: {:?}",
+            result.err()
+        );
     }
 
     // =========================================================================
@@ -1582,12 +1565,14 @@ mod tests {
         assert_ne!(buf, vec![0u8; 64]);
 
         // Reseed
-        drbg.reseed(false, None, b"additional data").expect("reseed");
+        drbg.reseed(false, None, b"additional data")
+            .expect("reseed");
         assert_eq!(drbg.state(), RandState::Ready);
 
         // Generate again after reseed
         let mut buf2 = vec![0u8; 32];
-        drbg.generate(&mut buf2, 128, false, b"").expect("generate2");
+        drbg.generate(&mut buf2, 128, false, b"")
+            .expect("generate2");
 
         // Get params
         let params = drbg.get_params().expect("get_params");

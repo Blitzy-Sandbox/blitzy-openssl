@@ -450,5 +450,4 @@ mod tests {
     fn default_property_value() {
         assert_eq!(DEFAULT_PROPERTY, "provider=default");
     }
-
 }

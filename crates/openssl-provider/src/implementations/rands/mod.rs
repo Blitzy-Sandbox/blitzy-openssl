@@ -226,16 +226,8 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
             "provider=default",
             "HMAC-based DRBG (SP 800-90A §10.1.2)",
         ),
-        super::algorithm(
-            &["SEED-SRC"],
-            "provider=default",
-            "OS Entropy Seed Source",
-        ),
-        super::algorithm(
-            &["TEST-RAND"],
-            "provider=default",
-            "Deterministic Test RNG",
-        ),
+        super::algorithm(&["SEED-SRC"], "provider=default", "OS Entropy Seed Source"),
+        super::algorithm(&["TEST-RAND"], "provider=default", "Deterministic Test RNG"),
         super::algorithm(
             &["CRNG-TEST"],
             "provider=default",
@@ -423,9 +415,15 @@ mod tests {
         let descs = descriptors();
         let has_jitter = descs.iter().any(|d| d.names.contains(&"JITTER"));
         if cfg!(feature = "jitter") {
-            assert!(has_jitter, "JITTER descriptor should be present with jitter feature");
+            assert!(
+                has_jitter,
+                "JITTER descriptor should be present with jitter feature"
+            );
         } else {
-            assert!(!has_jitter, "JITTER descriptor should NOT be present without jitter feature");
+            assert!(
+                !has_jitter,
+                "JITTER descriptor should NOT be present without jitter feature"
+            );
         }
     }
 
@@ -436,10 +434,7 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for desc in &descs {
             for name in &desc.names {
-                assert!(
-                    seen.insert(*name),
-                    "Duplicate algorithm name: {name}"
-                );
+                assert!(seen.insert(*name), "Duplicate algorithm name: {name}");
             }
         }
     }
@@ -486,9 +481,6 @@ mod tests {
     fn create_rand_context_case_sensitive() {
         // Lower-case should not match the upper-case canonical names
         let result = create_rand_context("ctr-drbg");
-        assert!(
-            result.is_err(),
-            "Algorithm lookup should be case-sensitive"
-        );
+        assert!(result.is_err(), "Algorithm lookup should be case-sensitive");
     }
 }

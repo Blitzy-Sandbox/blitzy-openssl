@@ -318,7 +318,7 @@ impl Poly1305State {
             let mut block = [0u8; BLOCK_SIZE];
             block[..self.buffer_len].copy_from_slice(&self.buffer[..self.buffer_len]);
             block[self.buffer_len] = 1; // Poly1305 padding: append 0x01
-            // hibit = 0 for the final partial block (no 2¹²⁸ appended).
+                                        // hibit = 0 for the final partial block (no 2¹²⁸ appended).
             self.process_block(&block, 0);
         }
 
@@ -735,9 +735,9 @@ mod tests {
 
     /// RFC 8439 §2.5.2 test vector key.
     const RFC8439_KEY: [u8; 32] = [
-        0x85, 0xd6, 0xbe, 0x78, 0x57, 0x55, 0x6d, 0x33, 0x7f, 0x44, 0x52, 0xfe, 0x42, 0xd5,
-        0x06, 0xa8, 0x01, 0x03, 0x80, 0x8a, 0xfb, 0x0d, 0xb2, 0xfd, 0x4a, 0xbf, 0xf6, 0xaf,
-        0x41, 0x49, 0xf5, 0x1b,
+        0x85, 0xd6, 0xbe, 0x78, 0x57, 0x55, 0x6d, 0x33, 0x7f, 0x44, 0x52, 0xfe, 0x42, 0xd5, 0x06,
+        0xa8, 0x01, 0x03, 0x80, 0x8a, 0xfb, 0x0d, 0xb2, 0xfd, 0x4a, 0xbf, 0xf6, 0xaf, 0x41, 0x49,
+        0xf5, 0x1b,
     ];
 
     /// RFC 8439 §2.5.2 test vector message.
@@ -745,8 +745,8 @@ mod tests {
 
     /// RFC 8439 §2.5.2 expected tag.
     const RFC8439_TAG: [u8; 16] = [
-        0xa8, 0x06, 0x1d, 0xc1, 0x30, 0x51, 0x36, 0xc6, 0xc2, 0x2b, 0x8b, 0xaf, 0x0c, 0x01,
-        0x27, 0xa9,
+        0xa8, 0x06, 0x1d, 0xc1, 0x30, 0x51, 0x36, 0xc6, 0xc2, 0x2b, 0x8b, 0xaf, 0x0c, 0x01, 0x27,
+        0xa9,
     ];
 
     // -----------------------------------------------------------------------
@@ -815,9 +815,9 @@ mod tests {
         // Key r-portion: 0x36e5f6b5c5e06070f0efca96227a863e, pad s=0.
         // Independently verified against Python reference implementation.
         let key: [u8; 32] = [
-            0x36, 0xe5, 0xf6, 0xb5, 0xc5, 0xe0, 0x60, 0x70, 0xf0, 0xef, 0xca, 0x96, 0x22,
-            0x7a, 0x86, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x36, 0xe5, 0xf6, 0xb5, 0xc5, 0xe0, 0x60, 0x70, 0xf0, 0xef, 0xca, 0x96, 0x22, 0x7a,
+            0x86, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
         ];
         let msg: &[u8] = b"Any submission to the IETF intended by the \
 Contributor for publication as all or part of an IETF Internet-Draft or \
@@ -827,8 +827,8 @@ statements in IETF sessions, as well as written and electronic \
 communications made at any time or place, which are addressed to";
         // Expected tag verified by Python poly1305 reference implementation.
         let expected_tag: [u8; 16] = [
-            0xf3, 0x47, 0x7e, 0x7c, 0xd9, 0x54, 0x17, 0xaf, 0x89, 0xa6, 0xb8, 0x79, 0x4c,
-            0x31, 0x0c, 0xf0,
+            0xf3, 0x47, 0x7e, 0x7c, 0xd9, 0x54, 0x17, 0xaf, 0x89, 0xa6, 0xb8, 0x79, 0x4c, 0x31,
+            0x0c, 0xf0,
         ];
 
         let mut state = Poly1305State::new(&key);
@@ -900,7 +900,10 @@ communications made at any time or place, which are addressed to";
     #[test]
     fn test_context_key_in_params() {
         let mut params = ParamSet::new();
-        params.set(PARAM_KEY, openssl_common::ParamValue::OctetString(RFC8439_KEY.to_vec()));
+        params.set(
+            PARAM_KEY,
+            openssl_common::ParamValue::OctetString(RFC8439_KEY.to_vec()),
+        );
 
         let provider = Poly1305Provider::new();
         let mut ctx = provider.new_ctx().unwrap();
@@ -1062,7 +1065,10 @@ communications made at any time or place, which are addressed to";
         let mut ctx = provider.new_ctx().unwrap();
 
         let mut params = ParamSet::new();
-        params.set(PARAM_KEY, openssl_common::ParamValue::OctetString(RFC8439_KEY.to_vec()));
+        params.set(
+            PARAM_KEY,
+            openssl_common::ParamValue::OctetString(RFC8439_KEY.to_vec()),
+        );
         ctx.set_params(&params).unwrap();
 
         // Context should now be active.

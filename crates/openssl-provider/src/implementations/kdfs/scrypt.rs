@@ -119,28 +119,82 @@ const SHA256_BLOCK_LEN: usize = 64;
 
 /// SHA-256 initial hash values (FIPS 180-4, Section 5.3.3).
 const SHA256_H0: [u32; 8] = [
-    0x6a09_e667, 0xbb67_ae85, 0x3c6e_f372, 0xa54f_f53a,
-    0x510e_527f, 0x9b05_688c, 0x1f83_d9ab, 0x5be0_cd19,
+    0x6a09_e667,
+    0xbb67_ae85,
+    0x3c6e_f372,
+    0xa54f_f53a,
+    0x510e_527f,
+    0x9b05_688c,
+    0x1f83_d9ab,
+    0x5be0_cd19,
 ];
 
 /// SHA-256 round constants (FIPS 180-4, Section 4.2.2).
 const SHA256_K: [u32; 64] = [
-    0x428a_2f98, 0x7137_4491, 0xb5c0_fbcf, 0xe9b5_dba5,
-    0x3956_c25b, 0x59f1_11f1, 0x923f_82a4, 0xab1c_5ed5,
-    0xd807_aa98, 0x1283_5b01, 0x2431_85be, 0x550c_7dc3,
-    0x72be_5d74, 0x80de_b1fe, 0x9bdc_06a7, 0xc19b_f174,
-    0xe49b_69c1, 0xefbe_4786, 0x0fc1_9dc6, 0x240c_a1cc,
-    0x2de9_2c6f, 0x4a74_84aa, 0x5cb0_a9dc, 0x76f9_88da,
-    0x983e_5152, 0xa831_c66d, 0xb003_27c8, 0xbf59_7fc7,
-    0xc6e0_0bf3, 0xd5a7_9147, 0x06ca_6351, 0x1429_2967,
-    0x27b7_0a85, 0x2e1b_2138, 0x4d2c_6dfc, 0x5338_0d13,
-    0x650a_7354, 0x766a_0abb, 0x81c2_c92e, 0x9272_2c85,
-    0xa2bf_e8a1, 0xa81a_664b, 0xc24b_8b70, 0xc76c_51a3,
-    0xd192_e819, 0xd699_0624, 0xf40e_3585, 0x106a_a070,
-    0x19a4_c116, 0x1e37_6c08, 0x2748_774c, 0x34b0_bcb5,
-    0x391c_0cb3, 0x4ed8_aa4a, 0x5b9c_ca4f, 0x682e_6ff3,
-    0x748f_82ee, 0x78a5_636f, 0x84c8_7814, 0x8cc7_0208,
-    0x90be_fffa, 0xa450_6ceb, 0xbef9_a3f7, 0xc671_78f2,
+    0x428a_2f98,
+    0x7137_4491,
+    0xb5c0_fbcf,
+    0xe9b5_dba5,
+    0x3956_c25b,
+    0x59f1_11f1,
+    0x923f_82a4,
+    0xab1c_5ed5,
+    0xd807_aa98,
+    0x1283_5b01,
+    0x2431_85be,
+    0x550c_7dc3,
+    0x72be_5d74,
+    0x80de_b1fe,
+    0x9bdc_06a7,
+    0xc19b_f174,
+    0xe49b_69c1,
+    0xefbe_4786,
+    0x0fc1_9dc6,
+    0x240c_a1cc,
+    0x2de9_2c6f,
+    0x4a74_84aa,
+    0x5cb0_a9dc,
+    0x76f9_88da,
+    0x983e_5152,
+    0xa831_c66d,
+    0xb003_27c8,
+    0xbf59_7fc7,
+    0xc6e0_0bf3,
+    0xd5a7_9147,
+    0x06ca_6351,
+    0x1429_2967,
+    0x27b7_0a85,
+    0x2e1b_2138,
+    0x4d2c_6dfc,
+    0x5338_0d13,
+    0x650a_7354,
+    0x766a_0abb,
+    0x81c2_c92e,
+    0x9272_2c85,
+    0xa2bf_e8a1,
+    0xa81a_664b,
+    0xc24b_8b70,
+    0xc76c_51a3,
+    0xd192_e819,
+    0xd699_0624,
+    0xf40e_3585,
+    0x106a_a070,
+    0x19a4_c116,
+    0x1e37_6c08,
+    0x2748_774c,
+    0x34b0_bcb5,
+    0x391c_0cb3,
+    0x4ed8_aa4a,
+    0x5b9c_ca4f,
+    0x682e_6ff3,
+    0x748f_82ee,
+    0x78a5_636f,
+    0x84c8_7814,
+    0x8cc7_0208,
+    0x90be_fffa,
+    0xa450_6ceb,
+    0xbef9_a3f7,
+    0xc671_78f2,
 ];
 
 /// Streaming SHA-256 hash context.
@@ -172,8 +226,7 @@ impl Sha256 {
         if self.buffer_len > 0 {
             let space = SHA256_BLOCK_LEN - self.buffer_len;
             let fill = data.len().min(space);
-            self.buffer[self.buffer_len..self.buffer_len + fill]
-                .copy_from_slice(&data[..fill]);
+            self.buffer[self.buffer_len..self.buffer_len + fill].copy_from_slice(&data[..fill]);
             self.buffer_len += fill;
             offset = fill;
 
@@ -243,12 +296,8 @@ impl Sha256 {
 
         // Message schedule expansion
         for i in 16..64 {
-            let s0 = w[i - 15].rotate_right(7)
-                ^ w[i - 15].rotate_right(18)
-                ^ (w[i - 15] >> 3);
-            let s1 = w[i - 2].rotate_right(17)
-                ^ w[i - 2].rotate_right(19)
-                ^ (w[i - 2] >> 10);
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
             w[i] = w[i - 16]
                 .wrapping_add(s0)
                 .wrapping_add(w[i - 7])
@@ -384,12 +433,7 @@ impl HmacSha256 {
 /// - `salt`: salt input to HMAC
 /// - `iterations`: PBKDF2 iteration count (c ≥ 1)
 /// - `output`: output buffer filled with derived key material
-fn pbkdf2_hmac_sha256(
-    password: &[u8],
-    salt: &[u8],
-    iterations: u32,
-    output: &mut [u8],
-) {
+fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], iterations: u32, output: &mut [u8]) {
     let mut block_num: u32 = 1;
     let mut offset = 0;
 
@@ -568,9 +612,9 @@ fn scrypt_romix(
     t_buf: &mut [u32],
 ) {
     let block_words = 32 * r_param; // number of u32 words per block
-    // N is validated as fitting in usize before scrypt_romix is called.
-    // We need the truncation here because the outer scrypt_derive already
-    // ensures n_cost fits in usize via try_from. Adding the allow is correct.
+                                    // N is validated as fitting in usize before scrypt_romix is called.
+                                    // We need the truncation here because the outer scrypt_derive already
+                                    // ensures n_cost fits in usize via try_from. Adding the allow is correct.
     #[allow(clippy::cast_possible_truncation)] // TRUNCATION: validated by caller
     let n_usize = n_cost as usize;
 
@@ -591,7 +635,8 @@ fn scrypt_romix(
     for _ in 0..n_usize {
         // j = Integerify(X) mod N — take the last 16-word block's first word
         let j_idx = u64::from(x_buf[(2 * r_param - 1) * 16]) & (n_cost - 1);
-        #[allow(clippy::cast_possible_truncation)] // TRUNCATION: j_idx < n_cost, validated in caller
+        #[allow(clippy::cast_possible_truncation)]
+        // TRUNCATION: j_idx < n_cost, validated in caller
         let j_val = j_idx as usize;
 
         // T = X XOR V[j]
@@ -659,17 +704,13 @@ fn scrypt_derive(
     // N must be at least 2
     if n < 2 {
         tracing::warn!(n = n, "scrypt_derive: N must be >= 2");
-        return Err(ProviderError::Init(
-            "scrypt: N must be at least 2".into(),
-        ));
+        return Err(ProviderError::Init("scrypt: N must be at least 2".into()));
     }
 
     // N must be a power of 2
     if n & (n - 1) != 0 {
         tracing::warn!(n = n, "scrypt_derive: N must be a power of 2");
-        return Err(ProviderError::Init(
-            "scrypt: N must be a power of 2".into(),
-        ));
+        return Err(ProviderError::Init("scrypt: N must be a power of 2".into()));
     }
 
     // p * r must fit in SCRYPT_PR_MAX (Rule R6: checked_mul for overflow safety)
@@ -890,35 +931,32 @@ impl ScryptContext {
                 ProviderError::Init("scrypt: salt must be an octet string".into())
             })?;
             self.salt = Some(bytes.to_vec());
-            tracing::debug!(
-                salt_len = bytes.len(),
-                "ScryptContext: salt set"
-            );
+            tracing::debug!(salt_len = bytes.len(), "ScryptContext: salt set");
         }
 
         // N — cost parameter
         if let Some(val) = params.get(PARAM_N) {
-            let n_val = val.as_u64().ok_or_else(|| {
-                ProviderError::Init("scrypt: N must be a uint64".into())
-            })?;
+            let n_val = val
+                .as_u64()
+                .ok_or_else(|| ProviderError::Init("scrypt: N must be a uint64".into()))?;
             self.n = n_val;
             tracing::debug!(n = n_val, "ScryptContext: N set");
         }
 
         // r — block size
         if let Some(val) = params.get(PARAM_R) {
-            let r_val = val.as_u64().ok_or_else(|| {
-                ProviderError::Init("scrypt: r must be a uint64".into())
-            })?;
+            let r_val = val
+                .as_u64()
+                .ok_or_else(|| ProviderError::Init("scrypt: r must be a uint64".into()))?;
             self.r = r_val;
             tracing::debug!(r = r_val, "ScryptContext: r set");
         }
 
         // p — parallelism
         if let Some(val) = params.get(PARAM_P) {
-            let p_val = val.as_u64().ok_or_else(|| {
-                ProviderError::Init("scrypt: p must be a uint64".into())
-            })?;
+            let p_val = val
+                .as_u64()
+                .ok_or_else(|| ProviderError::Init("scrypt: p must be a uint64".into()))?;
             self.p = p_val;
             tracing::debug!(p = p_val, "ScryptContext: p set");
         }
@@ -1116,11 +1154,11 @@ mod tests {
         let r: u64 = 1;
         let p: u64 = 1;
         let expected = [
-            0x77, 0xd6, 0x57, 0x62, 0x38, 0x65, 0x7b, 0x20, 0x3b, 0x19, 0xca, 0x42, 0xc1,
-            0x8a, 0x04, 0x97, 0xf1, 0x6b, 0x48, 0x44, 0xe3, 0x07, 0x4a, 0xe8, 0xdf, 0xdf,
-            0xfa, 0x3f, 0xed, 0xe2, 0x14, 0x42, 0xfc, 0xd0, 0x06, 0x9d, 0xed, 0x09, 0x48,
-            0xf8, 0x32, 0x6a, 0x75, 0x3a, 0x0f, 0xc8, 0x1f, 0x17, 0xe8, 0xd3, 0xe0, 0xfb,
-            0x2e, 0x0d, 0x36, 0x28, 0xcf, 0x35, 0xe2, 0x0c, 0x38, 0xd1, 0x89, 0x06,
+            0x77, 0xd6, 0x57, 0x62, 0x38, 0x65, 0x7b, 0x20, 0x3b, 0x19, 0xca, 0x42, 0xc1, 0x8a,
+            0x04, 0x97, 0xf1, 0x6b, 0x48, 0x44, 0xe3, 0x07, 0x4a, 0xe8, 0xdf, 0xdf, 0xfa, 0x3f,
+            0xed, 0xe2, 0x14, 0x42, 0xfc, 0xd0, 0x06, 0x9d, 0xed, 0x09, 0x48, 0xf8, 0x32, 0x6a,
+            0x75, 0x3a, 0x0f, 0xc8, 0x1f, 0x17, 0xe8, 0xd3, 0xe0, 0xfb, 0x2e, 0x0d, 0x36, 0x28,
+            0xcf, 0x35, 0xe2, 0x0c, 0x38, 0xd1, 0x89, 0x06,
         ];
 
         let mut output = vec![0u8; 64];
@@ -1138,11 +1176,11 @@ mod tests {
         let r: u64 = 8;
         let p: u64 = 16;
         let expected = [
-            0xfd, 0xba, 0xbe, 0x1c, 0x9d, 0x34, 0x72, 0x00, 0x78, 0x56, 0xe7, 0x19, 0x0d,
-            0x01, 0xe9, 0xfe, 0x7c, 0x6a, 0xd7, 0xcb, 0xc8, 0x23, 0x78, 0x30, 0xe7, 0x73,
-            0x76, 0x63, 0x4b, 0x37, 0x31, 0x62, 0x2e, 0xaf, 0x30, 0xd9, 0x2e, 0x22, 0xa3,
-            0x88, 0x6f, 0xf1, 0x09, 0x27, 0x9d, 0x98, 0x30, 0xda, 0xc7, 0x27, 0xaf, 0xb9,
-            0x4a, 0x83, 0xee, 0x6d, 0x83, 0x60, 0xcb, 0xdf, 0xa2, 0xcc, 0x06, 0x40,
+            0xfd, 0xba, 0xbe, 0x1c, 0x9d, 0x34, 0x72, 0x00, 0x78, 0x56, 0xe7, 0x19, 0x0d, 0x01,
+            0xe9, 0xfe, 0x7c, 0x6a, 0xd7, 0xcb, 0xc8, 0x23, 0x78, 0x30, 0xe7, 0x73, 0x76, 0x63,
+            0x4b, 0x37, 0x31, 0x62, 0x2e, 0xaf, 0x30, 0xd9, 0x2e, 0x22, 0xa3, 0x88, 0x6f, 0xf1,
+            0x09, 0x27, 0x9d, 0x98, 0x30, 0xda, 0xc7, 0x27, 0xaf, 0xb9, 0x4a, 0x83, 0xee, 0x6d,
+            0x83, 0x60, 0xcb, 0xdf, 0xa2, 0xcc, 0x06, 0x40,
         ];
 
         let mut output = vec![0u8; 64];
@@ -1154,9 +1192,9 @@ mod tests {
     #[test]
     fn test_sha256_empty() {
         let expected: [u8; 32] = [
-            0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99,
-            0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95,
-            0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+            0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f,
+            0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b,
+            0x78, 0x52, 0xb8, 0x55,
         ];
         assert_eq!(sha256_digest(b""), expected);
     }
@@ -1165,9 +1203,9 @@ mod tests {
     #[test]
     fn test_sha256_abc() {
         let expected: [u8; 32] = [
-            0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d,
-            0xae, 0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10,
-            0xff, 0x61, 0xf2, 0x00, 0x15, 0xad,
+            0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae,
+            0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61,
+            0xf2, 0x00, 0x15, 0xad,
         ];
         assert_eq!(sha256_digest(b"abc"), expected);
     }
@@ -1220,7 +1258,10 @@ mod tests {
         let mut ctx = provider.new_ctx().unwrap();
 
         let mut params = ParamSet::new();
-        params.set(PARAM_PASSWORD, ParamValue::OctetString(b"password".to_vec()));
+        params.set(
+            PARAM_PASSWORD,
+            ParamValue::OctetString(b"password".to_vec()),
+        );
         params.set(PARAM_SALT, ParamValue::OctetString(b"NaCl".to_vec()));
         params.set(PARAM_N, ParamValue::UInt64(1024));
         params.set(PARAM_R, ParamValue::UInt64(8));
@@ -1233,11 +1274,11 @@ mod tests {
 
         // Verify against RFC 7914 Section 12 Test Vector 2
         let expected = [
-            0xfd, 0xba, 0xbe, 0x1c, 0x9d, 0x34, 0x72, 0x00, 0x78, 0x56, 0xe7, 0x19, 0x0d,
-            0x01, 0xe9, 0xfe, 0x7c, 0x6a, 0xd7, 0xcb, 0xc8, 0x23, 0x78, 0x30, 0xe7, 0x73,
-            0x76, 0x63, 0x4b, 0x37, 0x31, 0x62, 0x2e, 0xaf, 0x30, 0xd9, 0x2e, 0x22, 0xa3,
-            0x88, 0x6f, 0xf1, 0x09, 0x27, 0x9d, 0x98, 0x30, 0xda, 0xc7, 0x27, 0xaf, 0xb9,
-            0x4a, 0x83, 0xee, 0x6d, 0x83, 0x60, 0xcb, 0xdf, 0xa2, 0xcc, 0x06, 0x40,
+            0xfd, 0xba, 0xbe, 0x1c, 0x9d, 0x34, 0x72, 0x00, 0x78, 0x56, 0xe7, 0x19, 0x0d, 0x01,
+            0xe9, 0xfe, 0x7c, 0x6a, 0xd7, 0xcb, 0xc8, 0x23, 0x78, 0x30, 0xe7, 0x73, 0x76, 0x63,
+            0x4b, 0x37, 0x31, 0x62, 0x2e, 0xaf, 0x30, 0xd9, 0x2e, 0x22, 0xa3, 0x88, 0x6f, 0xf1,
+            0x09, 0x27, 0x9d, 0x98, 0x30, 0xda, 0xc7, 0x27, 0xaf, 0xb9, 0x4a, 0x83, 0xee, 0x6d,
+            0x83, 0x60, 0xcb, 0xdf, 0xa2, 0xcc, 0x06, 0x40,
         ];
         assert_eq!(key, expected);
     }
@@ -1334,10 +1375,9 @@ mod tests {
         // ee24f319 df9b3d85 14121e4b 5ac5aa32
         // 76021d29 09c74829 edebc68d b8b8c25e
         let mut input: [u32; 16] = [
-            0x219a877e, 0x86c93e4f, 0xe640a97c, 0x268f7141,
-            0x5b55eeba, 0xb5c1618c, 0x1146f80d, 0x1d3bcd6d,
-            0x19f324ee, 0x853d9bdf, 0x4b1e1214, 0x32aac55a,
-            0x291d0276, 0x2948c709, 0x8dc6ebed, 0x5ec2b8b8,
+            0x219a877e, 0x86c93e4f, 0xe640a97c, 0x268f7141, 0x5b55eeba, 0xb5c1618c, 0x1146f80d,
+            0x1d3bcd6d, 0x19f324ee, 0x853d9bdf, 0x4b1e1214, 0x32aac55a, 0x291d0276, 0x2948c709,
+            0x8dc6ebed, 0x5ec2b8b8,
         ];
         // RFC 7914 Section 8 expected output bytes (little-endian u32 words):
         // a41f859c 6608cc99 3b81cacb 020cef05
@@ -1345,10 +1385,9 @@ mod tests {
         // b4393168 e3c9e6bc fe6bc5b7 a06d96ba
         // e424cc10 2c91745c 24ad673d c7618f81
         let expected: [u32; 16] = [
-            0x9c851fa4, 0x99cc0866, 0xcbca813b, 0x05ef0c02,
-            0x81214b04, 0x7d33fda2, 0x631c7bfd, 0x292f6896,
-            0x683139b4, 0xbce6c9e3, 0xb7c56bfe, 0xba966da0,
-            0x10cc24e4, 0x5c74912c, 0x3d67ad24, 0x818f61c7,
+            0x9c851fa4, 0x99cc0866, 0xcbca813b, 0x05ef0c02, 0x81214b04, 0x7d33fda2, 0x631c7bfd,
+            0x292f6896, 0x683139b4, 0xbce6c9e3, 0xb7c56bfe, 0xba966da0, 0x10cc24e4, 0x5c74912c,
+            0x3d67ad24, 0x818f61c7,
         ];
         salsa20_8(&mut input);
         assert_eq!(input, expected);

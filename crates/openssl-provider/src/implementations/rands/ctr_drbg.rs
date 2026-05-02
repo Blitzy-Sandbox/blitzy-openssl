@@ -43,9 +43,8 @@ const MAX_KX_LEN: usize = 48;
 /// Fixed derivation function key (SP 800-90A §10.3.2, step 8).
 /// K = leftmost keylen bits of 0x00 0x01 0x02 ... 0x1f.
 const DF_KEY: [u8; MAX_KEYLEN] = [
-    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
-    0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-    0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
 ];
 
 // ---------------------------------------------------------------------------
@@ -301,9 +300,7 @@ impl CtrDrbg {
     pub fn set_ctx_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         // Cipher name — use get_typed for type-safe String extraction.
         if params.contains("cipher") {
-            let name: String = params
-                .get_typed("cipher")
-                .map_err(ProviderError::Common)?;
+            let name: String = params.get_typed("cipher").map_err(ProviderError::Common)?;
             let new_keylen = parse_cipher_keylen(&name)?;
             self.keylen = new_keylen;
             self.cipher_name.clone_from(&name);
@@ -384,9 +381,7 @@ impl CtrDrbg {
         s_buf[0..4].copy_from_slice(&l_bytes);
 
         // N = seedlen as big-endian u32 (Rule R6: use to_be_bytes).
-        let n_bytes = u32::try_from(seedlen)
-            .unwrap_or(u32::MAX)
-            .to_be_bytes();
+        let n_bytes = u32::try_from(seedlen).unwrap_or(u32::MAX).to_be_bytes();
         s_buf[4..8].copy_from_slice(&n_bytes);
 
         // Concatenate input slices
@@ -419,8 +414,7 @@ impl CtrDrbg {
             let i_bytes = u32::try_from(i).unwrap_or(0).to_be_bytes();
             iv[0..4].copy_from_slice(&i_bytes);
             let chain_out = bcc(self.keylen, df_key, &iv, &s_buf)?;
-            kx_buf[i * AES_BLOCK_LEN..(i + 1) * AES_BLOCK_LEN]
-                .copy_from_slice(&chain_out);
+            kx_buf[i * AES_BLOCK_LEN..(i + 1) * AES_BLOCK_LEN].copy_from_slice(&chain_out);
         }
 
         // Split BCC output: K' = kx[0..keylen], X = kx[keylen..keylen+16]
@@ -667,11 +661,7 @@ impl DrbgMechanism for CtrDrbg {
 /// Private helper factored out of `generate` to keep the borrow-checker
 /// happy (the `additional` slice is re-borrowed after the output loop).
 impl CtrDrbg {
-    fn post_generate_update(
-        &mut self,
-        has_adin: bool,
-        additional: &[u8],
-    ) -> ProviderResult<()> {
+    fn post_generate_update(&mut self, has_adin: bool, additional: &[u8]) -> ProviderResult<()> {
         if has_adin && self.use_df {
             // Reuse the DF result stored in kx (C: adin=NULL, adinlen=1 path).
             self.update_reuse_kx()
@@ -882,10 +872,7 @@ mod tests {
         let mut out2 = [0u8; 32];
         drbg2.generate(&mut out2, &[]).unwrap();
 
-        assert_ne!(
-            out1, out2,
-            "additional input should change output"
-        );
+        assert_ne!(out1, out2, "additional input should change output");
     }
 
     #[test]

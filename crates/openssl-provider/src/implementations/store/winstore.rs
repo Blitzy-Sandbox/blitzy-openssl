@@ -151,9 +151,7 @@ pub fn register_certificate_loader(loader: CertLoaderFn) {
 /// # Arguments
 ///
 /// * `subject_filter` — Optional DER-encoded subject name filter.
-fn load_windows_root_certificates(
-    subject_filter: Option<&[u8]>,
-) -> ProviderResult<Vec<Vec<u8>>> {
+fn load_windows_root_certificates(subject_filter: Option<&[u8]>) -> ProviderResult<Vec<Vec<u8>>> {
     match CERT_LOADER.get() {
         Some(loader) => loader(subject_filter),
         None => {
@@ -343,7 +341,11 @@ impl WinStoreContext {
         // An empty subject slice is treated as "no filter" (None),
         // matching the C behaviour where cbData == 0 → NULL criteria.
         if let Some(sub) = subject {
-            let new_subject = if sub.is_empty() { None } else { Some(sub.to_vec()) };
+            let new_subject = if sub.is_empty() {
+                None
+            } else {
+                Some(sub.to_vec())
+            };
             if self.subject != new_subject {
                 self.subject = new_subject;
                 changed = true;

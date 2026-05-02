@@ -221,7 +221,6 @@ impl Tls1PrfContext {
     }
 }
 
-
 impl Tls1PrfContext {
     /// Applies the parameter set in the same order as C
     /// `kdf_tls1_prf_set_ctx_params` (`tls1_prf.c` lines 296–420).
@@ -278,10 +277,7 @@ impl Tls1PrfContext {
                 ))
             })?;
             if bytes.len() > MAX_INPUT_LEN {
-                warn!(
-                    len = bytes.len(),
-                    "TLS1-PRF: secret exceeds MAX_INPUT_LEN"
-                );
+                warn!(len = bytes.len(), "TLS1-PRF: secret exceeds MAX_INPUT_LEN");
                 return Err(ProviderError::Common(CommonError::InvalidArgument(
                     format!("TLS1-PRF: 'secret' length {} exceeds limit", bytes.len()),
                 )));
@@ -291,10 +287,7 @@ impl Tls1PrfContext {
             self.secret.zeroize();
             self.secret = bytes.to_vec();
             secret_changed = true;
-            debug!(
-                len = self.secret.len(),
-                "TLS1-PRF: secret installed"
-            );
+            debug!(len = self.secret.len(), "TLS1-PRF: secret installed");
         }
 
         // --- 4. seed (append semantics) ------------------------------------
@@ -315,16 +308,15 @@ impl Tls1PrfContext {
                 trace!("TLS1-PRF: empty seed segment ignored");
             } else {
                 // Checked addition to avoid overflow on pathological input.
-                let new_len = self.seed.len().checked_add(bytes.len()).ok_or(
-                    ProviderError::Common(CommonError::ArithmeticOverflow {
-                        operation: "TLS1-PRF seed length",
-                    }),
-                )?;
+                let new_len =
+                    self.seed
+                        .len()
+                        .checked_add(bytes.len())
+                        .ok_or(ProviderError::Common(CommonError::ArithmeticOverflow {
+                            operation: "TLS1-PRF seed length",
+                        }))?;
                 if new_len > MAX_INPUT_LEN {
-                    warn!(
-                        new_len,
-                        "TLS1-PRF: concatenated seed exceeds MAX_INPUT_LEN"
-                    );
+                    warn!(new_len, "TLS1-PRF: concatenated seed exceeds MAX_INPUT_LEN");
                     return Err(ProviderError::Common(CommonError::InvalidArgument(
                         format!("TLS1-PRF: seed length {new_len} exceeds limit"),
                     )));
@@ -363,12 +355,8 @@ impl Tls1PrfContext {
         // committing any state changes. This matches the C ordering
         // which calls `ossl_prov_digest_load` + `EVP_MD_xof` before
         // overwriting `ctx->P_hash`.
-        let md = MessageDigest::fetch(
-            &self.libctx,
-            name,
-            self.digest_properties.as_deref(),
-        )
-        .map_err(dispatch_err)?;
+        let md = MessageDigest::fetch(&self.libctx, name, self.digest_properties.as_deref())
+            .map_err(dispatch_err)?;
 
         if md.is_xof() {
             warn!(digest = name, "TLS1-PRF: XOF digest rejected");
@@ -501,10 +489,7 @@ impl Tls1PrfContext {
         // C `OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
         // dname, 0)` in `load_hmac_ctx`.
         let mut init_params = ParamSet::new();
-        init_params.set(
-            PARAM_DIGEST,
-            ParamValue::Utf8String(digest_name.to_owned()),
-        );
+        init_params.set(PARAM_DIGEST, ParamValue::Utf8String(digest_name.to_owned()));
 
         ctx.init(key, Some(&init_params)).map_err(dispatch_err)?;
         Ok(ctx)
@@ -600,9 +585,9 @@ impl Tls1PrfContext {
 
         while pos < olen {
             // Finalise A(i) = HMAC(secret, A(i-1)).
-            let mut current_ai = ai_next.take().ok_or_else(|| {
-                ProviderError::Init("TLS1-PRF: P_hash state lost".into())
-            })?;
+            let mut current_ai = ai_next
+                .take()
+                .ok_or_else(|| ProviderError::Init("TLS1-PRF: P_hash state lost".into()))?;
             let ai = current_ai.finalize().map_err(dispatch_err)?;
 
             // Prepare HMAC(secret, A(i) || seed). Dup the pristine
@@ -649,9 +634,10 @@ impl Tls1PrfContext {
     ///     (`tls1_prf.c` lines 555–609).
     ///   * **Single digest** (TLS 1.2): `P_<digest>(secret, seed)`.
     fn tls1_prf_alg(&self, out: &mut [u8]) -> ProviderResult<()> {
-        let primary = self.p_hash_template.as_ref().ok_or_else(|| {
-            ProviderError::Init("TLS1-PRF: primary HMAC template missing".into())
-        })?;
+        let primary = self
+            .p_hash_template
+            .as_ref()
+            .ok_or_else(|| ProviderError::Init("TLS1-PRF: primary HMAC template missing".into()))?;
 
         if self.is_md5_sha1 {
             // First half → P_MD5(S1, seed) written directly into `out`.
@@ -660,10 +646,7 @@ impl Tls1PrfContext {
             // Second half → P_SHA1(S2, seed) computed into a scratch
             // buffer and XORed into `out`.
             let secondary = self.p_sha1_template.as_ref().ok_or_else(|| {
-                ProviderError::Init(
-                    "TLS1-PRF: SHA1 HMAC template missing for combined mode"
-                        .into(),
-                )
+                ProviderError::Init("TLS1-PRF: SHA1 HMAC template missing for combined mode".into())
             })?;
             let mut tmp = vec![0u8; out.len()];
             let result = self.p_hash(secondary, &mut tmp);
@@ -867,7 +850,6 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
     )]
 }
 
-
 // =============================================================================
 // Unit tests
 // =============================================================================
@@ -953,10 +935,8 @@ mod tests {
              cadb386b411fd4fe4313a604fce6c17fbc",
         );
         let label = b"master secret";
-        let client_random =
-            hex("36c129d01a3200894b9179faac589d9835d58775f9b5ea3587cb8fd0364cae8c");
-        let server_random =
-            hex("f6c9575ed7ddd73e1f7d16eca115415812a43c2b747daaaae043abfb50053fce");
+        let client_random = hex("36c129d01a3200894b9179faac589d9835d58775f9b5ea3587cb8fd0364cae8c");
+        let server_random = hex("f6c9575ed7ddd73e1f7d16eca115415812a43c2b747daaaae043abfb50053fce");
         let expected = hex(
             "202c88c00f84a17a20027079604787461176455539e705be730890602c289a50\
              01e34eeb3a043e5d52a65e66125188bf",
@@ -984,10 +964,8 @@ mod tests {
              01e34eeb3a043e5d52a65e66125188bf",
         );
         let label = b"key expansion";
-        let server_random =
-            hex("ae6c806f8ad4d80784549dff28a4b58fd837681a51d928c3e30ee5ff14f39868");
-        let client_random =
-            hex("62e1fd91f23f558a605f28478c58cf72637b89784d959df7e946d3f07bd1b616");
+        let server_random = hex("ae6c806f8ad4d80784549dff28a4b58fd837681a51d928c3e30ee5ff14f39868");
+        let client_random = hex("62e1fd91f23f558a605f28478c58cf72637b89784d959df7e946d3f07bd1b616");
         let expected = hex(
             "d06139889fffac1e3a71865f504aa5d0d2a2e89506c6f2279b670c3e1b74f531\
              016a2530c51a3a0f7e1d6590d0f0566b2f387f8d11fd4f731cdd572d2eae927f\
@@ -1020,10 +998,8 @@ mod tests {
              0ec55d9844b2f1db02a96453513568d0",
         );
         let label = b"master secret";
-        let client_random =
-            hex("e5acaf549cd25c22d964c0d930fa4b5261d2507fad84c33715b7b9a864020693");
-        let server_random =
-            hex("135e4d557fdf3aa6406d82975d5c606a9734c9334b42136e96990fbd5358cdb2");
+        let client_random = hex("e5acaf549cd25c22d964c0d930fa4b5261d2507fad84c33715b7b9a864020693");
+        let server_random = hex("135e4d557fdf3aa6406d82975d5c606a9734c9334b42136e96990fbd5358cdb2");
         let expected = hex(
             "2f6962dfbc744c4b2138bb6b3d33054c5ecc14f24851d9896395a44ab3964efc\
              2090c5bf51a0891209f46c1e1e998f62",
@@ -1052,10 +1028,8 @@ mod tests {
              2090c5bf51a0891209f46c1e1e998f62",
         );
         let label = b"key expansion";
-        let server_random =
-            hex("67267e650eb32444119d222a368c191af3082888dc35afe8368e638c828874be");
-        let client_random =
-            hex("d58a7b1cd4fedaa232159df652ce188f9d997e061b9bf48e83b62990440931f6");
+        let server_random = hex("67267e650eb32444119d222a368c191af3082888dc35afe8368e638c828874be");
+        let client_random = hex("d58a7b1cd4fedaa232159df652ce188f9d997e061b9bf48e83b62990440931f6");
         let expected = hex(
             "3088825988e77fce68d19f756e18e43eb7fe672433504feaf99b3c503d9091b1\
              64f166db301d70c9fc0870b4a94563907bee1a61fb786cb717576890bcc51cb9\
@@ -1089,18 +1063,13 @@ mod tests {
              cadb386b411fd4fe4313a604fce6c17fbc",
         );
         let label = b"master secret";
-        let client_random =
-            hex("36c129d01a3200894b9179faac589d9835d58775f9b5ea3587cb8fd0364cae8c");
-        let server_random =
-            hex("f6c9575ed7ddd73e1f7d16eca115415812a43c2b747daaaae043abfb50053fce");
+        let client_random = hex("36c129d01a3200894b9179faac589d9835d58775f9b5ea3587cb8fd0364cae8c");
+        let server_random = hex("f6c9575ed7ddd73e1f7d16eca115415812a43c2b747daaaae043abfb50053fce");
 
         // Staged set_params calls.
         let mut ctx_staged = new_ctx();
         let mut p1 = ParamSet::new();
-        p1.set(
-            PARAM_DIGEST,
-            ParamValue::Utf8String("SHA2-256".to_string()),
-        );
+        p1.set(PARAM_DIGEST, ParamValue::Utf8String("SHA2-256".to_string()));
         p1.set(PARAM_SECRET, ParamValue::OctetString(secret.clone()));
         p1.set(PARAM_SEED, ParamValue::OctetString(label.to_vec()));
         ctx_staged.set_params(&p1).unwrap();
@@ -1150,10 +1119,7 @@ mod tests {
         let secret = b"replaysafesecret1234".to_vec();
         let mut ctx = Tls1PrfContext::new(LibContext::get_default());
         let mut ps = ParamSet::new();
-        ps.set(
-            PARAM_DIGEST,
-            ParamValue::Utf8String("SHA2-256".to_string()),
-        );
+        ps.set(PARAM_DIGEST, ParamValue::Utf8String("SHA2-256".to_string()));
         ps.set(PARAM_SECRET, ParamValue::OctetString(secret.clone()));
         ps.set(PARAM_SEED, ParamValue::OctetString(b"seed-data".to_vec()));
         ctx.apply_params(&ps).unwrap();
@@ -1178,10 +1144,7 @@ mod tests {
     fn get_params_returns_size_and_digest() {
         let mut ctx = Tls1PrfContext::new(LibContext::get_default());
         let mut ps = ParamSet::new();
-        ps.set(
-            PARAM_DIGEST,
-            ParamValue::Utf8String("SHA2-256".to_string()),
-        );
+        ps.set(PARAM_DIGEST, ParamValue::Utf8String("SHA2-256".to_string()));
         ps.set(PARAM_SECRET, ParamValue::OctetString(b"sss".to_vec()));
         ctx.apply_params(&ps).unwrap();
 
@@ -1204,10 +1167,7 @@ mod tests {
     fn xof_digest_is_rejected() {
         let mut ctx = new_ctx();
         let mut ps = ParamSet::new();
-        ps.set(
-            PARAM_DIGEST,
-            ParamValue::Utf8String("SHAKE128".to_string()),
-        );
+        ps.set(PARAM_DIGEST, ParamValue::Utf8String("SHAKE128".to_string()));
         let err = ctx.set_params(&ps).unwrap_err();
         assert!(
             matches!(err, ProviderError::Common(CommonError::InvalidArgument(_))),
@@ -1219,10 +1179,7 @@ mod tests {
     fn missing_secret_fails_with_init_error() {
         let mut ctx = new_ctx();
         let mut ps = ParamSet::new();
-        ps.set(
-            PARAM_DIGEST,
-            ParamValue::Utf8String("SHA2-256".to_string()),
-        );
+        ps.set(PARAM_DIGEST, ParamValue::Utf8String("SHA2-256".to_string()));
         ps.set(PARAM_SEED, ParamValue::OctetString(b"seed".to_vec()));
         ctx.set_params(&ps).unwrap();
 
@@ -1235,10 +1192,7 @@ mod tests {
     fn missing_seed_fails_with_init_error() {
         let mut ctx = new_ctx();
         let mut ps = ParamSet::new();
-        ps.set(
-            PARAM_DIGEST,
-            ParamValue::Utf8String("SHA2-256".to_string()),
-        );
+        ps.set(PARAM_DIGEST, ParamValue::Utf8String("SHA2-256".to_string()));
         ps.set(PARAM_SECRET, ParamValue::OctetString(b"secret12".to_vec()));
         ctx.set_params(&ps).unwrap();
 
@@ -1370,11 +1324,11 @@ mod tests {
     fn reset_zeroes_secret_and_seed_buffers() {
         let mut ctx = Tls1PrfContext::new(LibContext::get_default());
         let mut ps = ParamSet::new();
+        ps.set(PARAM_DIGEST, ParamValue::Utf8String("SHA2-256".to_string()));
         ps.set(
-            PARAM_DIGEST,
-            ParamValue::Utf8String("SHA2-256".to_string()),
+            PARAM_SECRET,
+            ParamValue::OctetString(b"hot-secret".to_vec()),
         );
-        ps.set(PARAM_SECRET, ParamValue::OctetString(b"hot-secret".to_vec()));
         ps.set(PARAM_SEED, ParamValue::OctetString(b"hot-seed".to_vec()));
         ctx.apply_params(&ps).unwrap();
         assert!(!ctx.secret.is_empty());
@@ -1390,4 +1344,3 @@ mod tests {
         assert!(!ctx.is_md5_sha1);
     }
 }
-

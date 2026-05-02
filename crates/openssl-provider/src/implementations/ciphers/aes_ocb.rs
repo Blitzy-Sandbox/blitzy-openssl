@@ -446,9 +446,7 @@ impl AesOcbContext {
     /// on success.
     fn require_iv(&self) -> ProviderResult<&[u8]> {
         match self.iv_state {
-            IvState::Uninitialised => {
-                Err(ProviderError::Dispatch("AES-OCB IV not set".into()))
-            }
+            IvState::Uninitialised => Err(ProviderError::Dispatch("AES-OCB IV not set".into())),
             IvState::Finished => Err(ProviderError::Dispatch(
                 "AES-OCB context already finalised; IV is spent".into(),
             )),

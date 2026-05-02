@@ -83,12 +83,8 @@ fn blocklen_for_digest(name: &str) -> Option<usize> {
     let upper = name.to_uppercase();
     match upper.as_str() {
         "SHA1" | "SHA-1" => Some(20),
-        "SHA224" | "SHA-224" | "SHA512-224" | "SHA-512/224" | "SHA512/224" | "SHA3-224" => {
-            Some(28)
-        }
-        "SHA256" | "SHA-256" | "SHA512-256" | "SHA-512/256" | "SHA512/256" | "SHA3-256" => {
-            Some(32)
-        }
+        "SHA224" | "SHA-224" | "SHA512-224" | "SHA-512/224" | "SHA512/224" | "SHA3-224" => Some(28),
+        "SHA256" | "SHA-256" | "SHA512-256" | "SHA-512/256" | "SHA512/256" | "SHA3-256" => Some(32),
         "SHA384" | "SHA-384" | "SHA3-384" => Some(48),
         "SHA512" | "SHA-512" | "SHA3-512" => Some(64),
         _ => None,
@@ -386,7 +382,9 @@ impl HmacDrbg {
         // --- Pass 1: K = HMAC(K, V || 0x00 || additional_data), V = HMAC(K, V) ---
         {
             // Build input: V || 0x00 || additional_data[0] || ... || additional_data[n]
-            let mut input = Vec::with_capacity(self.blocklen + 1 + additional_data.iter().map(|d| d.len()).sum::<usize>());
+            let mut input = Vec::with_capacity(
+                self.blocklen + 1 + additional_data.iter().map(|d| d.len()).sum::<usize>(),
+            );
             input.extend_from_slice(&self.v);
             input.push(0x00);
             for data in additional_data {
@@ -413,7 +411,9 @@ impl HmacDrbg {
         // --- Pass 2: only if provided_data is non-empty ---
         if has_data {
             // Build input: V || 0x01 || additional_data[0] || ... || additional_data[n]
-            let mut input = Vec::with_capacity(self.blocklen + 1 + additional_data.iter().map(|d| d.len()).sum::<usize>());
+            let mut input = Vec::with_capacity(
+                self.blocklen + 1 + additional_data.iter().map(|d| d.len()).sum::<usize>(),
+            );
             input.extend_from_slice(&self.v);
             input.push(0x01);
             for data in additional_data {
@@ -483,9 +483,7 @@ impl DrbgMechanism for HmacDrbg {
         // where seed_material = entropy_input || nonce || personalization_string
         self.hmac_update(&[entropy, nonce, personalization])?;
 
-        trace!(
-            "HMAC-DRBG: instantiate complete — K and V updated with seed material"
-        );
+        trace!("HMAC-DRBG: instantiate complete — K and V updated with seed material");
 
         Ok(())
     }
@@ -796,7 +794,10 @@ mod tests {
         drbg.generate(&mut output, &[]).unwrap();
 
         // Output should not be all zeros (astronomically unlikely with real HMAC)
-        assert!(!output.iter().all(|&b| b == 0), "generated output should not be all zeros");
+        assert!(
+            !output.iter().all(|&b| b == 0),
+            "generated output should not be all zeros"
+        );
     }
 
     /// Verify generate with additional input produces different output.
@@ -815,7 +816,10 @@ mod tests {
         drbg1.generate(&mut out1, &[]).unwrap();
         drbg2.generate(&mut out2, &[0xFF; 16]).unwrap();
 
-        assert_ne!(out1, out2, "additional input should produce different output");
+        assert_ne!(
+            out1, out2,
+            "additional input should produce different output"
+        );
     }
 
     /// Verify that consecutive generate calls produce different output.
@@ -829,7 +833,10 @@ mod tests {
         drbg.generate(&mut out1, &[]).unwrap();
         drbg.generate(&mut out2, &[]).unwrap();
 
-        assert_ne!(out1, out2, "consecutive generates should produce different output");
+        assert_ne!(
+            out1, out2,
+            "consecutive generates should produce different output"
+        );
     }
 
     /// Verify uninstantiate zeroes K and V.
@@ -851,11 +858,17 @@ mod tests {
         let mut drbg = HmacDrbg::new("SHA-256").unwrap();
         drbg.instantiate(&[0xAA; 32], &[0xBB; 16], &[]).unwrap();
 
-        assert!(!drbg.verify_zeroization(), "should not be zeroed before uninstantiate");
+        assert!(
+            !drbg.verify_zeroization(),
+            "should not be zeroed before uninstantiate"
+        );
 
         drbg.uninstantiate();
 
-        assert!(drbg.verify_zeroization(), "should be zeroed after uninstantiate");
+        assert!(
+            drbg.verify_zeroization(),
+            "should be zeroed after uninstantiate"
+        );
     }
 
     /// Verify set_params can change the digest.
@@ -865,7 +878,10 @@ mod tests {
         assert_eq!(drbg.blocklen(), 32);
 
         let mut params = ParamSet::new();
-        params.set("digest", openssl_common::param::ParamValue::Utf8String("SHA-512".to_string()));
+        params.set(
+            "digest",
+            openssl_common::param::ParamValue::Utf8String("SHA-512".to_string()),
+        );
         drbg.set_params(&params).unwrap();
 
         assert_eq!(drbg.blocklen(), 64);
@@ -879,7 +895,10 @@ mod tests {
     fn test_set_params_unsupported_digest() {
         let mut drbg = HmacDrbg::new("SHA-256").unwrap();
         let mut params = ParamSet::new();
-        params.set("digest", openssl_common::param::ParamValue::Utf8String("INVALID".to_string()));
+        params.set(
+            "digest",
+            openssl_common::param::ParamValue::Utf8String("INVALID".to_string()),
+        );
 
         let result = drbg.set_params(&params);
         assert!(result.is_err());
@@ -903,14 +922,21 @@ mod tests {
     /// Verify generate works across multiple hash sizes.
     #[test]
     fn test_multi_digest_generate() {
-        for digest in &["SHA-1", "SHA-224", "SHA-256", "SHA-384", "SHA-512", "SHA3-256", "SHA3-512"] {
+        for digest in &[
+            "SHA-1", "SHA-224", "SHA-256", "SHA-384", "SHA-512", "SHA3-256", "SHA3-512",
+        ] {
             let mut drbg = HmacDrbg::new(digest).expect(&format!("{} should be supported", digest));
             let bl = drbg.blocklen();
-            drbg.instantiate(&vec![0xAA; bl], &vec![0xBB; bl / 2], &[]).unwrap();
+            drbg.instantiate(&vec![0xAA; bl], &vec![0xBB; bl / 2], &[])
+                .unwrap();
 
             let mut output = vec![0u8; 64];
             drbg.generate(&mut output, &[]).unwrap();
-            assert!(!output.iter().all(|&b| b == 0), "output should not be all zeros for {}", digest);
+            assert!(
+                !output.iter().all(|&b| b == 0),
+                "output should not be all zeros for {}",
+                digest
+            );
         }
     }
 
@@ -954,7 +980,13 @@ mod tests {
         drbg1.hmac_update(&[]).unwrap();
         drbg2.hmac_update(&[&[0xFF; 16]]).unwrap();
 
-        assert_ne!(drbg1.k, drbg2.k, "Update with data should differ from without");
-        assert_ne!(drbg1.v, drbg2.v, "Update with data should differ from without");
+        assert_ne!(
+            drbg1.k, drbg2.k,
+            "Update with data should differ from without"
+        );
+        assert_ne!(
+            drbg1.v, drbg2.v,
+            "Update with data should differ from without"
+        );
     }
 }

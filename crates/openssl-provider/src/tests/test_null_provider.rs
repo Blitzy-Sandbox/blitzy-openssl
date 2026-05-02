@@ -226,9 +226,7 @@ fn test_null_provider_query_asym_cipher_returns_none() {
 fn test_null_provider_query_skeymgmt_returns_none() {
     let provider = NullProvider::new();
     assert!(
-        provider
-            .query_operation(OperationType::SKeyMgmt)
-            .is_none(),
+        provider.query_operation(OperationType::SKeyMgmt).is_none(),
         "Null provider must not advertise SKeyMgmt algorithms"
     );
 }
@@ -264,11 +262,7 @@ fn test_null_provider_query_all_operations_exhaustive() {
         );
     }
     // Verify we tested all 13 known variants
-    assert_eq!(
-        all_ops.len(),
-        13,
-        "Must test all 13 OperationType variants"
-    );
+    assert_eq!(all_ops.len(), 13, "Must test all 13 OperationType variants");
 }
 
 // =============================================================================
@@ -286,10 +280,7 @@ fn test_null_provider_get_params() {
     let params = provider.get_params().expect("get_params should succeed");
 
     // Verify all expected keys are present
-    assert!(
-        params.contains("name"),
-        "Params should contain 'name' key"
-    );
+    assert!(params.contains("name"), "Params should contain 'name' key");
     assert!(
         params.contains("version"),
         "Params should contain 'version' key"
@@ -470,29 +461,17 @@ fn test_null_provider_as_trait_object() {
     assert!(provider.query_operation(OperationType::Kdf).is_none());
     assert!(provider.query_operation(OperationType::Rand).is_none());
     assert!(provider.query_operation(OperationType::KeyMgmt).is_none());
-    assert!(
-        provider
-            .query_operation(OperationType::Signature)
-            .is_none()
-    );
-    assert!(
-        provider
-            .query_operation(OperationType::AsymCipher)
-            .is_none()
-    );
+    assert!(provider.query_operation(OperationType::Signature).is_none());
+    assert!(provider
+        .query_operation(OperationType::AsymCipher)
+        .is_none());
     assert!(provider.query_operation(OperationType::Kem).is_none());
     assert!(provider.query_operation(OperationType::KeyExch).is_none());
-    assert!(
-        provider
-            .query_operation(OperationType::EncoderDecoder)
-            .is_none()
-    );
+    assert!(provider
+        .query_operation(OperationType::EncoderDecoder)
+        .is_none());
     assert!(provider.query_operation(OperationType::Store).is_none());
-    assert!(
-        provider
-            .query_operation(OperationType::SKeyMgmt)
-            .is_none()
-    );
+    assert!(provider.query_operation(OperationType::SKeyMgmt).is_none());
 
     // Params through trait object
     let params = provider

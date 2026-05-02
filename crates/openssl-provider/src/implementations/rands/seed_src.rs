@@ -337,9 +337,7 @@ impl SeedSource {
         params.set("strength", ParamValue::UInt32(SEED_SRC_STRENGTH));
         params.set(
             "max_request",
-            ParamValue::UInt32(
-                u32::try_from(SEED_SRC_MAX_REQUEST).unwrap_or(u32::MAX),
-            ),
+            ParamValue::UInt32(u32::try_from(SEED_SRC_MAX_REQUEST).unwrap_or(u32::MAX)),
         );
         Ok(params)
     }

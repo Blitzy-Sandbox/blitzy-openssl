@@ -101,7 +101,8 @@ fn test_sha256_empty_message() {
 
     let mut ctx = provider.new_ctx().expect("context creation must succeed");
     ctx.init(None).expect("init must succeed");
-    ctx.update(b"").expect("update with empty data must succeed");
+    ctx.update(b"")
+        .expect("update with empty data must succeed");
     let digest = ctx.finalize().expect("finalize must succeed");
 
     // Structural correctness: output is exactly 32 bytes
@@ -137,7 +138,9 @@ fn test_sha256_abc() {
     assert_eq!(digest.len(), 32, "SHA-256 output must be 32 bytes");
 
     // Run the same input again to verify determinism
-    let mut ctx2 = provider.new_ctx().expect("second context creation must succeed");
+    let mut ctx2 = provider
+        .new_ctx()
+        .expect("second context creation must succeed");
     ctx2.init(None).expect("init must succeed");
     ctx2.update(b"abc").expect("update must succeed");
     let digest2 = ctx2.finalize().expect("finalize must succeed");
@@ -165,8 +168,12 @@ fn test_sha256_multipart_update() {
     // Multi-part update path
     let mut ctx_multi = provider.new_ctx().expect("context creation must succeed");
     ctx_multi.init(None).expect("init must succeed");
-    ctx_multi.update(b"a").expect("update with 'a' must succeed");
-    ctx_multi.update(b"bc").expect("update with 'bc' must succeed");
+    ctx_multi
+        .update(b"a")
+        .expect("update with 'a' must succeed");
+    ctx_multi
+        .update(b"bc")
+        .expect("update with 'bc' must succeed");
     let digest_multi = ctx_multi.finalize().expect("finalize must succeed");
 
     assert_eq!(
@@ -187,13 +194,22 @@ fn test_sha3_256_empty_message() {
     let provider_opt = digests::create_provider("SHA3-256");
 
     if let Some(provider) = provider_opt {
-        assert_eq!(provider.digest_size(), 32, "SHA3-256 output must be 32 bytes");
+        assert_eq!(
+            provider.digest_size(),
+            32,
+            "SHA3-256 output must be 32 bytes"
+        );
         // SHA3-256 block_size (rate) = 136 bytes (1088 bits)
-        assert_eq!(provider.block_size(), 136, "SHA3-256 block size must be 136 bytes");
+        assert_eq!(
+            provider.block_size(),
+            136,
+            "SHA3-256 block size must be 136 bytes"
+        );
 
         let mut ctx = provider.new_ctx().expect("context creation must succeed");
         ctx.init(None).expect("init must succeed");
-        ctx.update(b"").expect("update with empty data must succeed");
+        ctx.update(b"")
+            .expect("update with empty data must succeed");
         let digest = ctx.finalize().expect("finalize must succeed");
 
         assert_eq!(
@@ -236,13 +252,16 @@ fn test_digest_context_duplicate() {
     let mut ctx_clone = ctx.duplicate().expect("duplicate must succeed");
 
     // Finalize both with the same remaining data
-    ctx.update(b"world").expect("update on original must succeed");
+    ctx.update(b"world")
+        .expect("update on original must succeed");
     let digest_original = ctx.finalize().expect("finalize original must succeed");
 
     ctx_clone
         .update(b"world")
         .expect("update on duplicate must succeed");
-    let digest_clone = ctx_clone.finalize().expect("finalize duplicate must succeed");
+    let digest_clone = ctx_clone
+        .finalize()
+        .expect("finalize duplicate must succeed");
 
     assert_eq!(
         digest_original, digest_clone,
@@ -362,9 +381,7 @@ fn test_cipher_trait_api_contract() {
         fn block_size(&self) -> usize {
             1
         }
-        fn new_ctx(
-            &self,
-        ) -> openssl_common::ProviderResult<Box<dyn CipherContext>> {
+        fn new_ctx(&self) -> openssl_common::ProviderResult<Box<dyn CipherContext>> {
             Ok(Box::new(TestCipherContext {
                 encrypting: false,
                 initialized: false,
@@ -402,23 +419,16 @@ fn test_cipher_trait_api_contract() {
             output: &mut Vec<u8>,
         ) -> openssl_common::ProviderResult<usize> {
             if !self.initialized {
-                return Err(ProviderError::Init(
-                    "cipher not initialized".to_string(),
-                ));
+                return Err(ProviderError::Init("cipher not initialized".to_string()));
             }
             // Pass-through: output = input (null cipher behavior)
             output.extend_from_slice(input);
             self.buffer.extend_from_slice(input);
             Ok(input.len())
         }
-        fn finalize(
-            &mut self,
-            _output: &mut Vec<u8>,
-        ) -> openssl_common::ProviderResult<usize> {
+        fn finalize(&mut self, _output: &mut Vec<u8>) -> openssl_common::ProviderResult<usize> {
             if !self.initialized {
-                return Err(ProviderError::Init(
-                    "cipher not initialized".to_string(),
-                ));
+                return Err(ProviderError::Init("cipher not initialized".to_string()));
             }
             self.initialized = false;
             Ok(0)
@@ -430,10 +440,7 @@ fn test_cipher_trait_api_contract() {
                 .push_u64("block_size", 1);
             Ok(builder.build())
         }
-        fn set_params(
-            &mut self,
-            _params: &ParamSet,
-        ) -> openssl_common::ProviderResult<()> {
+        fn set_params(&mut self, _params: &ParamSet) -> openssl_common::ProviderResult<()> {
             Ok(())
         }
     }
@@ -460,8 +467,7 @@ fn test_cipher_trait_api_contract() {
     assert_eq!(ciphertext, plaintext);
 
     let mut final_out = Vec::new();
-    ctx.finalize(&mut final_out)
-        .expect("finalize must succeed");
+    ctx.finalize(&mut final_out).expect("finalize must succeed");
 
     // Decrypt init + update + finalize (round-trip)
     let mut ctx2 = provider.new_ctx().expect("new_ctx must succeed");
@@ -591,8 +597,7 @@ fn test_hmac_sha256_rfc4231_test_case_2() {
     let mut ctx3 = hmac_provider
         .new_ctx()
         .expect("context creation must succeed");
-    ctx3.init(key, Some(&params))
-        .expect("init must succeed");
+    ctx3.init(key, Some(&params)).expect("init must succeed");
     let ctx_params = ctx3.get_params().expect("get_params must succeed");
 
     // FIPS indicator should be 0 (not approved) since key < 14 bytes
@@ -764,8 +769,11 @@ fn test_digest_context_set_params() {
     let _result = ctx.set_params(&params);
 
     // Context must remain functional after set_params (regardless of its outcome)
-    ctx.update(b"test").expect("update after set_params must succeed");
-    let digest = ctx.finalize().expect("finalize after set_params must succeed");
+    ctx.update(b"test")
+        .expect("update after set_params must succeed");
+    let digest = ctx
+        .finalize()
+        .expect("finalize after set_params must succeed");
     assert_eq!(digest.len(), 32);
 }
 
@@ -826,10 +834,7 @@ fn test_cipher_context_get_set_params() {
             output.extend_from_slice(input);
             Ok(input.len())
         }
-        fn finalize(
-            &mut self,
-            _output: &mut Vec<u8>,
-        ) -> openssl_common::ProviderResult<usize> {
+        fn finalize(&mut self, _output: &mut Vec<u8>) -> openssl_common::ProviderResult<usize> {
             Ok(0)
         }
         fn get_params(&self) -> openssl_common::ProviderResult<ParamSet> {
@@ -873,7 +878,8 @@ fn test_cipher_context_get_set_params() {
 
     // Set params — disable padding
     let new_params = ParamBuilder::new().push_u32("padding", 0).build();
-    ctx.set_params(&new_params).expect("set_params must succeed");
+    ctx.set_params(&new_params)
+        .expect("set_params must succeed");
 
     // Verify padding was disabled
     let updated_params = ctx.get_params().expect("get_params after set must succeed");
@@ -1138,19 +1144,13 @@ fn test_cipher_decrypt_wrong_key_errors() {
             }
             Ok(input.len())
         }
-        fn finalize(
-            &mut self,
-            _output: &mut Vec<u8>,
-        ) -> openssl_common::ProviderResult<usize> {
+        fn finalize(&mut self, _output: &mut Vec<u8>) -> openssl_common::ProviderResult<usize> {
             Ok(0)
         }
         fn get_params(&self) -> openssl_common::ProviderResult<ParamSet> {
             Ok(ParamSet::new())
         }
-        fn set_params(
-            &mut self,
-            _params: &ParamSet,
-        ) -> openssl_common::ProviderResult<()> {
+        fn set_params(&mut self, _params: &ParamSet) -> openssl_common::ProviderResult<()> {
             Ok(())
         }
     }
@@ -1338,7 +1338,9 @@ fn test_default_provider_covers_all_operation_types() {
 #[test]
 fn test_digest_factory_case_insensitive_aliases() {
     // All these should resolve to the same SHA-256 provider
-    let aliases = ["SHA-256", "SHA256", "SHA2-256", "sha-256", "sha256", "sha2-256"];
+    let aliases = [
+        "SHA-256", "SHA256", "SHA2-256", "sha-256", "sha256", "sha2-256",
+    ];
 
     for alias in &aliases {
         let provider = digests::create_provider(alias);
@@ -1368,13 +1370,17 @@ fn test_hmac_multipart_update_consistency() {
         .build();
 
     // Single update
-    let mut ctx1 = hmac_provider.new_ctx().expect("context creation must succeed");
+    let mut ctx1 = hmac_provider
+        .new_ctx()
+        .expect("context creation must succeed");
     ctx1.init(&key, Some(&params)).expect("init must succeed");
     ctx1.update(b"hello world").expect("update must succeed");
     let mac1 = ctx1.finalize().expect("finalize must succeed");
 
     // Multi-part update
-    let mut ctx2 = hmac_provider.new_ctx().expect("context creation must succeed");
+    let mut ctx2 = hmac_provider
+        .new_ctx()
+        .expect("context creation must succeed");
     ctx2.init(&key, Some(&params)).expect("init must succeed");
     ctx2.update(b"hello ").expect("first update must succeed");
     ctx2.update(b"world").expect("second update must succeed");
@@ -1390,7 +1396,9 @@ fn test_hmac_multipart_update_consistency() {
 #[test]
 fn test_kdf_context_get_set_params() {
     let kdf_provider = ScryptProvider;
-    let mut ctx = kdf_provider.new_ctx().expect("context creation must succeed");
+    let mut ctx = kdf_provider
+        .new_ctx()
+        .expect("context creation must succeed");
 
     // Set params
     let params = ParamBuilder::new()

@@ -63,11 +63,11 @@ use tracing::{debug, trace};
 
 use openssl_common::{ProviderError, ProviderResult};
 
-use crate::traits::{DecoderProvider, KeyData};
 use super::common::{
     DecodedObject, EndecoderError, ObjectType, FORMAT_DER, MAX_PROPQUERY_SIZE,
     STRUCTURE_SUBJECT_PUBLIC_KEY_INFO,
 };
+use crate::traits::{DecoderProvider, KeyData};
 
 // =============================================================================
 // Well-Known Algorithm OIDs
@@ -105,28 +105,22 @@ const OID_DSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10040.4.
 
 /// ML-KEM (FIPS 203) OID: `2.16.840.1.101.3.4.4.1`
 /// (ML-KEM-512; the OID prefix for all ML-KEM parameter sets)
-const OID_ML_KEM_512: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.4.1");
+const OID_ML_KEM_512: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.4.1");
 
 /// ML-KEM-768 OID: `2.16.840.1.101.3.4.4.2`
-const OID_ML_KEM_768: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.4.2");
+const OID_ML_KEM_768: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.4.2");
 
 /// ML-KEM-1024 OID: `2.16.840.1.101.3.4.4.3`
-const OID_ML_KEM_1024: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.4.3");
+const OID_ML_KEM_1024: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.4.3");
 
 /// ML-DSA-44 (FIPS 204) OID: `2.16.840.1.101.3.4.3.17`
-const OID_ML_DSA_44: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.3.17");
+const OID_ML_DSA_44: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.3.17");
 
 /// ML-DSA-65 OID: `2.16.840.1.101.3.4.3.18`
-const OID_ML_DSA_65: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.3.18");
+const OID_ML_DSA_65: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.3.18");
 
 /// ML-DSA-87 OID: `2.16.840.1.101.3.4.3.19`
-const OID_ML_DSA_87: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.3.19");
+const OID_ML_DSA_87: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.3.19");
 
 /// SLH-DSA-SHA2-128s (FIPS 205) OID: `2.16.840.1.101.3.4.3.20`
 const OID_SLH_DSA_SHA2_128S: ObjectIdentifier =
@@ -178,16 +172,14 @@ const OID_SLH_DSA_SHAKE_256F: ObjectIdentifier =
 
 /// LMS OID: `1.2.840.113549.1.9.16.3.17` (HSS/LMS hash-based signatures,
 /// SP 800-208)
-const OID_LMS: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.16.3.17");
+const OID_LMS: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.16.3.17");
 
 /// SM2 named curve OID: `1.2.156.10197.1.301`
 ///
 /// Used by `is_sm2_key` to detect SM2 keys that use the generic EC
 /// `AlgorithmIdentifier` OID but carry the SM2 curve as a parameter.
 #[cfg(feature = "sm2")]
-const OID_SM2_CURVE: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("1.2.156.10197.1.301");
+const OID_SM2_CURVE: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.156.10197.1.301");
 
 // =============================================================================
 // SpkiDecoderContext — Per-Operation Decoder Context
@@ -351,7 +343,10 @@ impl DecoderProvider for SpkiTaggingDecoder {
     /// if the DER does not parse as valid SPKI. Returns
     /// `ProviderError::Dispatch` if the algorithm OID is unrecognised.
     fn decode(&self, input: &[u8]) -> ProviderResult<Box<dyn KeyData>> {
-        trace!(input_len = input.len(), "SPKI type-tagging decoder: starting");
+        trace!(
+            input_len = input.len(),
+            "SPKI type-tagging decoder: starting"
+        );
 
         // Step 1: Parse SubjectPublicKeyInfo from DER.
         //
@@ -385,39 +380,28 @@ impl DecoderProvider for SpkiTaggingDecoder {
         let data_name = {
             if *algorithm_oid == OID_EC {
                 // Extract raw parameter bytes for SM2 curve OID check.
-                let params_bytes = spki
-                    .algorithm
-                    .parameters
-                    .as_ref()
-                    .map(|p| p.value());
+                let params_bytes = spki.algorithm.parameters.as_ref().map(|p| p.value());
 
                 if is_sm2_key(algorithm_oid, params_bytes) {
                     "SM2"
                 } else {
-                    oid_to_algorithm_name(algorithm_oid)
-                        .ok_or_else(|| {
-                            ProviderError::Dispatch(format!(
-                                "unrecognised algorithm OID: {algorithm_oid}"
-                            ))
-                        })?
-                }
-            } else {
-                oid_to_algorithm_name(algorithm_oid)
-                    .ok_or_else(|| {
+                    oid_to_algorithm_name(algorithm_oid).ok_or_else(|| {
                         ProviderError::Dispatch(format!(
                             "unrecognised algorithm OID: {algorithm_oid}"
                         ))
                     })?
+                }
+            } else {
+                oid_to_algorithm_name(algorithm_oid).ok_or_else(|| {
+                    ProviderError::Dispatch(format!("unrecognised algorithm OID: {algorithm_oid}"))
+                })?
             }
         };
 
         #[cfg(not(feature = "sm2"))]
-        let data_name = oid_to_algorithm_name(algorithm_oid)
-            .ok_or_else(|| {
-                ProviderError::Dispatch(format!(
-                    "unrecognised algorithm OID: {algorithm_oid}"
-                ))
-            })?;
+        let data_name = oid_to_algorithm_name(algorithm_oid).ok_or_else(|| {
+            ProviderError::Dispatch(format!("unrecognised algorithm OID: {algorithm_oid}"))
+        })?;
 
         debug!(
             algorithm = data_name,
@@ -656,14 +640,14 @@ mod tests {
             0x00, // no unused bits
             0x30, 0x0e, // SEQUENCE, 14 bytes (mock RSA key)
             0x02, 0x09, // INTEGER, 9 bytes (modulus)
-            0x00, 0xc5, 0xd3, 0x4c, 0x71, 0x5e, 0x8b, 0xb1, 0x43,
-            0x02, 0x01, // INTEGER, 1 byte (exponent)
+            0x00, 0xc5, 0xd3, 0x4c, 0x71, 0x5e, 0x8b, 0xb1, 0x43, 0x02,
+            0x01, // INTEGER, 1 byte (exponent)
             0x03,
         ];
 
         let total_len = alg_id.len() + pub_key.len();
         der.push(0x30); // SEQUENCE tag
-        // DER length encoding
+                        // DER length encoding
         if total_len < 128 {
             der.push(u8::try_from(total_len).expect("length fits in u8"));
         } else {
@@ -718,10 +702,9 @@ mod tests {
             0x03, 0x21, // BIT STRING, 33 bytes content
             0x00, // unused bits = 0
             // 32 bytes of mock Ed25519 public key
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+            0x1d, 0x1e, 0x1f, 0x20,
         ];
 
         let total_len = alg_id.len() + pub_key.len();
@@ -806,8 +789,14 @@ mod tests {
 
     #[test]
     fn test_oid_to_algorithm_name_slh_dsa() {
-        assert_eq!(oid_to_algorithm_name(&OID_SLH_DSA_SHA2_128S), Some("SLH-DSA-SHA2-128s"));
-        assert_eq!(oid_to_algorithm_name(&OID_SLH_DSA_SHAKE_256F), Some("SLH-DSA-SHAKE-256f"));
+        assert_eq!(
+            oid_to_algorithm_name(&OID_SLH_DSA_SHA2_128S),
+            Some("SLH-DSA-SHA2-128s")
+        );
+        assert_eq!(
+            oid_to_algorithm_name(&OID_SLH_DSA_SHAKE_256F),
+            Some("SLH-DSA-SHAKE-256f")
+        );
     }
 
     #[test]
@@ -840,7 +829,11 @@ mod tests {
         let decoder = SpkiTaggingDecoder;
         let der = rsa_spki_der();
         let result = decoder.decode(&der);
-        assert!(result.is_ok(), "RSA SPKI should decode successfully: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "RSA SPKI should decode successfully: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -848,7 +841,11 @@ mod tests {
         let decoder = SpkiTaggingDecoder;
         let der = ec_spki_der();
         let result = decoder.decode(&der);
-        assert!(result.is_ok(), "EC SPKI should decode successfully: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "EC SPKI should decode successfully: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -856,7 +853,11 @@ mod tests {
         let decoder = SpkiTaggingDecoder;
         let der = ed25519_spki_der();
         let result = decoder.decode(&der);
-        assert!(result.is_ok(), "Ed25519 SPKI should decode successfully: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Ed25519 SPKI should decode successfully: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -898,10 +899,7 @@ mod tests {
     fn test_is_sm2_key_ec_p256_params() {
         // EC OID with P-256 curve parameter — not SM2.
         // OID 1.2.840.10045.3.1.7 (secp256r1/P-256) DER encoding
-        let p256_oid_der: &[u8] = &[
-            0x06, 0x08,
-            0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
-        ];
+        let p256_oid_der: &[u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
         assert!(!is_sm2_key(&OID_EC, Some(p256_oid_der)));
     }
 

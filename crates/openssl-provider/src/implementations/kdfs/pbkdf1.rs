@@ -215,13 +215,11 @@ impl Pbkdf1Context {
             self.salt = s.to_vec();
         }
         if let Some(val) = params.get(PARAM_ITER) {
-            let iter = val.as_u64().ok_or_else(|| {
-                ProviderError::Init("PBKDF1: iter must be a uint64".into())
-            })?;
+            let iter = val
+                .as_u64()
+                .ok_or_else(|| ProviderError::Init("PBKDF1: iter must be a uint64".into()))?;
             if iter == 0 {
-                return Err(ProviderError::Init(
-                    "PBKDF1: iterations must be > 0".into(),
-                ));
+                return Err(ProviderError::Init("PBKDF1: iterations must be > 0".into()));
             }
             self.iterations = iter;
         }
@@ -242,9 +240,7 @@ impl Pbkdf1Context {
             return Err(ProviderError::Init("PBKDF1: salt must be set".into()));
         }
         if self.iterations == 0 {
-            return Err(ProviderError::Init(
-                "PBKDF1: iterations must be > 0".into(),
-            ));
+            return Err(ProviderError::Init("PBKDF1: iterations must be > 0".into()));
         }
         Ok(())
     }
@@ -273,8 +269,8 @@ impl Pbkdf1Context {
         // context.  The descriptor is immutable and can be safely reused
         // across iterations (it carries no per-operation state).
         let lib_ctx = LibContext::get_default();
-        let digest = MessageDigest::fetch(&lib_ctx, &self.digest_name, None)
-            .map_err(dispatch_err)?;
+        let digest =
+            MessageDigest::fetch(&lib_ctx, &self.digest_name, None).map_err(dispatch_err)?;
         let hash_len = digest.digest_size();
         let out_len = output.len();
 
@@ -345,10 +341,7 @@ impl Pbkdf1Context {
         output[..out_len].copy_from_slice(&t[..out_len]);
         t.zeroize();
 
-        debug!(
-            out_len = out_len,
-            "PBKDF1: derivation complete"
-        );
+        debug!(out_len = out_len, "PBKDF1: derivation complete");
         Ok(out_len)
     }
 }
@@ -476,12 +469,7 @@ mod tests {
     }
 
     /// Build a `ParamSet` with a caller-specified digest.
-    fn make_params_with_digest(
-        digest: &str,
-        pw: &[u8],
-        salt: &[u8],
-        iter: u64,
-    ) -> ParamSet {
+    fn make_params_with_digest(digest: &str, pw: &[u8], salt: &[u8], iter: u64) -> ParamSet {
         let mut ps = ParamSet::new();
         ps.set(PARAM_DIGEST, ParamValue::Utf8String(digest.to_string()));
         ps.set(PARAM_PASSWORD, ParamValue::OctetString(pw.to_vec()));
@@ -771,10 +759,7 @@ mod tests {
             out.get(PARAM_DIGEST).and_then(ParamValue::as_str),
             Some("SHA1")
         );
-        assert_eq!(
-            out.get(PARAM_ITER).and_then(ParamValue::as_u64),
-            Some(500)
-        );
+        assert_eq!(out.get(PARAM_ITER).and_then(ParamValue::as_u64), Some(500));
         // Password and salt must not leak into the returned param set.
         assert!(out.get(PARAM_PASSWORD).is_none());
         assert!(out.get(PARAM_SALT).is_none());

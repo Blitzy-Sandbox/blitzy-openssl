@@ -435,12 +435,8 @@ impl DecoderProvider for MsBlobDecoder {
         // Replaces C `ctx->desc->read_private_key()` / `read_public_key()`
         // dispatch (decode_msblob2key.c lines 142–163).
         let key_data: Box<dyn KeyData> = match self.key_type {
-            MsBlobKeyType::Rsa => {
-                parse_rsa_blob(payload_data, header.is_public, header.bitlen)?
-            }
-            MsBlobKeyType::Dsa => {
-                parse_dsa_blob(payload_data, header.is_public, header.bitlen)?
-            }
+            MsBlobKeyType::Rsa => parse_rsa_blob(payload_data, header.is_public, header.bitlen)?,
+            MsBlobKeyType::Dsa => parse_dsa_blob(payload_data, header.is_public, header.bitlen)?,
         };
 
         // Log the decoded object type for observability correlation.
@@ -507,8 +503,7 @@ pub fn parse_blob_header(data: &[u8]) -> ProviderResult<BlobHeader> {
     let b_version = data[1];
     // data[2..4] is reserved (ignored)
     let ai_key_alg = u32::from_le_bytes(
-        <[u8; 4]>::try_from(&data[4..8])
-            .map_err(|_| EndecoderError::BadEncoding)?,
+        <[u8; 4]>::try_from(&data[4..8]).map_err(|_| EndecoderError::BadEncoding)?,
     );
 
     // Validate bType: must be public or private key blob.
@@ -525,7 +520,11 @@ pub fn parse_blob_header(data: &[u8]) -> ProviderResult<BlobHeader> {
     // Non-standard versions are warned but not fatal — some implementations
     // use different version numbers.
     if b_version != 0x02 {
-        warn!(b_version, expected = 0x02, "MSBLOB: unexpected blob version");
+        warn!(
+            b_version,
+            expected = 0x02,
+            "MSBLOB: unexpected blob version"
+        );
     }
 
     // Determine algorithm family from aiKeyAlg.
@@ -540,12 +539,10 @@ pub fn parse_blob_header(data: &[u8]) -> ProviderResult<BlobHeader> {
 
     // ── Algorithm-Specific Header (bytes 8–15) ──────────────────────────
     let magic = u32::from_le_bytes(
-        <[u8; 4]>::try_from(&data[8..12])
-            .map_err(|_| EndecoderError::BadEncoding)?,
+        <[u8; 4]>::try_from(&data[8..12]).map_err(|_| EndecoderError::BadEncoding)?,
     );
     let bitlen = u32::from_le_bytes(
-        <[u8; 4]>::try_from(&data[12..16])
-            .map_err(|_| EndecoderError::BadEncoding)?,
+        <[u8; 4]>::try_from(&data[12..16]).map_err(|_| EndecoderError::BadEncoding)?,
     );
 
     // Validate magic and determine public/private from it.
@@ -642,9 +639,7 @@ fn compute_blob_payload_length(bitlen: u32, is_dss: bool, is_public: bool) -> us
 
     if is_dss {
         // DSA: p(byte_len) + q(DSS_Q_LEN=20) + g(byte_len) + pubkey(byte_len)
-        let mut total = byte_len
-            .saturating_mul(3)
-            .saturating_add(DSS_Q_LEN);
+        let mut total = byte_len.saturating_mul(3).saturating_add(DSS_Q_LEN);
         if !is_public {
             // Private key adds privkey(DSS_Q_LEN=20)
             total = total.saturating_add(DSS_Q_LEN);
@@ -711,8 +706,8 @@ pub fn parse_rsa_blob(
     is_public: bool,
     bitlen: u32,
 ) -> ProviderResult<Box<dyn KeyData>> {
-    let byte_len = usize::try_from(bitlen.saturating_add(7) / 8)
-        .map_err(|_| EndecoderError::InvalidKey)?;
+    let byte_len =
+        usize::try_from(bitlen.saturating_add(7) / 8).map_err(|_| EndecoderError::InvalidKey)?;
     let half = byte_len / 2;
 
     debug!(bitlen, byte_len, is_public, "parsing RSA MSBLOB payload");
@@ -723,7 +718,7 @@ pub fn parse_rsa_blob(
     let pubexp_bytes = extract_field(data, &mut pos, RSA_PUBEXP_LEN, "RSA pubexp")?;
     let mut public_exponent = pubexp_bytes.to_vec();
     public_exponent.reverse(); // LE → BE
-    // Strip leading zeros from big-endian representation.
+                               // Strip leading zeros from big-endian representation.
     strip_leading_zeros(&mut public_exponent);
 
     // ── Modulus (byte_len bytes, little-endian) ─────────────────────────
@@ -839,8 +834,8 @@ pub fn parse_dsa_blob(
     is_public: bool,
     bitlen: u32,
 ) -> ProviderResult<Box<dyn KeyData>> {
-    let byte_len = usize::try_from(bitlen.saturating_add(7) / 8)
-        .map_err(|_| EndecoderError::InvalidKey)?;
+    let byte_len =
+        usize::try_from(bitlen.saturating_add(7) / 8).map_err(|_| EndecoderError::InvalidKey)?;
 
     debug!(bitlen, byte_len, is_public, "parsing DSA MSBLOB payload");
 
@@ -1094,18 +1089,18 @@ mod tests {
         let mut blob = Vec::new();
 
         // BLOBHEADER
-        blob.push(PUBLICKEYBLOB);   // bType
-        blob.push(0x02);            // bVersion
+        blob.push(PUBLICKEYBLOB); // bType
+        blob.push(0x02); // bVersion
         blob.extend_from_slice(&[0x00, 0x00]); // reserved
         blob.extend_from_slice(&CALG_RSA_KEYX.to_le_bytes()); // aiKeyAlg
 
         // RSAPUBKEY header
         blob.extend_from_slice(&RSA1_MAGIC.to_le_bytes()); // magic
-        blob.extend_from_slice(&bitlen.to_le_bytes());     // bitlen
+        blob.extend_from_slice(&bitlen.to_le_bytes()); // bitlen
 
         // Payload: pubexp (4 bytes) + modulus (byte_len bytes)
         blob.extend_from_slice(&65537u32.to_le_bytes()); // pubexp = 65537
-        blob.extend(vec![0xAB; byte_len]);               // modulus (dummy)
+        blob.extend(vec![0xAB; byte_len]); // modulus (dummy)
 
         blob
     }
@@ -1249,7 +1244,11 @@ mod tests {
             key_type: MsBlobKeyType::Rsa,
         };
         let result = decoder.decode(&blob);
-        assert!(result.is_ok(), "should decode RSA public MSBLOB: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "should decode RSA public MSBLOB: {:?}",
+            result.err()
+        );
     }
 
     #[cfg(feature = "rsa")]
@@ -1287,7 +1286,11 @@ mod tests {
             key_type: MsBlobKeyType::Dsa,
         };
         let result = decoder.decode(&blob);
-        assert!(result.is_ok(), "should decode DSA public MSBLOB: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "should decode DSA public MSBLOB: {:?}",
+            result.err()
+        );
     }
 
     #[cfg(feature = "dsa")]

@@ -101,8 +101,7 @@ const ALGORITHM_NAME: &str = "PVKKDF";
 const ALGORITHM_PROPERTY: &str = "provider=legacy";
 
 /// Human-readable description published via the algorithm descriptor.
-const ALGORITHM_DESCRIPTION: &str =
-    "Microsoft PVK (Private Key Blob) key derivation function \
+const ALGORITHM_DESCRIPTION: &str = "Microsoft PVK (Private Key Blob) key derivation function \
      (legacy Windows private key format, non-FIPS)";
 
 // =============================================================================
@@ -307,9 +306,7 @@ impl PvkKdfContext {
         }
         if self.digest_name.is_empty() {
             warn!("PvkKdfContext::validate: digest name is empty");
-            return Err(ProviderError::Init(
-                "PVKKDF: digest name is empty".into(),
-            ));
+            return Err(ProviderError::Init("PVKKDF: digest name is empty".into()));
         }
         Ok(())
     }
@@ -333,8 +330,8 @@ impl PvkKdfContext {
     /// precedes `EVP_DigestUpdate(mctx, ctx->pass, ...)`.
     fn derive_internal(&self, output: &mut [u8]) -> ProviderResult<usize> {
         let lib_ctx = LibContext::get_default();
-        let digest = MessageDigest::fetch(&lib_ctx, &self.digest_name, None)
-            .map_err(dispatch_err)?;
+        let digest =
+            MessageDigest::fetch(&lib_ctx, &self.digest_name, None).map_err(dispatch_err)?;
         let hash_len = digest.digest_size();
         let out_len = output.len();
 
@@ -621,8 +618,13 @@ mod tests {
         let mut ctx = provider.new_ctx().unwrap();
         let ps = make_params(b"password", b"saltsalt");
         let mut output = vec![0u8; SHA1_LEN];
-        let n = ctx.derive(&mut output, &ps).expect("derivation should succeed");
-        assert_eq!(n, SHA1_LEN, "PVK writes exactly digest_size bytes for SHA-1");
+        let n = ctx
+            .derive(&mut output, &ps)
+            .expect("derivation should succeed");
+        assert_eq!(
+            n, SHA1_LEN,
+            "PVK writes exactly digest_size bytes for SHA-1"
+        );
         assert_ne!(
             output,
             vec![0u8; SHA1_LEN],
@@ -662,10 +664,7 @@ mod tests {
         ctx2.derive(&mut out2, &make_params(b"password-b", salt))
             .unwrap();
 
-        assert_ne!(
-            out1, out2,
-            "distinct passwords must produce distinct keys"
-        );
+        assert_ne!(out1, out2, "distinct passwords must produce distinct keys");
     }
 
     #[test]

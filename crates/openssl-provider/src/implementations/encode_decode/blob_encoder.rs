@@ -229,12 +229,10 @@ impl EncoderProvider for BlobEncoder {
         }
 
         // Confirm PUBLIC_KEY is included or we are in guess mode (empty).
-        let is_public = selection.is_empty()
-            || selection.contains(KeySelection::PUBLIC_KEY);
+        let is_public = selection.is_empty() || selection.contains(KeySelection::PUBLIC_KEY);
         debug!(
             key_type = self.key_type,
-            is_public,
-            "selection validated — proceeding with public key blob encoding"
+            is_public, "selection validated — proceeding with public key blob encoding"
         );
 
         // Step 2: Reject abstract keys.
@@ -651,9 +649,7 @@ mod tests {
             "all_blob_encoders() must return at least EC encoder"
         );
 
-        let ec_found = descriptors
-            .iter()
-            .any(|d| d.names.contains(&"EC"));
+        let ec_found = descriptors.iter().any(|d| d.names.contains(&"EC"));
         assert!(ec_found, "EC blob encoder must be present");
     }
 

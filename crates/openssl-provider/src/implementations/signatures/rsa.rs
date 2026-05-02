@@ -188,7 +188,12 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
         ),
         // Standalone RSA-PSS — uses PSS padding regardless of the signing API.
         algorithm(
-            &["RSA-PSS", "RSASSA-PSS", "rsassaPss", "1.2.840.113549.1.1.10"],
+            &[
+                "RSA-PSS",
+                "RSASSA-PSS",
+                "rsassaPss",
+                "1.2.840.113549.1.1.10",
+            ],
             DEFAULT_PROPERTY,
             "OpenSSL RSA-PSS implementation",
         ),

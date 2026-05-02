@@ -24,8 +24,8 @@
 //!
 //! All code in this module is 100% safe Rust (Rule R8).
 
+use super::common::{default_get_params, DigestFlags};
 use crate::traits::{AlgorithmDescriptor, DigestContext, DigestProvider};
-use super::common::{DigestFlags, default_get_params};
 use openssl_common::error::ProviderResult;
 use openssl_common::param::ParamSet;
 
@@ -226,7 +226,9 @@ mod tests {
 
         let mut dup = ctx.duplicate().expect("duplicate should succeed");
         dup.init(None).expect("init on duplicate should succeed");
-        let digest = dup.finalize().expect("finalize on duplicate should succeed");
+        let digest = dup
+            .finalize()
+            .expect("finalize on duplicate should succeed");
         assert!(digest.is_empty());
     }
 
@@ -260,7 +262,11 @@ mod tests {
     #[test]
     fn test_null_descriptors() {
         let descs = descriptors();
-        assert_eq!(descs.len(), 1, "NULL digest should have exactly one descriptor");
+        assert_eq!(
+            descs.len(),
+            1,
+            "NULL digest should have exactly one descriptor"
+        );
         assert_eq!(descs[0].names, vec!["NULL"]);
         assert_eq!(descs[0].property, "provider=default");
         assert!(!descs[0].description.is_empty());

@@ -955,12 +955,11 @@ impl DhKeyData {
                 let x = priv_key.value();
                 let y = pub_key.value();
 
-                let recomputed_y =
-                    mod_exp_consttime(params.g(), &x, params.p()).map_err(|e| {
-                        ProviderError::Dispatch(format!(
-                            "DH pairwise check: mod_exp_consttime failed: {e}"
-                        ))
-                    })?;
+                let recomputed_y = mod_exp_consttime(params.g(), &x, params.p()).map_err(|e| {
+                    ProviderError::Dispatch(format!(
+                        "DH pairwise check: mod_exp_consttime failed: {e}"
+                    ))
+                })?;
 
                 if recomputed_y.cmp(y) != Ordering::Equal {
                     warn!(
@@ -2153,10 +2152,7 @@ mod tests {
         let r = key
             .validate_selection(KeySelection::KEYPAIR)
             .expect("validate must not error on structurally-valid components");
-        assert!(
-            !r,
-            "tampered public value must fail the pairwise check"
-        );
+        assert!(!r, "tampered public value must fail the pairwise check");
     }
 
     #[test]

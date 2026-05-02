@@ -36,10 +36,10 @@
 use crate::base::BaseProvider;
 use crate::default::DefaultProvider;
 use crate::dispatch::MethodStore;
-use crate::null::NullProvider;
-use crate::traits::{Provider, ProviderInfo};
 #[cfg(feature = "legacy")]
 use crate::legacy::LegacyProvider;
+use crate::null::NullProvider;
+use crate::traits::{Provider, ProviderInfo};
 use openssl_common::OperationType;
 
 // =============================================================================
@@ -151,7 +151,10 @@ fn test_default_provider_full_lifecycle() {
     assert_eq!(info.name, "OpenSSL Default Provider");
     assert_eq!(info.version, "4.0.0");
     assert_eq!(info.build_info, "openssl-rs 4.0.0");
-    assert!(info.status, "Default provider should start with status=true");
+    assert!(
+        info.status,
+        "Default provider should start with status=true"
+    );
     assert!(
         provider.is_running(),
         "Default provider should be running after creation"
@@ -160,7 +163,10 @@ fn test_default_provider_full_lifecycle() {
     // --- Phase: Query operations ---
     // Default supports ALL 12 standard algorithm categories with default features.
     let digest_algos = provider.query_operation(OperationType::Digest);
-    assert!(digest_algos.is_some(), "Default provider must support Digest");
+    assert!(
+        digest_algos.is_some(),
+        "Default provider must support Digest"
+    );
     assert!(
         !digest_algos.unwrap().is_empty(),
         "Digest algorithms must be non-empty"
@@ -286,9 +292,7 @@ fn test_base_provider_full_lifecycle() {
         "Base provider must not support KeyMgmt"
     );
     assert!(
-        provider
-            .query_operation(OperationType::Signature)
-            .is_none(),
+        provider.query_operation(OperationType::Signature).is_none(),
         "Base provider must not support Signature"
     );
     assert!(
@@ -340,29 +344,17 @@ fn test_null_provider_full_lifecycle() {
     assert!(provider.query_operation(OperationType::Kdf).is_none());
     assert!(provider.query_operation(OperationType::Rand).is_none());
     assert!(provider.query_operation(OperationType::KeyMgmt).is_none());
-    assert!(
-        provider
-            .query_operation(OperationType::Signature)
-            .is_none()
-    );
-    assert!(
-        provider
-            .query_operation(OperationType::AsymCipher)
-            .is_none()
-    );
+    assert!(provider.query_operation(OperationType::Signature).is_none());
+    assert!(provider
+        .query_operation(OperationType::AsymCipher)
+        .is_none());
     assert!(provider.query_operation(OperationType::Kem).is_none());
     assert!(provider.query_operation(OperationType::KeyExch).is_none());
-    assert!(
-        provider
-            .query_operation(OperationType::EncoderDecoder)
-            .is_none()
-    );
+    assert!(provider
+        .query_operation(OperationType::EncoderDecoder)
+        .is_none());
     assert!(provider.query_operation(OperationType::Store).is_none());
-    assert!(
-        provider
-            .query_operation(OperationType::SKeyMgmt)
-            .is_none()
-    );
+    assert!(provider.query_operation(OperationType::SKeyMgmt).is_none());
 
     // --- Teardown (no-op for null) ---
     let result = provider.teardown();
@@ -408,23 +400,15 @@ fn test_legacy_provider_full_lifecycle() {
     assert!(provider.query_operation(OperationType::Mac).is_none());
     assert!(provider.query_operation(OperationType::Rand).is_none());
     assert!(provider.query_operation(OperationType::KeyMgmt).is_none());
-    assert!(
-        provider
-            .query_operation(OperationType::Signature)
-            .is_none()
-    );
-    assert!(
-        provider
-            .query_operation(OperationType::AsymCipher)
-            .is_none()
-    );
+    assert!(provider.query_operation(OperationType::Signature).is_none());
+    assert!(provider
+        .query_operation(OperationType::AsymCipher)
+        .is_none());
     assert!(provider.query_operation(OperationType::Kem).is_none());
     assert!(provider.query_operation(OperationType::KeyExch).is_none());
-    assert!(
-        provider
-            .query_operation(OperationType::EncoderDecoder)
-            .is_none()
-    );
+    assert!(provider
+        .query_operation(OperationType::EncoderDecoder)
+        .is_none());
     assert!(provider.query_operation(OperationType::Store).is_none());
 
     // --- Teardown ---
@@ -861,7 +845,10 @@ fn test_provider_teardown_idempotent() {
 
     // Second teardown — must also succeed (idempotent).
     let result2 = provider.teardown();
-    assert!(result2.is_ok(), "Second teardown must also succeed (idempotent)");
+    assert!(
+        result2.is_ok(),
+        "Second teardown must also succeed (idempotent)"
+    );
     assert!(!provider.is_running());
 
     // Also verify with Base provider.
@@ -917,11 +904,9 @@ fn test_provider_recreation_after_teardown() {
 
     let new_base = BaseProvider::new();
     assert!(new_base.is_running());
-    assert!(
-        new_base
-            .query_operation(OperationType::EncoderDecoder)
-            .is_some()
-    );
+    assert!(new_base
+        .query_operation(OperationType::EncoderDecoder)
+        .is_some());
 }
 
 /// Verifies that a method store can be re-populated after providers are
@@ -935,7 +920,10 @@ fn test_method_store_repopulate_after_teardown() {
     store.register_provider(&default_provider);
 
     let digests_before = store.enumerate_algorithms(OperationType::Digest);
-    assert!(!digests_before.is_empty(), "Digests must exist after first registration");
+    assert!(
+        !digests_before.is_empty(),
+        "Digests must exist after first registration"
+    );
 
     // --- Teardown and remove ---
     assert!(default_provider.teardown().is_ok());
@@ -967,11 +955,22 @@ fn test_provider_get_params_consistency() {
     let null = NullProvider::new();
 
     // Default provider params.
-    let default_params = default.get_params().expect("Default get_params must succeed");
+    let default_params = default
+        .get_params()
+        .expect("Default get_params must succeed");
     let gettable = default.gettable_params();
-    assert!(gettable.contains(&"name"), "Default must expose 'name' param");
-    assert!(gettable.contains(&"version"), "Default must expose 'version' param");
-    assert!(gettable.contains(&"status"), "Default must expose 'status' param");
+    assert!(
+        gettable.contains(&"name"),
+        "Default must expose 'name' param"
+    );
+    assert!(
+        gettable.contains(&"version"),
+        "Default must expose 'version' param"
+    );
+    assert!(
+        gettable.contains(&"status"),
+        "Default must expose 'status' param"
+    );
 
     // Base provider params.
     let base_params = base.get_params().expect("Base get_params must succeed");
@@ -982,7 +981,10 @@ fn test_provider_get_params_consistency() {
     // Null provider params.
     let null_params = null.get_params().expect("Null get_params must succeed");
     let null_gettable = null.gettable_params();
-    assert!(!null_gettable.is_empty(), "Null provider must expose some params");
+    assert!(
+        !null_gettable.is_empty(),
+        "Null provider must expose some params"
+    );
 
     // Suppress unused-variable warnings by asserting the params exist.
     drop(default_params);

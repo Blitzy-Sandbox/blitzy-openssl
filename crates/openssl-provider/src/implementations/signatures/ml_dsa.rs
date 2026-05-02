@@ -83,7 +83,9 @@ use std::sync::Arc;
 use tracing::{debug, trace, warn};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use openssl_common::{CommonError, CryptoError, ParamSet, ParamValue, ProviderError, ProviderResult};
+use openssl_common::{
+    CommonError, CryptoError, ParamSet, ParamValue, ProviderError, ProviderResult,
+};
 use openssl_crypto::context::LibContext;
 use openssl_crypto::pqc::ml_dsa::{
     ml_dsa_params_get, ml_dsa_sign, ml_dsa_verify, MlDsaKey, MlDsaParams,
@@ -596,12 +598,8 @@ impl MlDsaSignatureContext {
     fn parse_key_for_signing(&self, key: &[u8]) -> ProviderResult<Arc<MlDsaKey>> {
         let params = self.variant.params();
         if key.len() == params.sk_len {
-            let parsed = MlDsaKey::from_private(
-                key,
-                params,
-                Arc::clone(&self.lib_ctx),
-            )
-            .map_err(dispatch_err)?;
+            let parsed = MlDsaKey::from_private(key, params, Arc::clone(&self.lib_ctx))
+                .map_err(dispatch_err)?;
             Ok(Arc::new(parsed))
         } else {
             warn!(
@@ -610,12 +608,14 @@ impl MlDsaSignatureContext {
                 expected_priv_len = params.sk_len,
                 "ml-dsa: signing requires the private encoding"
             );
-            Err(ProviderError::Common(CommonError::InvalidArgument(format!(
-                "ML-DSA {} signing requires a {}-byte private key (got {} bytes)",
-                self.variant.name(),
-                params.sk_len,
-                key.len()
-            ))))
+            Err(ProviderError::Common(CommonError::InvalidArgument(
+                format!(
+                    "ML-DSA {} signing requires a {}-byte private key (got {} bytes)",
+                    self.variant.name(),
+                    params.sk_len,
+                    key.len()
+                ),
+            )))
         }
     }
 
@@ -624,20 +624,12 @@ impl MlDsaSignatureContext {
     fn parse_key_for_verify(&self, key: &[u8]) -> ProviderResult<Arc<MlDsaKey>> {
         let params = self.variant.params();
         if key.len() == params.pk_len {
-            let parsed = MlDsaKey::from_public(
-                key,
-                params,
-                Arc::clone(&self.lib_ctx),
-            )
-            .map_err(dispatch_err)?;
+            let parsed = MlDsaKey::from_public(key, params, Arc::clone(&self.lib_ctx))
+                .map_err(dispatch_err)?;
             Ok(Arc::new(parsed))
         } else if key.len() == params.sk_len {
-            let parsed = MlDsaKey::from_private(
-                key,
-                params,
-                Arc::clone(&self.lib_ctx),
-            )
-            .map_err(dispatch_err)?;
+            let parsed = MlDsaKey::from_private(key, params, Arc::clone(&self.lib_ctx))
+                .map_err(dispatch_err)?;
             Ok(Arc::new(parsed))
         } else {
             warn!(
@@ -647,13 +639,15 @@ impl MlDsaSignatureContext {
                 expected_priv_len = params.sk_len,
                 "ml-dsa: verify key length unrecognised"
             );
-            Err(ProviderError::Common(CommonError::InvalidArgument(format!(
+            Err(ProviderError::Common(CommonError::InvalidArgument(
+                format!(
                 "ML-DSA {} verify requires {}-byte public or {}-byte private key (got {} bytes)",
                 self.variant.name(),
                 params.pk_len,
                 params.sk_len,
                 key.len()
-            ))))
+            ),
+            )))
         }
     }
 
@@ -696,15 +690,12 @@ impl MlDsaSignatureContext {
                 "ml-dsa: µ-mode signing is not supported by this provider build"
             );
             return Err(ProviderError::Common(CommonError::Unsupported(
-                "ML-DSA µ-mode signing is not yet wired through the crypto crate"
-                    .to_string(),
+                "ML-DSA µ-mode signing is not yet wired through the crypto crate".to_string(),
             )));
         }
 
         let key = self.key.clone().ok_or_else(|| {
-            ProviderError::Init(
-                "ml-dsa: sign called before sign_init loaded a key".to_string(),
-            )
+            ProviderError::Init("ml-dsa: sign called before sign_init loaded a key".to_string())
         })?;
 
         // Build the entropy reference passed to the crypto crate.
@@ -713,7 +704,8 @@ impl MlDsaSignatureContext {
         //   2. deterministic flag → all-zero nonce
         //   3. neither → None, crypto crate draws from the library RNG.
         let zero_entropy: [u8; ML_DSA_ENTROPY_LEN];
-        let add_random: Option<&[u8; ML_DSA_ENTROPY_LEN]> = if let Some(ref te) = self.test_entropy {
+        let add_random: Option<&[u8; ML_DSA_ENTROPY_LEN]> = if let Some(ref te) = self.test_entropy
+        {
             Some(te)
         } else if self.deterministic {
             zero_entropy = [0u8; ML_DSA_ENTROPY_LEN];
@@ -765,8 +757,7 @@ impl MlDsaSignatureContext {
                 "ml-dsa: µ-mode verification is not supported by this provider build"
             );
             return Err(ProviderError::Common(CommonError::Unsupported(
-                "ML-DSA µ-mode verification is not yet wired through the crypto crate"
-                    .to_string(),
+                "ML-DSA µ-mode verification is not yet wired through the crypto crate".to_string(),
             )));
         }
 
@@ -784,9 +775,7 @@ impl MlDsaSignatureContext {
         }
 
         let key = self.key.clone().ok_or_else(|| {
-            ProviderError::Init(
-                "ml-dsa: verify called before verify_init loaded a key".to_string(),
-            )
+            ProviderError::Init("ml-dsa: verify called before verify_init loaded a key".to_string())
         })?;
 
         let context = self.context_string.as_deref().unwrap_or(&[]);
@@ -948,10 +937,7 @@ impl MlDsaSignatureContext {
             "message-encoding",
             ParamValue::Int32(self.msg_encode.as_i32()),
         );
-        out.set(
-            "mu",
-            ParamValue::Int32(i32::from(u8::from(self.mu_mode))),
-        );
+        out.set("mu", ParamValue::Int32(i32::from(u8::from(self.mu_mode))));
         out.set(
             "security-bits",
             ParamValue::Int32(self.variant.security_bits()),
@@ -1002,8 +988,7 @@ impl MlDsaSignatureContext {
                 "ml-dsa: digest_sign called without digest_sign_init"
             );
             return Err(ProviderError::Init(
-                "ml-dsa: digest_sign called without digest_sign_init"
-                    .to_string(),
+                "ml-dsa: digest_sign called without digest_sign_init".to_string(),
             ));
         }
         debug!(
@@ -1042,19 +1027,14 @@ impl MlDsaSignatureContext {
     ///   self-test deferral failure, key inconsistency).
     ///
     /// [`crate::pqc::ml_dsa::ml_dsa_verify`]: openssl_crypto::pqc::ml_dsa::ml_dsa_verify
-    pub fn digest_verify(
-        &mut self,
-        message: &[u8],
-        signature: &[u8],
-    ) -> ProviderResult<bool> {
+    pub fn digest_verify(&mut self, message: &[u8], signature: &[u8]) -> ProviderResult<bool> {
         if self.operation != Some(OperationMode::Verify) {
             warn!(
                 algorithm = self.variant.name(),
                 "ml-dsa: digest_verify called without digest_verify_init"
             );
             return Err(ProviderError::Init(
-                "ml-dsa: digest_verify called without digest_verify_init"
-                    .to_string(),
+                "ml-dsa: digest_verify called without digest_verify_init".to_string(),
             ));
         }
         debug!(
@@ -1378,10 +1358,7 @@ impl SignatureContext for MlDsaSignatureContext {
             "message-encoding",
             ParamValue::Int32(self.msg_encode.as_i32()),
         );
-        out.set(
-            "mu",
-            ParamValue::Int32(i32::from(u8::from(self.mu_mode))),
-        );
+        out.set("mu", ParamValue::Int32(i32::from(u8::from(self.mu_mode))));
         out.set(
             "security-bits",
             ParamValue::Int32(self.variant.security_bits()),
@@ -1805,10 +1782,7 @@ mod tests {
     fn set_ctx_params_accepts_context_string() {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
         let mut p = ParamSet::new();
-        p.set(
-            "context-string",
-            ParamValue::OctetString(b"hello".to_vec()),
-        );
+        p.set("context-string", ParamValue::OctetString(b"hello".to_vec()));
         ctx.set_ctx_params(&p).unwrap();
         assert_eq!(ctx.context_string.as_deref(), Some(b"hello".as_slice()));
     }
@@ -1908,12 +1882,12 @@ mod tests {
     fn set_ctx_params_accepts_signature_cache() {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
         let mut p = ParamSet::new();
-        p.set(
-            "signature",
-            ParamValue::OctetString(vec![0xEE; 64]),
-        );
+        p.set("signature", ParamValue::OctetString(vec![0xEE; 64]));
         ctx.set_ctx_params(&p).unwrap();
-        assert_eq!(ctx.cached_signature.as_deref(), Some(vec![0xEE; 64].as_slice()));
+        assert_eq!(
+            ctx.cached_signature.as_deref(),
+            Some(vec![0xEE; 64].as_slice())
+        );
     }
 
     #[test]
@@ -1926,10 +1900,7 @@ mod tests {
     fn set_ctx_params_rejects_type_mismatch() {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
         let mut p = ParamSet::new();
-        p.set(
-            "deterministic",
-            ParamValue::Utf8String("yes".to_string()),
-        );
+        p.set("deterministic", ParamValue::Utf8String("yes".to_string()));
         let err = ctx.set_ctx_params(&p).unwrap_err();
         assert!(matches!(
             err,
@@ -2003,34 +1974,23 @@ mod tests {
     #[test]
     fn verify_without_init_returns_init_error() {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
-        let err =
-            SignatureContext::verify(&mut ctx, b"msg", &vec![0u8; 2420]).unwrap_err();
+        let err = SignatureContext::verify(&mut ctx, b"msg", &vec![0u8; 2420]).unwrap_err();
         assert!(matches!(err, ProviderError::Init(_)));
     }
 
     #[test]
     fn digest_sign_init_rejects_external_digest() {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
-        let err = SignatureContext::digest_sign_init(
-            &mut ctx,
-            "SHA-512",
-            &[0u8; 10],
-            None,
-        )
-        .unwrap_err();
+        let err =
+            SignatureContext::digest_sign_init(&mut ctx, "SHA-512", &[0u8; 10], None).unwrap_err();
         assert!(matches!(err, ProviderError::Dispatch(_)));
     }
 
     #[test]
     fn digest_verify_init_rejects_external_digest() {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
-        let err = SignatureContext::digest_verify_init(
-            &mut ctx,
-            "SHAKE256",
-            &[0u8; 10],
-            None,
-        )
-        .unwrap_err();
+        let err = SignatureContext::digest_verify_init(&mut ctx, "SHAKE256", &[0u8; 10], None)
+            .unwrap_err();
         assert!(matches!(err, ProviderError::Dispatch(_)));
     }
 
@@ -2039,8 +1999,7 @@ mod tests {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
         // Empty digest is allowed; key validation then fails with the
         // length-mismatch error path.
-        let err = SignatureContext::digest_sign_init(&mut ctx, "", &[0u8; 10], None)
-            .unwrap_err();
+        let err = SignatureContext::digest_sign_init(&mut ctx, "", &[0u8; 10], None).unwrap_err();
         assert!(matches!(
             err,
             ProviderError::Common(CommonError::InvalidArgument(_))
@@ -2050,8 +2009,7 @@ mod tests {
     #[test]
     fn digest_sign_update_without_init_errors() {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
-        let err =
-            SignatureContext::digest_sign_update(&mut ctx, b"chunk").unwrap_err();
+        let err = SignatureContext::digest_sign_update(&mut ctx, b"chunk").unwrap_err();
         assert!(matches!(err, ProviderError::Init(_)));
     }
 
@@ -2065,17 +2023,14 @@ mod tests {
     #[test]
     fn digest_verify_update_without_init_errors() {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
-        let err =
-            SignatureContext::digest_verify_update(&mut ctx, b"chunk").unwrap_err();
+        let err = SignatureContext::digest_verify_update(&mut ctx, b"chunk").unwrap_err();
         assert!(matches!(err, ProviderError::Init(_)));
     }
 
     #[test]
     fn digest_verify_final_without_init_errors() {
         let mut ctx = make_ctx(MlDsaVariant::MlDsa44);
-        let err =
-            SignatureContext::digest_verify_final(&mut ctx, &vec![0u8; 2420])
-                .unwrap_err();
+        let err = SignatureContext::digest_verify_final(&mut ctx, &vec![0u8; 2420]).unwrap_err();
         assert!(matches!(err, ProviderError::Init(_)));
     }
 

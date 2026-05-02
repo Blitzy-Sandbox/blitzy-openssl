@@ -690,7 +690,11 @@ mod tests {
         let critical = RCT_CRITICAL[ENTROPY_H];
         let repeated: Vec<u8> = vec![0x42; critical as usize];
         let result = crng.get_seed(&repeated);
-        assert!(result.is_err(), "RCT should fail after {} identical bytes", critical);
+        assert!(
+            result.is_err(),
+            "RCT should fail after {} identical bytes",
+            critical
+        );
         assert_eq!(crng.state, RandState::Error);
     }
 
@@ -717,7 +721,11 @@ mod tests {
         }
 
         let result = crng.get_seed(&data);
-        assert!(result.is_err(), "APT should fail after {} matching samples", critical);
+        assert!(
+            result.is_err(),
+            "APT should fail after {} matching samples",
+            critical
+        );
         assert_eq!(crng.state, RandState::Error);
     }
 
@@ -795,7 +803,11 @@ mod tests {
         let just_below = RCT_CRITICAL[ENTROPY_H] - 1;
         let repeated: Vec<u8> = vec![0x42; just_below as usize];
         let result = crng.get_seed(&repeated);
-        assert!(result.is_ok(), "RCT should pass for {} identical bytes", just_below);
+        assert!(
+            result.is_ok(),
+            "RCT should pass for {} identical bytes",
+            just_below
+        );
     }
 
     /// Verify that APT window resets correctly after completion.

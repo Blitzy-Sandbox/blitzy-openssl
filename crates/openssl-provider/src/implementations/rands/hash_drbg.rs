@@ -14,7 +14,7 @@
 //! Source: `providers/implementations/rands/drbg_hash.c`
 
 use crate::traits::{RandContext, RandProvider};
-use digest::{DynDigest, Digest};
+use digest::{Digest, DynDigest};
 use openssl_common::error::{ProviderError, ProviderResult};
 use tracing::{debug, trace};
 use zeroize::Zeroize;
@@ -84,9 +84,8 @@ fn strength_for_digest(name: &str) -> ProviderResult<u32> {
     match name {
         "SHA-1" | "SHA1" => Ok(128),
         "SHA-224" | "SHA2-224" | "SHA-512/224" | "SHA2-512/224" | "SHA3-224" => Ok(192),
-        "SHA-256" | "SHA2-256" | "SHA-512/256" | "SHA2-512/256" | "SHA3-256"
-        | "SHA-384" | "SHA2-384" | "SHA3-384"
-        | "SHA-512" | "SHA2-512" | "SHA3-512" => Ok(256),
+        "SHA-256" | "SHA2-256" | "SHA-512/256" | "SHA2-512/256" | "SHA3-256" | "SHA-384"
+        | "SHA2-384" | "SHA3-384" | "SHA-512" | "SHA2-512" | "SHA3-512" => Ok(256),
         _ => Err(ProviderError::Init(format!(
             "Unsupported digest for Hash-DRBG: '{name}'"
         ))),
@@ -225,12 +224,7 @@ impl HashDrbg {
     /// ```
     ///
     /// Replaces C `hash_df()` from `drbg_hash.c`.
-    fn hash_df(
-        &self,
-        out: &mut [u8],
-        inbyte: Option<u8>,
-        inputs: &[&[u8]],
-    ) -> ProviderResult<()> {
+    fn hash_df(&self, out: &mut [u8], inbyte: Option<u8>, inputs: &[&[u8]]) -> ProviderResult<()> {
         let out_len = out.len();
         let no_of_bits_to_return = u32::try_from(out_len.checked_mul(8).ok_or_else(|| {
             ProviderError::Init("Hash-DRBG hash_df: output length overflow".into())
@@ -475,11 +469,7 @@ impl DrbgMechanism for HashDrbg {
         // V = Hash_df(0x01 || V || entropy || additional, seedlen)
         let v_snapshot = self.v[..self.seedlen].to_vec();
         let mut v_buf = vec![0u8; self.seedlen];
-        self.hash_df(
-            &mut v_buf,
-            Some(0x01),
-            &[&v_snapshot, entropy, additional],
-        )?;
+        self.hash_df(&mut v_buf, Some(0x01), &[&v_snapshot, entropy, additional])?;
         self.v[..self.seedlen].copy_from_slice(&v_buf[..self.seedlen]);
 
         // C = Hash_df(0x00 || V, seedlen)
@@ -536,8 +526,8 @@ impl DrbgMechanism for HashDrbg {
         Self::add_bytes(&mut self.v[..self.seedlen], &c_snapshot);
 
         // Add reseed_counter as 4-byte big-endian (matching C drbg_hash_generate)
-        let counter_u32 = u32::try_from(self.reseed_counter.min(u64::from(u32::MAX)))
-            .unwrap_or(u32::MAX);
+        let counter_u32 =
+            u32::try_from(self.reseed_counter.min(u64::from(u32::MAX))).unwrap_or(u32::MAX);
         let counter_bytes = counter_u32.to_be_bytes();
         Self::add_bytes(&mut self.v[..self.seedlen], &counter_bytes);
 
@@ -735,16 +725,25 @@ mod tests {
 
         // Instantiate
         drbg.instantiate(&entropy, &nonce, pers).unwrap();
-        assert!(!drbg.verify_zeroization(), "V/C should not be zero after instantiate");
+        assert!(
+            !drbg.verify_zeroization(),
+            "V/C should not be zero after instantiate"
+        );
 
         // Generate
         let mut output = [0u8; 64];
         drbg.generate(&mut output, &[]).unwrap();
-        assert!(output.iter().any(|&b| b != 0), "output should not be all zeros");
+        assert!(
+            output.iter().any(|&b| b != 0),
+            "output should not be all zeros"
+        );
 
         // Uninstantiate
         drbg.uninstantiate();
-        assert!(drbg.verify_zeroization(), "V/C/vtmp should be zero after uninstantiate");
+        assert!(
+            drbg.verify_zeroization(),
+            "V/C/vtmp should be zero after uninstantiate"
+        );
     }
 
     /// Verify that reseed changes internal state.
@@ -823,7 +822,10 @@ mod tests {
         drbg.hash_df(&mut out2, None, &[input.as_slice()]).unwrap();
 
         assert_eq!(out1, out2, "hash_df should be deterministic");
-        assert!(out1.iter().any(|&b| b != 0), "hash_df output should not be all zeros");
+        assert!(
+            out1.iter().any(|&b| b != 0),
+            "hash_df output should not be all zeros"
+        );
     }
 
     /// Verify hash_df with inbyte differs from without.

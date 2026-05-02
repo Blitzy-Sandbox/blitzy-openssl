@@ -426,7 +426,10 @@ mod tests {
     fn descriptors_returns_non_empty() {
         let descs = descriptors();
         // At minimum, the null cipher is always included
-        assert!(!descs.is_empty(), "descriptors() must return at least the NULL cipher");
+        assert!(
+            !descs.is_empty(),
+            "descriptors() must return at least the NULL cipher"
+        );
     }
 
     /// Verify that all descriptors have non-empty names.
@@ -434,9 +437,15 @@ mod tests {
     fn all_descriptors_have_valid_names() {
         let descs = descriptors();
         for desc in &descs {
-            assert!(!desc.names.is_empty(), "Every descriptor must have at least one name");
+            assert!(
+                !desc.names.is_empty(),
+                "Every descriptor must have at least one name"
+            );
             for name in &desc.names {
-                assert!(!name.is_empty(), "Algorithm names must not be empty strings");
+                assert!(
+                    !name.is_empty(),
+                    "Algorithm names must not be empty strings"
+                );
             }
         }
     }

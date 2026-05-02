@@ -491,62 +491,52 @@ fn create_core_provider(name: &str) -> Option<Box<dyn DigestProvider>> {
         // SHA-1 family (160-bit, 64-byte block)
         // C names: "SHA1", "SHA-1", "SSL3-SHA1"
         // ---------------------------------------------------------------
-        "SHA-1" | "SHA1" | "SSL3-SHA1" => {
-            Some(Box::new(sha1::Sha1Provider))
-        }
+        "SHA-1" | "SHA1" | "SSL3-SHA1" => Some(Box::new(sha1::Sha1Provider)),
 
         // ---------------------------------------------------------------
         // SHA-2 family — 256-bit state variants
         // Uses Sha256Provider with Sha256Variant enum
         // ---------------------------------------------------------------
-        "SHA2-224" | "SHA-224" | "SHA224" => {
-            Some(Box::new(sha2::Sha256Provider::new(sha2::Sha256Variant::Sha224)))
-        }
-        "SHA2-256" | "SHA-256" | "SHA256" => {
-            Some(Box::new(sha2::Sha256Provider::new(sha2::Sha256Variant::Sha256)))
-        }
+        "SHA2-224" | "SHA-224" | "SHA224" => Some(Box::new(sha2::Sha256Provider::new(
+            sha2::Sha256Variant::Sha224,
+        ))),
+        "SHA2-256" | "SHA-256" | "SHA256" => Some(Box::new(sha2::Sha256Provider::new(
+            sha2::Sha256Variant::Sha256,
+        ))),
 
         // ---------------------------------------------------------------
         // SHA-2 family — 512-bit state variants
         // Uses Sha512Provider with Sha512Variant enum
         // ---------------------------------------------------------------
-        "SHA2-384" | "SHA-384" | "SHA384" => {
-            Some(Box::new(sha2::Sha512Provider::new(sha2::Sha512Variant::Sha384)))
-        }
-        "SHA2-512" | "SHA-512" | "SHA512" => {
-            Some(Box::new(sha2::Sha512Provider::new(sha2::Sha512Variant::Sha512)))
-        }
-        "SHA2-512/224" | "SHA-512/224" | "SHA512-224" => {
-            Some(Box::new(sha2::Sha512Provider::new(sha2::Sha512Variant::Sha512_224)))
-        }
-        "SHA2-512/256" | "SHA-512/256" | "SHA512-256" => {
-            Some(Box::new(sha2::Sha512Provider::new(sha2::Sha512Variant::Sha512_256)))
-        }
+        "SHA2-384" | "SHA-384" | "SHA384" => Some(Box::new(sha2::Sha512Provider::new(
+            sha2::Sha512Variant::Sha384,
+        ))),
+        "SHA2-512" | "SHA-512" | "SHA512" => Some(Box::new(sha2::Sha512Provider::new(
+            sha2::Sha512Variant::Sha512,
+        ))),
+        "SHA2-512/224" | "SHA-512/224" | "SHA512-224" => Some(Box::new(sha2::Sha512Provider::new(
+            sha2::Sha512Variant::Sha512_224,
+        ))),
+        "SHA2-512/256" | "SHA-512/256" | "SHA512-256" => Some(Box::new(sha2::Sha512Provider::new(
+            sha2::Sha512Variant::Sha512_256,
+        ))),
 
         // ---------------------------------------------------------------
         // MD5 family (128-bit, 64-byte block)
         // ---------------------------------------------------------------
-        "MD5" | "SSL3-MD5" => {
-            Some(Box::new(md5::Md5Provider))
-        }
+        "MD5" | "SSL3-MD5" => Some(Box::new(md5::Md5Provider)),
         // MD5-SHA1 composite (288-bit / 36-byte output)
-        "MD5-SHA1" => {
-            Some(Box::new(md5::Md5Sha1Provider))
-        }
+        "MD5-SHA1" => Some(Box::new(md5::Md5Sha1Provider)),
 
         // ---------------------------------------------------------------
         // RIPEMD-160 (160-bit, 64-byte block)
         // ---------------------------------------------------------------
-        "RIPEMD-160" | "RIPEMD160" | "RIPEMD" => {
-            Some(Box::new(ripemd::Ripemd160Provider))
-        }
+        "RIPEMD-160" | "RIPEMD160" | "RIPEMD" => Some(Box::new(ripemd::Ripemd160Provider)),
 
         // ---------------------------------------------------------------
         // NULL digest (0-bit, 0-byte block) — passthrough sentinel
         // ---------------------------------------------------------------
-        "NULL" => {
-            Some(Box::new(null::NullDigestProvider))
-        }
+        "NULL" => Some(Box::new(null::NullDigestProvider)),
 
         // ---------------------------------------------------------------
         // ML-DSA mu hash — SHAKE256-based (64-byte output)
@@ -586,12 +576,8 @@ fn create_sha3_provider(name: &str) -> Option<Box<dyn DigestProvider>> {
         "KECCAK-512" => Some(Box::new(sha3::KeccakProvider::new(512))),
 
         // KECCAK-KMAC (used by KMAC-128 and KMAC-256)
-        "KECCAK-KMAC-128" | "KECCAK-KMAC128" => {
-            Some(Box::new(sha3::KeccakKmacProvider::new(128)))
-        }
-        "KECCAK-KMAC-256" | "KECCAK-KMAC256" => {
-            Some(Box::new(sha3::KeccakKmacProvider::new(256)))
-        }
+        "KECCAK-KMAC-128" | "KECCAK-KMAC128" => Some(Box::new(sha3::KeccakKmacProvider::new(128))),
+        "KECCAK-KMAC-256" | "KECCAK-KMAC256" => Some(Box::new(sha3::KeccakKmacProvider::new(256))),
 
         // cSHAKE customizable XOF (NIST SP 800-185)
         "CSHAKE-128" | "CSHAKE128" => Some(Box::new(sha3::CshakeProvider::new(128))),
@@ -609,12 +595,8 @@ fn create_sha3_provider(name: &str) -> Option<Box<dyn DigestProvider>> {
 #[cfg(feature = "blake2")]
 fn create_blake2_provider(name: &str) -> Option<Box<dyn DigestProvider>> {
     match name {
-        "BLAKE2B-512" | "BLAKE2B512" => {
-            Some(Box::new(blake2::Blake2bProvider))
-        }
-        "BLAKE2S-256" | "BLAKE2S256" => {
-            Some(Box::new(blake2::Blake2sProvider))
-        }
+        "BLAKE2B-512" | "BLAKE2B512" => Some(Box::new(blake2::Blake2bProvider)),
+        "BLAKE2S-256" | "BLAKE2S256" => Some(Box::new(blake2::Blake2sProvider)),
         _ => None,
     }
 }
@@ -754,19 +736,35 @@ mod tests {
     #[test]
     fn test_provider_digest_sizes() {
         if let Some(sha1) = create_provider("SHA-1") {
-            assert_eq!(sha1.digest_size(), 20, "SHA-1 digest size should be 20 bytes");
+            assert_eq!(
+                sha1.digest_size(),
+                20,
+                "SHA-1 digest size should be 20 bytes"
+            );
         }
         if let Some(sha256) = create_provider("SHA-256") {
-            assert_eq!(sha256.digest_size(), 32, "SHA-256 digest size should be 32 bytes");
+            assert_eq!(
+                sha256.digest_size(),
+                32,
+                "SHA-256 digest size should be 32 bytes"
+            );
         }
         if let Some(sha512) = create_provider("SHA-512") {
-            assert_eq!(sha512.digest_size(), 64, "SHA-512 digest size should be 64 bytes");
+            assert_eq!(
+                sha512.digest_size(),
+                64,
+                "SHA-512 digest size should be 64 bytes"
+            );
         }
         if let Some(md5) = create_provider("MD5") {
             assert_eq!(md5.digest_size(), 16, "MD5 digest size should be 16 bytes");
         }
         if let Some(null_d) = create_provider("NULL") {
-            assert_eq!(null_d.digest_size(), 0, "NULL digest size should be 0 bytes");
+            assert_eq!(
+                null_d.digest_size(),
+                0,
+                "NULL digest size should be 0 bytes"
+            );
         }
     }
 
@@ -774,10 +772,18 @@ mod tests {
     #[test]
     fn test_provider_block_sizes() {
         if let Some(sha256) = create_provider("SHA-256") {
-            assert_eq!(sha256.block_size(), 64, "SHA-256 block size should be 64 bytes");
+            assert_eq!(
+                sha256.block_size(),
+                64,
+                "SHA-256 block size should be 64 bytes"
+            );
         }
         if let Some(sha512) = create_provider("SHA-512") {
-            assert_eq!(sha512.block_size(), 128, "SHA-512 block size should be 128 bytes");
+            assert_eq!(
+                sha512.block_size(),
+                128,
+                "SHA-512 block size should be 128 bytes"
+            );
         }
         if let Some(null_d) = create_provider("NULL") {
             assert_eq!(null_d.block_size(), 0, "NULL block size should be 0 bytes");
@@ -824,8 +830,16 @@ mod tests {
     fn test_md5_sha1_composite() {
         if let Some(md5_sha1) = create_provider("MD5-SHA1") {
             // MD5 (16 bytes) + SHA-1 (20 bytes) = 36 bytes composite
-            assert_eq!(md5_sha1.digest_size(), 36, "MD5-SHA1 should produce 36-byte output");
-            assert_eq!(md5_sha1.block_size(), 64, "MD5-SHA1 block size should be 64");
+            assert_eq!(
+                md5_sha1.digest_size(),
+                36,
+                "MD5-SHA1 should produce 36-byte output"
+            );
+            assert_eq!(
+                md5_sha1.block_size(),
+                64,
+                "MD5-SHA1 block size should be 64"
+            );
         }
     }
 
@@ -833,8 +847,16 @@ mod tests {
     #[test]
     fn test_ripemd160_sizes() {
         if let Some(ripemd) = create_provider("RIPEMD-160") {
-            assert_eq!(ripemd.digest_size(), 20, "RIPEMD-160 digest should be 20 bytes");
-            assert_eq!(ripemd.block_size(), 64, "RIPEMD-160 block should be 64 bytes");
+            assert_eq!(
+                ripemd.digest_size(),
+                20,
+                "RIPEMD-160 digest should be 20 bytes"
+            );
+            assert_eq!(
+                ripemd.block_size(),
+                64,
+                "RIPEMD-160 block should be 64 bytes"
+            );
         }
     }
 }

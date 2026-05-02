@@ -140,9 +140,7 @@ const SBOX: [u8; 256] = [
 ];
 
 /// AES round constants for key expansion (FIPS 197 §5.2).
-const RCON: [u8; 10] = [
-    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36,
-];
+const RCON: [u8; 10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36];
 
 /// Apply the S-box to each byte of a 32-bit word.
 fn sub_word(word: u32) -> u32 {
@@ -248,9 +246,9 @@ impl AesKey {
     /// Returns [`ProviderError::Init`] if the key length is not 16, 24, or 32.
     fn new(key: &[u8]) -> ProviderResult<Self> {
         let (nk, nr) = match key.len() {
-            16 => (4, 10),  // AES-128
-            24 => (6, 12),  // AES-192
-            32 => (8, 14),  // AES-256
+            16 => (4, 10), // AES-128
+            24 => (6, 12), // AES-192
+            32 => (8, 14), // AES-256
             other => {
                 return Err(ProviderError::Init(format!(
                     "Invalid AES key length: {other} bytes (expected 16, 24, or 32)"
@@ -298,7 +296,10 @@ impl AesKey {
             round_keys.push(rk);
         }
 
-        Ok(Self { round_keys, num_rounds: nr })
+        Ok(Self {
+            round_keys,
+            num_rounds: nr,
+        })
     }
 
     /// Encrypt a single 128-bit block using the AES cipher.
@@ -350,8 +351,7 @@ impl Drop for AesKey {
 /// R = 11100001 || 0^120 (the bit-reflected representation of the
 /// polynomial x^128 + x^7 + x^2 + x + 1).
 const GF128_R: [u8; AES_BLOCK_SIZE] = [
-    0xE1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xE1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
 /// XOR two 128-bit blocks in place: `a ^= b`.
@@ -772,9 +772,7 @@ impl MacContext for GmacContext {
 
         // Validate that a GCM cipher has been configured
         let cipher_name = self.cipher_name.as_ref().ok_or_else(|| {
-            ProviderError::Init(
-                "GMAC requires a GCM cipher to be set before init".to_string(),
-            )
+            ProviderError::Init("GMAC requires a GCM cipher to be set before init".to_string())
         })?;
         validate_gcm_mode(cipher_name)?;
         debug!(cipher = %cipher_name, "GMAC init: validated GCM cipher");

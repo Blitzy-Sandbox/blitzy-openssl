@@ -929,8 +929,7 @@ pub fn decode_with_context(
         // suggested cleansing happened automatically; this rewrite
         // closes the LOW/SECURITY-DOC L923 finding by making the
         // cleanse contract explicit and enforced by the type system.
-        let passphrase_bytes: Zeroizing<Vec<u8>> =
-            Zeroizing::new(cb.get_passphrase(&prompt)?);
+        let passphrase_bytes: Zeroizing<Vec<u8>> = Zeroizing::new(cb.get_passphrase(&prompt)?);
 
         // The header text is embedded in the PEM block when RFC 1421
         // is used; pem-rfc7468 will have rejected it, so we fell

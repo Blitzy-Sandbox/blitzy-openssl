@@ -28,8 +28,8 @@ use std::path::PathBuf;
 use openssl_common::error::{CommonError, ProviderError, ProviderResult};
 use tracing::{debug, warn};
 
-use crate::traits::{AlgorithmDescriptor, StoreContext, StoreObject, StoreProvider};
 use super::any2obj::{self, Any2ObjContext, DecodedObject, InputFormat};
+use crate::traits::{AlgorithmDescriptor, StoreContext, StoreObject, StoreProvider};
 
 // =============================================================================
 // Constants
@@ -261,9 +261,7 @@ impl StoreProvider for FileStore {
         } else {
             debug!(path = %path.display(), "FileStore::open — file mode");
             // Read file content into memory (replaces C BIO_new_file + BIO_read).
-            let data = fs::read(&path).map_err(|e| {
-                ProviderError::Common(CommonError::from(e))
-            })?;
+            let data = fs::read(&path).map_err(|e| ProviderError::Common(CommonError::from(e)))?;
             let ctx = FileStoreContext {
                 uri: uri.to_string(),
                 mode: StoreMode::File,
@@ -571,9 +569,8 @@ impl FileStoreContext {
                 "FileStoreContext::load_dir_entry — reading directory"
             );
             let mut entry_paths: Vec<PathBuf> = Vec::new();
-            let read_dir = fs::read_dir(dir_path.as_path()).map_err(|e| {
-                ProviderError::Common(CommonError::from(e))
-            })?;
+            let read_dir = fs::read_dir(dir_path.as_path())
+                .map_err(|e| ProviderError::Common(CommonError::from(e)))?;
 
             for entry_result in read_dir {
                 match entry_result {
@@ -739,11 +736,7 @@ fn parse_file_uri(uri: &str) -> ProviderResult<PathBuf> {
 fn normalize_file_path(path: &str) -> PathBuf {
     // Windows drive letter: /C:/path → C:/path
     let bytes = path.as_bytes();
-    if bytes.len() >= 3
-        && bytes[0] == b'/'
-        && bytes[1].is_ascii_alphabetic()
-        && bytes[2] == b':'
-    {
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
         return PathBuf::from(&path[1..]);
     }
 
@@ -906,9 +899,7 @@ fn map_decoded_to_store_object(
         any2obj::ObjectType::Pkey => {
             // Check expected type filter.
             match expected_type {
-                ExpectedType::Unspecified
-                | ExpectedType::PubKey
-                | ExpectedType::PrivateKey => {
+                ExpectedType::Unspecified | ExpectedType::PubKey | ExpectedType::PrivateKey => {
                     // Return certificate bytes as a generic key representation.
                     // The actual key parsing is deferred to higher-level code.
                     Some(StoreObject::Certificate(decoded.data.clone()))
@@ -916,14 +907,12 @@ fn map_decoded_to_store_object(
                 _ => None,
             }
         }
-        any2obj::ObjectType::Skey => {
-            match expected_type {
-                ExpectedType::Unspecified | ExpectedType::SymmetricKey => {
-                    Some(StoreObject::Certificate(decoded.data.clone()))
-                }
-                _ => None,
+        any2obj::ObjectType::Skey => match expected_type {
+            ExpectedType::Unspecified | ExpectedType::SymmetricKey => {
+                Some(StoreObject::Certificate(decoded.data.clone()))
             }
-        }
+            _ => None,
+        },
         any2obj::ObjectType::Unknown => {
             // Try to classify by data structure hint.
             match data_structure {
@@ -1052,12 +1041,18 @@ mod tests {
 
     #[test]
     fn test_normalize_unix_path() {
-        assert_eq!(normalize_file_path("/usr/local/cert.pem"), PathBuf::from("/usr/local/cert.pem"));
+        assert_eq!(
+            normalize_file_path("/usr/local/cert.pem"),
+            PathBuf::from("/usr/local/cert.pem")
+        );
     }
 
     #[test]
     fn test_normalize_windows_drive() {
-        assert_eq!(normalize_file_path("/C:/cert.pem"), PathBuf::from("C:/cert.pem"));
+        assert_eq!(
+            normalize_file_path("/C:/cert.pem"),
+            PathBuf::from("C:/cert.pem")
+        );
     }
 
     #[test]
@@ -1075,45 +1070,89 @@ mod tests {
 
     #[test]
     fn test_matching_hash_prefix_with_digit_extension() {
-        assert!(file_name_check("abcdef01.0", "abcdef01", ExpectedType::Unspecified));
-        assert!(file_name_check("abcdef01.42", "abcdef01", ExpectedType::Certificate));
+        assert!(file_name_check(
+            "abcdef01.0",
+            "abcdef01",
+            ExpectedType::Unspecified
+        ));
+        assert!(file_name_check(
+            "abcdef01.42",
+            "abcdef01",
+            ExpectedType::Certificate
+        ));
     }
 
     #[test]
     fn test_non_matching_prefix_rejected() {
-        assert!(!file_name_check("12345678.0", "abcdef01", ExpectedType::Unspecified));
+        assert!(!file_name_check(
+            "12345678.0",
+            "abcdef01",
+            ExpectedType::Unspecified
+        ));
     }
 
     #[test]
     fn test_crl_extension_accepted_for_crl_type() {
-        assert!(file_name_check("abcdef01.r0", "abcdef01", ExpectedType::Crl));
-        assert!(file_name_check("abcdef01.r42", "abcdef01", ExpectedType::Unspecified));
+        assert!(file_name_check(
+            "abcdef01.r0",
+            "abcdef01",
+            ExpectedType::Crl
+        ));
+        assert!(file_name_check(
+            "abcdef01.r42",
+            "abcdef01",
+            ExpectedType::Unspecified
+        ));
     }
 
     #[test]
     fn test_crl_extension_rejected_for_cert_type() {
-        assert!(!file_name_check("abcdef01.r0", "abcdef01", ExpectedType::Certificate));
+        assert!(!file_name_check(
+            "abcdef01.r0",
+            "abcdef01",
+            ExpectedType::Certificate
+        ));
     }
 
     #[test]
     fn test_non_crl_extension_rejected_for_crl_type() {
-        assert!(!file_name_check("abcdef01.0", "abcdef01", ExpectedType::Crl));
+        assert!(!file_name_check(
+            "abcdef01.0",
+            "abcdef01",
+            ExpectedType::Crl
+        ));
     }
 
     #[test]
     fn test_non_digit_extension_rejected() {
-        assert!(!file_name_check("abcdef01.abc", "abcdef01", ExpectedType::Unspecified));
+        assert!(!file_name_check(
+            "abcdef01.abc",
+            "abcdef01",
+            ExpectedType::Unspecified
+        ));
     }
 
     #[test]
     fn test_no_dot_separator_rejected() {
-        assert!(!file_name_check("abcdef010", "abcdef01", ExpectedType::Unspecified));
+        assert!(!file_name_check(
+            "abcdef010",
+            "abcdef01",
+            ExpectedType::Unspecified
+        ));
     }
 
     #[test]
     fn test_vms_generation_suffix() {
-        assert!(file_name_check("abcdef01.0;1", "abcdef01", ExpectedType::Unspecified));
-        assert!(!file_name_check("abcdef01.0;abc", "abcdef01", ExpectedType::Unspecified));
+        assert!(file_name_check(
+            "abcdef01.0;1",
+            "abcdef01",
+            ExpectedType::Unspecified
+        ));
+        assert!(!file_name_check(
+            "abcdef01.0;abc",
+            "abcdef01",
+            ExpectedType::Unspecified
+        ));
     }
 
     // ── file_name_to_uri Tests ─────────────────────────────────────────
@@ -1135,9 +1174,18 @@ mod tests {
     #[test]
     fn test_expected_type_input_structure() {
         assert_eq!(ExpectedType::Unspecified.input_structure(), None);
-        assert_eq!(ExpectedType::PubKey.input_structure(), Some("SubjectPublicKeyInfo"));
-        assert_eq!(ExpectedType::PrivateKey.input_structure(), Some("EncryptedPrivateKeyInfo"));
-        assert_eq!(ExpectedType::Certificate.input_structure(), Some("Certificate"));
+        assert_eq!(
+            ExpectedType::PubKey.input_structure(),
+            Some("SubjectPublicKeyInfo")
+        );
+        assert_eq!(
+            ExpectedType::PrivateKey.input_structure(),
+            Some("EncryptedPrivateKeyInfo")
+        );
+        assert_eq!(
+            ExpectedType::Certificate.input_structure(),
+            Some("Certificate")
+        );
         assert_eq!(ExpectedType::Crl.input_structure(), Some("CertificateList"));
         assert_eq!(ExpectedType::SymmetricKey.input_structure(), None);
     }

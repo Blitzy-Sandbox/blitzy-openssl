@@ -233,11 +233,7 @@ fn test_method_store_fetch_by_name_and_property() {
     let store = store_with_one_digest();
 
     // Matching property should succeed
-    let result = store.fetch(
-        OperationType::Digest,
-        "SHA-256",
-        Some("provider=default"),
-    );
+    let result = store.fetch(OperationType::Digest, "SHA-256", Some("provider=default"));
     assert!(
         result.is_ok(),
         "fetch with matching property should succeed: {:?}",
@@ -245,11 +241,7 @@ fn test_method_store_fetch_by_name_and_property() {
     );
 
     // Non-matching property should fail
-    let result = store.fetch(
-        OperationType::Digest,
-        "SHA-256",
-        Some("provider=legacy"),
-    );
+    let result = store.fetch(OperationType::Digest, "SHA-256", Some("provider=legacy"));
     assert!(
         result.is_err(),
         "fetch with non-matching property should fail"
@@ -390,10 +382,7 @@ fn test_method_store_cache_invalidated_on_remove() {
 
     // Fetch should now fail (cache cleared and registry entry removed)
     let result = store.fetch(OperationType::Digest, "SHA-256", None);
-    assert!(
-        result.is_err(),
-        "fetch after provider removal should fail"
-    );
+    assert!(result.is_err(), "fetch after provider removal should fail");
 }
 
 // =============================================================================
@@ -404,18 +393,10 @@ fn test_method_store_cache_invalidated_on_remove() {
 #[test]
 fn test_property_match_exact() {
     let store = MethodStore::new();
-    let desc = make_digest_descriptor(
-        vec!["SHA2-256", "SHA-256"],
-        "provider=default",
-        "SHA-2 256",
-    );
+    let desc = make_digest_descriptor(vec!["SHA2-256", "SHA-256"], "provider=default", "SHA-2 256");
     store.register(OperationType::Digest, "default", vec![desc]);
 
-    let result = store.fetch(
-        OperationType::Digest,
-        "SHA-256",
-        Some("provider=default"),
-    );
+    let result = store.fetch(OperationType::Digest, "SHA-256", Some("provider=default"));
     assert!(result.is_ok(), "exact property match should succeed");
 }
 
@@ -424,11 +405,7 @@ fn test_property_match_exact() {
 #[test]
 fn test_property_match_empty_query() {
     let store = MethodStore::new();
-    let desc = make_digest_descriptor(
-        vec!["SHA2-256", "SHA-256"],
-        "provider=default",
-        "SHA-2 256",
-    );
+    let desc = make_digest_descriptor(vec!["SHA2-256", "SHA-256"], "provider=default", "SHA-2 256");
     store.register(OperationType::Digest, "default", vec![desc]);
 
     // None query → wildcard
@@ -452,22 +429,11 @@ fn test_property_match_empty_query() {
 #[test]
 fn test_property_match_no_match() {
     let store = MethodStore::new();
-    let desc = make_digest_descriptor(
-        vec!["SHA2-256", "SHA-256"],
-        "provider=default",
-        "SHA-2 256",
-    );
+    let desc = make_digest_descriptor(vec!["SHA2-256", "SHA-256"], "provider=default", "SHA-2 256");
     store.register(OperationType::Digest, "default", vec![desc]);
 
-    let result = store.fetch(
-        OperationType::Digest,
-        "SHA-256",
-        Some("provider=legacy"),
-    );
-    assert!(
-        result.is_err(),
-        "non-matching property query should fail"
-    );
+    let result = store.fetch(OperationType::Digest, "SHA-256", Some("provider=legacy"));
+    assert!(result.is_err(), "non-matching property query should fail");
 }
 
 /// Verify that subset property matching works: if the algorithm has multiple
@@ -483,11 +449,7 @@ fn test_property_match_multiple_properties() {
     store.register(OperationType::Digest, "default", vec![desc]);
 
     // Query for subset of properties should match
-    let result = store.fetch(
-        OperationType::Digest,
-        "SHA-256",
-        Some("provider=default"),
-    );
+    let result = store.fetch(OperationType::Digest, "SHA-256", Some("provider=default"));
     assert!(
         result.is_ok(),
         "subset property query should match: {:?}",
@@ -533,10 +495,7 @@ fn test_enumerate_algorithms_by_operation() {
 
     let encoders = store.enumerate_algorithms(OperationType::EncoderDecoder);
     assert_eq!(encoders.len(), 1, "should enumerate 1 encoder");
-    assert!(
-        encoders[0].names.contains(&"DER"),
-        "encoder should be DER"
-    );
+    assert!(encoders[0].names.contains(&"DER"), "encoder should be DER");
 
     // No cross-contamination: digest enumeration should not contain ciphers
     for d in &digests {
@@ -624,16 +583,10 @@ fn test_register_provider_queries_all_operations() {
     );
 
     let macs = store.enumerate_algorithms(OperationType::Mac);
-    assert!(
-        !macs.is_empty(),
-        "DefaultProvider should register MACs"
-    );
+    assert!(!macs.is_empty(), "DefaultProvider should register MACs");
 
     let kdfs = store.enumerate_algorithms(OperationType::Kdf);
-    assert!(
-        !kdfs.is_empty(),
-        "DefaultProvider should register KDFs"
-    );
+    assert!(!kdfs.is_empty(), "DefaultProvider should register KDFs");
 
     // Verify total registration count is non-trivial
     let all = store.enumerate_all();
@@ -690,10 +643,7 @@ fn test_register_base_provider_limited_operations() {
     );
 
     let macs = store.enumerate_algorithms(OperationType::Mac);
-    assert!(
-        macs.is_empty(),
-        "BaseProvider should not register MACs"
-    );
+    assert!(macs.is_empty(), "BaseProvider should not register MACs");
 
     // Base should register at least encoder/decoder or store operations
     let all = store.enumerate_all();
@@ -733,8 +683,7 @@ fn test_method_store_concurrent_reads() {
         .map(|_| {
             let store_clone = Arc::clone(&store);
             thread::spawn(move || {
-                let result =
-                    store_clone.fetch(OperationType::Digest, "SHA-256", None);
+                let result = store_clone.fetch(OperationType::Digest, "SHA-256", None);
                 assert!(result.is_ok(), "concurrent read should succeed");
             })
         })
@@ -757,16 +706,8 @@ fn test_method_store_concurrent_read_write() {
             let store_clone = Arc::clone(&store);
             thread::spawn(move || {
                 for _ in 0..50 {
-                    let _ = store_clone.fetch(
-                        OperationType::Digest,
-                        "SHA-256",
-                        None,
-                    );
-                    let _ = store_clone.fetch(
-                        OperationType::Cipher,
-                        "AES-128-GCM",
-                        None,
-                    );
+                    let _ = store_clone.fetch(OperationType::Digest, "SHA-256", None);
+                    let _ = store_clone.fetch(OperationType::Cipher, "AES-128-GCM", None);
                 }
             })
         })
@@ -786,15 +727,13 @@ fn test_method_store_concurrent_read_write() {
                 property: "provider=default",
                 description: "test digest",
             };
-            store_writer.register(
-                OperationType::Digest,
-                "default",
-                vec![desc],
-            );
+            store_writer.register(OperationType::Digest, "default", vec![desc]);
         }
     });
 
-    writer_handle.join().expect("writer thread should not panic");
+    writer_handle
+        .join()
+        .expect("writer thread should not panic");
     for handle in reader_handles {
         handle.join().expect("reader thread should not panic");
     }
@@ -830,10 +769,8 @@ fn test_method_store_concurrent_register_and_enumerate() {
             thread::spawn(move || {
                 for _ in 0..20 {
                     let _ = store_clone.enumerate_all();
-                    let _ = store_clone
-                        .enumerate_algorithms(OperationType::Digest);
-                    let _ = store_clone
-                        .enumerate_algorithms(OperationType::Cipher);
+                    let _ = store_clone.enumerate_algorithms(OperationType::Digest);
+                    let _ = store_clone.enumerate_algorithms(OperationType::Cipher);
                 }
             })
         })
@@ -864,11 +801,7 @@ fn test_method_store_concurrent_flush_and_fetch() {
             let store_clone = Arc::clone(&store);
             thread::spawn(move || {
                 for _ in 0..100 {
-                    let _ = store_clone.fetch(
-                        OperationType::Digest,
-                        "SHA-256",
-                        None,
-                    );
+                    let _ = store_clone.fetch(OperationType::Digest, "SHA-256", None);
                 }
             })
         })
@@ -887,7 +820,10 @@ fn test_method_store_concurrent_flush_and_fetch() {
     }
 
     let result = store.fetch(OperationType::Digest, "SHA-256", None);
-    assert!(result.is_ok(), "fetch should still work after concurrent flushes");
+    assert!(
+        result.is_ok(),
+        "fetch should still work after concurrent flushes"
+    );
 }
 
 // =============================================================================
@@ -901,7 +837,10 @@ fn test_get_capabilities_tls_group() {
     let store = MethodStore::new();
 
     let caps = store.get_capabilities("TLS-GROUP");
-    assert!(!caps.is_empty(), "TLS-GROUP capabilities should be non-empty");
+    assert!(
+        !caps.is_empty(),
+        "TLS-GROUP capabilities should be non-empty"
+    );
 
     for cap in &caps {
         assert!(
@@ -916,8 +855,7 @@ fn test_get_capabilities_tls_group() {
         );
     }
 
-    let group_names: Vec<&str> =
-        caps.iter().map(|c| c.group_name.as_str()).collect();
+    let group_names: Vec<&str> = caps.iter().map(|c| c.group_name.as_str()).collect();
 
     assert!(
         group_names.contains(&"secp256r1"),
@@ -960,7 +898,11 @@ fn test_set_and_get_capabilities() {
     store.set_capabilities("CUSTOM-CAP", custom_caps);
 
     let retrieved = store.get_capabilities("CUSTOM-CAP");
-    assert_eq!(retrieved.len(), 1, "should retrieve exactly 1 custom capability");
+    assert_eq!(
+        retrieved.len(),
+        1,
+        "should retrieve exactly 1 custom capability"
+    );
     assert_eq!(retrieved[0].group_name, "test-group");
     assert_eq!(retrieved[0].secbits, 256);
     assert_eq!(retrieved[0].min_tls, Some(0x0303));

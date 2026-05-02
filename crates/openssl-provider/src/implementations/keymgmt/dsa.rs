@@ -809,10 +809,7 @@ impl DsaKeyData {
     /// - `ProviderError::Dispatch` wrapping a [`openssl_common::error::CryptoError`]
     ///   display if the constructed parameters fail [`DsaParams::new`]
     ///   validation (out-of-range, structurally invalid).
-    pub fn from_params(
-        selection: KeySelection,
-        data: &ParamSet,
-    ) -> ProviderResult<Self> {
+    pub fn from_params(selection: KeySelection, data: &ParamSet) -> ProviderResult<Self> {
         trace!(
             target: "openssl_provider::keymgmt::dsa",
             ?selection,
@@ -892,10 +889,7 @@ impl DsaKeyData {
         }
 
         let bits_u32 = u32::try_from(ctx.pbits).map_err(|_| {
-            ProviderError::Dispatch(format!(
-                "DSA pbits {} does not fit in u32",
-                ctx.pbits
-            ))
+            ProviderError::Dispatch(format!("DSA pbits {} does not fit in u32", ctx.pbits))
         })?;
 
         let params = generate_params(bits_u32).map_err(|e| {
@@ -918,9 +912,8 @@ impl DsaKeyData {
                     "internal error: params should be present after generation".to_string(),
                 )
             })?;
-            let kp = generate_key(params_ref).map_err(|e| {
-                ProviderError::Dispatch(format!("DSA key generation failed: {e}"))
-            })?;
+            let kp = generate_key(params_ref)
+                .map_err(|e| ProviderError::Dispatch(format!("DSA key generation failed: {e}")))?;
             // Extract raw BigNum values. BigNum implements Clone.
             key.private_value = Some(kp.private_key().value().clone());
             key.public_value = Some(kp.public_key().value().clone());
@@ -1083,12 +1076,11 @@ impl DsaKeyData {
                     )
                 })?;
 
-                let recomputed_y =
-                    mod_exp_consttime(params.g(), x, params.p()).map_err(|e| {
-                        ProviderError::Dispatch(format!(
-                            "DSA pairwise check: mod_exp_consttime failed: {e}"
-                        ))
-                    })?;
+                let recomputed_y = mod_exp_consttime(params.g(), x, params.p()).map_err(|e| {
+                    ProviderError::Dispatch(format!(
+                        "DSA pairwise check: mod_exp_consttime failed: {e}"
+                    ))
+                })?;
 
                 if recomputed_y.cmp(y) != Ordering::Equal {
                     warn!(
@@ -1221,7 +1213,6 @@ fn security_bits_from_prime(bits: u32) -> u32 {
         0
     }
 }
-
 
 // =============================================================================
 // DsaKeyMgmt — KeyMgmtProvider implementation
@@ -1627,7 +1618,9 @@ mod tests {
         assert!(!mgmt
             .validate(&*key, KeySelection::DOMAIN_PARAMETERS)
             .expect("validate"));
-        assert!(!mgmt.validate(&*key, KeySelection::KEYPAIR).expect("validate"));
+        assert!(!mgmt
+            .validate(&*key, KeySelection::KEYPAIR)
+            .expect("validate"));
     }
 
     // -------------------------------------------------------------------------
@@ -1856,8 +1849,8 @@ mod tests {
     fn extract_bignum_bytes_rejects_wrong_type() {
         let mut ps = ParamSet::new();
         ps.set(PARAM_FFC_P, ParamValue::UInt32(42));
-        let err = extract_bignum_bytes(&ps, PARAM_FFC_P)
-            .expect_err("must reject non-bignum variant");
+        let err =
+            extract_bignum_bytes(&ps, PARAM_FFC_P).expect_err("must reject non-bignum variant");
         match err {
             ProviderError::Dispatch(msg) => {
                 assert!(msg.contains(PARAM_FFC_P));
@@ -1870,8 +1863,7 @@ mod tests {
     #[test]
     fn extract_bignum_bytes_rejects_missing_key() {
         let ps = ParamSet::new();
-        let err = extract_bignum_bytes(&ps, PARAM_FFC_P)
-            .expect_err("must reject missing key");
+        let err = extract_bignum_bytes(&ps, PARAM_FFC_P).expect_err("must reject missing key");
         match err {
             ProviderError::Dispatch(msg) => {
                 assert!(msg.contains(PARAM_FFC_P));
@@ -1943,10 +1935,8 @@ mod tests {
     /// consistent `(p, q, g, x, y)` values from a fresh 1024-bit DSA
     /// key generation. Helper for the pairwise tests below.
     fn gen_real_dsa_keydata() -> DsaKeyData {
-        let params = generate_params(1024)
-            .expect("1024-bit DSA parameter generation must succeed");
-        let kp =
-            generate_key(&params).expect("DSA key generation must succeed on valid params");
+        let params = generate_params(1024).expect("1024-bit DSA parameter generation must succeed");
+        let kp = generate_key(&params).expect("DSA key generation must succeed on valid params");
         let mut key = DsaKeyData::new();
         key.private_value = Some(kp.private_key().value().clone());
         key.public_value = Some(kp.public_key().value().clone());
@@ -2001,10 +1991,7 @@ mod tests {
         let r = key
             .validate_selection(KeySelection::KEYPAIR)
             .expect("validate must not error on structurally-valid components");
-        assert!(
-            !r,
-            "tampered public value must fail the pairwise check"
-        );
+        assert!(!r, "tampered public value must fail the pairwise check");
     }
 
     #[test]
@@ -2111,4 +2098,3 @@ mod tests {
         assert_eq!(result.expect("ok"), true);
     }
 }
-

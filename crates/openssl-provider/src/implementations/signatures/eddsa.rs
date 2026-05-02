@@ -714,12 +714,11 @@ impl EdDsaSignatureContext {
         // through a hash-and-scalar-multiplication; the crypto layer
         // exposes a keypair constructor that performs this derivation.
         let pair = match pub_bytes_opt {
-            Some(pub_bytes) => EcxKeyPair::new(key_type, private_key.as_bytes().to_vec(), pub_bytes)
-                .map_err(|e| {
-                    ProviderError::Init(format!(
-                        "EdDSA keypair construction failed: {e}"
-                    ))
-                })?,
+            Some(pub_bytes) => {
+                EcxKeyPair::new(key_type, private_key.as_bytes().to_vec(), pub_bytes).map_err(
+                    |e| ProviderError::Init(format!("EdDSA keypair construction failed: {e}")),
+                )?
+            }
             None => {
                 // When the public half is absent we fall back to the
                 // crypto layer's derivation API by round-tripping
@@ -772,9 +771,7 @@ impl EdDsaSignatureContext {
         }
 
         let public = EcxPublicKey::new(key_type, key.to_vec()).map_err(|e| {
-            ProviderError::Init(format!(
-                "EdDSA public key rejected by crypto layer: {e}"
-            ))
+            ProviderError::Init(format!("EdDSA public key rejected by crypto layer: {e}"))
         })?;
 
         // Explicit on-curve check; the crypto-layer verify functions
@@ -849,7 +846,6 @@ impl fmt::Debug for EdDsaSignatureContext {
     }
 }
 
-
 // =============================================================================
 // Inherent sign / verify helpers
 // =============================================================================
@@ -877,9 +873,7 @@ impl EdDsaSignatureContext {
     /// round-trip through the same context.
     fn sign_internal(&mut self, message: &[u8]) -> ProviderResult<Vec<u8>> {
         let key = self.key.as_ref().ok_or_else(|| {
-            ProviderError::Init(
-                "EdDSA sign: no key bound (call sign_init first)".to_string(),
-            )
+            ProviderError::Init("EdDSA sign: no key bound (call sign_init first)".to_string())
         })?;
 
         let private_key = key.private_key();
@@ -964,9 +958,7 @@ impl EdDsaSignatureContext {
     /// (e.g. malformed public key or decode failure).
     fn verify_internal(&self, message: &[u8], signature: &[u8]) -> ProviderResult<bool> {
         let key = self.key.as_ref().ok_or_else(|| {
-            ProviderError::Init(
-                "EdDSA verify: no key bound (call verify_init first)".to_string(),
-            )
+            ProviderError::Init("EdDSA verify: no key bound (call verify_init first)".to_string())
         })?;
 
         // Fast-path rejection for obviously wrong signature lengths —
@@ -1269,10 +1261,7 @@ impl SignatureContext for EdDsaSignatureContext {
         // string; we emit a clear error early rather than waiting
         // for sign() to surface an unhelpful dispatch error.
         if self.instance.requires_context_string() {
-            let ok = self
-                .context_string
-                .as_ref()
-                .is_some_and(|c| !c.is_empty());
+            let ok = self.context_string.as_ref().is_some_and(|c| !c.is_empty());
             if !ok {
                 return Err(ProviderError::Init(format!(
                     "{} requires a non-empty context string (set via 'context-string' param)",
@@ -1343,16 +1332,14 @@ impl SignatureContext for EdDsaSignatureContext {
             // simply invalid but never evaluated on the verify
             // path.
             let _ = public_only; // silence unused binding; parsed-for-validation
-            // Build a keypair where the private bytes are a fresh
-            // all-zero buffer (not used on the verify path) and
-            // the public bytes are the caller's.  EcxPrivateKey
-            // rejects zero-length; we supply the required private
-            // length so construction succeeds.
+                                 // Build a keypair where the private bytes are a fresh
+                                 // all-zero buffer (not used on the verify path) and
+                                 // the public bytes are the caller's.  EcxPrivateKey
+                                 // rejects zero-length; we supply the required private
+                                 // length so construction succeeds.
             let zero_private = vec![0u8; public_len];
             let pair = EcxKeyPair::new(key_type, zero_private, key.to_vec()).map_err(|e| {
-                ProviderError::Init(format!(
-                    "EdDSA keypair construction failed for verify: {e}"
-                ))
+                ProviderError::Init(format!("EdDSA keypair construction failed for verify: {e}"))
             })?;
             self.key = Some(Arc::new(pair));
         } else if key.len() == pair_len {
@@ -1575,7 +1562,6 @@ fn enforce_digest_match(instance: EdDsaInstance, digest: &str) -> ProviderResult
     Ok(())
 }
 
-
 // =============================================================================
 // Algorithm descriptors
 //
@@ -1701,8 +1687,8 @@ mod tests {
             EdDsaInstance::Ed448,
             EdDsaInstance::Ed448ph,
         ] {
-            let parsed = parse_instance_name(instance.name())
-                .expect("canonical name must round-trip");
+            let parsed =
+                parse_instance_name(instance.name()).expect("canonical name must round-trip");
             assert_eq!(parsed, instance, "name={}", instance.name());
         }
     }
@@ -1753,8 +1739,14 @@ mod tests {
 
     #[test]
     fn instance_signature_lengths() {
-        assert_eq!(EdDsaInstance::Ed25519.signature_len(), ED25519_SIGNATURE_LEN);
-        assert_eq!(EdDsaInstance::Ed25519ph.signature_len(), ED25519_SIGNATURE_LEN);
+        assert_eq!(
+            EdDsaInstance::Ed25519.signature_len(),
+            ED25519_SIGNATURE_LEN
+        );
+        assert_eq!(
+            EdDsaInstance::Ed25519ph.signature_len(),
+            ED25519_SIGNATURE_LEN
+        );
         assert_eq!(
             EdDsaInstance::Ed25519ctx.signature_len(),
             ED25519_SIGNATURE_LEN
@@ -1835,22 +1827,13 @@ mod tests {
             ed25519_signature_descriptor().names,
             vec!["ED25519", "1.3.101.112"]
         );
-        assert_eq!(
-            ed25519ph_signature_descriptor().names,
-            vec!["ED25519ph"]
-        );
-        assert_eq!(
-            ed25519ctx_signature_descriptor().names,
-            vec!["ED25519ctx"]
-        );
+        assert_eq!(ed25519ph_signature_descriptor().names, vec!["ED25519ph"]);
+        assert_eq!(ed25519ctx_signature_descriptor().names, vec!["ED25519ctx"]);
         assert_eq!(
             ed448_signature_descriptor().names,
             vec!["ED448", "1.3.101.113"]
         );
-        assert_eq!(
-            ed448ph_signature_descriptor().names,
-            vec!["ED448ph"]
-        );
+        assert_eq!(ed448ph_signature_descriptor().names, vec!["ED448ph"]);
     }
 
     // -------------------------------------------------------------------------
@@ -1889,11 +1872,8 @@ mod tests {
 
     #[test]
     fn context_duplicate_preserves_state() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed448,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed448, LibContext::get_default(), None);
         ctx.context_string = Some(b"hello".to_vec());
         let dup = ctx.duplicate();
         assert_eq!(dup.instance(), EdDsaInstance::Ed448);
@@ -1909,22 +1889,16 @@ mod tests {
 
     #[test]
     fn sign_without_init_returns_init_error() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let err = SignatureContext::sign(&mut ctx, b"hello").expect_err("sign without init");
         assert!(matches!(err, ProviderError::Init(_)));
     }
 
     #[test]
     fn verify_without_init_returns_init_error() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let err = SignatureContext::verify(&mut ctx, b"hello", &[0u8; 64])
             .expect_err("verify without init");
         assert!(matches!(err, ProviderError::Init(_)));
@@ -1932,11 +1906,8 @@ mod tests {
 
     #[test]
     fn digest_sign_final_without_init_returns_init_error() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let err = SignatureContext::digest_sign_final(&mut ctx).expect_err("final without init");
         assert!(matches!(err, ProviderError::Init(_)));
     }
@@ -1953,8 +1924,8 @@ mod tests {
         // string, mirroring the ed448 variant's contract.
         use openssl_crypto::ec::curve25519::{generate_keypair, EcxKeyType};
 
-        let kp = generate_keypair(EcxKeyType::Ed25519)
-            .expect("Ed25519 keypair generation must succeed");
+        let kp =
+            generate_keypair(EcxKeyType::Ed25519).expect("Ed25519 keypair generation must succeed");
         let mut pair_bytes = Vec::with_capacity(ED25519_KEY_LEN * 2);
         pair_bytes.extend_from_slice(kp.private_key().as_bytes());
         pair_bytes.extend_from_slice(kp.public_key().as_bytes());
@@ -1971,11 +1942,8 @@ mod tests {
         );
 
         // Sign with Ed25519ctx + non-empty context.
-        let mut sctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519ctx,
-            LibContext::get_default(),
-            None,
-        );
+        let mut sctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519ctx, LibContext::get_default(), None);
         SignatureContext::sign_init(&mut sctx, &pair_bytes, Some(&params))
             .expect("sign_init must succeed with full keypair and non-empty context");
         let signature = SignatureContext::sign(&mut sctx, b"hello, ed25519ctx!")
@@ -1990,11 +1958,8 @@ mod tests {
         // the same Ed25519ctx instance and identical context string.
         // This validates that the dom2 prefix is consistently
         // applied on both sign and verify paths.
-        let mut vctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519ctx,
-            LibContext::get_default(),
-            None,
-        );
+        let mut vctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519ctx, LibContext::get_default(), None);
         SignatureContext::verify_init(&mut vctx, &public_bytes, Some(&params))
             .expect("verify_init must succeed for Ed25519ctx");
         let valid = SignatureContext::verify(&mut vctx, b"hello, ed25519ctx!", &signature)
@@ -2012,19 +1977,12 @@ mod tests {
             "context-string",
             ParamValue::OctetString(b"different-ctx".to_vec()),
         );
-        let mut vctx_wrong = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519ctx,
-            LibContext::get_default(),
-            None,
-        );
+        let mut vctx_wrong =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519ctx, LibContext::get_default(), None);
         SignatureContext::verify_init(&mut vctx_wrong, &public_bytes, Some(&wrong_params))
             .expect("verify_init must succeed even with mismatched ctx");
-        let invalid = SignatureContext::verify(
-            &mut vctx_wrong,
-            b"hello, ed25519ctx!",
-            &signature,
-        )
-        .expect("verify dispatch must succeed for a wrong-context attempt");
+        let invalid = SignatureContext::verify(&mut vctx_wrong, b"hello, ed25519ctx!", &signature)
+            .expect("verify dispatch must succeed for a wrong-context attempt");
         assert!(
             !invalid,
             "Ed25519ctx verify must reject signatures bound to a different context"
@@ -2033,11 +1991,8 @@ mod tests {
 
     #[test]
     fn ed25519ctx_without_context_string_rejected_at_init() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519ctx,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519ctx, LibContext::get_default(), None);
         // 32-byte private key is accepted by parse_key_for_signing.
         let private = vec![0x01u8; ED25519_KEY_LEN];
         let err = SignatureContext::sign_init(&mut ctx, &private, None)
@@ -2047,11 +2002,8 @@ mod tests {
 
     #[test]
     fn context_string_length_limit_enforced() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed448,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed448, LibContext::get_default(), None);
         let oversized = vec![0xABu8; EDDSA_MAX_CONTEXT_STRING_LEN + 1];
         let err = ctx
             .set_context_string(Some(oversized))
@@ -2066,11 +2018,8 @@ mod tests {
 
     #[test]
     fn pure_ed25519_rejects_context_string() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let err = ctx
             .set_context_string(Some(b"nope".to_vec()))
             .expect_err("pure Ed25519 rejects context");
@@ -2082,11 +2031,8 @@ mod tests {
 
     #[test]
     fn context_string_empty_clears_cleanly() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed448,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed448, LibContext::get_default(), None);
         ctx.set_context_string(Some(b"seed".to_vec())).unwrap();
         ctx.set_context_string(None).unwrap();
         assert!(ctx.context_string.is_none());
@@ -2098,48 +2044,41 @@ mod tests {
 
     #[test]
     fn get_ctx_params_exposes_instance_and_algorithm_id() {
-        let ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let params = ctx.get_params().expect("get_params");
         let inst = params.get("instance").and_then(|v| v.as_str()).unwrap();
         assert_eq!(inst, "ED25519");
-        let aid = params.get("algorithm-id").and_then(|v| v.as_bytes()).unwrap();
+        let aid = params
+            .get("algorithm-id")
+            .and_then(|v| v.as_bytes())
+            .unwrap();
         assert_eq!(aid, &[0x30, 0x05, 0x06, 0x03, 0x2B, 0x65, 0x70]);
     }
 
     #[test]
     fn get_ctx_params_for_ed448_uses_correct_oid() {
-        let ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed448,
-            LibContext::get_default(),
-            None,
-        );
+        let ctx = EdDsaSignatureContext::new(EdDsaInstance::Ed448, LibContext::get_default(), None);
         let params = ctx.get_params().expect("get_params");
-        let aid = params.get("algorithm-id").and_then(|v| v.as_bytes()).unwrap();
+        let aid = params
+            .get("algorithm-id")
+            .and_then(|v| v.as_bytes())
+            .unwrap();
         assert_eq!(aid, &[0x30, 0x05, 0x06, 0x03, 0x2B, 0x65, 0x71]);
     }
 
     #[test]
     fn set_ctx_params_ignores_empty_param_set() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let empty = ParamSet::new();
         assert!(SignatureContext::set_params(&mut ctx, &empty).is_ok());
     }
 
     #[test]
     fn set_ctx_params_forwards_context_string() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed448,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed448, LibContext::get_default(), None);
         let mut params = ParamSet::new();
         params.set(
             "context-string",
@@ -2154,11 +2093,8 @@ mod tests {
 
     #[test]
     fn set_ctx_params_rejects_context_wrong_type() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed448,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed448, LibContext::get_default(), None);
         let mut params = ParamSet::new();
         params.set(
             "context-string",
@@ -2174,27 +2110,18 @@ mod tests {
 
     #[test]
     fn set_ctx_params_allows_instance_switch_within_family() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let mut params = ParamSet::new();
-        params.set(
-            "instance",
-            ParamValue::Utf8String("ED25519ph".to_string()),
-        );
+        params.set("instance", ParamValue::Utf8String("ED25519ph".to_string()));
         SignatureContext::set_params(&mut ctx, &params).unwrap();
         assert_eq!(ctx.instance(), EdDsaInstance::Ed25519ph);
     }
 
     #[test]
     fn set_ctx_params_rejects_cross_family_instance_switch() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let mut params = ParamSet::new();
         params.set("instance", ParamValue::Utf8String("ED448".to_string()));
         let err = SignatureContext::set_params(&mut ctx, &params)
@@ -2207,11 +2134,8 @@ mod tests {
 
     #[test]
     fn set_ctx_params_rejects_unknown_instance_name() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let mut params = ParamSet::new();
         params.set(
             "instance",
@@ -2265,11 +2189,8 @@ mod tests {
 
     #[test]
     fn digest_sign_init_rejects_incompatible_digest() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let err = SignatureContext::digest_sign_init(&mut ctx, "SHA256", &[0u8; 32], None)
             .expect_err("SHA256 must not be accepted by pure Ed25519");
         match err {
@@ -2287,11 +2208,8 @@ mod tests {
 
     #[test]
     fn streaming_digest_sign_without_init_is_rejected() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let err = SignatureContext::digest_sign_update(&mut ctx, b"chunk")
             .expect_err("update without init");
         assert!(matches!(err, ProviderError::Init(_)));
@@ -2299,11 +2217,8 @@ mod tests {
 
     #[test]
     fn streaming_digest_verify_without_init_is_rejected() {
-        let mut ctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut ctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         let err = SignatureContext::digest_verify_update(&mut ctx, b"chunk")
             .expect_err("update without init");
         assert!(matches!(err, ProviderError::Init(_)));
@@ -2354,8 +2269,8 @@ mod tests {
         // variant — the canonical Ed25519 contract per RFC 8032.
         use openssl_crypto::ec::curve25519::{generate_keypair, EcxKeyType};
 
-        let kp = generate_keypair(EcxKeyType::Ed25519)
-            .expect("Ed25519 keypair generation must succeed");
+        let kp =
+            generate_keypair(EcxKeyType::Ed25519).expect("Ed25519 keypair generation must succeed");
         let mut pair_bytes = Vec::with_capacity(ED25519_KEY_LEN * 2);
         pair_bytes.extend_from_slice(kp.private_key().as_bytes());
         pair_bytes.extend_from_slice(kp.public_key().as_bytes());
@@ -2363,11 +2278,8 @@ mod tests {
 
         // Pure Ed25519 forbids any context string, so we pass
         // `None` for params on both sign_init and verify_init.
-        let mut sctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut sctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         SignatureContext::sign_init(&mut sctx, &pair_bytes, None)
             .expect("sign_init must succeed for pure Ed25519 with full keypair and no params");
         let signature = SignatureContext::sign(&mut sctx, b"pure Ed25519 message")
@@ -2379,11 +2291,8 @@ mod tests {
         );
 
         // Positive verify with the matching keypair.
-        let mut vctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut vctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         SignatureContext::verify_init(&mut vctx, &public_bytes, None)
             .expect("verify_init must succeed for pure Ed25519");
         let valid = SignatureContext::verify(&mut vctx, b"pure Ed25519 message", &signature)
@@ -2398,19 +2307,13 @@ mod tests {
         let kp_other = generate_keypair(EcxKeyType::Ed25519)
             .expect("second Ed25519 keypair generation must succeed");
         let other_public = kp_other.public_key().as_bytes().to_vec();
-        let mut vctx_wrong = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519,
-            LibContext::get_default(),
-            None,
-        );
+        let mut vctx_wrong =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519, LibContext::get_default(), None);
         SignatureContext::verify_init(&mut vctx_wrong, &other_public, None)
             .expect("verify_init must succeed even with a different public key");
-        let invalid = SignatureContext::verify(
-            &mut vctx_wrong,
-            b"pure Ed25519 message",
-            &signature,
-        )
-        .expect("verify dispatch must succeed for a wrong-key attempt");
+        let invalid =
+            SignatureContext::verify(&mut vctx_wrong, b"pure Ed25519 message", &signature)
+                .expect("verify dispatch must succeed for a wrong-key attempt");
         assert!(
             !invalid,
             "Ed25519 (pure) verify must reject signatures bound to a different key"
@@ -2441,8 +2344,8 @@ mod tests {
         // Ed25519ph contract per RFC 8032 §5.1.
         use openssl_crypto::ec::curve25519::{generate_keypair, EcxKeyType};
 
-        let kp = generate_keypair(EcxKeyType::Ed25519)
-            .expect("Ed25519 keypair generation must succeed");
+        let kp =
+            generate_keypair(EcxKeyType::Ed25519).expect("Ed25519 keypair generation must succeed");
         let mut pair_bytes = Vec::with_capacity(ED25519_KEY_LEN * 2);
         pair_bytes.extend_from_slice(kp.private_key().as_bytes());
         pair_bytes.extend_from_slice(kp.public_key().as_bytes());
@@ -2452,11 +2355,8 @@ mod tests {
         // not require one; we exercise the no-context path here.
         // The dom2(F=1, C) prefix is still applied by the crypto
         // layer with C = empty.
-        let mut sctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519ph,
-            LibContext::get_default(),
-            None,
-        );
+        let mut sctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519ph, LibContext::get_default(), None);
         SignatureContext::sign_init(&mut sctx, &pair_bytes, None)
             .expect("sign_init must succeed for Ed25519ph with full keypair and no params");
         let signature = SignatureContext::sign(&mut sctx, b"Ed25519ph prehash test message")
@@ -2468,19 +2368,13 @@ mod tests {
         );
 
         // Positive verify with the matching keypair.
-        let mut vctx = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519ph,
-            LibContext::get_default(),
-            None,
-        );
+        let mut vctx =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519ph, LibContext::get_default(), None);
         SignatureContext::verify_init(&mut vctx, &public_bytes, None)
             .expect("verify_init must succeed for Ed25519ph");
-        let valid = SignatureContext::verify(
-            &mut vctx,
-            b"Ed25519ph prehash test message",
-            &signature,
-        )
-        .expect("Ed25519ph verify dispatch must succeed");
+        let valid =
+            SignatureContext::verify(&mut vctx, b"Ed25519ph prehash test message", &signature)
+                .expect("Ed25519ph verify dispatch must succeed");
         assert!(
             valid,
             "Ed25519ph round-trip verification must yield a valid signature"
@@ -2491,11 +2385,8 @@ mod tests {
         let kp_other = generate_keypair(EcxKeyType::Ed25519)
             .expect("second Ed25519 keypair generation must succeed");
         let other_public = kp_other.public_key().as_bytes().to_vec();
-        let mut vctx_wrong = EdDsaSignatureContext::new(
-            EdDsaInstance::Ed25519ph,
-            LibContext::get_default(),
-            None,
-        );
+        let mut vctx_wrong =
+            EdDsaSignatureContext::new(EdDsaInstance::Ed25519ph, LibContext::get_default(), None);
         SignatureContext::verify_init(&mut vctx_wrong, &other_public, None)
             .expect("verify_init must succeed even with a different public key");
         let invalid = SignatureContext::verify(
@@ -2509,6 +2400,4 @@ mod tests {
             "Ed25519ph verify must reject signatures bound to a different key"
         );
     }
-
 }
-

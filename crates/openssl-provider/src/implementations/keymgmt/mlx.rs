@@ -285,8 +285,8 @@ impl fmt::Display for MlxVariant {
 #[must_use]
 const fn ml_kem_nid_for(variant: MlKemVariant) -> u32 {
     match variant {
-        MlKemVariant::MlKem512 => 0x9C8,  // EVP_PKEY_ML_KEM_512  (placeholder)
-        MlKemVariant::MlKem768 => 0x9C9,  // EVP_PKEY_ML_KEM_768
+        MlKemVariant::MlKem512 => 0x9C8, // EVP_PKEY_ML_KEM_512  (placeholder)
+        MlKemVariant::MlKem768 => 0x9C9, // EVP_PKEY_ML_KEM_768
         MlKemVariant::MlKem1024 => 0x9CA, // EVP_PKEY_ML_KEM_1024
     }
 }
@@ -430,7 +430,8 @@ impl ClassicalKey {
                 // export goes through `EVP_PKEY_get_octet_string_param`.
                 let _ = key.has_private_key();
                 Err(ProviderError::Common(CommonError::Unsupported(
-                    "MLX EC private-key export not yet supported through the safe Rust surface".into(),
+                    "MLX EC private-key export not yet supported through the safe Rust surface"
+                        .into(),
                 )))
             }
             Self::Ecx(pair) => {
@@ -468,7 +469,8 @@ impl ClassicalKey {
                 })?;
                 let new_group = group.clone();
                 let new_point = point.clone();
-                let new_key = EcKey::from_public_key(&new_group, new_point).map_err(map_crypto_err)?;
+                let new_key =
+                    EcKey::from_public_key(&new_group, new_point).map_err(map_crypto_err)?;
                 Ok(Self::Ec {
                     group: new_group,
                     key: Box::new(new_key),
@@ -618,10 +620,7 @@ impl MlxKeyData {
     /// `true` if both subkeys are present and have a public component.
     #[must_use]
     pub fn has_public_key(&self) -> bool {
-        let mlk_ok = self
-            .ml_kem_key
-            .as_ref()
-            .is_some_and(MlKemKey::have_pubkey);
+        let mlk_ok = self.ml_kem_key.as_ref().is_some_and(MlKemKey::have_pubkey);
         let cls_ok = self
             .classical_key
             .as_ref()
@@ -632,10 +631,7 @@ impl MlxKeyData {
     /// `true` if both subkeys are present and have a private component.
     #[must_use]
     pub fn has_private_key(&self) -> bool {
-        let mlk_ok = self
-            .ml_kem_key
-            .as_ref()
-            .is_some_and(MlKemKey::have_prvkey);
+        let mlk_ok = self.ml_kem_key.as_ref().is_some_and(MlKemKey::have_prvkey);
         let cls_ok = self
             .classical_key
             .as_ref()
@@ -773,7 +769,6 @@ impl Zeroize for MlxGenContext {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // MlxKeyMgmt — KeyMgmtProvider implementation
 // ---------------------------------------------------------------------------
@@ -877,13 +872,13 @@ impl MlxKeyMgmt {
                 Ok(ClassicalKey::Ec { group, key })
             }
             MlxVariant::MlKem768X25519 => {
-                let pair = crypto_ecx::generate_keypair(EcxKeyType::X25519)
-                    .map_err(map_crypto_err)?;
+                let pair =
+                    crypto_ecx::generate_keypair(EcxKeyType::X25519).map_err(map_crypto_err)?;
                 Ok(ClassicalKey::Ecx(pair))
             }
             MlxVariant::MlKem1024X448 => {
-                let pair = crypto_ecx::generate_keypair(EcxKeyType::X448)
-                    .map_err(map_crypto_err)?;
+                let pair =
+                    crypto_ecx::generate_keypair(EcxKeyType::X448).map_err(map_crypto_err)?;
                 Ok(ClassicalKey::Ecx(pair))
             }
             MlxVariant::MlKem768Sm2 => {
@@ -1063,17 +1058,18 @@ impl MlxKeyMgmt {
                     EcxKeyType::X448
                 };
                 let priv_key = EcxPrivateKey::new(kt, bytes.to_vec()).map_err(map_crypto_err)?;
-                let pub_key = match kt {
-                    EcxKeyType::X25519 => crypto_ecx::x25519_public_from_private(&priv_key)
-                        .map_err(map_crypto_err)?,
-                    EcxKeyType::X448 => crypto_ecx::x448_public_from_private(&priv_key)
-                        .map_err(map_crypto_err)?,
-                    _ => {
-                        return Err(ProviderError::Common(CommonError::Internal(
-                            "unexpected ECX key type for MLX hybrid".into(),
-                        )))
-                    }
-                };
+                let pub_key =
+                    match kt {
+                        EcxKeyType::X25519 => crypto_ecx::x25519_public_from_private(&priv_key)
+                            .map_err(map_crypto_err)?,
+                        EcxKeyType::X448 => crypto_ecx::x448_public_from_private(&priv_key)
+                            .map_err(map_crypto_err)?,
+                        _ => {
+                            return Err(ProviderError::Common(CommonError::Internal(
+                                "unexpected ECX key type for MLX hybrid".into(),
+                            )))
+                        }
+                    };
                 // Reconstruct via the public byte path because `EcxKeyPair::new` takes
                 // raw byte vectors. The `priv_key` we built above already validated the
                 // length; here we hand the bytes directly into the canonical constructor.
@@ -1090,22 +1086,28 @@ impl MlxKeyMgmt {
     }
 
     fn import_ml_kem_pub(&self, data: &mut MlxKeyData, bytes: &[u8]) -> ProviderResult<()> {
-        let mut key = data.ml_kem_key.take().map_or_else(
-            || MlKemKey::new(Arc::clone(&self.lib_ctx), self.variant.ml_kem_variant()),
-            Ok,
-        )
-        .map_err(map_crypto_err)?;
+        let mut key = data
+            .ml_kem_key
+            .take()
+            .map_or_else(
+                || MlKemKey::new(Arc::clone(&self.lib_ctx), self.variant.ml_kem_variant()),
+                Ok,
+            )
+            .map_err(map_crypto_err)?;
         key.parse_pubkey(bytes).map_err(map_crypto_err)?;
         data.ml_kem_key = Some(key);
         Ok(())
     }
 
     fn import_ml_kem_prv(&self, data: &mut MlxKeyData, bytes: &[u8]) -> ProviderResult<()> {
-        let mut key = data.ml_kem_key.take().map_or_else(
-            || MlKemKey::new(Arc::clone(&self.lib_ctx), self.variant.ml_kem_variant()),
-            Ok,
-        )
-        .map_err(map_crypto_err)?;
+        let mut key = data
+            .ml_kem_key
+            .take()
+            .map_or_else(
+                || MlKemKey::new(Arc::clone(&self.lib_ctx), self.variant.ml_kem_variant()),
+                Ok,
+            )
+            .map_err(map_crypto_err)?;
         key.parse_prvkey(bytes).map_err(map_crypto_err)?;
         data.ml_kem_key = Some(key);
         Ok(())
@@ -1123,10 +1125,12 @@ impl MlxKeyMgmt {
         );
 
         if key.variant != self.variant {
-            return Err(ProviderError::Common(CommonError::InvalidArgument(format!(
-                "MLX export: key variant ({}) does not match provider variant ({})",
-                key.variant, self.variant
-            ))));
+            return Err(ProviderError::Common(CommonError::InvalidArgument(
+                format!(
+                    "MLX export: key variant ({}) does not match provider variant ({})",
+                    key.variant, self.variant
+                ),
+            )));
         }
 
         let info = self.variant.variant_info();
@@ -1147,9 +1151,7 @@ impl MlxKeyMgmt {
             let cls_bytes = cls.encode_public(info)?;
             let mlk_bytes = mlk.encode_pubkey().map_err(map_crypto_err)?;
 
-            let total = self
-                .variant
-                .total_pub_len();
+            let total = self.variant.total_pub_len();
             let mut buf = Vec::with_capacity(total);
             buf.extend_from_slice(&cls_bytes);
             buf.extend_from_slice(&mlk_bytes);
@@ -1180,9 +1182,7 @@ impl MlxKeyMgmt {
             let cls_bytes = cls.encode_private(info)?;
             let mlk_bytes = mlk.encode_prvkey().map_err(map_crypto_err)?;
 
-            let total = self
-                .variant
-                .total_priv_len();
+            let total = self.variant.total_priv_len();
             let mut buf = Vec::with_capacity(total);
             buf.extend_from_slice(&cls_bytes);
             buf.extend_from_slice(&mlk_bytes);
@@ -1238,9 +1238,8 @@ impl MlxKeyMgmt {
         // or PUBLIC_KEY-only — is rejected.
         let allow_full = selection.contains(KeySelection::PRIVATE_KEY)
             && selection.contains(KeySelection::PUBLIC_KEY);
-        let allow_empty =
-            !selection.contains(KeySelection::PRIVATE_KEY)
-                && !selection.contains(KeySelection::PUBLIC_KEY);
+        let allow_empty = !selection.contains(KeySelection::PRIVATE_KEY)
+            && !selection.contains(KeySelection::PUBLIC_KEY);
 
         if !allow_full && !allow_empty {
             return Err(ProviderError::Common(CommonError::Unsupported(
@@ -1293,7 +1292,10 @@ impl MlxKeyMgmt {
     ///
     /// Mirrors C `mlx_kem_get_params`: bits/secbits/seccat from ML-KEM, plus
     /// `max-size = ml_kem.ctext_bytes + classical.pub_key_len`.
-    #[allow(dead_code, reason = "Used through the public KeyMgmtProvider::export trait method.")]
+    #[allow(
+        dead_code,
+        reason = "Used through the public KeyMgmtProvider::export trait method."
+    )]
     fn get_params(&self, key: &MlxKeyData) -> ProviderResult<ParamSet> {
         let mut out = ParamSet::new();
         let info = self.variant.variant_info();
@@ -1382,11 +1384,7 @@ impl fmt::Debug for MlxKeyMgmt {
 /// with an existing ECX private slot is meaningful) and for forward
 /// compatibility if a future translation re-introduces private-scalar carry
 /// semantics.
-fn merge_ec(
-    _existing: Option<&ClassicalKey>,
-    group: EcGroup,
-    new_key: EcKey,
-) -> ClassicalKey {
+fn merge_ec(_existing: Option<&ClassicalKey>, group: EcGroup, new_key: EcKey) -> ClassicalKey {
     ClassicalKey::Ec {
         group,
         key: Box::new(new_key),
@@ -1416,8 +1414,7 @@ fn merge_ecx_pub(
             let kt = pair.key_type();
             let priv_bytes = pair.private_key().as_bytes().to_vec();
             let pub_bytes = pubk.as_bytes().to_vec();
-            let new_pair =
-                EcxKeyPair::new(kt, priv_bytes, pub_bytes).map_err(map_crypto_err)?;
+            let new_pair = EcxKeyPair::new(kt, priv_bytes, pub_bytes).map_err(map_crypto_err)?;
             Ok(ClassicalKey::Ecx(new_pair))
         }
         Some(ClassicalKey::EcxPubOnly(_)) => {
@@ -1426,7 +1423,6 @@ fn merge_ecx_pub(
         }
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // KeyMgmtProvider trait implementation
@@ -1457,20 +1453,12 @@ impl KeyMgmtProvider for MlxKeyMgmt {
         Ok(Box::new(data))
     }
 
-    fn import(
-        &self,
-        selection: KeySelection,
-        data: &ParamSet,
-    ) -> ProviderResult<Box<dyn KeyData>> {
+    fn import(&self, selection: KeySelection, data: &ParamSet) -> ProviderResult<Box<dyn KeyData>> {
         let imported = self.import_into(selection, data)?;
         Ok(Box::new(imported))
     }
 
-    fn export(
-        &self,
-        key: &dyn KeyData,
-        selection: KeySelection,
-    ) -> ProviderResult<ParamSet> {
+    fn export(&self, key: &dyn KeyData, selection: KeySelection) -> ProviderResult<ParamSet> {
         // The trait operates on `&dyn KeyData`, so we recover the concrete
         // [`MlxKeyData`] by routing through the manual Debug implementation.
         // Concrete callers (the FFI layer / tests) should use
@@ -1605,7 +1593,10 @@ mod tests {
 
     #[test]
     fn variant_provider_names_match_c_dispatch_table() {
-        assert_eq!(MlxVariant::MlKem768P256.provider_name(), "SecP256r1MLKEM768");
+        assert_eq!(
+            MlxVariant::MlKem768P256.provider_name(),
+            "SecP256r1MLKEM768"
+        );
         assert_eq!(
             MlxVariant::MlKem1024P384.provider_name(),
             "SecP384r1MLKEM1024"
@@ -2002,9 +1993,7 @@ mod tests {
         let pub_blob = p.get(PARAM_PUB_KEY).and_then(ParamValue::as_bytes).unwrap();
         assert_eq!(pub_blob.len(), MlxVariant::MlKem768P256.total_pub_len());
         // Domain parameters should also be exported when requested.
-        let dom = m
-            .export_from(&k, KeySelection::DOMAIN_PARAMETERS)
-            .unwrap();
+        let dom = m.export_from(&k, KeySelection::DOMAIN_PARAMETERS).unwrap();
         let curve = dom
             .get(PARAM_GROUP_NAME)
             .and_then(ParamValue::as_str)
@@ -2059,9 +2048,7 @@ mod tests {
         let original = m.generate_into(KeySelection::KEYPAIR).unwrap();
         let exported = m.export_from(&original, KeySelection::PUBLIC_KEY).unwrap();
 
-        let imported = m
-            .import_into(KeySelection::PUBLIC_KEY, &exported)
-            .unwrap();
+        let imported = m.import_into(KeySelection::PUBLIC_KEY, &exported).unwrap();
         // Public sides must match.
         assert!(m.match_keys(&original, &imported));
     }
@@ -2071,9 +2058,7 @@ mod tests {
         let m = MlxKeyMgmt::new(MlxVariant::MlKem1024X448);
         let original = m.generate_into(KeySelection::KEYPAIR).unwrap();
         let exported = m.export_from(&original, KeySelection::PUBLIC_KEY).unwrap();
-        let imported = m
-            .import_into(KeySelection::PUBLIC_KEY, &exported)
-            .unwrap();
+        let imported = m.import_into(KeySelection::PUBLIC_KEY, &exported).unwrap();
         assert!(m.match_keys(&original, &imported));
     }
 
@@ -2170,4 +2155,3 @@ mod tests {
         }
     }
 }
-

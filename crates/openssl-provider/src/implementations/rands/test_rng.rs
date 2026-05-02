@@ -48,8 +48,8 @@
 // Imports
 // =============================================================================
 
-use crate::traits::{RandContext, RandProvider};
 use super::drbg::RandState;
+use crate::traits::{RandContext, RandProvider};
 use openssl_common::error::{CommonError, ProviderError, ProviderResult};
 use openssl_common::param::{ParamSet, ParamValue};
 use parking_lot::Mutex;
@@ -433,13 +433,13 @@ impl TestRng {
         }
         if params.contains("entropy") {
             if let Some(val) = params.get("entropy") {
-                let bytes = val.as_bytes().ok_or_else(|| {
-                    CommonError::ParamTypeMismatch {
+                let bytes = val
+                    .as_bytes()
+                    .ok_or_else(|| CommonError::ParamTypeMismatch {
                         key: "entropy".to_string(),
                         expected: "OctetString",
                         actual: val.param_type_name(),
-                    }
-                })?;
+                    })?;
                 self.entropy = bytes.to_vec();
                 self.entropy_pos = 0;
                 trace!(len = self.entropy.len(), "set entropy buffer");
@@ -447,13 +447,13 @@ impl TestRng {
         }
         if params.contains("nonce") {
             if let Some(val) = params.get("nonce") {
-                let bytes = val.as_bytes().ok_or_else(|| {
-                    CommonError::ParamTypeMismatch {
+                let bytes = val
+                    .as_bytes()
+                    .ok_or_else(|| CommonError::ParamTypeMismatch {
                         key: "nonce".to_string(),
                         expected: "OctetString",
                         actual: val.param_type_name(),
-                    }
-                })?;
+                    })?;
                 self.nonce = Some(bytes.to_vec());
                 trace!(len = bytes.len(), "set nonce buffer");
             }

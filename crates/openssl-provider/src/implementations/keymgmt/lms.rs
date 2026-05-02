@@ -76,7 +76,10 @@ mod tests {
     #[test]
     fn lms_descriptors_carry_oid_and_textual_alias() {
         let descs = lms_descriptors();
-        assert!(descs[0].names.iter().any(|n| *n == "id-alg-hss-lms-hashsig"));
+        assert!(descs[0]
+            .names
+            .iter()
+            .any(|n| *n == "id-alg-hss-lms-hashsig"));
         assert!(descs[0]
             .names
             .iter()

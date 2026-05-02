@@ -148,7 +148,10 @@ fn flush_cache_preserves_registered_algorithms() {
     store.flush_cache();
     let after = store.enumerate_algorithms(OperationType::Digest).len();
 
-    assert_eq!(before, after, "flush_cache must not discard registry entries");
+    assert_eq!(
+        before, after,
+        "flush_cache must not discard registry entries"
+    );
 }
 
 /// `remove_provider` clears only the named provider's algorithms.

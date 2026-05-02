@@ -474,11 +474,9 @@ impl HmacContext {
     fn apply_params(&mut self, params: &ParamSet) -> ProviderResult<()> {
         // Extract digest name
         if params.contains(PARAM_DIGEST) {
-            let name: String = params
-                .get_typed(PARAM_DIGEST)
-                .map_err(|e| ProviderError::Dispatch(format!(
-                    "HMAC: failed to read digest parameter: {e}"
-                )))?;
+            let name: String = params.get_typed(PARAM_DIGEST).map_err(|e| {
+                ProviderError::Dispatch(format!("HMAC: failed to read digest parameter: {e}"))
+            })?;
             if let Some(algo) = DigestAlgorithm::from_name(&name) {
                 debug!(digest = %name, "HMAC: selecting digest algorithm");
                 self.digest_name = Some(name);
@@ -495,11 +493,9 @@ impl HmacContext {
 
         // Extract properties
         if params.contains(PARAM_PROPERTIES) {
-            let props: String = params
-                .get_typed(PARAM_PROPERTIES)
-                .map_err(|e| ProviderError::Dispatch(format!(
-                    "HMAC: failed to read properties parameter: {e}"
-                )))?;
+            let props: String = params.get_typed(PARAM_PROPERTIES).map_err(|e| {
+                ProviderError::Dispatch(format!("HMAC: failed to read properties parameter: {e}"))
+            })?;
             trace!(properties = %props, "HMAC: setting properties");
             self.properties = Some(props);
         }
@@ -518,17 +514,21 @@ impl HmacContext {
 
         // Extract TLS data size
         if params.contains(PARAM_TLS_DATA_SIZE) {
-            let tls_size: u64 = params
-                .get_typed(PARAM_TLS_DATA_SIZE)
-                .map_err(|e| ProviderError::Dispatch(format!(
+            let tls_size: u64 = params.get_typed(PARAM_TLS_DATA_SIZE).map_err(|e| {
+                ProviderError::Dispatch(format!(
                     "HMAC: failed to read tls-data-size parameter: {e}"
-                )))?;
-            let tls_size_usize = usize::try_from(tls_size)
-                .map_err(|_| ProviderError::Dispatch(
+                ))
+            })?;
+            let tls_size_usize = usize::try_from(tls_size).map_err(|_| {
+                ProviderError::Dispatch(
                     "HMAC: tls-data-size value exceeds platform size".to_string(),
-                ))?;
+                )
+            })?;
             if tls_size_usize > 0 {
-                trace!(tls_data_size = tls_size_usize, "HMAC: enabling TLS MAC mode");
+                trace!(
+                    tls_data_size = tls_size_usize,
+                    "HMAC: enabling TLS MAC mode"
+                );
                 self.tls_state = Some(TlsMacState::new(tls_size_usize));
             } else {
                 self.tls_state = None;
@@ -732,16 +732,17 @@ impl MacContext for HmacContext {
                 ));
             }
             let result = tls.mac_out.clone();
-            trace!(mac_len = result.len(), "HMAC TLS: returning pre-computed MAC");
+            trace!(
+                mac_len = result.len(),
+                "HMAC TLS: returning pre-computed MAC"
+            );
             self.state = HmacState::Finalized;
             return Ok(result);
         }
 
         // Normal path: extract engine and finalize
         let result = match std::mem::replace(&mut self.state, HmacState::Finalized) {
-            HmacState::Initialized(mut e) | HmacState::Updated(mut e) => {
-                e.finalize()
-            }
+            HmacState::Initialized(mut e) | HmacState::Updated(mut e) => e.finalize(),
             HmacState::Uninitialized => {
                 return Err(ProviderError::Init(
                     "HMAC: context not initialized — call init() first".to_string(),
@@ -1050,22 +1051,70 @@ impl DigestEngine {
 
 /// SHA-256 round constants K (FIPS 180-4 §4.2.2).
 const SHA256_K: [u32; 64] = [
-    0x428a_2f98, 0x7137_4491, 0xb5c0_fbcf, 0xe9b5_dba5,
-    0x3956_c25b, 0x59f1_11f1, 0x923f_82a4, 0xab1c_5ed5,
-    0xd807_aa98, 0x1283_5b01, 0x2431_85be, 0x550c_7dc3,
-    0x72be_5d74, 0x80de_b1fe, 0x9bdc_06a7, 0xc19b_f174,
-    0xe49b_69c1, 0xefbe_4786, 0x0fc1_9dc6, 0x240c_a1cc,
-    0x2de9_2c6f, 0x4a74_84aa, 0x5cb0_a9dc, 0x76f9_88da,
-    0x983e_5152, 0xa831_c66d, 0xb003_27c8, 0xbf59_7fc7,
-    0xc6e0_0bf3, 0xd5a7_9147, 0x06ca_6351, 0x1429_2967,
-    0x27b7_0a85, 0x2e1b_2138, 0x4d2c_6dfc, 0x5338_0d13,
-    0x650a_7354, 0x766a_0abb, 0x81c2_c92e, 0x9272_2c85,
-    0xa2bf_e8a1, 0xa81a_664b, 0xc24b_8b70, 0xc76c_51a3,
-    0xd192_e819, 0xd699_0624, 0xf40e_3585, 0x106a_a070,
-    0x19a4_c116, 0x1e37_6c08, 0x2748_774c, 0x34b0_bcb5,
-    0x391c_0cb3, 0x4ed8_aa4a, 0x5b9c_ca4f, 0x682e_6ff3,
-    0x748f_82ee, 0x78a5_636f, 0x84c8_7814, 0x8cc7_0208,
-    0x90be_fffa, 0xa450_6ceb, 0xbef9_a3f7, 0xc671_78f2,
+    0x428a_2f98,
+    0x7137_4491,
+    0xb5c0_fbcf,
+    0xe9b5_dba5,
+    0x3956_c25b,
+    0x59f1_11f1,
+    0x923f_82a4,
+    0xab1c_5ed5,
+    0xd807_aa98,
+    0x1283_5b01,
+    0x2431_85be,
+    0x550c_7dc3,
+    0x72be_5d74,
+    0x80de_b1fe,
+    0x9bdc_06a7,
+    0xc19b_f174,
+    0xe49b_69c1,
+    0xefbe_4786,
+    0x0fc1_9dc6,
+    0x240c_a1cc,
+    0x2de9_2c6f,
+    0x4a74_84aa,
+    0x5cb0_a9dc,
+    0x76f9_88da,
+    0x983e_5152,
+    0xa831_c66d,
+    0xb003_27c8,
+    0xbf59_7fc7,
+    0xc6e0_0bf3,
+    0xd5a7_9147,
+    0x06ca_6351,
+    0x1429_2967,
+    0x27b7_0a85,
+    0x2e1b_2138,
+    0x4d2c_6dfc,
+    0x5338_0d13,
+    0x650a_7354,
+    0x766a_0abb,
+    0x81c2_c92e,
+    0x9272_2c85,
+    0xa2bf_e8a1,
+    0xa81a_664b,
+    0xc24b_8b70,
+    0xc76c_51a3,
+    0xd192_e819,
+    0xd699_0624,
+    0xf40e_3585,
+    0x106a_a070,
+    0x19a4_c116,
+    0x1e37_6c08,
+    0x2748_774c,
+    0x34b0_bcb5,
+    0x391c_0cb3,
+    0x4ed8_aa4a,
+    0x5b9c_ca4f,
+    0x682e_6ff3,
+    0x748f_82ee,
+    0x78a5_636f,
+    0x84c8_7814,
+    0x8cc7_0208,
+    0x90be_fffa,
+    0xa450_6ceb,
+    0xbef9_a3f7,
+    0xc671_78f2,
 ];
 
 /// SHA-256 family state.
@@ -1082,8 +1131,14 @@ impl Sha256State {
     fn new_sha256() -> Self {
         Self {
             h: [
-                0x6a09_e667, 0xbb67_ae85, 0x3c6e_f372, 0xa54f_f53a,
-                0x510e_527f, 0x9b05_688c, 0x1f83_d9ab, 0x5be0_cd19,
+                0x6a09_e667,
+                0xbb67_ae85,
+                0x3c6e_f372,
+                0xa54f_f53a,
+                0x510e_527f,
+                0x9b05_688c,
+                0x1f83_d9ab,
+                0x5be0_cd19,
             ],
             output_len: 32,
         }
@@ -1093,8 +1148,14 @@ impl Sha256State {
     fn new_sha224() -> Self {
         Self {
             h: [
-                0xc105_9ed8, 0x367c_d507, 0x3070_dd17, 0xf70e_5939,
-                0xffc0_0b31, 0x6858_1511, 0x64f9_8fa7, 0xbefa_4fa4,
+                0xc105_9ed8,
+                0x367c_d507,
+                0x3070_dd17,
+                0xf70e_5939,
+                0xffc0_0b31,
+                0x6858_1511,
+                0x64f9_8fa7,
+                0xbefa_4fa4,
             ],
             output_len: 28,
         }
@@ -1119,10 +1180,8 @@ impl Sha256State {
 
         // Message schedule expansion
         for i in 16..64 {
-            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18)
-                ^ (w[i - 15] >> 3);
-            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19)
-                ^ (w[i - 2] >> 10);
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
             w[i] = w[i - 16]
                 .wrapping_add(s0)
                 .wrapping_add(w[i - 7])
@@ -1203,46 +1262,86 @@ fn sha256_finalize(state: &mut Sha256State, remaining: &[u8], total_len: u64) ->
 
 /// SHA-512 round constants K (FIPS 180-4 §4.2.3).
 const SHA512_K: [u64; 80] = [
-    0x428a_2f98_d728_ae22, 0x7137_4491_23ef_65cd,
-    0xb5c0_fbcf_ec4d_3b2f, 0xe9b5_dba5_8189_dbbc,
-    0x3956_c25b_f348_b538, 0x59f1_11f1_b605_d019,
-    0x923f_82a4_af19_4f9b, 0xab1c_5ed5_da6d_8118,
-    0xd807_aa98_a303_0242, 0x1283_5b01_4570_6fbe,
-    0x2431_85be_4ee4_b28c, 0x550c_7dc3_d5ff_b4e2,
-    0x72be_5d74_f27b_896f, 0x80de_b1fe_3b16_96b1,
-    0x9bdc_06a7_25c7_1235, 0xc19b_f174_cf69_2694,
-    0xe49b_69c1_9ef1_4ad2, 0xefbe_4786_384f_25e3,
-    0x0fc1_9dc6_8b8c_d5b5, 0x240c_a1cc_77ac_9c65,
-    0x2de9_2c6f_592b_0275, 0x4a74_84aa_6ea6_e483,
-    0x5cb0_a9dc_bd41_fbd4, 0x76f9_88da_8311_53b5,
-    0x983e_5152_ee66_dfab, 0xa831_c66d_2db4_3210,
-    0xb003_27c8_98fb_213f, 0xbf59_7fc7_beef_0ee4,
-    0xc6e0_0bf3_3da8_8fc2, 0xd5a7_9147_930a_a725,
-    0x06ca_6351_e003_826f, 0x1429_2967_0a0e_6e70,
-    0x27b7_0a85_46d2_2ffc, 0x2e1b_2138_5c26_c926,
-    0x4d2c_6dfc_5ac4_2aed, 0x5338_0d13_9d95_b3df,
-    0x650a_7354_8baf_63de, 0x766a_0abb_3c77_b2a8,
-    0x81c2_c92e_47ed_aee6, 0x9272_2c85_1482_353b,
-    0xa2bf_e8a1_4cf1_0364, 0xa81a_664b_bc42_3001,
-    0xc24b_8b70_d0f8_9791, 0xc76c_51a3_0654_be30,
-    0xd192_e819_d6ef_5218, 0xd699_0624_5565_a910,
-    0xf40e_3585_5771_202a, 0x106a_a070_32bb_d1b8,
-    0x19a4_c116_b8d2_d0c8, 0x1e37_6c08_5141_ab53,
-    0x2748_774c_df8e_eb99, 0x34b0_bcb5_e19b_48a8,
-    0x391c_0cb3_c5c9_5a63, 0x4ed8_aa4a_e341_8acb,
-    0x5b9c_ca4f_7763_e373, 0x682e_6ff3_d6b2_b8a3,
-    0x748f_82ee_5def_b2fc, 0x78a5_636f_4317_2f60,
-    0x84c8_7814_a1f0_ab72, 0x8cc7_0208_1a64_39ec,
-    0x90be_fffa_2363_1e28, 0xa450_6ceb_de82_bde9,
-    0xbef9_a3f7_b2c6_7915, 0xc671_78f2_e372_532b,
-    0xca27_3ece_ea26_619c, 0xd186_b8c7_21c0_c207,
-    0xeada_7dd6_cde0_eb1e, 0xf57d_4f7f_ee6e_d178,
-    0x06f0_67aa_7217_6fba, 0x0a63_7dc5_a2c8_98a6,
-    0x113f_9804_bef9_0dae, 0x1b71_0b35_131c_471b,
-    0x28db_77f5_2304_7d84, 0x32ca_ab7b_40c7_2493,
-    0x3c9e_be0a_15c9_bebc, 0x431d_67c4_9c10_0d4c,
-    0x4cc5_d4be_cb3e_42b6, 0x597f_299c_fc65_7e2a,
-    0x5fcb_6fab_3ad6_faec, 0x6c44_198c_4a47_5817,
+    0x428a_2f98_d728_ae22,
+    0x7137_4491_23ef_65cd,
+    0xb5c0_fbcf_ec4d_3b2f,
+    0xe9b5_dba5_8189_dbbc,
+    0x3956_c25b_f348_b538,
+    0x59f1_11f1_b605_d019,
+    0x923f_82a4_af19_4f9b,
+    0xab1c_5ed5_da6d_8118,
+    0xd807_aa98_a303_0242,
+    0x1283_5b01_4570_6fbe,
+    0x2431_85be_4ee4_b28c,
+    0x550c_7dc3_d5ff_b4e2,
+    0x72be_5d74_f27b_896f,
+    0x80de_b1fe_3b16_96b1,
+    0x9bdc_06a7_25c7_1235,
+    0xc19b_f174_cf69_2694,
+    0xe49b_69c1_9ef1_4ad2,
+    0xefbe_4786_384f_25e3,
+    0x0fc1_9dc6_8b8c_d5b5,
+    0x240c_a1cc_77ac_9c65,
+    0x2de9_2c6f_592b_0275,
+    0x4a74_84aa_6ea6_e483,
+    0x5cb0_a9dc_bd41_fbd4,
+    0x76f9_88da_8311_53b5,
+    0x983e_5152_ee66_dfab,
+    0xa831_c66d_2db4_3210,
+    0xb003_27c8_98fb_213f,
+    0xbf59_7fc7_beef_0ee4,
+    0xc6e0_0bf3_3da8_8fc2,
+    0xd5a7_9147_930a_a725,
+    0x06ca_6351_e003_826f,
+    0x1429_2967_0a0e_6e70,
+    0x27b7_0a85_46d2_2ffc,
+    0x2e1b_2138_5c26_c926,
+    0x4d2c_6dfc_5ac4_2aed,
+    0x5338_0d13_9d95_b3df,
+    0x650a_7354_8baf_63de,
+    0x766a_0abb_3c77_b2a8,
+    0x81c2_c92e_47ed_aee6,
+    0x9272_2c85_1482_353b,
+    0xa2bf_e8a1_4cf1_0364,
+    0xa81a_664b_bc42_3001,
+    0xc24b_8b70_d0f8_9791,
+    0xc76c_51a3_0654_be30,
+    0xd192_e819_d6ef_5218,
+    0xd699_0624_5565_a910,
+    0xf40e_3585_5771_202a,
+    0x106a_a070_32bb_d1b8,
+    0x19a4_c116_b8d2_d0c8,
+    0x1e37_6c08_5141_ab53,
+    0x2748_774c_df8e_eb99,
+    0x34b0_bcb5_e19b_48a8,
+    0x391c_0cb3_c5c9_5a63,
+    0x4ed8_aa4a_e341_8acb,
+    0x5b9c_ca4f_7763_e373,
+    0x682e_6ff3_d6b2_b8a3,
+    0x748f_82ee_5def_b2fc,
+    0x78a5_636f_4317_2f60,
+    0x84c8_7814_a1f0_ab72,
+    0x8cc7_0208_1a64_39ec,
+    0x90be_fffa_2363_1e28,
+    0xa450_6ceb_de82_bde9,
+    0xbef9_a3f7_b2c6_7915,
+    0xc671_78f2_e372_532b,
+    0xca27_3ece_ea26_619c,
+    0xd186_b8c7_21c0_c207,
+    0xeada_7dd6_cde0_eb1e,
+    0xf57d_4f7f_ee6e_d178,
+    0x06f0_67aa_7217_6fba,
+    0x0a63_7dc5_a2c8_98a6,
+    0x113f_9804_bef9_0dae,
+    0x1b71_0b35_131c_471b,
+    0x28db_77f5_2304_7d84,
+    0x32ca_ab7b_40c7_2493,
+    0x3c9e_be0a_15c9_bebc,
+    0x431d_67c4_9c10_0d4c,
+    0x4cc5_d4be_cb3e_42b6,
+    0x597f_299c_fc65_7e2a,
+    0x5fcb_6fab_3ad6_faec,
+    0x6c44_198c_4a47_5817,
 ];
 
 /// SHA-512 family state.
@@ -1259,10 +1358,14 @@ impl Sha512State {
     fn new_sha512() -> Self {
         Self {
             h: [
-                0x6a09_e667_f3bc_c908, 0xbb67_ae85_84ca_a73b,
-                0x3c6e_f372_fe94_f82b, 0xa54f_f53a_5f1d_36f1,
-                0x510e_527f_ade6_82d1, 0x9b05_688c_2b3e_6c1f,
-                0x1f83_d9ab_fb41_bd6b, 0x5be0_cd19_137e_2179,
+                0x6a09_e667_f3bc_c908,
+                0xbb67_ae85_84ca_a73b,
+                0x3c6e_f372_fe94_f82b,
+                0xa54f_f53a_5f1d_36f1,
+                0x510e_527f_ade6_82d1,
+                0x9b05_688c_2b3e_6c1f,
+                0x1f83_d9ab_fb41_bd6b,
+                0x5be0_cd19_137e_2179,
             ],
             output_len: 64,
         }
@@ -1272,10 +1375,14 @@ impl Sha512State {
     fn new_sha384() -> Self {
         Self {
             h: [
-                0xcbbb_9d5d_c105_9ed8, 0x629a_292a_367c_d507,
-                0x9159_015a_3070_dd17, 0x152f_ecd8_f70e_5939,
-                0x6733_2667_ffc0_0b31, 0x8eb4_4a87_6858_1511,
-                0xdb0c_2e0d_64f9_8fa7, 0x47b5_481d_befa_4fa4,
+                0xcbbb_9d5d_c105_9ed8,
+                0x629a_292a_367c_d507,
+                0x9159_015a_3070_dd17,
+                0x152f_ecd8_f70e_5939,
+                0x6733_2667_ffc0_0b31,
+                0x8eb4_4a87_6858_1511,
+                0xdb0c_2e0d_64f9_8fa7,
+                0x47b5_481d_befa_4fa4,
             ],
             output_len: 48,
         }
@@ -1285,10 +1392,14 @@ impl Sha512State {
     fn new_sha512_224() -> Self {
         Self {
             h: [
-                0x8c3d_37c8_1954_4da2, 0x73e1_9966_89dc_d4d6,
-                0x1dfb_b7ae_a13b_abc3, 0xeb55_bf6f_ff2a_c8b3,
-                0xdb9a_be5e_48b6_f8f0, 0x3ea1_fc5f_5315_a4ae,
-                0xde0c_0dfd_6068_1e62, 0x6826_8ad4_44f7_dc6a,
+                0x8c3d_37c8_1954_4da2,
+                0x73e1_9966_89dc_d4d6,
+                0x1dfb_b7ae_a13b_abc3,
+                0xeb55_bf6f_ff2a_c8b3,
+                0xdb9a_be5e_48b6_f8f0,
+                0x3ea1_fc5f_5315_a4ae,
+                0xde0c_0dfd_6068_1e62,
+                0x6826_8ad4_44f7_dc6a,
             ],
             output_len: 28,
         }
@@ -1298,10 +1409,14 @@ impl Sha512State {
     fn new_sha512_256() -> Self {
         Self {
             h: [
-                0x2231_2194_fc2b_f72c, 0x9f55_5fa3_c84c_64c2,
-                0x2393_b86b_6f53_b151, 0x9638_7719_5940_eabd,
-                0x9628_3ee2_a04a_4484, 0x0bfb_5a4f_1bec_38b3,
-                0x5da6_b97f_fbff_ddbe, 0xeb68_aaf3_ced9_bacd,
+                0x2231_2194_fc2b_f72c,
+                0x9f55_5fa3_c84c_64c2,
+                0x2393_b86b_6f53_b151,
+                0x9638_7719_5940_eabd,
+                0x9628_3ee2_a04a_4484,
+                0x0bfb_5a4f_1bec_38b3,
+                0x5da6_b97f_fbff_ddbe,
+                0xeb68_aaf3_ced9_bacd,
             ],
             output_len: 32,
         }
@@ -1317,19 +1432,21 @@ impl Sha512State {
         for i in 0..16 {
             let offset = i * 8;
             w[i] = u64::from_be_bytes([
-                block[offset],     block[offset + 1],
-                block[offset + 2], block[offset + 3],
-                block[offset + 4], block[offset + 5],
-                block[offset + 6], block[offset + 7],
+                block[offset],
+                block[offset + 1],
+                block[offset + 2],
+                block[offset + 3],
+                block[offset + 4],
+                block[offset + 5],
+                block[offset + 6],
+                block[offset + 7],
             ]);
         }
 
         // Message schedule expansion
         for i in 16..80 {
-            let s0 = w[i - 15].rotate_right(1) ^ w[i - 15].rotate_right(8)
-                ^ (w[i - 15] >> 7);
-            let s1 = w[i - 2].rotate_right(19) ^ w[i - 2].rotate_right(61)
-                ^ (w[i - 2] >> 6);
+            let s0 = w[i - 15].rotate_right(1) ^ w[i - 15].rotate_right(8) ^ (w[i - 15] >> 7);
+            let s1 = w[i - 2].rotate_right(19) ^ w[i - 2].rotate_right(61) ^ (w[i - 2] >> 6);
             w[i] = w[i - 16]
                 .wrapping_add(s0)
                 .wrapping_add(w[i - 7])
@@ -1421,7 +1538,13 @@ impl Sha1State {
     /// SHA-1 initial hash values (FIPS 180-4 §5.3.1).
     fn new() -> Self {
         Self {
-            h: [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476, 0xc3d2_e1f0],
+            h: [
+                0x6745_2301,
+                0xefcd_ab89,
+                0x98ba_dcfe,
+                0x1032_5476,
+                0xc3d2_e1f0,
+            ],
         }
     }
 
@@ -1505,30 +1628,77 @@ fn sha1_finalize(state: &mut Sha1State, remaining: &[u8], total_len: u64) -> Vec
 
 /// MD5 per-round shift amounts (RFC 1321 §3.4).
 const MD5_S: [u32; 64] = [
-    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
-    5,  9, 14, 20, 5,  9, 14, 20, 5,  9, 14, 20, 5,  9, 14, 20,
-    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9,
+    14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15,
+    21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
 ];
 
 /// MD5 sine-derived constants T[i] = floor(2^32 × |sin(i+1)|) (RFC 1321 §3.4).
 const MD5_T: [u32; 64] = [
-    0xd76a_a478, 0xe8c7_b756, 0x2420_70db, 0xc1bd_ceee,
-    0xf57c_0faf, 0x4787_c62a, 0xa830_4613, 0xfd46_9501,
-    0x6980_98d8, 0x8b44_f7af, 0xffff_5bb1, 0x895c_d7be,
-    0x6b90_1122, 0xfd98_7193, 0xa679_438e, 0x49b4_0821,
-    0xf61e_2562, 0xc040_b340, 0x265e_5a51, 0xe9b6_c7aa,
-    0xd62f_105d, 0x0244_1453, 0xd8a1_e681, 0xe7d3_fbc8,
-    0x21e1_cde6, 0xc337_07d6, 0xf4d5_0d87, 0x455a_14ed,
-    0xa9e3_e905, 0xfcef_a3f8, 0x676f_02d9, 0x8d2a_4c8a,
-    0xfffa_3942, 0x8771_f681, 0x6d9d_6122, 0xfde5_380c,
-    0xa4be_ea44, 0x4bde_cfa9, 0xf6bb_4b60, 0xbebf_bc70,
-    0x289b_7ec6, 0xeaa1_27fa, 0xd4ef_3085, 0x0488_1d05,
-    0xd9d4_d039, 0xe6db_99e5, 0x1fa2_7cf8, 0xc4ac_5665,
-    0xf429_2244, 0x432a_ff97, 0xab94_23a7, 0xfc93_a039,
-    0x655b_59c3, 0x8f0c_cc92, 0xffef_f47d, 0x8584_5dd1,
-    0x6fa8_7e4f, 0xfe2c_e6e0, 0xa301_4314, 0x4e08_11a1,
-    0xf753_7e82, 0xbd3a_f235, 0x2ad7_d2bb, 0xeb86_d391,
+    0xd76a_a478,
+    0xe8c7_b756,
+    0x2420_70db,
+    0xc1bd_ceee,
+    0xf57c_0faf,
+    0x4787_c62a,
+    0xa830_4613,
+    0xfd46_9501,
+    0x6980_98d8,
+    0x8b44_f7af,
+    0xffff_5bb1,
+    0x895c_d7be,
+    0x6b90_1122,
+    0xfd98_7193,
+    0xa679_438e,
+    0x49b4_0821,
+    0xf61e_2562,
+    0xc040_b340,
+    0x265e_5a51,
+    0xe9b6_c7aa,
+    0xd62f_105d,
+    0x0244_1453,
+    0xd8a1_e681,
+    0xe7d3_fbc8,
+    0x21e1_cde6,
+    0xc337_07d6,
+    0xf4d5_0d87,
+    0x455a_14ed,
+    0xa9e3_e905,
+    0xfcef_a3f8,
+    0x676f_02d9,
+    0x8d2a_4c8a,
+    0xfffa_3942,
+    0x8771_f681,
+    0x6d9d_6122,
+    0xfde5_380c,
+    0xa4be_ea44,
+    0x4bde_cfa9,
+    0xf6bb_4b60,
+    0xbebf_bc70,
+    0x289b_7ec6,
+    0xeaa1_27fa,
+    0xd4ef_3085,
+    0x0488_1d05,
+    0xd9d4_d039,
+    0xe6db_99e5,
+    0x1fa2_7cf8,
+    0xc4ac_5665,
+    0xf429_2244,
+    0x432a_ff97,
+    0xab94_23a7,
+    0xfc93_a039,
+    0x655b_59c3,
+    0x8f0c_cc92,
+    0xffef_f47d,
+    0x8584_5dd1,
+    0x6fa8_7e4f,
+    0xfe2c_e6e0,
+    0xa301_4314,
+    0x4e08_11a1,
+    0xf753_7e82,
+    0xbd3a_f235,
+    0x2ad7_d2bb,
+    0xeb86_d391,
 ];
 
 /// MD5 state.
@@ -1573,10 +1743,7 @@ impl Md5State {
                 _ => (c ^ (b | (!d)), (7 * i) % 16),
             };
 
-            let temp = a
-                .wrapping_add(f)
-                .wrapping_add(MD5_T[i])
-                .wrapping_add(m[g]);
+            let temp = a.wrapping_add(f).wrapping_add(MD5_T[i]).wrapping_add(m[g]);
             a = d;
             d = c;
             c = b;
@@ -1629,8 +1796,8 @@ mod tests {
         let key = vec![0x0bu8; 16];
         let data = b"Hi There";
         let expected = [
-            0x92, 0x94, 0x72, 0x7a, 0x36, 0x38, 0xbb, 0x1c,
-            0x13, 0xf4, 0x8e, 0xf8, 0x15, 0x8b, 0xfc, 0x9d,
+            0x92, 0x94, 0x72, 0x7a, 0x36, 0x38, 0xbb, 0x1c, 0x13, 0xf4, 0x8e, 0xf8, 0x15, 0x8b,
+            0xfc, 0x9d,
         ];
 
         let mut engine = HmacEngine::new(DigestAlgorithm::Md5, &key);
@@ -1645,10 +1812,9 @@ mod tests {
         let key = vec![0x0bu8; 20];
         let data = b"Hi There";
         let expected = [
-            0xb0, 0x34, 0x4c, 0x61, 0xd8, 0xdb, 0x38, 0x53,
-            0x5c, 0xa8, 0xaf, 0xce, 0xaf, 0x0b, 0xf1, 0x2b,
-            0x88, 0x1d, 0xc2, 0x00, 0xc9, 0x83, 0x3d, 0xa7,
-            0x26, 0xe9, 0x37, 0x6c, 0x2e, 0x32, 0xcf, 0xf7,
+            0xb0, 0x34, 0x4c, 0x61, 0xd8, 0xdb, 0x38, 0x53, 0x5c, 0xa8, 0xaf, 0xce, 0xaf, 0x0b,
+            0xf1, 0x2b, 0x88, 0x1d, 0xc2, 0x00, 0xc9, 0x83, 0x3d, 0xa7, 0x26, 0xe9, 0x37, 0x6c,
+            0x2e, 0x32, 0xcf, 0xf7,
         ];
 
         let mut engine = HmacEngine::new(DigestAlgorithm::Sha256, &key);
@@ -1663,10 +1829,9 @@ mod tests {
         let key = b"Jefe";
         let data = b"what do ya want for nothing?";
         let expected = [
-            0x5b, 0xdc, 0xc1, 0x46, 0xbf, 0x60, 0x75, 0x4e,
-            0x6a, 0x04, 0x24, 0x26, 0x08, 0x95, 0x75, 0xc7,
-            0x5a, 0x00, 0x3f, 0x08, 0x9d, 0x27, 0x39, 0x83,
-            0x9d, 0xec, 0x58, 0xb9, 0x64, 0xec, 0x38, 0x43,
+            0x5b, 0xdc, 0xc1, 0x46, 0xbf, 0x60, 0x75, 0x4e, 0x6a, 0x04, 0x24, 0x26, 0x08, 0x95,
+            0x75, 0xc7, 0x5a, 0x00, 0x3f, 0x08, 0x9d, 0x27, 0x39, 0x83, 0x9d, 0xec, 0x58, 0xb9,
+            0x64, 0xec, 0x38, 0x43,
         ];
 
         let mut engine = HmacEngine::new(DigestAlgorithm::Sha256, key);
@@ -1681,9 +1846,8 @@ mod tests {
         let key = vec![0x0bu8; 20];
         let data = b"Hi There";
         let expected = [
-            0xb6, 0x17, 0x31, 0x86, 0x55, 0x05, 0x72, 0x64,
-            0xe2, 0x8b, 0xc0, 0xb6, 0xfb, 0x37, 0x8c, 0x8e,
-            0xf1, 0x46, 0xbe, 0x00,
+            0xb6, 0x17, 0x31, 0x86, 0x55, 0x05, 0x72, 0x64, 0xe2, 0x8b, 0xc0, 0xb6, 0xfb, 0x37,
+            0x8c, 0x8e, 0xf1, 0x46, 0xbe, 0x00,
         ];
 
         let mut engine = HmacEngine::new(DigestAlgorithm::Sha1, &key);
@@ -1696,10 +1860,9 @@ mod tests {
     #[test]
     fn test_sha256_empty() {
         let expected = [
-            0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
-            0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
-            0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
-            0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+            0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f,
+            0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b,
+            0x78, 0x52, 0xb8, 0x55,
         ];
         let mut engine = DigestEngine::new(DigestAlgorithm::Sha256);
         let result = engine.finalize();
@@ -1710,8 +1873,8 @@ mod tests {
     #[test]
     fn test_md5_empty() {
         let expected = [
-            0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04,
-            0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8, 0x42, 0x7e,
+            0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04, 0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8,
+            0x42, 0x7e,
         ];
         let mut engine = DigestEngine::new(DigestAlgorithm::Md5);
         let result = engine.finalize();
@@ -1722,9 +1885,8 @@ mod tests {
     #[test]
     fn test_sha1_abc() {
         let expected = [
-            0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a,
-            0xba, 0x3e, 0x25, 0x71, 0x78, 0x50, 0xc2, 0x6c,
-            0x9c, 0xd0, 0xd8, 0x9d,
+            0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a, 0xba, 0x3e, 0x25, 0x71, 0x78, 0x50,
+            0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d,
         ];
         let mut engine = DigestEngine::new(DigestAlgorithm::Sha1);
         engine.update(b"abc");
@@ -1757,10 +1919,9 @@ mod tests {
 
         // Expected HMAC-SHA-256 of "Hi There" with key = 20 bytes of 0x0b
         let expected = [
-            0xb0, 0x34, 0x4c, 0x61, 0xd8, 0xdb, 0x38, 0x53,
-            0x5c, 0xa8, 0xaf, 0xce, 0xaf, 0x0b, 0xf1, 0x2b,
-            0x88, 0x1d, 0xc2, 0x00, 0xc9, 0x83, 0x3d, 0xa7,
-            0x26, 0xe9, 0x37, 0x6c, 0x2e, 0x32, 0xcf, 0xf7,
+            0xb0, 0x34, 0x4c, 0x61, 0xd8, 0xdb, 0x38, 0x53, 0x5c, 0xa8, 0xaf, 0xce, 0xaf, 0x0b,
+            0xf1, 0x2b, 0x88, 0x1d, 0xc2, 0x00, 0xc9, 0x83, 0x3d, 0xa7, 0x26, 0xe9, 0x37, 0x6c,
+            0x2e, 0x32, 0xcf, 0xf7,
         ];
         assert_eq!(result, expected);
     }
@@ -1775,7 +1936,8 @@ mod tests {
         let short_key = vec![0x01u8; 10]; // 10 bytes < 14 bytes
         ctx.init(&short_key, None).expect("init should succeed");
         let params = ctx.get_params().expect("get_params should succeed");
-        let fips_val: u64 = params.get_typed(PARAM_FIPS_INDICATOR)
+        let fips_val: u64 = params
+            .get_typed(PARAM_FIPS_INDICATOR)
             .expect("fips indicator present");
         assert_eq!(fips_val, 0, "short key should not be FIPS approved");
     }
@@ -1789,7 +1951,8 @@ mod tests {
         let short_key = vec![0x01u8; 10]; // Short key
         ctx.init(&short_key, None).expect("init should succeed");
         let params = ctx.get_params().expect("get_params should succeed");
-        let fips_val: u64 = params.get_typed(PARAM_FIPS_INDICATOR)
+        let fips_val: u64 = params
+            .get_typed(PARAM_FIPS_INDICATOR)
             .expect("fips indicator present");
         assert_eq!(fips_val, 1, "internal variant should stay FIPS approved");
     }
@@ -1855,11 +2018,26 @@ mod tests {
     /// Test DigestAlgorithm::from_name case-insensitivity.
     #[test]
     fn test_digest_algorithm_names() {
-        assert_eq!(DigestAlgorithm::from_name("sha-256"), Some(DigestAlgorithm::Sha256));
-        assert_eq!(DigestAlgorithm::from_name("SHA256"), Some(DigestAlgorithm::Sha256));
-        assert_eq!(DigestAlgorithm::from_name("sha2-256"), Some(DigestAlgorithm::Sha256));
-        assert_eq!(DigestAlgorithm::from_name("MD5"), Some(DigestAlgorithm::Md5));
-        assert_eq!(DigestAlgorithm::from_name("SHA-512/224"), Some(DigestAlgorithm::Sha512_224));
+        assert_eq!(
+            DigestAlgorithm::from_name("sha-256"),
+            Some(DigestAlgorithm::Sha256)
+        );
+        assert_eq!(
+            DigestAlgorithm::from_name("SHA256"),
+            Some(DigestAlgorithm::Sha256)
+        );
+        assert_eq!(
+            DigestAlgorithm::from_name("sha2-256"),
+            Some(DigestAlgorithm::Sha256)
+        );
+        assert_eq!(
+            DigestAlgorithm::from_name("MD5"),
+            Some(DigestAlgorithm::Md5)
+        );
+        assert_eq!(
+            DigestAlgorithm::from_name("SHA-512/224"),
+            Some(DigestAlgorithm::Sha512_224)
+        );
         assert_eq!(DigestAlgorithm::from_name("unknown"), None);
     }
 

@@ -150,14 +150,12 @@ const KECCAK_RC: [u64; 24] = [
 /// position after the π permutation.  `KECCAK_ROTC[i]` is the left
 /// rotation amount for the lane that ends up at flat index `KECCAK_PILN[i]`.
 const KECCAK_ROTC: [u32; 24] = [
-    1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62,
-    18, 39, 61, 20, 44,
+    1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
 ];
 
 /// Destination lane indices for the combined ρ/π step.
 const KECCAK_PILN: [usize; 24] = [
-    10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20,
-    14, 22, 9, 6, 1,
+    10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
 ];
 
 // ===========================================================================
@@ -438,14 +436,10 @@ impl KeccakSponge {
     fn keccak_f(state: &mut [u64; 25]) {
         for (round, &rc) in KECCAK_RC.iter().enumerate() {
             let _ = round; // round index available for debugging if needed
-            // θ (theta) step -------------------------------------------------
+                           // θ (theta) step -------------------------------------------------
             let mut c = [0u64; 5];
             for x in 0..5 {
-                c[x] = state[x]
-                    ^ state[x + 5]
-                    ^ state[x + 10]
-                    ^ state[x + 15]
-                    ^ state[x + 20];
+                c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
             }
             let mut d = [0u64; 5];
             for x in 0..5 {
@@ -469,8 +463,7 @@ impl KeccakSponge {
                 let mut row = [0u64; 5];
                 row.copy_from_slice(&state[y_offset..y_offset + 5]);
                 for x in 0..5 {
-                    state[y_offset + x] =
-                        row[x] ^ ((!row[(x + 1) % 5]) & row[(x + 2) % 5]);
+                    state[y_offset + x] = row[x] ^ ((!row[(x + 1) % 5]) & row[(x + 2) % 5]);
                 }
             }
 
@@ -494,8 +487,7 @@ impl KeccakSponge {
         if self.buf_len > 0 {
             let space = self.rate.saturating_sub(self.buf_len);
             let to_copy = data.len().min(space);
-            self.buf[self.buf_len..self.buf_len + to_copy]
-                .copy_from_slice(&data[..to_copy]);
+            self.buf[self.buf_len..self.buf_len + to_copy].copy_from_slice(&data[..to_copy]);
             self.buf_len += to_copy;
             offset += to_copy;
 
@@ -865,9 +857,7 @@ impl KmacContext {
     fn build_header(&self) -> ProviderResult<Vec<u8>> {
         let rate = self.variant.rate();
         // Concatenate encode_string("KMAC") ‖ encode_string(custom).
-        let mut payload = Vec::with_capacity(
-            KMAC_STRING.len().saturating_add(self.custom_len),
-        );
+        let mut payload = Vec::with_capacity(KMAC_STRING.len().saturating_add(self.custom_len));
         payload.extend_from_slice(&KMAC_STRING);
         if self.custom_len > 0 {
             payload.extend_from_slice(&self.custom[..self.custom_len]);

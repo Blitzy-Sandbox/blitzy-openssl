@@ -35,10 +35,10 @@
 
 use crate::traits::{AlgorithmDescriptor, CipherContext, CipherProvider};
 use openssl_common::error::{ProviderError, ProviderResult};
-use openssl_common::param::{ParamBuilder, ParamSet};
 /// Re-exported so that consumers inspecting `ParamSet` entries returned by
 /// `generic_get_params` can match on value variants without a separate import.
 pub use openssl_common::param::ParamValue;
+use openssl_common::param::{ParamBuilder, ParamSet};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use subtle::ConstantTimeEq;
@@ -93,7 +93,10 @@ impl CipherMode {
     /// with associated data).
     #[must_use]
     pub fn is_aead(self) -> bool {
-        matches!(self, Self::Gcm | Self::Ccm | Self::Ocb | Self::Siv | Self::GcmSiv)
+        matches!(
+            self,
+            Self::Gcm | Self::Ccm | Self::Ocb | Self::Siv | Self::GcmSiv
+        )
     }
 
     /// Returns `true` if this mode requires block-aligned input
@@ -870,7 +873,10 @@ pub fn generic_get_params(
         .push_u32(param_keys::KEYLEN, kl)
         .push_u32(param_keys::BLOCK_SIZE, bs)
         .push_u32(param_keys::IVLEN, il)
-        .push_u32(param_keys::AEAD, bool_u32(flags.contains(CipherFlags::AEAD)))
+        .push_u32(
+            param_keys::AEAD,
+            bool_u32(flags.contains(CipherFlags::AEAD)),
+        )
         .push_u32(
             param_keys::CUSTOM_IV,
             bool_u32(flags.contains(CipherFlags::CUSTOM_IV)),
@@ -1156,9 +1162,7 @@ pub fn generate_random_iv(len: usize) -> ProviderResult<Vec<u8>> {
 /// - `Err(ProviderError)` if the IV is empty.
 pub fn increment_iv(iv: &mut [u8]) -> ProviderResult<()> {
     if iv.is_empty() {
-        return Err(ProviderError::Dispatch(
-            "cannot increment empty IV".into(),
-        ));
+        return Err(ProviderError::Dispatch("cannot increment empty IV".into()));
     }
     // Big-endian increment: start from the least-significant byte
     // (rightmost) and propagate carry leftward.
@@ -1435,13 +1439,7 @@ mod tests {
 
     #[test]
     fn generic_init_key_creates_config() {
-        let config = generic_init_key(
-            CipherMode::Cbc,
-            256,
-            128,
-            128,
-            CipherFlags::empty(),
-        );
+        let config = generic_init_key(CipherMode::Cbc, 256, 128, 128, CipherFlags::empty());
         assert_eq!(config.mode, CipherMode::Cbc);
         assert_eq!(config.key_bytes(), 32);
         assert_eq!(config.block_bytes(), 16);
@@ -1455,14 +1453,8 @@ mod tests {
     fn generic_block_update_buffers_partial() {
         let mut buffer = Vec::new();
         // 5 bytes input, block_size=16: no complete blocks yet
-        let result = generic_block_update(
-            &[1, 2, 3, 4, 5],
-            16,
-            &mut buffer,
-            false,
-            |_data| vec![],
-        )
-        .expect("should succeed");
+        let result = generic_block_update(&[1, 2, 3, 4, 5], 16, &mut buffer, false, |_data| vec![])
+            .expect("should succeed");
         assert!(result.is_empty());
         assert_eq!(buffer.len(), 5);
     }
@@ -1505,8 +1497,7 @@ mod tests {
     #[test]
     fn generic_stream_update_passthrough() {
         let input = b"stream data";
-        let result = generic_stream_update(input, |data| data.to_vec())
-            .expect("should succeed");
+        let result = generic_stream_update(input, |data| data.to_vec()).expect("should succeed");
         assert_eq!(result, b"stream data");
     }
 
@@ -1515,7 +1506,10 @@ mod tests {
     #[test]
     fn gcm_tag_len_valid_range() {
         for len in 4..=16 {
-            assert!(gcm_validate_tag_len(len).is_ok(), "tag len {len} should be valid");
+            assert!(
+                gcm_validate_tag_len(len).is_ok(),
+                "tag len {len} should be valid"
+            );
         }
     }
 
@@ -1547,14 +1541,20 @@ mod tests {
     #[test]
     fn ccm_tag_len_valid_even() {
         for len in [4, 6, 8, 10, 12, 14, 16] {
-            assert!(ccm_validate_tag_len(len).is_ok(), "tag len {len} should be valid");
+            assert!(
+                ccm_validate_tag_len(len).is_ok(),
+                "tag len {len} should be valid"
+            );
         }
     }
 
     #[test]
     fn ccm_tag_len_odd_rejected() {
         for len in [5, 7, 9, 11, 13, 15] {
-            assert!(ccm_validate_tag_len(len).is_err(), "tag len {len} should be rejected");
+            assert!(
+                ccm_validate_tag_len(len).is_err(),
+                "tag len {len} should be rejected"
+            );
         }
     }
 
@@ -1567,7 +1567,10 @@ mod tests {
     #[test]
     fn ccm_iv_len_valid_range() {
         for len in 7..=13 {
-            assert!(ccm_validate_iv_len(len).is_ok(), "IV len {len} should be valid");
+            assert!(
+                ccm_validate_iv_len(len).is_ok(),
+                "IV len {len} should be valid"
+            );
         }
     }
 

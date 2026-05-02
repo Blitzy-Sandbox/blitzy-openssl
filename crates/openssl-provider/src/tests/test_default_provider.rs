@@ -22,9 +22,12 @@ use openssl_common::types::OperationType;
 /// Helper: queries the given operation type and returns the descriptors.
 /// Panics with a descriptive message if the query returns `None`.
 fn query_algorithms(provider: &DefaultProvider, op: OperationType) -> Vec<AlgorithmDescriptor> {
-    provider
-        .query_operation(op)
-        .unwrap_or_else(|| panic!("query_operation({:?}) should return Some for default provider", op))
+    provider.query_operation(op).unwrap_or_else(|| {
+        panic!(
+            "query_operation({:?}) should return Some for default provider",
+            op
+        )
+    })
 }
 
 /// Helper: checks whether any descriptor in the list has the given algorithm name
@@ -271,7 +274,10 @@ fn test_default_provider_rand_nonempty() {
     assert!(!rands.is_empty(), "RAND algorithms should not be empty");
     // At least one DRBG variant should be present
     let has_drbg = has_algorithm(&rands, "CTR-DRBG") || has_algorithm(&rands, "HASH-DRBG");
-    assert!(has_drbg, "Expected at least CTR-DRBG or HASH-DRBG in RAND algorithms");
+    assert!(
+        has_drbg,
+        "Expected at least CTR-DRBG or HASH-DRBG in RAND algorithms"
+    );
 }
 
 /// Verifies that signatures include at least RSA and ECDSA.
@@ -284,10 +290,7 @@ fn test_default_provider_signatures_nonempty() {
         "query_operation(Signature) should return Some"
     );
     let sigs = sigs.expect("checked above");
-    assert!(
-        !sigs.is_empty(),
-        "Signature algorithms should not be empty"
-    );
+    assert!(!sigs.is_empty(), "Signature algorithms should not be empty");
     assert_has_algorithm(&sigs, "RSA");
     assert_has_algorithm(&sigs, "ECDSA");
 }
@@ -344,10 +347,7 @@ fn test_default_provider_store_nonempty() {
         "query_operation(Store) should return Some"
     );
     let stores = stores.expect("checked above");
-    assert!(
-        !stores.is_empty(),
-        "Store algorithms should not be empty"
-    );
+    assert!(!stores.is_empty(), "Store algorithms should not be empty");
 }
 
 /// Verifies that asymmetric cipher algorithms include RSA.
@@ -365,7 +365,9 @@ fn test_default_provider_asym_cipher() {
         "AsymCipher algorithms should not be empty"
     );
     // RSA asymmetric cipher should be present
-    let has_rsa = asym.iter().any(|d| d.names.contains(&"RSA") || d.names.contains(&"rsaEncryption"));
+    let has_rsa = asym
+        .iter()
+        .any(|d| d.names.contains(&"RSA") || d.names.contains(&"rsaEncryption"));
     assert!(has_rsa, "RSA should be present in asymmetric ciphers");
 }
 
@@ -498,10 +500,7 @@ fn test_default_provider_get_params() {
         .expect("get_params() should succeed for default provider");
     // Verify the name parameter
     let name_param = params.get("name");
-    assert!(
-        name_param.is_some(),
-        "ParamSet should contain a 'name' key"
-    );
+    assert!(name_param.is_some(), "ParamSet should contain a 'name' key");
     assert_eq!(
         name_param.and_then(|v| v.as_str()),
         Some("OpenSSL Default Provider"),
@@ -591,7 +590,9 @@ fn test_default_provider_lifecycle() {
     }
 
     // Phase 3: Verify parameters are accessible
-    let params = provider.get_params().expect("get_params should succeed before teardown");
+    let params = provider
+        .get_params()
+        .expect("get_params should succeed before teardown");
     assert_eq!(
         params.get("status").and_then(|v| v.as_i32()),
         Some(1),
@@ -632,9 +633,7 @@ fn test_default_provider_lifecycle() {
 #[test]
 fn test_default_provider_double_teardown() {
     let mut provider = DefaultProvider::new();
-    provider
-        .teardown()
-        .expect("first teardown should succeed");
+    provider.teardown().expect("first teardown should succeed");
     // Second teardown should also succeed (idempotent behavior)
     provider
         .teardown()

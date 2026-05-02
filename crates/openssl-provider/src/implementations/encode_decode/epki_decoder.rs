@@ -50,11 +50,11 @@ use tracing::{debug, warn};
 
 use openssl_common::{ProviderError, ProviderResult};
 
-use crate::traits::{DecoderProvider, KeyData, KeySelection};
 use super::common::{
-    DecodedObject, EndecoderError, ObjectType, FORMAT_DER, MAX_PROPQUERY_SIZE,
-    STRUCTURE_PRIVATE_KEY_INFO, read_der,
+    read_der, DecodedObject, EndecoderError, ObjectType, FORMAT_DER, MAX_PROPQUERY_SIZE,
+    STRUCTURE_PRIVATE_KEY_INFO,
 };
+use crate::traits::{DecoderProvider, KeyData, KeySelection};
 
 // Re-use the comprehensive OID → algorithm name mapping from the SPKI decoder.
 // Both decoders need the same mapping (C used OBJ_obj2txt / OBJ_nid2sn globally).
@@ -459,9 +459,7 @@ pub fn decrypt_epki(input: &[u8], passphrase: &[u8]) -> ProviderResult<Vec<u8>> 
     // from decode_epki2pki.c lines 142–153.
     let secret_doc = epki.decrypt(passphrase).map_err(|e| {
         warn!(error = %e, "decrypt_epki: PKCS#5 PBE decryption failed");
-        ProviderError::Dispatch(format!(
-            "EncryptedPrivateKeyInfo decryption failed: {e}"
-        ))
+        ProviderError::Dispatch(format!("EncryptedPrivateKeyInfo decryption failed: {e}"))
     })?;
 
     let decrypted_bytes = secret_doc.as_bytes().to_vec();

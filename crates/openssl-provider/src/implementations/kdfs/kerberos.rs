@@ -411,10 +411,7 @@ impl std::fmt::Debug for KerberosKdfContext {
         // `finish_non_exhaustive` signals the omission clearly and
         // satisfies `clippy::missing_fields_in_debug`.
         f.debug_struct("KerberosKdfContext")
-            .field(
-                "cipher",
-                &self.cipher.as_ref().map(|c| c.name().to_owned()),
-            )
+            .field("cipher", &self.cipher.as_ref().map(|c| c.name().to_owned()))
             .field("cipher_properties", &self.cipher_properties)
             .field("key_len", &self.key.len())
             .field("constant_len", &self.constant.len())
@@ -511,11 +508,7 @@ impl KerberosKdfContext {
         match params.get(PARAM_PROPERTIES) {
             None => {}
             Some(ParamValue::Utf8String(s)) => {
-                self.cipher_properties = if s.is_empty() {
-                    None
-                } else {
-                    Some(s.clone())
-                };
+                self.cipher_properties = if s.is_empty() { None } else { Some(s.clone()) };
                 debug!(properties = ?self.cipher_properties, "KRB5KDF: cipher properties updated");
             }
             Some(_) => {
@@ -740,13 +733,7 @@ impl KerberosKdfContext {
         let mut produced: usize = 0;
         let mut iteration: usize = 0;
         while produced < okey_len {
-            Self::cbc_encrypt_block(
-                &mut ctx,
-                cipher,
-                working_key,
-                &plainblock,
-                &mut cipherblock,
-            )?;
+            Self::cbc_encrypt_block(&mut ctx, cipher, working_key, &plainblock, &mut cipherblock)?;
 
             let remaining = okey_len - produced;
             let to_copy = remaining.min(blocksize);
@@ -939,7 +926,6 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
         "Kerberos 5 Key Derivation Function (RFC 3961 §5.1)",
     )]
 }
-
 
 // =============================================================================
 // Tests
@@ -1467,10 +1453,7 @@ mod tests {
             .push_utf8(PARAM_CIPHER, "NO-SUCH-CIPHER".to_string())
             .build();
         let err = ctx.set_params(&ps).unwrap_err();
-        assert!(
-            matches!(err, ProviderError::Dispatch(_)),
-            "err={err:?}"
-        );
+        assert!(matches!(err, ProviderError::Dispatch(_)), "err={err:?}");
     }
 
     #[test]
@@ -1500,9 +1483,7 @@ mod tests {
         .unwrap();
 
         let mut out = vec![0u8; 16];
-        let err = ctx
-            .derive(&mut out, &ParamSet::new())
-            .unwrap_err();
+        let err = ctx.derive(&mut out, &ParamSet::new()).unwrap_err();
         assert!(
             matches!(err, ProviderError::Common(CommonError::InvalidArgument(_))),
             "err={err:?}"
@@ -1543,4 +1524,3 @@ mod tests {
         assert!(Arc::strong_count(&libctx) >= 2);
     }
 }
-

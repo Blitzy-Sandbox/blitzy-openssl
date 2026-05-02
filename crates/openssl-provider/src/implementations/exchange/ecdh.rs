@@ -432,9 +432,7 @@ impl EcdhExchangeContext {
         }
 
         let digest = self.kdf_digest.as_ref().ok_or_else(|| {
-            ProviderError::Init(
-                "ECDH: X9.63 KDF requested but no kdf-digest set".to_string(),
-            )
+            ProviderError::Init("ECDH: X9.63 KDF requested but no kdf-digest set".to_string())
         })?;
 
         let group = self.require_group()?;
@@ -528,9 +526,7 @@ impl EcdhExchangeContext {
         let target_len = match self.kdf_type {
             EcdhKdfType::None => Self::ecdh_size(group)?,
             EcdhKdfType::X963 => self.kdf_outlen.ok_or_else(|| {
-                ProviderError::Init(
-                    "ECDH: derive_skey: X9.63 KDF requires kdf-outlen".to_string(),
-                )
+                ProviderError::Init("ECDH: derive_skey: X9.63 KDF requires kdf-outlen".to_string())
             })?,
         };
         if target_len == 0 {
@@ -572,9 +568,7 @@ impl EcdhExchangeContext {
                 })?;
                 let curve = Self::parse_curve_name(name)?;
                 let group = EcGroup::from_curve_name(curve).map_err(|e| {
-                    ProviderError::Init(format!(
-                        "ECDH: failed to load curve '{name}': {e}"
-                    ))
+                    ProviderError::Init(format!("ECDH: failed to load curve '{name}': {e}"))
                 })?;
                 self.group = Some(group);
                 Ok(())
@@ -587,9 +581,7 @@ impl EcdhExchangeContext {
                 })?;
                 if !(COFACTOR_MODE_USE_KEY..=COFACTOR_MODE_ENABLED).contains(&mode) {
                     return Err(ProviderError::Common(CommonError::InvalidArgument(
-                        format!(
-                            "ECDH: '{key}' must be -1, 0, or 1 (got {mode})"
-                        ),
+                        format!("ECDH: '{key}' must be -1, 0, or 1 (got {mode})"),
                     )));
                 }
                 self.cofactor_mode = mode;
@@ -611,16 +603,12 @@ impl EcdhExchangeContext {
                     )))
                 })?;
                 let ctx: Arc<LibContext> = LibContext::default();
-                let digest = MessageDigest::fetch(
-                    &ctx,
-                    name,
-                    self.kdf_digest_props.as_deref(),
-                )
-                .map_err(|e| {
-                    ProviderError::Init(format!(
-                        "ECDH: failed to fetch KDF digest '{name}': {e}"
-                    ))
-                })?;
+                let digest = MessageDigest::fetch(&ctx, name, self.kdf_digest_props.as_deref())
+                    .map_err(|e| {
+                        ProviderError::Init(format!(
+                            "ECDH: failed to fetch KDF digest '{name}': {e}"
+                        ))
+                    })?;
                 if digest.is_xof() {
                     warn!(digest = name, "ECDH: rejecting XOF digest for KDF");
                     return Err(ProviderError::Init(format!(
@@ -963,7 +951,10 @@ impl std::fmt::Debug for EcdhExchangeContext {
             .field("has_peer_key", &self.peer_public.is_some())
             .field("cofactor_mode", &self.cofactor_mode)
             .field("kdf_type", &self.kdf_type)
-            .field("kdf_digest", &self.kdf_digest.as_ref().map(MessageDigest::name))
+            .field(
+                "kdf_digest",
+                &self.kdf_digest.as_ref().map(MessageDigest::name),
+            )
             .field("kdf_digest_props", &self.kdf_digest_props)
             .field("kdf_outlen", &self.kdf_outlen)
             .field("kdf_ukm_len", &self.kdf_ukm.as_ref().map(|u| u.len()))
@@ -1070,9 +1061,7 @@ mod tests {
         let secret_len = curve.field_size_bytes();
         let mut alice_secret = vec![0u8; secret_len];
         let mut bob_secret = vec![0u8; secret_len];
-        let an = alice_ctx
-            .derive(&mut alice_secret)
-            .expect("alice derive");
+        let an = alice_ctx.derive(&mut alice_secret).expect("alice derive");
         let bn = bob_ctx.derive(&mut bob_secret).expect("bob derive");
         assert_eq!(an, bn, "shared secret lengths must match");
         assert_eq!(
@@ -1273,8 +1262,7 @@ mod tests {
         ctx.set_params(&p).expect("set cofactor mode");
         let out = ctx.get_params().expect("get_params");
         assert_eq!(
-            out.get(PARAM_COFACTOR_MODE)
-                .and_then(|v| v.as_i32()),
+            out.get(PARAM_COFACTOR_MODE).and_then(|v| v.as_i32()),
             Some(1)
         );
     }
@@ -1357,10 +1345,7 @@ mod tests {
     fn kdf_ukm_round_trip() {
         let mut ctx = ctx_with_curve(NamedCurve::Prime256v1);
         let mut p = ParamSet::new();
-        p.set(
-            PARAM_KDF_UKM,
-            ParamValue::OctetString(vec![1, 2, 3, 4, 5]),
-        );
+        p.set(PARAM_KDF_UKM, ParamValue::OctetString(vec![1, 2, 3, 4, 5]));
         ctx.set_params(&p).expect("set kdf-ukm");
         let out = ctx.get_params().expect("get_params");
         assert_eq!(
@@ -1579,7 +1564,9 @@ mod tests {
         let mut a_clone = vec![0u8; 32];
         let mut b = vec![0u8; 32];
         let an = alice_ctx.derive(&mut a).expect("alice derive");
-        let acn = alice_clone.derive(&mut a_clone).expect("alice clone derive");
+        let acn = alice_clone
+            .derive(&mut a_clone)
+            .expect("alice clone derive");
         let bn = bob_ctx.derive(&mut b).expect("bob derive");
         assert_eq!(an, acn);
         assert_eq!(an, bn);
@@ -1651,10 +1638,7 @@ mod tests {
         // Now init — KDF state must be wiped.
         ctx.init(&priv_bytes, None).expect("init");
         let out = ctx.get_params().expect("get_params");
-        assert_eq!(
-            out.get(PARAM_KDF_TYPE).and_then(|v| v.as_str()),
-            Some("")
-        );
+        assert_eq!(out.get(PARAM_KDF_TYPE).and_then(|v| v.as_str()), Some(""));
         assert!(!out.contains(PARAM_KDF_DIGEST));
         assert!(!out.contains(PARAM_KDF_OUTLEN));
     }

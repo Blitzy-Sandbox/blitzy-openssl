@@ -61,9 +61,10 @@
 //!   provider's algorithm enumeration.
 
 use super::common::{
-    generate_random_iv, generic_get_params, gcm_validate_iv_len, gcm_validate_tag_len, increment_iv,
-    param_keys, verify_tag, CipherFlags, CipherMode, GcmState, IvGeneration, GCM_DEFAULT_IV_LEN,
-    GCM_MAX_TAG_LEN, GCM_TLS_EXPLICIT_IV_LEN, GCM_TLS_FIXED_IV_LEN, GCM_TLS_TAG_LEN,
+    gcm_validate_iv_len, gcm_validate_tag_len, generate_random_iv, generic_get_params,
+    increment_iv, param_keys, verify_tag, CipherFlags, CipherMode, GcmState, IvGeneration,
+    GCM_DEFAULT_IV_LEN, GCM_MAX_TAG_LEN, GCM_TLS_EXPLICIT_IV_LEN, GCM_TLS_FIXED_IV_LEN,
+    GCM_TLS_TAG_LEN,
 };
 use crate::traits::{AlgorithmDescriptor, CipherContext, CipherProvider};
 use openssl_common::error::{ProviderError, ProviderResult};
@@ -456,9 +457,8 @@ impl AesGcmContext {
         // which is not part of the plaintext that GCM authenticates. We
         // subtract the tag length (16) and reject undersized records.
         if !self.encrypting {
-            let tag_u16 = u16::try_from(GCM_TLS_TAG_LEN).map_err(|_| {
-                ProviderError::Dispatch("AES-GCM TLS tag length overflow".into())
-            })?;
+            let tag_u16 = u16::try_from(GCM_TLS_TAG_LEN)
+                .map_err(|_| ProviderError::Dispatch("AES-GCM TLS tag length overflow".into()))?;
             record_len = record_len.checked_sub(tag_u16).ok_or_else(|| {
                 ProviderError::Dispatch(
                     "AES-GCM TLS AAD record length too small to contain tag".into(),
@@ -1017,8 +1017,14 @@ mod tests {
         assert_eq!(descs.len(), 3, "expected 3 AES-GCM descriptors");
         let mut seen = std::collections::HashSet::new();
         for d in &descs {
-            assert!(!d.names.is_empty(), "descriptor must have at least one name");
-            assert!(!d.description.is_empty(), "descriptor must have a description");
+            assert!(
+                !d.names.is_empty(),
+                "descriptor must have at least one name"
+            );
+            assert!(
+                !d.description.is_empty(),
+                "descriptor must have a description"
+            );
             assert_eq!(d.property, "provider=default");
             for n in &d.names {
                 assert!(seen.insert(*n), "duplicate algorithm name: {n}");
@@ -1128,19 +1134,18 @@ mod tests {
         // Decrypt-path AAD: the wire record body the receiver observes
         // is `explicit_iv || ciphertext || tag`, so `length =
         // plaintext.len() + GCM_TLS_EXPLICIT_IV_LEN + GCM_MAX_TAG_LEN`.
-        let dec_len_field = u16::try_from(plaintext.len() + GCM_TLS_EXPLICIT_IV_LEN + GCM_MAX_TAG_LEN)
-            .expect("test setup decrypt len fits u16");
+        let dec_len_field =
+            u16::try_from(plaintext.len() + GCM_TLS_EXPLICIT_IV_LEN + GCM_MAX_TAG_LEN)
+                .expect("test setup decrypt len fits u16");
         let aad_dec = build_aad(dec_len_field);
 
         // Encrypt
         let cipher = AesGcmCipher::new("AES-256-GCM", 32);
         let mut ctx = cipher.new_ctx().expect("new_ctx");
-        ctx.encrypt_init(&key, Some(&iv), None).expect("encrypt_init");
+        ctx.encrypt_init(&key, Some(&iv), None)
+            .expect("encrypt_init");
         let mut aad_params = ParamSet::new();
-        aad_params.set(
-            param_keys::AEAD_TLS1_AAD,
-            ParamValue::OctetString(aad_enc),
-        );
+        aad_params.set(param_keys::AEAD_TLS1_AAD, ParamValue::OctetString(aad_enc));
         ctx.set_params(&aad_params).expect("set_params AAD");
         let mut out = Vec::new();
         ctx.update(plaintext, &mut out).expect("update");
@@ -1155,7 +1160,9 @@ mod tests {
 
         // Decrypt with the corresponding wire-format AAD.
         let mut ctx_d = cipher.new_ctx().expect("new_ctx dec");
-        ctx_d.decrypt_init(&key, Some(&iv), None).expect("decrypt_init");
+        ctx_d
+            .decrypt_init(&key, Some(&iv), None)
+            .expect("decrypt_init");
         let mut aad_params_d = ParamSet::new();
         aad_params_d.set(param_keys::AEAD_TLS1_AAD, ParamValue::OctetString(aad_dec));
         aad_params_d.set(param_keys::AEAD_TAG, ParamValue::OctetString(tag));
@@ -1287,7 +1294,9 @@ mod tests {
         let mut ctx = cipher.new_ctx().unwrap();
         let mut params = ParamSet::new();
         params.set(param_keys::AEAD_TAGLEN, ParamValue::UInt32(20)); // > GCM_MAX_TAG_LEN
-        let err = ctx.set_params(&params).expect_err("oversized tag must fail");
+        let err = ctx
+            .set_params(&params)
+            .expect_err("oversized tag must fail");
         assert!(matches!(err, ProviderError::Dispatch(_)));
     }
 

@@ -41,7 +41,11 @@ const DEFAULT_PROPERTY: &str = "provider=default";
 #[must_use]
 pub fn descriptors() -> Vec<AlgorithmDescriptor> {
     vec![algorithm(
-        &["LMS", "id-alg-hss-lms-hashsig", "1.2.840.113549.1.9.16.3.17"],
+        &[
+            "LMS",
+            "id-alg-hss-lms-hashsig",
+            "1.2.840.113549.1.9.16.3.17",
+        ],
         DEFAULT_PROPERTY,
         "OpenSSL LMS implementation (NIST SP 800-208 verify-only)",
     )]

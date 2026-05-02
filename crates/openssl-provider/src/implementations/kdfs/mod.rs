@@ -373,4 +373,3 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
 
     descs
 }
-

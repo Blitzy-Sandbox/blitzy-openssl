@@ -16,7 +16,7 @@
 //!
 //! All code in this module is 100% safe Rust (Rule R8).
 
-use crate::traits::{AlgorithmDescriptor, DigestProvider, DigestContext};
+use crate::traits::{AlgorithmDescriptor, DigestContext, DigestProvider};
 use openssl_common::error::ProviderResult;
 use openssl_common::param::{ParamSet, ParamValue};
 
@@ -114,8 +114,14 @@ impl DigestContext for Ripemd160Context {
 
     fn get_params(&self) -> ProviderResult<ParamSet> {
         let mut params = ParamSet::new();
-        params.set("block_size", ParamValue::UInt64(RIPEMD160_BLOCK_SIZE as u64));
-        params.set("digest_size", ParamValue::UInt64(RIPEMD160_DIGEST_SIZE as u64));
+        params.set(
+            "block_size",
+            ParamValue::UInt64(RIPEMD160_BLOCK_SIZE as u64),
+        );
+        params.set(
+            "digest_size",
+            ParamValue::UInt64(RIPEMD160_DIGEST_SIZE as u64),
+        );
         Ok(params)
     }
 

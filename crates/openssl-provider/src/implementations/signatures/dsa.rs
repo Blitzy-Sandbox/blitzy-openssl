@@ -957,17 +957,11 @@ impl DsaSignatureContext {
     fn require_supported_nonce(&self, call: &'static str) -> ProviderResult<()> {
         match self.nonce_type {
             NonceType::Default => {
-                trace!(
-                    call = call,
-                    "dsa: random nonce (FIPS 186-4 §4.5) selected"
-                );
+                trace!(call = call, "dsa: random nonce (FIPS 186-4 §4.5) selected");
                 Ok(())
             }
             NonceType::Deterministic => {
-                trace!(
-                    call = call,
-                    "dsa: deterministic nonce (RFC 6979) selected"
-                );
+                trace!(call = call, "dsa: deterministic nonce (RFC 6979) selected");
                 Ok(())
             }
         }
@@ -2695,11 +2689,7 @@ mod tests {
     /// component exceeds 4 GiB, which is impossible for any DSA modulus
     /// supported by `openssl_crypto::dsa`. The `#[allow(clippy::expect_used)]`
     /// at the test-module attribute (lines 2265–2267) covers this.
-    fn encode_dsa_key_blob(
-        params: &DsaParams,
-        y: Option<&BigNum>,
-        x: Option<&BigNum>,
-    ) -> Vec<u8> {
+    fn encode_dsa_key_blob(params: &DsaParams, y: Option<&BigNum>, x: Option<&BigNum>) -> Vec<u8> {
         let mut out = Vec::new();
         out.push(DSA_KEY_TLV_VERSION);
 
@@ -2876,8 +2866,7 @@ mod tests {
         let kp_b = fresh_dsa_1024_keypair();
 
         let lib_ctx = LibContext::get_default();
-        let md = MessageDigest::fetch(&lib_ctx, SHA256, None)
-            .expect("SHA-256 must be available");
+        let md = MessageDigest::fetch(&lib_ctx, SHA256, None).expect("SHA-256 must be available");
         let message: &[u8] = b"wrong-key cross-verify scenario";
         let digest = digest_one_shot(&md, message).expect("hashing must succeed");
 
@@ -2896,8 +2885,8 @@ mod tests {
             DsaSignatureContext::new(DsaVariant::Composable, LibContext::get_default(), None);
         SignatureContext::sign_init(&mut sctx, &sign_blob_a, Some(&sparams))
             .expect("sign_init under kp_a must succeed");
-        let signature = SignatureContext::sign(&mut sctx, &digest)
-            .expect("kp_a must sign successfully");
+        let signature =
+            SignatureContext::sign(&mut sctx, &digest).expect("kp_a must sign successfully");
 
         // Verify under kp_b — different params, different y, so the
         // verification math will reject the signature with Ok(false).
@@ -2912,5 +2901,4 @@ mod tests {
             "DSA cross-key verification must return Ok(false), not Err"
         );
     }
-
 }

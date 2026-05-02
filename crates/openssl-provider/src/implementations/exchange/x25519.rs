@@ -39,9 +39,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use openssl_common::error::{ProviderError, ProviderResult};
 use openssl_common::param::{ParamSet, ParamValue};
-use openssl_crypto::ec::curve25519::{
-    x25519, x448, EcxKeyType, EcxPrivateKey, EcxPublicKey,
-};
+use openssl_crypto::ec::curve25519::{x25519, x448, EcxKeyType, EcxPrivateKey, EcxPublicKey};
 
 use crate::traits::{KeyExchangeContext, KeyExchangeProvider};
 
@@ -174,30 +172,30 @@ impl KeyExchangeContext for EcxExchangeContext {
     }
 
     fn derive(&mut self, secret: &mut [u8]) -> ProviderResult<usize> {
-        let priv_bytes = self
-            .our_private
-            .as_ref()
-            .ok_or_else(|| {
-                ProviderError::Dispatch(format!(
-                    "{} not initialised (no private key)",
-                    self.curve_name()
-                ))
-            })?;
+        let priv_bytes = self.our_private.as_ref().ok_or_else(|| {
+            ProviderError::Dispatch(format!(
+                "{} not initialised (no private key)",
+                self.curve_name()
+            ))
+        })?;
 
-        let peer_bytes = self
-            .peer_public
-            .as_ref()
-            .ok_or_else(|| {
-                ProviderError::Dispatch(format!("{} peer key not set", self.curve_name()))
-            })?;
+        let peer_bytes = self.peer_public.as_ref().ok_or_else(|| {
+            ProviderError::Dispatch(format!("{} peer key not set", self.curve_name()))
+        })?;
 
         // Construct crypto-layer key types
         let priv_key = EcxPrivateKey::new(self.key_type, priv_bytes.to_vec()).map_err(|e| {
-            ProviderError::Dispatch(format!("{} private key construction failed: {e}", self.curve_name()))
+            ProviderError::Dispatch(format!(
+                "{} private key construction failed: {e}",
+                self.curve_name()
+            ))
         })?;
 
         let pub_key = EcxPublicKey::new(self.key_type, peer_bytes.clone()).map_err(|e| {
-            ProviderError::Dispatch(format!("{} public key construction failed: {e}", self.curve_name()))
+            ProviderError::Dispatch(format!(
+                "{} public key construction failed: {e}",
+                self.curve_name()
+            ))
         })?;
 
         // Perform the key exchange
@@ -211,7 +209,9 @@ impl KeyExchangeContext for EcxExchangeContext {
                 )));
             }
         }
-        .map_err(|e| ProviderError::Dispatch(format!("{} key agreement failed: {e}", self.curve_name())))?;
+        .map_err(|e| {
+            ProviderError::Dispatch(format!("{} key agreement failed: {e}", self.curve_name()))
+        })?;
 
         let out_len = std::cmp::min(shared.len(), secret.len());
         secret[..out_len].copy_from_slice(&shared[..out_len]);
@@ -232,10 +232,7 @@ impl KeyExchangeContext for EcxExchangeContext {
             ParamValue::Utf8String(self.curve_name().to_string()),
         );
         // TRUNCATION: key_len() returns 32 (X25519) or 56 (X448), always fits u32.
-        ps.set(
-            "key-length",
-            ParamValue::UInt32(self.key_len() as u32),
-        );
+        ps.set("key-length", ParamValue::UInt32(self.key_len() as u32));
         Ok(ps)
     }
 
@@ -417,26 +414,21 @@ mod tests {
     #[test]
     fn x25519_rfc7748_test_vector() {
         // Alice's private key (clamped scalar)
-        let alice_priv = hex_to_bytes(
-            "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
-        );
+        let alice_priv =
+            hex_to_bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
         // Alice's public key = scalar * basepoint
         // Bob's private key
-        let bob_priv = hex_to_bytes(
-            "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
-        );
+        let bob_priv =
+            hex_to_bytes("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
         // Bob's public key
-        let bob_pub = hex_to_bytes(
-            "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
-        );
+        let bob_pub =
+            hex_to_bytes("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f");
         // Alice's public key
-        let alice_pub = hex_to_bytes(
-            "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a",
-        );
+        let alice_pub =
+            hex_to_bytes("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a");
         // Expected shared secret
-        let expected_shared = hex_to_bytes(
-            "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742",
-        );
+        let expected_shared =
+            hex_to_bytes("4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742");
 
         let provider = X25519KeyExchange;
 
