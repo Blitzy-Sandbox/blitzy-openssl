@@ -95,9 +95,12 @@
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::doc_markdown)]
 
+use crate::context::LibContext;
 use crate::hash::sha::{Digest, Sha256Context, ShakeContext};
 use openssl_common::{CommonError, CryptoError, CryptoResult};
+use std::sync::Arc;
 use subtle::ConstantTimeEq;
+use zeroize::Zeroize;
 
 // ===========================================================================
 // Domain separator constants (RFC 8554 §3.3 / §5.3)
@@ -107,26 +110,29 @@ use subtle::ConstantTimeEq;
 ///
 /// Used in `H(I || q || D_PBLC || y_0 || ... || y_{p-1})` — final hash that
 /// produces the candidate LM-OTS public key `Kc` during verification.
-/// See RFC 8554 §4.3.
-const D_PBLC: [u8; 2] = [0x80, 0x80];
+/// See RFC 8554 §4.3. Encoded as `0x80, 0x80` on the wire (the C source
+/// declares this as `D_PBLC = 0x8080` in `crypto/lms/lms_verify.c`).
+pub const D_PBLC: [u8; 2] = [0x80, 0x80];
 
 /// Domain separator for LM-OTS message / chain-input hashing.
 ///
 /// Used in `Q = H(I || q || D_MESG || C || message)` — the randomised message
 /// hash that is split into Winternitz coefficients. See RFC 8554 §4.3.
-const D_MESG: [u8; 2] = [0x81, 0x81];
+/// Encoded as `0x81, 0x81` on the wire.
+pub const D_MESG: [u8; 2] = [0x81, 0x81];
 
 /// Domain separator for LMS Merkle-tree leaf hashing.
 ///
 /// Used in `Tc = H(I || (r + 2^h) || D_LEAF || Kc)` — the leaf hash at tree
-/// position `r`. See RFC 8554 §5.3.
-const D_LEAF: [u8; 2] = [0x82, 0x82];
+/// position `r`. See RFC 8554 §5.3. Encoded as `0x82, 0x82` on the wire.
+pub const D_LEAF: [u8; 2] = [0x82, 0x82];
 
 /// Domain separator for LMS Merkle-tree interior-node hashing.
 ///
 /// Used in `T[r] = H(I || r || D_INTR || T[2r] || T[2r+1])` when combining two
-/// sibling hashes into their parent. See RFC 8554 §5.3.
-const D_INTR: [u8; 2] = [0x83, 0x83];
+/// sibling hashes into their parent. See RFC 8554 §5.3. Encoded as
+/// `0x83, 0x83` on the wire.
+pub const D_INTR: [u8; 2] = [0x83, 0x83];
 
 // ===========================================================================
 // Wire-format sizing constants (RFC 8554 §4.3 / §5.3 / SP 800-208)
@@ -393,6 +399,12 @@ pub struct LmsParams {
     pub h: u32,
     /// Target bit-strength (128 or 192/256 depending on truncation).
     pub bit_strength: usize,
+    /// Algorithm name for the underlying hash primitive.
+    ///
+    /// Follows OpenSSL provider naming: `"SHA256"` for full-width SHA-256
+    /// (`n = 32`), `"SHA256-192"` for truncated SHA-256/192 (`n = 24`), and
+    /// `"SHAKE-256"` for both SHAKE-256 variants (`n = 24` or `n = 32`).
+    pub digest_name: &'static str,
 }
 
 /// Static parameter table for all 20 LMS algorithm types.
@@ -401,45 +413,45 @@ pub struct LmsParams {
 /// in `crypto/lms/lms_params.c`.
 static LMS_PARAMS_TABLE: [LmsParams; 20] = [
     // 0x05 — LMS_SHA256_N32_H5
-    LmsParams { lms_type: LmsType::Sha256N32H5, hash_alg: LmsHashAlg::Sha256, n: 32, h: 5, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::Sha256N32H5, hash_alg: LmsHashAlg::Sha256, n: 32, h: 5, bit_strength: 256, digest_name: "SHA256" },
     // 0x06 — LMS_SHA256_N32_H10
-    LmsParams { lms_type: LmsType::Sha256N32H10, hash_alg: LmsHashAlg::Sha256, n: 32, h: 10, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::Sha256N32H10, hash_alg: LmsHashAlg::Sha256, n: 32, h: 10, bit_strength: 256, digest_name: "SHA256" },
     // 0x07 — LMS_SHA256_N32_H15
-    LmsParams { lms_type: LmsType::Sha256N32H15, hash_alg: LmsHashAlg::Sha256, n: 32, h: 15, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::Sha256N32H15, hash_alg: LmsHashAlg::Sha256, n: 32, h: 15, bit_strength: 256, digest_name: "SHA256" },
     // 0x08 — LMS_SHA256_N32_H20
-    LmsParams { lms_type: LmsType::Sha256N32H20, hash_alg: LmsHashAlg::Sha256, n: 32, h: 20, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::Sha256N32H20, hash_alg: LmsHashAlg::Sha256, n: 32, h: 20, bit_strength: 256, digest_name: "SHA256" },
     // 0x09 — LMS_SHA256_N32_H25
-    LmsParams { lms_type: LmsType::Sha256N32H25, hash_alg: LmsHashAlg::Sha256, n: 32, h: 25, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::Sha256N32H25, hash_alg: LmsHashAlg::Sha256, n: 32, h: 25, bit_strength: 256, digest_name: "SHA256" },
     // 0x0A — LMS_SHA256_N24_H5
-    LmsParams { lms_type: LmsType::Sha256N24H5, hash_alg: LmsHashAlg::Sha256, n: 24, h: 5, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::Sha256N24H5, hash_alg: LmsHashAlg::Sha256, n: 24, h: 5, bit_strength: 192, digest_name: "SHA256-192" },
     // 0x0B — LMS_SHA256_N24_H10
-    LmsParams { lms_type: LmsType::Sha256N24H10, hash_alg: LmsHashAlg::Sha256, n: 24, h: 10, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::Sha256N24H10, hash_alg: LmsHashAlg::Sha256, n: 24, h: 10, bit_strength: 192, digest_name: "SHA256-192" },
     // 0x0C — LMS_SHA256_N24_H15
-    LmsParams { lms_type: LmsType::Sha256N24H15, hash_alg: LmsHashAlg::Sha256, n: 24, h: 15, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::Sha256N24H15, hash_alg: LmsHashAlg::Sha256, n: 24, h: 15, bit_strength: 192, digest_name: "SHA256-192" },
     // 0x0D — LMS_SHA256_N24_H20
-    LmsParams { lms_type: LmsType::Sha256N24H20, hash_alg: LmsHashAlg::Sha256, n: 24, h: 20, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::Sha256N24H20, hash_alg: LmsHashAlg::Sha256, n: 24, h: 20, bit_strength: 192, digest_name: "SHA256-192" },
     // 0x0E — LMS_SHA256_N24_H25
-    LmsParams { lms_type: LmsType::Sha256N24H25, hash_alg: LmsHashAlg::Sha256, n: 24, h: 25, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::Sha256N24H25, hash_alg: LmsHashAlg::Sha256, n: 24, h: 25, bit_strength: 192, digest_name: "SHA256-192" },
     // 0x0F — LMS_SHAKE_N32_H5
-    LmsParams { lms_type: LmsType::ShakeN32H5, hash_alg: LmsHashAlg::Shake256, n: 32, h: 5, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::ShakeN32H5, hash_alg: LmsHashAlg::Shake256, n: 32, h: 5, bit_strength: 256, digest_name: "SHAKE-256" },
     // 0x10 — LMS_SHAKE_N32_H10
-    LmsParams { lms_type: LmsType::ShakeN32H10, hash_alg: LmsHashAlg::Shake256, n: 32, h: 10, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::ShakeN32H10, hash_alg: LmsHashAlg::Shake256, n: 32, h: 10, bit_strength: 256, digest_name: "SHAKE-256" },
     // 0x11 — LMS_SHAKE_N32_H15
-    LmsParams { lms_type: LmsType::ShakeN32H15, hash_alg: LmsHashAlg::Shake256, n: 32, h: 15, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::ShakeN32H15, hash_alg: LmsHashAlg::Shake256, n: 32, h: 15, bit_strength: 256, digest_name: "SHAKE-256" },
     // 0x12 — LMS_SHAKE_N32_H20
-    LmsParams { lms_type: LmsType::ShakeN32H20, hash_alg: LmsHashAlg::Shake256, n: 32, h: 20, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::ShakeN32H20, hash_alg: LmsHashAlg::Shake256, n: 32, h: 20, bit_strength: 256, digest_name: "SHAKE-256" },
     // 0x13 — LMS_SHAKE_N32_H25
-    LmsParams { lms_type: LmsType::ShakeN32H25, hash_alg: LmsHashAlg::Shake256, n: 32, h: 25, bit_strength: 256 },
+    LmsParams { lms_type: LmsType::ShakeN32H25, hash_alg: LmsHashAlg::Shake256, n: 32, h: 25, bit_strength: 256, digest_name: "SHAKE-256" },
     // 0x14 — LMS_SHAKE_N24_H5
-    LmsParams { lms_type: LmsType::ShakeN24H5, hash_alg: LmsHashAlg::Shake256, n: 24, h: 5, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::ShakeN24H5, hash_alg: LmsHashAlg::Shake256, n: 24, h: 5, bit_strength: 192, digest_name: "SHAKE-256" },
     // 0x15 — LMS_SHAKE_N24_H10
-    LmsParams { lms_type: LmsType::ShakeN24H10, hash_alg: LmsHashAlg::Shake256, n: 24, h: 10, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::ShakeN24H10, hash_alg: LmsHashAlg::Shake256, n: 24, h: 10, bit_strength: 192, digest_name: "SHAKE-256" },
     // 0x16 — LMS_SHAKE_N24_H15
-    LmsParams { lms_type: LmsType::ShakeN24H15, hash_alg: LmsHashAlg::Shake256, n: 24, h: 15, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::ShakeN24H15, hash_alg: LmsHashAlg::Shake256, n: 24, h: 15, bit_strength: 192, digest_name: "SHAKE-256" },
     // 0x17 — LMS_SHAKE_N24_H20
-    LmsParams { lms_type: LmsType::ShakeN24H20, hash_alg: LmsHashAlg::Shake256, n: 24, h: 20, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::ShakeN24H20, hash_alg: LmsHashAlg::Shake256, n: 24, h: 20, bit_strength: 192, digest_name: "SHAKE-256" },
     // 0x18 — LMS_SHAKE_N24_H25
-    LmsParams { lms_type: LmsType::ShakeN24H25, hash_alg: LmsHashAlg::Shake256, n: 24, h: 25, bit_strength: 192 },
+    LmsParams { lms_type: LmsType::ShakeN24H25, hash_alg: LmsHashAlg::Shake256, n: 24, h: 25, bit_strength: 192, digest_name: "SHAKE-256" },
 ];
 
 // ===========================================================================
@@ -468,6 +480,12 @@ pub struct LmOtsParams {
     pub ls: u32,
     /// Target bit-strength.
     pub bit_strength: usize,
+    /// Algorithm name for the underlying hash primitive.
+    ///
+    /// Follows OpenSSL provider naming: `"SHA256"` for full-width SHA-256
+    /// (`n = 32`), `"SHA256-192"` for truncated SHA-256/192 (`n = 24`), and
+    /// `"SHAKE-256"` for both SHAKE-256 variants.
+    pub digest_name: &'static str,
 }
 
 /// Static parameter table for all 16 LM-OTS algorithm types.
@@ -476,37 +494,37 @@ pub struct LmOtsParams {
 /// table in `crypto/lms/lm_ots_params.c`.
 static LM_OTS_PARAMS_TABLE: [LmOtsParams; 16] = [
     // 0x01 — LMOTS_SHA256_N32_W1
-    LmOtsParams { lm_ots_type: LmOtsType::Sha256N32W1, hash_alg: LmsHashAlg::Sha256, n: 32, w: 1, p: 265, ls: 7, bit_strength: 256 },
+    LmOtsParams { lm_ots_type: LmOtsType::Sha256N32W1, hash_alg: LmsHashAlg::Sha256, n: 32, w: 1, p: 265, ls: 7, bit_strength: 256, digest_name: "SHA256" },
     // 0x02 — LMOTS_SHA256_N32_W2
-    LmOtsParams { lm_ots_type: LmOtsType::Sha256N32W2, hash_alg: LmsHashAlg::Sha256, n: 32, w: 2, p: 133, ls: 6, bit_strength: 256 },
+    LmOtsParams { lm_ots_type: LmOtsType::Sha256N32W2, hash_alg: LmsHashAlg::Sha256, n: 32, w: 2, p: 133, ls: 6, bit_strength: 256, digest_name: "SHA256" },
     // 0x03 — LMOTS_SHA256_N32_W4
-    LmOtsParams { lm_ots_type: LmOtsType::Sha256N32W4, hash_alg: LmsHashAlg::Sha256, n: 32, w: 4, p: 67, ls: 4, bit_strength: 256 },
+    LmOtsParams { lm_ots_type: LmOtsType::Sha256N32W4, hash_alg: LmsHashAlg::Sha256, n: 32, w: 4, p: 67, ls: 4, bit_strength: 256, digest_name: "SHA256" },
     // 0x04 — LMOTS_SHA256_N32_W8
-    LmOtsParams { lm_ots_type: LmOtsType::Sha256N32W8, hash_alg: LmsHashAlg::Sha256, n: 32, w: 8, p: 34, ls: 0, bit_strength: 256 },
+    LmOtsParams { lm_ots_type: LmOtsType::Sha256N32W8, hash_alg: LmsHashAlg::Sha256, n: 32, w: 8, p: 34, ls: 0, bit_strength: 256, digest_name: "SHA256" },
     // 0x05 — LMOTS_SHA256_N24_W1
-    LmOtsParams { lm_ots_type: LmOtsType::Sha256N24W1, hash_alg: LmsHashAlg::Sha256, n: 24, w: 1, p: 200, ls: 8, bit_strength: 192 },
+    LmOtsParams { lm_ots_type: LmOtsType::Sha256N24W1, hash_alg: LmsHashAlg::Sha256, n: 24, w: 1, p: 200, ls: 8, bit_strength: 192, digest_name: "SHA256-192" },
     // 0x06 — LMOTS_SHA256_N24_W2
-    LmOtsParams { lm_ots_type: LmOtsType::Sha256N24W2, hash_alg: LmsHashAlg::Sha256, n: 24, w: 2, p: 101, ls: 6, bit_strength: 192 },
+    LmOtsParams { lm_ots_type: LmOtsType::Sha256N24W2, hash_alg: LmsHashAlg::Sha256, n: 24, w: 2, p: 101, ls: 6, bit_strength: 192, digest_name: "SHA256-192" },
     // 0x07 — LMOTS_SHA256_N24_W4
-    LmOtsParams { lm_ots_type: LmOtsType::Sha256N24W4, hash_alg: LmsHashAlg::Sha256, n: 24, w: 4, p: 51, ls: 4, bit_strength: 192 },
+    LmOtsParams { lm_ots_type: LmOtsType::Sha256N24W4, hash_alg: LmsHashAlg::Sha256, n: 24, w: 4, p: 51, ls: 4, bit_strength: 192, digest_name: "SHA256-192" },
     // 0x08 — LMOTS_SHA256_N24_W8
-    LmOtsParams { lm_ots_type: LmOtsType::Sha256N24W8, hash_alg: LmsHashAlg::Sha256, n: 24, w: 8, p: 26, ls: 0, bit_strength: 192 },
+    LmOtsParams { lm_ots_type: LmOtsType::Sha256N24W8, hash_alg: LmsHashAlg::Sha256, n: 24, w: 8, p: 26, ls: 0, bit_strength: 192, digest_name: "SHA256-192" },
     // 0x09 — LMOTS_SHAKE_N32_W1
-    LmOtsParams { lm_ots_type: LmOtsType::ShakeN32W1, hash_alg: LmsHashAlg::Shake256, n: 32, w: 1, p: 265, ls: 7, bit_strength: 256 },
+    LmOtsParams { lm_ots_type: LmOtsType::ShakeN32W1, hash_alg: LmsHashAlg::Shake256, n: 32, w: 1, p: 265, ls: 7, bit_strength: 256, digest_name: "SHAKE-256" },
     // 0x0A — LMOTS_SHAKE_N32_W2
-    LmOtsParams { lm_ots_type: LmOtsType::ShakeN32W2, hash_alg: LmsHashAlg::Shake256, n: 32, w: 2, p: 133, ls: 6, bit_strength: 256 },
+    LmOtsParams { lm_ots_type: LmOtsType::ShakeN32W2, hash_alg: LmsHashAlg::Shake256, n: 32, w: 2, p: 133, ls: 6, bit_strength: 256, digest_name: "SHAKE-256" },
     // 0x0B — LMOTS_SHAKE_N32_W4
-    LmOtsParams { lm_ots_type: LmOtsType::ShakeN32W4, hash_alg: LmsHashAlg::Shake256, n: 32, w: 4, p: 67, ls: 4, bit_strength: 256 },
+    LmOtsParams { lm_ots_type: LmOtsType::ShakeN32W4, hash_alg: LmsHashAlg::Shake256, n: 32, w: 4, p: 67, ls: 4, bit_strength: 256, digest_name: "SHAKE-256" },
     // 0x0C — LMOTS_SHAKE_N32_W8
-    LmOtsParams { lm_ots_type: LmOtsType::ShakeN32W8, hash_alg: LmsHashAlg::Shake256, n: 32, w: 8, p: 34, ls: 0, bit_strength: 256 },
+    LmOtsParams { lm_ots_type: LmOtsType::ShakeN32W8, hash_alg: LmsHashAlg::Shake256, n: 32, w: 8, p: 34, ls: 0, bit_strength: 256, digest_name: "SHAKE-256" },
     // 0x0D — LMOTS_SHAKE_N24_W1
-    LmOtsParams { lm_ots_type: LmOtsType::ShakeN24W1, hash_alg: LmsHashAlg::Shake256, n: 24, w: 1, p: 200, ls: 8, bit_strength: 192 },
+    LmOtsParams { lm_ots_type: LmOtsType::ShakeN24W1, hash_alg: LmsHashAlg::Shake256, n: 24, w: 1, p: 200, ls: 8, bit_strength: 192, digest_name: "SHAKE-256" },
     // 0x0E — LMOTS_SHAKE_N24_W2
-    LmOtsParams { lm_ots_type: LmOtsType::ShakeN24W2, hash_alg: LmsHashAlg::Shake256, n: 24, w: 2, p: 101, ls: 6, bit_strength: 192 },
+    LmOtsParams { lm_ots_type: LmOtsType::ShakeN24W2, hash_alg: LmsHashAlg::Shake256, n: 24, w: 2, p: 101, ls: 6, bit_strength: 192, digest_name: "SHAKE-256" },
     // 0x0F — LMOTS_SHAKE_N24_W4
-    LmOtsParams { lm_ots_type: LmOtsType::ShakeN24W4, hash_alg: LmsHashAlg::Shake256, n: 24, w: 4, p: 51, ls: 4, bit_strength: 192 },
+    LmOtsParams { lm_ots_type: LmOtsType::ShakeN24W4, hash_alg: LmsHashAlg::Shake256, n: 24, w: 4, p: 51, ls: 4, bit_strength: 192, digest_name: "SHAKE-256" },
     // 0x10 — LMOTS_SHAKE_N24_W8
-    LmOtsParams { lm_ots_type: LmOtsType::ShakeN24W8, hash_alg: LmsHashAlg::Shake256, n: 24, w: 8, p: 26, ls: 0, bit_strength: 192 },
+    LmOtsParams { lm_ots_type: LmOtsType::ShakeN24W8, hash_alg: LmsHashAlg::Shake256, n: 24, w: 8, p: 26, ls: 0, bit_strength: 192, digest_name: "SHAKE-256" },
 ];
 
 // ===========================================================================
@@ -1295,6 +1313,681 @@ pub fn verify(encoded_pubkey: &[u8], msg: &[u8], sig: &[u8]) -> CryptoResult<boo
         Some(pk) => lms_verify(&pk, msg, sig),
         None => Ok(false),
     }
+}
+
+// ===========================================================================
+// Standalone parameter-set lookup functions (schema-required API)
+// ===========================================================================
+
+/// Look up an LM-OTS parameter set by its IANA-assigned algorithm-type tag.
+///
+/// Returns `None` when the tag is outside the registered range
+/// (`0x0000_0001..=0x0000_0010`). Replaces C `ossl_lm_ots_params_get()` from
+/// `crypto/lms/lm_ots_params.c`; the C version returns `NULL` for unknown
+/// tags — Rule R5 mandates `Option<T>` instead.
+///
+/// # Rule compliance
+/// * Rule R5: Uses `Option<T>` instead of `NULL` sentinel.
+/// * Rule R8: Contains zero `unsafe` code.
+#[must_use]
+pub fn lm_ots_params_get(ots_type: LmOtsType) -> Option<&'static LmOtsParams> {
+    Some(ots_type.params())
+}
+
+/// Look up an LMS parameter set by its IANA-assigned algorithm-type tag.
+///
+/// Returns `None` when the tag is outside the registered range
+/// (`0x0000_0005..=0x0000_0018`). Replaces C `ossl_lms_params_get()` from
+/// `crypto/lms/lms_params.c`.
+///
+/// # Rule compliance
+/// * Rule R5: Uses `Option<T>` instead of `NULL` sentinel.
+/// * Rule R8: Contains zero `unsafe` code.
+#[must_use]
+pub fn lms_params_get(lms_type: LmsType) -> Option<&'static LmsParams> {
+    Some(lms_type.params())
+}
+
+/// Compute the 16-bit LM-OTS Winternitz checksum (RFC 8554 §4.4).
+///
+/// The checksum is computed as `Cksm(S) = sum_{i=0..u} (max_coef - coef(S, i, w)) << ls`
+/// where `u = n*8/w`, `max_coef = 2^w - 1`, and `coef(S, i, w)` extracts
+/// Winternitz coefficient `i` from byte string `S`. The sum is taken modulo
+/// `2^16` and the low-order 16 bits are returned.
+///
+/// `s` must contain at least `params.n` bytes; only the first `params.n` are
+/// consumed. This is a thin `u16`-returning wrapper around the internal
+/// big-endian byte computation. Replaces C `ossl_lm_ots_params_checksum()`
+/// from `crypto/lms/lm_ots_params.c`.
+///
+/// # Errors
+/// Returns [`CryptoError::InvalidArgument`] when `s.len() < params.n` or
+/// when the parameter set has invalid `w`/`ls` values.
+///
+/// # Rule compliance
+/// * Rule R5: Uses `Result<u16, _>` rather than a sentinel value.
+/// * Rule R6: All width conversions use checked arithmetic / safe casts.
+/// * Rule R8: Contains zero `unsafe` code.
+pub fn lm_ots_checksum(params: &LmOtsParams, s: &[u8]) -> CryptoResult<u16> {
+    let bytes = lm_ots_params_checksum(s, params.n, params.w, params.ls)?;
+    Ok(u16::from_be_bytes(bytes))
+}
+
+// ===========================================================================
+// LmsPublicKey — encoded-form public key wrapper (schema-required type)
+// ===========================================================================
+
+/// LMS public key in encoded wire form, with a parsed copy of the root hash.
+///
+/// This is the schema-mandated public-key type. It pairs the original
+/// wire-format encoding (`encoded`) with the extracted root hash `K = T(1)`
+/// for direct constant-time comparison and downstream re-serialisation.
+///
+/// The wire format is, per RFC 8554 §5.4:
+/// ```text
+/// u32(lms_type) || u32(lms_ots_type) || I[16] || K[n]
+/// ```
+/// where `n` is the digest size of the LMS parameter set (24 or 32 bytes).
+///
+/// Memory containing key material is securely erased via [`zeroize::Zeroize`]
+/// when the value is dropped, replacing C `OPENSSL_cleanse()` from
+/// `crypto/mem_clr.c`.
+#[derive(Debug, Clone)]
+pub struct LmsPublicKey {
+    /// Encoded public-key buffer (full wire format).
+    pub encoded: Vec<u8>,
+    /// Length of the encoded public-key buffer in bytes.
+    pub encoded_len: usize,
+    /// Root public-key hash `K = T(1)`, `n` bytes long.
+    pub k: Vec<u8>,
+}
+
+impl LmsPublicKey {
+    /// Construct an empty `LmsPublicKey`. The fields are populated by
+    /// [`lms_pubkey_decode`] or by callers parsing wire data directly.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            encoded: Vec::new(),
+            encoded_len: 0,
+            k: Vec::new(),
+        }
+    }
+}
+
+impl Default for LmsPublicKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for LmsPublicKey {
+    fn drop(&mut self) {
+        // Zero key material on drop. Although LMS public keys are not secret,
+        // we follow the project-wide convention of zeroing all key buffers to
+        // prevent accidental leakage when reused via memory pools.
+        self.encoded.zeroize();
+        self.k.zeroize();
+        self.encoded_len = 0;
+    }
+}
+
+// ===========================================================================
+// KeySelection — bitflags matching OpenSSL OSSL_KEYMGMT_SELECT_*
+// ===========================================================================
+
+bitflags::bitflags! {
+    /// Bitmask selector identifying which key components to operate on.
+    ///
+    /// Mirrors OpenSSL's `OSSL_KEYMGMT_SELECT_*` constants from
+    /// `include/openssl/core_dispatch.h`. Used by [`LmsKey::has_key`],
+    /// [`LmsKey::is_valid`], and [`LmsKey::equal`] to scope the comparison
+    /// to a subset of the key. LMS keys exposed here are public-only because
+    /// LMS signing requires stateful private-key handling that is out of
+    /// scope per the AAP.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct KeySelection: u32 {
+        /// Selects key-domain parameters (LMS/LM-OTS algorithm tags).
+        const PARAMETERS = 0x01;
+        /// Selects the private-key component (unsupported for LMS verify-only).
+        const PRIVATE_KEY = 0x02;
+        /// Selects the public-key component (root hash + identifier).
+        const PUBLIC_KEY = 0x04;
+        /// Selects the entire keypair.
+        const KEYPAIR = Self::PRIVATE_KEY.bits() | Self::PUBLIC_KEY.bits();
+        /// Selects all components (parameters + keypair).
+        const ALL = Self::PARAMETERS.bits() | Self::KEYPAIR.bits();
+    }
+}
+
+// ===========================================================================
+// LmsKey — top-level LMS key handle (schema-required type)
+// ===========================================================================
+
+/// Top-level LMS key handle, mirroring C `LMS_KEY` from `include/crypto/lms.h`.
+///
+/// Holds the active parameter sets, the 16-byte tree identifier `I`, the
+/// public key (encoded form + root hash), and a reference to the owning
+/// library context. LMS signing requires stateful key management and is
+/// explicitly out of scope per AAP §0.7 — only the public-key fields are
+/// populated by [`LmsKey::new`] / [`lms_pubkey_decode`].
+///
+/// All sensitive material (the tree identifier `I` and the public-key
+/// buffers) is zeroed on drop via [`zeroize`] per AAP §0.7.6.
+#[derive(Debug)]
+pub struct LmsKey {
+    /// Active LMS parameter set, populated when a public key is loaded.
+    pub lms_params: Option<&'static LmsParams>,
+    /// Active LM-OTS parameter set, populated when a public key is loaded.
+    pub ots_params: Option<&'static LmOtsParams>,
+    /// 16-byte LMS tree identifier `I`.
+    pub id: Vec<u8>,
+    /// Encoded public key plus extracted root hash.
+    pub pub_key: LmsPublicKey,
+    /// Optional library context for provider/algorithm fetching.
+    libctx: Option<Arc<LibContext>>,
+}
+
+impl LmsKey {
+    /// Construct an empty LMS key bound to the given library context.
+    ///
+    /// The returned key has no parameter sets and no public-key material;
+    /// call [`lms_pubkey_decode`] to populate it from wire-format bytes.
+    /// Replaces C `ossl_lms_key_new(OSSL_LIB_CTX *ctx)` from
+    /// `crypto/lms/lms_key.c`.
+    #[must_use]
+    pub fn new(libctx: Arc<LibContext>) -> Self {
+        Self {
+            lms_params: None,
+            ots_params: None,
+            id: Vec::new(),
+            pub_key: LmsPublicKey::new(),
+            libctx: Some(libctx),
+        }
+    }
+
+    /// Construct an LMS key without an associated library context.
+    ///
+    /// Useful for tests and standalone parsing where a `LibContext` is not
+    /// required. Production callers should prefer [`LmsKey::new`].
+    #[must_use]
+    pub fn new_detached() -> Self {
+        Self {
+            lms_params: None,
+            ots_params: None,
+            id: Vec::new(),
+            pub_key: LmsPublicKey::new(),
+            libctx: None,
+        }
+    }
+
+    /// Return a reference to the optional library context.
+    #[must_use]
+    pub fn libctx(&self) -> Option<&Arc<LibContext>> {
+        self.libctx.as_ref()
+    }
+
+    /// Compare two LMS keys in constant time, scoped to the requested
+    /// `selection` mask.
+    ///
+    /// Returns `true` only when every selected component matches:
+    /// * `PARAMETERS` — both keys have identical `lms_params` and
+    ///   `ots_params` tags;
+    /// * `PUBLIC_KEY` — both keys have identical `id` and root-hash `k`;
+    /// * `PRIVATE_KEY` — always returns `false` (verify-only);
+    ///
+    /// Comparison of byte arrays uses [`subtle::ConstantTimeEq::ct_eq`] to
+    /// prevent timing side-channel leakage. Replaces C `ossl_lms_key_equal()`
+    /// from `crypto/lms/lms_key.c`.
+    ///
+    /// # Rule compliance
+    /// * Rule R5: Returns `bool` (no sentinel values).
+    /// * Rule R8: Contains zero `unsafe` code.
+    #[must_use]
+    pub fn equal(&self, other: &LmsKey, selection: KeySelection) -> bool {
+        if selection.contains(KeySelection::PRIVATE_KEY) {
+            // LMS private keys require stateful management and are not
+            // exposed here; comparing them always fails.
+            return false;
+        }
+        if selection.contains(KeySelection::PARAMETERS) {
+            let lms_eq = match (self.lms_params, other.lms_params) {
+                (Some(a), Some(b)) => a.lms_type as u32 == b.lms_type as u32,
+                (None, None) => true,
+                _ => false,
+            };
+            let ots_eq = match (self.ots_params, other.ots_params) {
+                (Some(a), Some(b)) => a.lm_ots_type as u32 == b.lm_ots_type as u32,
+                (None, None) => true,
+                _ => false,
+            };
+            if !lms_eq || !ots_eq {
+                return false;
+            }
+        }
+        if selection.contains(KeySelection::PUBLIC_KEY) {
+            if self.id.len() != other.id.len() {
+                return false;
+            }
+            if self.id.ct_eq(&other.id).unwrap_u8() != 1 {
+                return false;
+            }
+            if self.pub_key.k.len() != other.pub_key.k.len() {
+                return false;
+            }
+            if self.pub_key.k.ct_eq(&other.pub_key.k).unwrap_u8() != 1 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Test whether the requested key components are present and consistent.
+    ///
+    /// Replaces C `ossl_lms_key_valid()` from `crypto/lms/lms_key.c`.
+    ///
+    /// * `PARAMETERS` — both `lms_params` and `ots_params` are populated and
+    ///   share a hash family.
+    /// * `PUBLIC_KEY` — `id` is exactly 16 bytes and `k` matches the
+    ///   parameter-set digest size `n`.
+    /// * `PRIVATE_KEY` — always returns `false` (verify-only).
+    ///
+    /// # Rule compliance
+    /// * Rule R5: Returns `bool` rather than `0/1` sentinel from C.
+    /// * Rule R8: Contains zero `unsafe` code.
+    #[must_use]
+    pub fn is_valid(&self, selection: KeySelection) -> bool {
+        if selection.contains(KeySelection::PRIVATE_KEY) {
+            return false;
+        }
+        if selection.contains(KeySelection::PARAMETERS) {
+            let (Some(lms), Some(ots)) = (self.lms_params, self.ots_params) else {
+                return false;
+            };
+            if lms.n != ots.n {
+                return false;
+            }
+        }
+        if selection.contains(KeySelection::PUBLIC_KEY) {
+            let Some(lms) = self.lms_params else {
+                return false;
+            };
+            if self.id.len() != LMS_SIZE_I {
+                return false;
+            }
+            if self.pub_key.k.len() != lms.n as usize {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Test whether the requested key components are populated.
+    ///
+    /// Differs from [`LmsKey::is_valid`] in that it only checks for
+    /// presence — not for size/family consistency. Replaces C
+    /// `ossl_lms_key_has()` from `crypto/lms/lms_key.c`.
+    ///
+    /// # Rule compliance
+    /// * Rule R5: Returns `bool` (no sentinels).
+    /// * Rule R8: Contains zero `unsafe` code.
+    #[must_use]
+    pub fn has_key(&self, selection: KeySelection) -> bool {
+        if selection.contains(KeySelection::PRIVATE_KEY) {
+            return false;
+        }
+        if selection.contains(KeySelection::PARAMETERS)
+            && (self.lms_params.is_none() || self.ots_params.is_none())
+        {
+            return false;
+        }
+        if selection.contains(KeySelection::PUBLIC_KEY)
+            && (self.id.is_empty() || self.pub_key.k.is_empty())
+        {
+            return false;
+        }
+        true
+    }
+
+    /// Length in bytes of the encoded LMS public key.
+    ///
+    /// Returns `4 + 4 + 16 + n = 24 + n` where `n` is the parameter-set
+    /// digest size, or `0` if no parameter set is associated with the key.
+    /// Replaces C `ossl_lms_pubkey_length()` for a populated key.
+    #[must_use]
+    pub fn pub_len(&self) -> usize {
+        match self.lms_params {
+            Some(p) => LMS_SIZE_LMS_TYPE + LMS_SIZE_OTS_TYPE + LMS_SIZE_I + p.n as usize,
+            None => 0,
+        }
+    }
+
+    /// Bit-strength of the LMS hash collision resistance for this key.
+    ///
+    /// Equals `n * 8` where `n` is the digest size: 192 bits for `n = 24`
+    /// and 256 bits for `n = 32`.
+    #[must_use]
+    pub fn collision_strength_bits(&self) -> u32 {
+        match self.lms_params {
+            // n is at most 32, so n * 8 is at most 256, well below u32::MAX.
+            Some(p) => p.n.saturating_mul(8),
+            None => 0,
+        }
+    }
+
+    /// Length in bytes of an LMS signature for this key's parameter set.
+    ///
+    /// Equals `12 + n * (1 + p + h)` per RFC 8554 §5.4, where `p` is the
+    /// LM-OTS chain count and `h` is the LMS Merkle-tree height. Returns
+    /// `0` when the key has no associated parameter sets.
+    ///
+    /// # Rule compliance
+    /// * Rule R6: All multiplications use checked arithmetic;
+    ///   `usize::MAX` is never reached for any registered LMS parameter set.
+    #[must_use]
+    pub fn sig_len(&self) -> usize {
+        match (self.lms_params, self.ots_params) {
+            (Some(lms), Some(ots)) => {
+                let n = lms.n as usize;
+                let p = ots.p as usize;
+                let h = lms.h as usize;
+                let inner = 1usize.saturating_add(p).saturating_add(h);
+                let body = n.saturating_mul(inner);
+                12usize.saturating_add(body)
+            }
+            _ => 0,
+        }
+    }
+}
+
+impl Drop for LmsKey {
+    fn drop(&mut self) {
+        // Zero the tree identifier on drop. The public-key fields zero
+        // themselves via `LmsPublicKey::Drop`. The library context is held
+        // by `Arc` and dropped automatically.
+        self.id.zeroize();
+        self.lms_params = None;
+        self.ots_params = None;
+    }
+}
+
+// ===========================================================================
+// LmOtsSig — parsed LM-OTS signature view (schema-required type)
+// ===========================================================================
+
+/// Parsed view over an LM-OTS signature borrowed from a wire-format buffer.
+///
+/// Mirrors C `LM_OTS_SIG` from `include/crypto/lms_sig.h`. The signature
+/// layout on the wire is (RFC 8554 §4.5):
+/// ```text
+/// u32(lmots_type) || C[n] || y_0[n] || y_1[n] || ... || y_{p-1}[n]
+/// ```
+/// `c` is the salt and `y` is the concatenation of the `p` Winternitz chain
+/// values. Both `c` and `y` are borrowed slices into the original signature
+/// buffer for zero-copy access.
+#[derive(Debug, Clone, Copy)]
+pub struct LmOtsSig<'a> {
+    /// LM-OTS parameter set indicated by the leading type tag.
+    pub params: &'static LmOtsParams,
+    /// Salt value `C`, exactly `params.n` bytes.
+    pub c: &'a [u8],
+    /// Trailing chain values, exactly `params.p * params.n` bytes.
+    pub y: &'a [u8],
+}
+
+// ===========================================================================
+// LmsSig — parsed LMS signature view (schema-required type)
+// ===========================================================================
+
+/// Parsed view over an LMS signature borrowed from a wire-format buffer.
+///
+/// Mirrors C `LMS_SIG` from `include/crypto/lms_sig.h`. The signature layout
+/// on the wire is (RFC 8554 §5.4):
+/// ```text
+/// u32(q) || LMOTS_SIG || u32(lms_type) || path[h * n]
+/// ```
+/// where `LMOTS_SIG` is laid out as in [`LmOtsSig`]. The authentication
+/// path `auth_path` is borrowed from the original buffer for zero-copy
+/// access.
+#[derive(Debug, Clone, Copy)]
+pub struct LmsSig<'a> {
+    /// Leaf index `q` (0-based, encoded as 32-bit big-endian on the wire).
+    pub q: u32,
+    /// Embedded LM-OTS signature.
+    pub ots_sig: LmOtsSig<'a>,
+    /// LMS parameter set indicated by the trailing type tag.
+    pub params: &'static LmsParams,
+    /// Authentication path bytes, exactly `params.h * params.n` bytes.
+    pub auth_path: &'a [u8],
+}
+
+// ===========================================================================
+// Standalone signature decoder (schema-required function)
+// ===========================================================================
+
+/// Strictly decode an LMS signature into a borrowed [`LmsSig`].
+///
+/// Validates that the buffer has the exact expected length determined by
+/// the LMS and LM-OTS parameter sets carried inside the signature. Cross-
+/// checks the embedded type tags against `pub_key`'s expected parameters.
+///
+/// Translates `crypto/lms/lms_sig_decoder.c::ossl_lms_sig_from_data`.
+///
+/// # Errors
+/// * [`CryptoError::Encoding`] — buffer is too short / too long, or has
+///   structurally invalid type tags.
+/// * [`CryptoError::Verification`] — embedded tags do not match the
+///   public key.
+///
+/// # Rule compliance
+/// * Rule R5: All failure modes return `Err`; no sentinels.
+/// * Rule R6: All width conversions use checked arithmetic.
+/// * Rule R8: Contains zero `unsafe` code.
+pub fn lms_sig_decode<'a>(data: &'a [u8], pub_key: &LmsKey) -> CryptoResult<LmsSig<'a>> {
+    let lms = pub_key.lms_params.ok_or_else(|| {
+        CryptoError::Key("lms_sig_decode: public key has no LMS parameters".to_string())
+    })?;
+    let ots = pub_key.ots_params.ok_or_else(|| {
+        CryptoError::Key("lms_sig_decode: public key has no LM-OTS parameters".to_string())
+    })?;
+    let n = lms.n as usize;
+    let p = ots.p as usize;
+    let h = lms.h as usize;
+
+    // expected_sig_len = 4 (q) + 4 (ots_type) + n (C) + p*n (y) + 4 (lms_type) + h*n (path)
+    //                 = 12 + n * (1 + p + h)
+    let inner = 1usize.checked_add(p).and_then(|v| v.checked_add(h)).ok_or(
+        CryptoError::Common(CommonError::ArithmeticOverflow {
+            operation: "lms_sig_decode: 1 + p + h overflow",
+        }),
+    )?;
+    let body = n
+        .checked_mul(inner)
+        .ok_or(CryptoError::Common(CommonError::ArithmeticOverflow {
+            operation: "lms_sig_decode: n * (1 + p + h) overflow",
+        }))?;
+    let expected_sig_len = 12usize.checked_add(body).ok_or(CryptoError::Common(
+        CommonError::ArithmeticOverflow {
+            operation: "lms_sig_decode: 12 + body overflow",
+        },
+    ))?;
+    if data.len() != expected_sig_len {
+        return Err(CryptoError::Encoding(format!(
+            "lms_sig_decode: signature length {} != expected {}",
+            data.len(),
+            expected_sig_len
+        )));
+    }
+
+    // q : 4 bytes
+    let q = read_u32_be(&data[0..4])?;
+    // 2^h overflow safety: h <= 25 for all registered parameter sets.
+    if h >= u32::BITS as usize {
+        return Err(CryptoError::Encoding(format!(
+            "lms_sig_decode: invalid tree height h={h}"
+        )));
+    }
+    let max_q = 1u32 << h;
+    if q >= max_q {
+        return Err(CryptoError::Verification(format!(
+            "lms_sig_decode: leaf index q={q} >= 2^h={max_q}"
+        )));
+    }
+
+    // ots_type : 4 bytes
+    let ots_tag = read_u32_be(&data[4..8])?;
+    let ots_decoded =
+        LmOtsType::from_u32(ots_tag).ok_or_else(|| {
+            CryptoError::Encoding(format!("lms_sig_decode: invalid LM-OTS tag 0x{ots_tag:08x}"))
+        })?;
+    if (ots_decoded as u32) != (ots.lm_ots_type as u32) {
+        return Err(CryptoError::Verification(format!(
+            "lms_sig_decode: LM-OTS tag 0x{ots_tag:08x} does not match public key"
+        )));
+    }
+    let ots_decoded_params = ots_decoded.params();
+
+    // C : n bytes
+    let c_start: usize = 8;
+    let c_end = c_start.checked_add(n).ok_or(CryptoError::Common(
+        CommonError::ArithmeticOverflow {
+            operation: "lms_sig_decode: c_start + n overflow",
+        },
+    ))?;
+    let c = &data[c_start..c_end];
+
+    // y : p * n bytes
+    let pn = p.checked_mul(n).ok_or(CryptoError::Common(
+        CommonError::ArithmeticOverflow {
+            operation: "lms_sig_decode: p * n overflow",
+        },
+    ))?;
+    let y_start = c_end;
+    let y_end = y_start.checked_add(pn).ok_or(CryptoError::Common(
+        CommonError::ArithmeticOverflow {
+            operation: "lms_sig_decode: y_start + pn overflow",
+        },
+    ))?;
+    let y = &data[y_start..y_end];
+
+    // lms_type : 4 bytes
+    let lms_type_start = y_end;
+    let lms_type_end = lms_type_start.checked_add(4).ok_or(CryptoError::Common(
+        CommonError::ArithmeticOverflow {
+            operation: "lms_sig_decode: lms_type_start + 4 overflow",
+        },
+    ))?;
+    let lms_tag = read_u32_be(&data[lms_type_start..lms_type_end])?;
+    let lms_decoded =
+        LmsType::from_u32(lms_tag).ok_or_else(|| {
+            CryptoError::Encoding(format!("lms_sig_decode: invalid LMS tag 0x{lms_tag:08x}"))
+        })?;
+    if (lms_decoded as u32) != (lms.lms_type as u32) {
+        return Err(CryptoError::Verification(format!(
+            "lms_sig_decode: LMS tag 0x{lms_tag:08x} does not match public key"
+        )));
+    }
+    let lms_decoded_params = lms_decoded.params();
+
+    // auth_path : h * n bytes
+    let hn = h.checked_mul(n).ok_or(CryptoError::Common(
+        CommonError::ArithmeticOverflow {
+            operation: "lms_sig_decode: h * n overflow",
+        },
+    ))?;
+    let path_start = lms_type_end;
+    let path_end = path_start.checked_add(hn).ok_or(CryptoError::Common(
+        CommonError::ArithmeticOverflow {
+            operation: "lms_sig_decode: path_start + hn overflow",
+        },
+    ))?;
+    if path_end != data.len() {
+        // Should be unreachable due to the upfront expected_sig_len check.
+        return Err(CryptoError::Encoding(format!(
+            "lms_sig_decode: trailing data; expected {expected_sig_len} bytes total"
+        )));
+    }
+    let auth_path = &data[path_start..path_end];
+
+    Ok(LmsSig {
+        q,
+        ots_sig: LmOtsSig {
+            params: ots_decoded_params,
+            c,
+            y,
+        },
+        params: lms_decoded_params,
+        auth_path,
+    })
+}
+
+// ===========================================================================
+// Standalone public-key decoder/length (schema-required functions)
+// ===========================================================================
+
+/// Decode an LMS public key from wire format and populate `key` in place.
+///
+/// Mirrors C `ossl_lms_pubkey_decode()` from
+/// `crypto/lms/lms_pubkey_decode.c`. On success, `key.lms_params`,
+/// `key.ots_params`, `key.id`, and `key.pub_key` (encoded + extracted root
+/// hash) are all populated from the input buffer.
+///
+/// # Errors
+/// * [`CryptoError::Encoding`] — buffer is too short, has invalid tags, or
+///   carries a hash family / digest size mismatch between the LMS and
+///   LM-OTS parameter sets.
+///
+/// # Rule compliance
+/// * Rule R5: All failure modes return `Err`; no sentinels.
+/// * Rule R8: Contains zero `unsafe` code.
+pub fn lms_pubkey_decode(data: &[u8], key: &mut LmsKey) -> CryptoResult<()> {
+    match LmsPubKey::decode(data)? {
+        Some(pk) => {
+            // Extract the borrowed view's components into the owning key.
+            let id = pk.i().to_vec();
+            key.lms_params = Some(pk.lms_params());
+            key.ots_params = Some(pk.ots_params());
+            key.id = id;
+            key.pub_key = LmsPublicKey {
+                encoded: data.to_vec(),
+                encoded_len: data.len(),
+                k: pk.k().to_vec(),
+            };
+            Ok(())
+        }
+        None => Err(CryptoError::Encoding(
+            "lms_pubkey_decode: malformed LMS public key".to_string(),
+        )),
+    }
+}
+
+/// Compute the wire-format length of an LMS public key from its leading
+/// `lms_type` tag.
+///
+/// Reads the 4-byte big-endian tag at the start of `data`, resolves the LMS
+/// parameter set, and returns `4 + 4 + 16 + n = 24 + n` bytes. Mirrors C
+/// `ossl_lms_pubkey_length()` from `crypto/lms/lms_pubkey_decode.c`.
+///
+/// # Errors
+/// * [`CryptoError::Encoding`] — buffer is shorter than 4 bytes or the tag
+///   does not correspond to a registered LMS algorithm.
+///
+/// # Rule compliance
+/// * Rule R5: Returns `Err` rather than a `0` sentinel for unknown tags.
+/// * Rule R6: All width conversions use checked arithmetic.
+/// * Rule R8: Contains zero `unsafe` code.
+pub fn lms_pubkey_length(data: &[u8]) -> CryptoResult<usize> {
+    if data.len() < LMS_SIZE_LMS_TYPE {
+        return Err(CryptoError::Encoding(format!(
+            "lms_pubkey_length: buffer too short ({} < {LMS_SIZE_LMS_TYPE})",
+            data.len()
+        )));
+    }
+    let tag = read_u32_be(&data[..LMS_SIZE_LMS_TYPE])?;
+    let lms_type = LmsType::from_u32(tag).ok_or_else(|| {
+        CryptoError::Encoding(format!("lms_pubkey_length: invalid LMS tag 0x{tag:08x}"))
+    })?;
+    Ok(LmsPubKey::encoded_len(lms_type.params()))
 }
 
 // ===========================================================================
