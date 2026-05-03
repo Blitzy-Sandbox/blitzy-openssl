@@ -1,105 +1,76 @@
-//! RSA-OAEP padding (Optimal Asymmetric Encryption Padding).
+//! OAEP (Optimal Asymmetric Encryption Padding) implementation per RFC 8017 §7.1.
 //!
-//! Implements the OAEP encryption padding scheme as specified in
-//! **RFC 8017 §7.1** (PKCS #1 v2.2). OAEP is the recommended padding mode
-//! for RSA encryption in new deployments because it provides IND-CCA2
-//! security under the RSA assumption in the random oracle model
-//! (Bellare-Rogaway, Eurocrypt 1994; Fujisaki-Okamoto-Pointcheval-Stern,
-//! CRYPTO 2001).
+//! Translates the C implementation from `crypto/rsa/rsa_oaep.c` (393 lines).
+//! Provides EME-OAEP encoding and decoding with configurable hash functions
+//! and Mask Generation Function (MGF1).
 //!
-//! Translates the upstream C implementation in `crypto/rsa/rsa_oaep.c`
-//! (~410 lines) into idiomatic, fully-safe Rust. The decode path retains
-//! the **constant-time / Manger-attack defense** of the C reference: every
-//! comparison on secret data is performed with the
-//! [`openssl_common::constant_time`] primitives, and the final extraction
-//! step uses a bit-shifted memmove that runs in `O(N · log N)` regardless
-//! of the discovered separator position.
+//! ## Schema-Required API
 //!
-//! # Source Mapping
+//! This module exposes the following public surface mandated by the OAEP
+//! schema for the workspace:
 //!
-//! | Rust Component                | C Source                                                   | Purpose                                                  |
-//! |-------------------------------|------------------------------------------------------------|----------------------------------------------------------|
-//! | [`OaepParams`]                | `EVP_PKEY_CTX_set_rsa_oaep_md` / `_set_rsa_mgf1_md` / `_set_rsa_oaep_label` | Per-operation OAEP parameters: hash, MGF1 hash, label |
-//! | [`oaep_encrypt`]              | `crypto/rsa/rsa_oaep.c::RSA_padding_add_PKCS1_OAEP_mgf1`   | RFC 8017 §7.1.1 EME-OAEP encode + RSA primitive         |
-//! | [`oaep_decrypt`]              | `crypto/rsa/rsa_oaep.c::RSA_padding_check_PKCS1_OAEP_mgf1` | RFC 8017 §7.1.2 EME-OAEP decode + RSA primitive         |
-//! | MGF1 mask generation          | `crypto/rsa/rsa_oaep.c::PKCS1_MGF1`                        | RFC 8017 §B.2.1 MGF1 — provided by [`super::pss::pkcs1_mgf1`] |
+//! * [`OaepParams`] — typed parameter bag (digest, `mgf1_digest`, label).
+//! * [`OaepError`] — enum capturing the five OAEP-specific failure modes.
+//! * [`mgf1`] — Mask Generation Function 1 (RFC 8017 §B.2.1).
+//! * [`oaep_encode`] — byte-buffer EME-OAEP encoding (no RSA primitive).
+//! * [`oaep_decode`] — byte-buffer EME-OAEP decoding (constant-time).
+//! * [`oaep_encode_default`] / [`oaep_decode_default`] — convenience wrappers
+//!   matching legacy C `RSA_padding_add_PKCS1_OAEP` / `RSA_padding_check_PKCS1_OAEP`.
 //!
-//! # OAEP Encoding (RFC 8017 §7.1.1 EME-OAEP-Encode)
+//! Higher-level [`oaep_encrypt`] / [`oaep_decrypt`] functions wrap an RSA
+//! key primitive around the byte-buffer encode/decode and remain available
+//! for convenience and backward compatibility within the crate.
 //!
-//! OAEP transforms a message `M` of length `mLen ≤ k − 2hLen − 2` octets
-//! (where `k` is the RSA modulus length in octets and `hLen` is the hash
-//! function output length in octets) into an encoded message `EM` of
-//! length `k` octets:
+//! ## Security Properties
 //!
-//! ```text
-//! 1.  lHash = Hash(L)                            // L is the optional label
-//! 2.  PS    = (k − mLen − 2hLen − 2) zero octets
-//! 3.  DB    = lHash || PS || 0x01 || M           // length k − hLen − 1
-//! 4.  seed  = random hLen octets
-//! 5.  dbMask  = MGF1(seed, k − hLen − 1)
-//! 6.  maskedDB = DB ⊕ dbMask
-//! 7.  seedMask = MGF1(maskedDB, hLen)
-//! 8.  maskedSeed = seed ⊕ seedMask
-//! 9.  EM    = 0x00 || maskedSeed || maskedDB     // total length k
-//! 10. C     = RSAEP((n, e), OS2IP(EM))           // RSA primitive
-//! ```
+//! - All decoding operations use constant-time comparisons to prevent
+//!   timing side-channels (Manger's attack, Bleichenbacher-style attacks).
+//!   The decode flow accumulates a single `good` mask across every check
+//!   and only collapses to a Result at the very end, mirroring the C
+//!   reference implementation in `crypto/rsa/rsa_oaep.c`.
+//! - Intermediate buffers (random seed, dbMask, seedMask, unmasked DB,
+//!   the encoded message) are zeroized on every code path via
+//!   [`zeroize::Zeroize`].
+//! - FIPS mode (when the `fips` cargo feature is enabled) restricts the
+//!   acceptable digest algorithms in line with NIST SP 800-131A and
+//!   FIPS 186-5.
 //!
-//! # OAEP Decoding (RFC 8017 §7.1.2 EME-OAEP-Decode)
+//! ## Source Mapping
 //!
-//! Decoding mirrors encoding but is performed in **constant time** to
-//! defeat Manger's attack (Manger, CRYPTO 2001), which exploits timing
-//! differences in the leading-byte check (`Y == 0x00`) to recover the
-//! plaintext bit-by-bit. The Rust implementation:
+//! | C symbol (`crypto/rsa/rsa_oaep.c`)                              | Rust counterpart |
+//! |-----------------------------------------------------------------|------------------|
+//! | `RSA_padding_add_PKCS1_OAEP`                                    | [`oaep_encode_default`] |
+//! | `ossl_rsa_padding_add_PKCS1_OAEP_mgf1_ex`                       | [`oaep_encode`]         |
+//! | `RSA_padding_check_PKCS1_OAEP`                                  | [`oaep_decode_default`] |
+//! | `ossl_rsa_padding_check_PKCS1_OAEP_mgf1_ex`                     | [`oaep_decode`]         |
+//! | `PKCS1_MGF1`                                                    | [`mgf1`]                |
+//! | `RSA_R_DATA_TOO_LARGE_FOR_KEY_SIZE`                             | [`OaepError::DataTooLargeForKeySize`] |
+//! | `RSA_R_OAEP_DECODING_ERROR`                                     | [`OaepError::OaepDecodingError`]      |
+//! | `RSA_R_INVALID_OAEP_PARAMETERS`                                 | [`OaepError::InvalidOaepParametersValue`] |
+//! | `RSA_R_DIGEST_NOT_ALLOWED`                                      | [`OaepError::DigestNotAllowed`]       |
+//! | (FIPS-only) MGF1 digest validation failure                      | [`OaepError::InvalidMgf1Digest`]      |
 //!
-//! - Defers all branching on secret-derived data: the `good` accumulator
-//!   collects every per-step validity bit using bitwise AND.
-//! - Performs the separator scan with `constant_time::constant_time_eq_8`
-//!   on every byte position (no early break).
-//! - Performs the message extraction with a bit-shifted memmove
-//!   (`O(log₂(maxMsg))` outer iterations) so that the access pattern
-//!   does not depend on the recovered message length.
-//! - Selects the success / failure return path with
-//!   `constant_time::constant_time_select_int` — an integer-domain
-//!   conditional move.
+//! ## Default Parameters
 //!
-//! # Defaults & Negotiated Parameters
+//! Per AAP §0 (Step 4 of the file's instructions) and the legacy C wrapper
+//! `RSA_padding_add_PKCS1_OAEP`, the default OAEP parameters use **SHA-1**
+//! for both the label hash and MGF1 hash, with an empty label. SHA-1 is
+//! retained as the default for backwards-compatible interoperability with
+//! existing RFC 8017 implementations; security-conscious callers should
+//! select SHA-256 or stronger via [`OaepParams::with_digest`].
 //!
-//! - **Hash:** SHA-1 in upstream OpenSSL for backwards compatibility, but
-//!   **SHA-256** is strongly recommended for new code. The default in
-//!   [`OaepParams::new_default`] is therefore **SHA-256**.
-//! - **MGF1 hash:** same as the OAEP hash unless overridden via
-//!   [`OaepParams::with_mgf1_hash`].
-//! - **Label:** empty by default. RFC 8017 §7.1 permits any octet string
-//!   as a label, but most deployments leave it empty.
+//! ## References
 //!
-//! # Choice of Hash Function (Compliance)
+//! - RFC 8017 §7.1: RSAES-OAEP encryption scheme.
+//! - RFC 8017 §B.2.1: MGF1 mask generation function.
+//! - NIST SP 800-56B §7.2.2: RSA-OAEP key transport.
+//! - NIST SP 800-131A: hash algorithm transition guidance (FIPS gating).
 //!
-//! Per **NIST SP 800-131A Rev. 2 §6**, SHA-1 is **disallowed** for new
-//! RSA-OAEP deployments after 2030. Use SHA-256 or SHA-384 in new code.
+//! ## Safety
 //!
-//! # Specifications
-//!
-//! - **RFC 8017 §7.1** — RSAES-OAEP Encryption Scheme
-//! - **RFC 8017 §B.2.1** — MGF1 Mask Generation Function
-//! - **NIST SP 800-56B Rev. 2 §7.2.2.3** — RSA-OAEP-KEM Key-Transport
-//! - **NIST SP 800-131A Rev. 2 §6** — Hash function transitions
-//! - **Manger, CRYPTO 2001** — A Chosen-Ciphertext Attack on RSA OAEP
-//!
-//! # Rules Enforced
-//!
-//! - **R5 (Nullability):** Optional label is `Vec<u8>` (empty by default,
-//!   never an integer sentinel); optional MGF1 hash is `Option<…>`.
-//! - **R6 (Lossless Casts):** Cross-type conversions go through
-//!   `try_from` / `u32::from` widening; no bare narrowing `as` casts on
-//!   length values.
-//! - **R8 (Zero Unsafe):** No `unsafe` code in this module; the parent
-//!   crate forbids it.
-//! - **R10 (Wiring):** Reachable from `openssl_crypto::rsa::oaep` and
-//!   integrated with [`super::public_encrypt`] / [`super::private_decrypt`]
-//!   via [`super::PaddingMode::None`] (the OAEP padding is performed in
-//!   this module before / after the RSA primitive).
-//! - **§0.7.6 (Secure Erasure):** All intermediate buffers (`db`, `seed`,
-//!   `dbmask`, `seedmask`, decoded EM) are wiped via [`Zeroize`].
+//! Unsafe code is `forbid`den at the crate root in
+//! `crates/openssl-crypto/src/lib.rs`; this file inherits that
+//! guarantee. There are zero `unsafe` blocks in this module.
 
 use openssl_common::constant_time;
 use openssl_common::error::{CryptoError, CryptoResult};
@@ -110,454 +81,738 @@ use crate::rand::rand_bytes;
 use tracing::{debug, trace};
 use zeroize::Zeroize;
 
-use super::pss::pkcs1_mgf1;
 use super::{
     digest_to_scheme_nid, private_decrypt, public_encrypt, scheme_nid_to_digest, PaddingMode,
     RsaError, RsaPrivateKey, RsaPublicKey,
 };
 
 // =============================================================================
-// OAEP parameters
+// 1. OaepError — schema-required error enum
 // =============================================================================
 
-/// Per-operation OAEP parameters: the digest function applied to the
-/// label (and used as the OAEP / MGF1 hash by default), an optional
-/// override for the MGF1 hash, and the optional label.
+/// Errors produced by OAEP padding operations.
 ///
-/// Translates the three OpenSSL provider parameters
-/// `OSSL_PKEY_RSA_OAEP_DIGEST`, `OSSL_PKEY_RSA_MGF1_DIGEST`, and
-/// `OSSL_PKEY_RSA_OAEP_LABEL` (see `include/openssl/core_names.h`).
+/// This enum surfaces the five OAEP-specific failure modes mandated by the
+/// workspace schema and corresponds 1:1 with the `RSA_R_*` reason codes
+/// raised in `crypto/rsa/rsa_oaep.c`. Each variant converts into a
+/// [`CryptoError`] via the [`From`] impl below so callers can propagate
+/// errors uniformly through the `?` operator.
+#[derive(Debug, thiserror::Error)]
+pub enum OaepError {
+    /// The plaintext message exceeds the maximum size that the modulus can
+    /// hold once OAEP overhead is accounted for. The maximum message length
+    /// for an RSA modulus of `k` bytes and a hash of `hLen` bytes is
+    /// `k - 2*hLen - 2`.
+    ///
+    /// Maps `RSA_R_DATA_TOO_LARGE_FOR_KEY_SIZE` from
+    /// `crypto/rsa/rsa_oaep.c`.
+    #[error("OAEP: data too large for RSA modulus")]
+    DataTooLargeForKeySize,
+
+    /// OAEP decoding failed: the encoded message did not pass one or more
+    /// integrity checks (first byte != 0x00, lHash mismatch, missing 0x01
+    /// separator, or padding-string contained non-zero bytes).
+    ///
+    /// **SECURITY:** This single, opaque error variant is intentional —
+    /// the underlying check results are accumulated in a constant-time
+    /// `good` mask to prevent Manger-style attacks. Callers MUST NOT try
+    /// to distinguish the specific failure cause from this error.
+    ///
+    /// Maps `RSA_R_OAEP_DECODING_ERROR` from `crypto/rsa/rsa_oaep.c`.
+    #[error("OAEP: decoding error")]
+    OaepDecodingError,
+
+    /// One of the OAEP parameters is structurally invalid — for example,
+    /// an empty output buffer or a key size below `2*hLen + 2` bytes.
+    ///
+    /// Maps `RSA_R_INVALID_OAEP_PARAMETERS` from `crypto/rsa/rsa_oaep.c`.
+    #[error("OAEP: invalid parameter value: {0}")]
+    InvalidOaepParametersValue(&'static str),
+
+    /// The requested hash algorithm is not approved for OAEP under the
+    /// active operating mode. Raised in FIPS mode for legacy hashes
+    /// (MD2/MD4/MD5/SHA-1 outside legacy-allowed contexts) and for
+    /// extendable-output functions (SHAKE128/SHAKE256) which are not
+    /// defined for OAEP label hashing.
+    #[error("OAEP: digest not allowed")]
+    DigestNotAllowed,
+
+    /// The requested MGF1 digest algorithm is not acceptable. Raised in
+    /// FIPS mode for unapproved MGF1 hashes and for XOFs whose output
+    /// length is not fixed.
+    #[error("OAEP: invalid MGF1 digest")]
+    InvalidMgf1Digest,
+}
+
+impl From<OaepError> for CryptoError {
+    fn from(err: OaepError) -> Self {
+        match err {
+            OaepError::DataTooLargeForKeySize
+            | OaepError::OaepDecodingError
+            | OaepError::InvalidOaepParametersValue(_) => CryptoError::Encoding(err.to_string()),
+            OaepError::DigestNotAllowed | OaepError::InvalidMgf1Digest => {
+                CryptoError::AlgorithmNotFound(err.to_string())
+            }
+        }
+    }
+}
+
+// =============================================================================
+// 2. OaepParams — typed parameter bag
+// =============================================================================
+
+/// OAEP encryption / decryption parameters.
 ///
-/// # Field Semantics
+/// Replaces the C pattern of passing `md`, `mgf1md`, `param`, and `plen`
+/// as separate arguments to
+/// `ossl_rsa_padding_add_PKCS1_OAEP_mgf1_ex`. The schema-defined field
+/// names are `digest`, `mgf1_digest`, and `label`.
 ///
-/// - `hash` — Hash function `Hash` applied to the label `L` per
-///   RFC 8017 §7.1.1 step 1. Also used as the MGF1 hash unless
-///   [`mgf1_hash`](Self::mgf1_hash) overrides it.
-/// - `mgf1_hash` — Optional override for the MGF1 mask-generation hash.
-///   `None` means "same as `hash`" per the RFC default.
-/// - `label` — The label `L`. Empty by default; RFC 8017 permits any
-///   octet string but most deployments use the empty string.
+/// The default value uses SHA-1 (per legacy `RSA_padding_add_PKCS1_OAEP`),
+/// no MGF1 override (so MGF1 also uses SHA-1), and an empty label. To
+/// override, use the builder-style `with_*` helpers.
 #[derive(Debug, Clone)]
 pub struct OaepParams {
-    /// Hash function applied to the label and used as default MGF1 hash.
-    pub hash: DigestAlgorithm,
-    /// Optional MGF1 hash override (`None` ⇒ same as `hash`).
-    pub mgf1_hash: Option<DigestAlgorithm>,
-    /// Optional label `L` (empty by default).
+    /// Hash function used both for hashing the label and (by default) for
+    /// MGF1 mask generation. Required by RFC 8017 §7.1.1 step 2a.
+    pub digest: DigestAlgorithm,
+
+    /// Optional override for the MGF1 hash. When `None`, MGF1 uses the
+    /// same hash as `digest`. Per RFC 8017 §7.1, OAEP allows the label
+    /// hash and MGF1 hash to differ.
+    pub mgf1_digest: Option<DigestAlgorithm>,
+
+    /// OAEP label (called "L" in RFC 8017 §7.1.1; an empty label is
+    /// permitted and is the most common case). The label is hashed once
+    /// to produce `lHash` and bound into the encoded message; decoders
+    /// MUST supply the same label or decoding will fail.
     pub label: Vec<u8>,
 }
 
 impl OaepParams {
-    /// Creates a new [`OaepParams`] with **SHA-256** as the OAEP and
-    /// MGF1 hash and an empty label. SHA-256 is the recommended default
-    /// per NIST SP 800-131A Rev. 2 §6 (SHA-1 disallowed after 2030).
+    /// Constructs the default OAEP parameter set.
+    ///
+    /// Equivalent to `OaepParams::default()`. Returns parameters with
+    /// SHA-1 for both the label hash and MGF1 hash, and an empty label —
+    /// matching the legacy C wrapper `RSA_padding_add_PKCS1_OAEP` from
+    /// `crypto/rsa/rsa_oaep.c` line 39.
     #[must_use]
     pub fn new_default() -> Self {
         Self {
-            hash: DigestAlgorithm::Sha256,
-            mgf1_hash: None,
+            digest: DigestAlgorithm::Sha1,
+            mgf1_digest: None,
             label: Vec::new(),
         }
     }
 
-    /// Creates [`OaepParams`] using the given hash for both OAEP and
-    /// MGF1 (no override) with an empty label.
+    /// Returns a copy of `self` with the OAEP digest replaced.
+    ///
+    /// Builder-style helper used by callers that wish to override the
+    /// default SHA-1 with a stronger hash such as SHA-256.
     #[must_use]
-    pub fn with_hash(hash: DigestAlgorithm) -> Self {
-        Self {
-            hash,
-            mgf1_hash: None,
-            label: Vec::new(),
-        }
-    }
-
-    /// Sets a distinct MGF1 hash (RFC 8017 §B.2.1). Returns `self` for
-    /// chaining.
-    #[must_use]
-    pub fn with_mgf1_hash(mut self, mgf1_hash: DigestAlgorithm) -> Self {
-        self.mgf1_hash = Some(mgf1_hash);
+    pub fn with_digest(mut self, digest: DigestAlgorithm) -> Self {
+        self.digest = digest;
         self
     }
 
-    /// Sets the label `L` (RFC 8017 §7.1.1 step 1). Returns `self` for
-    /// chaining.
+    /// Returns a copy of `self` with the MGF1 digest replaced.
+    ///
+    /// When set, MGF1 will use this hash instead of `self.digest`.
+    #[must_use]
+    pub fn with_mgf1_digest(mut self, mgf1_digest: DigestAlgorithm) -> Self {
+        self.mgf1_digest = Some(mgf1_digest);
+        self
+    }
+
+    /// Returns a copy of `self` with the label replaced.
+    ///
+    /// The label is hashed once during encoding and bound to the
+    /// ciphertext; decoders MUST supply the same label.
     #[must_use]
     pub fn with_label(mut self, label: Vec<u8>) -> Self {
         self.label = label;
         self
     }
 
-    /// Returns the effective MGF1 hash: the override if present,
-    /// otherwise the OAEP hash.
-    #[must_use]
-    pub fn mgf1_hash_effective(&self) -> DigestAlgorithm {
-        self.mgf1_hash.unwrap_or(self.hash)
-    }
-
-    /// Returns the OAEP hash NID (object identifier numeric form) for
-    /// serialization. Translates `OBJ_nid2obj(EVP_MD_get_type(md))` from
-    /// `crypto/rsa/rsa_oaep.c`.
+    /// Returns the effective MGF1 digest, applying the default fallback.
     ///
-    /// Returns `None` if the hash algorithm has no NID mapping.
+    /// If `mgf1_digest` is `Some(h)`, returns `h`; otherwise returns
+    /// `self.digest`. Per RFC 8017 §7.1, OAEP defaults MGF1 to use the
+    /// same hash as the label hash unless explicitly overridden.
     #[must_use]
-    pub fn oaep_hash_nid(&self) -> Option<u32> {
-        digest_to_scheme_nid(self.hash)
+    pub fn mgf1_digest_effective(&self) -> DigestAlgorithm {
+        self.mgf1_digest.unwrap_or(self.digest)
     }
 
-    /// Returns the MGF1 hash NID (object identifier numeric form) for
-    /// serialization. Returns `None` if the hash algorithm has no NID
-    /// mapping.
+
+    /// Returns the upstream-compatible NID for the OAEP digest.
+    ///
+    /// Used by ASN.1 encoding paths that emit `RSAES-OAEP-params`
+    /// (RFC 8017 Appendix A.2.1) into PKCS#1 / PKCS#8 / X.509 structures.
+    /// Returns `None` if the digest does not have an OpenSSL-native NID.
     #[must_use]
-    pub fn mgf1_hash_nid(&self) -> Option<u32> {
-        digest_to_scheme_nid(self.mgf1_hash_effective())
+    pub fn oaep_digest_nid(&self) -> Option<u32> {
+        digest_to_scheme_nid(self.digest)
     }
 
-    /// Resolves OAEP parameters from a `(oaep_hash_nid, mgf1_hash_nid)`
-    /// pair as commonly stored in encoded ASN.1 forms (per
-    /// `RSAES-OAEP-params`, RFC 8017 §A.2.1). Returns the corresponding
-    /// [`OaepParams`] with an empty label. The caller may set the label
-    /// via [`Self::with_label`].
+    /// Returns the upstream-compatible NID for the MGF1 digest.
+    ///
+    /// Returns the NID corresponding to [`Self::mgf1_digest_effective`].
+    #[must_use]
+    pub fn mgf1_digest_nid(&self) -> Option<u32> {
+        digest_to_scheme_nid(self.mgf1_digest_effective())
+    }
+
+    /// Constructs an [`OaepParams`] from a pair of NIDs.
     ///
     /// Returns `None` if either NID does not map to a known
-    /// [`DigestAlgorithm`].
+    /// [`DigestAlgorithm`]. The label is left empty; callers that need a
+    /// non-empty label should chain [`Self::with_label`].
     #[must_use]
-    pub fn from_nids(oaep_hash_nid: u32, mgf1_hash_nid: u32) -> Option<Self> {
-        let hash = scheme_nid_to_digest(oaep_hash_nid)?;
-        let mgf1 = scheme_nid_to_digest(mgf1_hash_nid)?;
-        let mgf1_hash = if mgf1 == hash { None } else { Some(mgf1) };
+    pub fn from_nids(oaep_digest_nid: u32, mgf1_digest_nid: u32) -> Option<Self> {
+        let digest = scheme_nid_to_digest(oaep_digest_nid)?;
+        let mgf1 = scheme_nid_to_digest(mgf1_digest_nid)?;
         Some(Self {
-            hash,
-            mgf1_hash,
+            digest,
+            mgf1_digest: if mgf1 == digest { None } else { Some(mgf1) },
             label: Vec::new(),
         })
     }
 }
 
 impl Default for OaepParams {
+    /// Default OAEP parameters: SHA-1 hash, SHA-1 MGF1, empty label.
     fn default() -> Self {
         Self::new_default()
     }
 }
 
 // =============================================================================
-// Internal helpers
+// 3. Internal helpers
 // =============================================================================
 
-/// Computes `Hash(L)` — the hash of the label per RFC 8017 §7.1.1 step 1.
+/// One-shot label hash helper. Computes `lHash = Hash(label)` per
+/// RFC 8017 §7.1.1 step 2a. The returned `Vec<u8>` has length
+/// `digest.digest_size()`.
 ///
-/// Translates the `EVP_MD_CTX` invocation pattern in
-/// `crypto/rsa/rsa_oaep.c::RSA_padding_add_PKCS1_OAEP_mgf1` (lines 67–88).
-fn hash_label(label: &[u8], hash: DigestAlgorithm) -> CryptoResult<Vec<u8>> {
-    let mut ctx: Box<dyn Digest> = create_digest(hash)?;
+/// An empty label is valid and produces `Hash("")`.
+fn hash_label(label: &[u8], digest: DigestAlgorithm) -> CryptoResult<Vec<u8>> {
+    let mut ctx: Box<dyn Digest> = create_digest(digest)?;
     ctx.update(label)?;
     ctx.finalize()
 }
 
-/// Produces an `RsaError::OaepDecodingError`. The decode path treats
-/// every failure mode (length, leading byte, label hash, separator,
-/// message length) identically to avoid leaking which step rejected the
-/// ciphertext (Manger defense). The on-the-wire error returned by this
-/// helper carries no diagnostic information beyond
-/// "OAEP decoding failed".
-#[inline]
+/// Convenience helper that wraps the schema-required
+/// [`OaepError::OaepDecodingError`] in a [`CryptoError`]. All decode
+/// failure paths funnel through here so the error message is uniform
+/// and information-leak-free.
 fn oaep_decode_error() -> CryptoError {
-    CryptoError::from(RsaError::OaepDecodingError)
+    CryptoError::from(OaepError::OaepDecodingError)
 }
 
 // =============================================================================
-// OAEP encrypt
+// 4. FIPS digest validation
 // =============================================================================
 
-/// RSA-OAEP encrypts `msg` with the public `key` and the supplied OAEP
-/// parameters, returning the RSA ciphertext of length `k = key_size_bytes`.
+/// Validates that the specified digest is approved for OAEP in FIPS mode.
 ///
-/// Translates `RSA_padding_add_PKCS1_OAEP_mgf1` followed by the public
-/// RSA primitive from `crypto/rsa/rsa_oaep.c` (lines 54–149). The OAEP
-/// padding is performed in pure Rust here, then the resulting EM buffer
-/// (already exactly `k` bytes long) is handed to
-/// [`super::public_encrypt`] with [`PaddingMode::None`] for the modular
-/// exponentiation.
+/// Translates the FIPS-only check from `crypto/rsa/rsa_oaep.c` lines
+/// 79-100 (which calls into the provider's
+/// `rsa_oaep_check_digest_compatible` predicate). XOFs (SHAKE128 /
+/// SHAKE256) and unapproved legacy hashes (MD2 / MD4 / MD5) are
+/// rejected. SHA-1 is permitted only for legacy interoperability.
 ///
-/// # Length Constraints (RFC 8017 §7.1.1)
+/// This function is gated on the `fips` cargo feature; it is inert when
+/// the feature is disabled. The signature is preserved unconditionally
+/// so that downstream callers do not need conditional compilation.
+#[cfg(feature = "fips_module")]
+fn validate_oaep_digest_fips(digest: DigestAlgorithm) -> Result<(), OaepError> {
+    match digest {
+        // Legacy hashes are not approved under SP 800-131A.
+        DigestAlgorithm::Md2 | DigestAlgorithm::Md4 | DigestAlgorithm::Md5 => {
+            Err(OaepError::DigestNotAllowed)
+        }
+        // SHAKE XOFs are not defined for OAEP (no fixed output length).
+        DigestAlgorithm::Shake128 | DigestAlgorithm::Shake256 => Err(OaepError::DigestNotAllowed),
+        _ => Ok(()),
+    }
+}
+
+/// FIPS-mode MGF1 digest validation. Mirrors
+/// [`validate_oaep_digest_fips`] but emits
+/// [`OaepError::InvalidMgf1Digest`] for unapproved MGF1 hashes.
+#[cfg(feature = "fips_module")]
+fn validate_mgf1_digest_fips(digest: DigestAlgorithm) -> Result<(), OaepError> {
+    match digest {
+        DigestAlgorithm::Md2 | DigestAlgorithm::Md4 | DigestAlgorithm::Md5 => {
+            Err(OaepError::InvalidMgf1Digest)
+        }
+        // SHAKE XOFs are technically usable as MGFs but are out of scope
+        // for FIPS-approved OAEP.
+        DigestAlgorithm::Shake128 | DigestAlgorithm::Shake256 => {
+            Err(OaepError::InvalidMgf1Digest)
+        }
+        _ => Ok(()),
+    }
+}
+
+// Inert when the `fips_module` feature is disabled. Defined as no-ops
+// so the call sites remain identical between builds; we keep the
+// `Result<(), OaepError>` return type intentionally so callers don't
+// need cfg-conditional `?` operators.
+#[cfg(not(feature = "fips_module"))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "Symmetry with the FIPS-enabled variant; callers use `?` regardless."
+)]
+fn validate_oaep_digest_fips(_digest: DigestAlgorithm) -> Result<(), OaepError> {
+    Ok(())
+}
+
+#[cfg(not(feature = "fips_module"))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "Symmetry with the FIPS-enabled variant; callers use `?` regardless."
+)]
+fn validate_mgf1_digest_fips(_digest: DigestAlgorithm) -> Result<(), OaepError> {
+    Ok(())
+}
+
+// =============================================================================
+// 5. mgf1 — Mask Generation Function 1 (RFC 8017 §B.2.1)
+// =============================================================================
+
+/// Mask Generation Function 1 (MGF1) per RFC 8017 §B.2.1.
 ///
-/// Let `k` be the RSA modulus length in octets and `hLen` the digest size.
+/// Generates `mask.len()` bytes of pseudo-random output by iterating
+/// `Hash(seed || I2OSP(counter, 4))` with `counter` running from 0 upward.
+/// The output is the concatenation of the hash blocks, truncated to
+/// `mask.len()` bytes. This is the schema-required public entry point;
+/// it is also used internally by [`oaep_encode`] and [`oaep_decode`].
 ///
-/// - `k` must be at least `2 · hLen + 2` (`KEY_SIZE_TOO_SMALL` otherwise).
-/// - `mLen` (`= msg.len()`) must satisfy `mLen ≤ k − 2 · hLen − 2`
-///   (`DATA_TOO_LARGE_FOR_KEY_SIZE` otherwise).
+/// Translates `PKCS1_MGF1` from `crypto/rsa/rsa_oaep.c` lines 350-393.
+///
+/// # Arguments
+///
+/// * `mask` — output buffer to fill with generated mask bytes.
+/// * `seed` — input seed value (typically `hLen` bytes, but any length
+///   is permitted by RFC 8017).
+/// * `digest` — hash function to use (e.g., SHA-256).
 ///
 /// # Errors
 ///
-/// Returns:
-/// - [`RsaError::DataTooLargeForKeySize`] if `msg` is longer than the key
-///   can accommodate.
-/// - [`RsaError::KeyTooSmall`] if the modulus is too small for the chosen
-///   hash.
-/// - Whatever the hash, RNG, or RSA primitive returns on failure.
+/// * Returns `CryptoError::Encoding` if the digest has zero output size
+///   (XOFs without an explicit output length).
+/// * Returns `CryptoError::Encoding` on counter overflow (mathematically
+///   unreachable for any realistic mask length, but checked for
+///   defence-in-depth per Rule R6).
+/// * Propagates digest engine errors (digest creation / update /
+///   finalization).
 ///
-/// # Side-Channel Properties
+/// # Example
 ///
-/// This is the **encryption** path; the message is the caller's own
-/// secret. Side-channel countermeasures (constant-time MGF1 application,
-/// secure-erasure of the seed and intermediate masks) protect the random
-/// seed and prevent state leakage between operations.
-pub fn oaep_encrypt(key: &RsaPublicKey, msg: &[u8], params: &OaepParams) -> CryptoResult<Vec<u8>> {
-    trace!(
-        msg_len = msg.len(),
-        hash = ?params.hash,
-        mgf1 = ?params.mgf1_hash_effective(),
-        label_len = params.label.len(),
-        "RSA oaep_encrypt",
-    );
-
-    let hash = params.hash;
-    let mgf1_hash = params.mgf1_hash_effective();
-    let mdlen = hash.digest_size();
+/// ```ignore
+/// use openssl_crypto::hash::DigestAlgorithm;
+/// use openssl_crypto::rsa::oaep::mgf1;
+///
+/// let mut mask = [0u8; 64];
+/// let seed = b"seed bytes";
+/// mgf1(&mut mask, seed, DigestAlgorithm::Sha256).unwrap();
+/// ```
+pub fn mgf1(mask: &mut [u8], seed: &[u8], digest: DigestAlgorithm) -> CryptoResult<()> {
+    let mdlen = digest.digest_size();
     if mdlen == 0 {
-        return Err(CryptoError::Encoding(
-            "OAEP: hash has zero digest size".to_string(),
-        ));
+        return Err(CryptoError::Encoding(format!(
+            "MGF1: hash {} has zero digest size",
+            digest.name()
+        )));
     }
 
-    let k_u32 = key.key_size_bytes();
-    let k = usize::try_from(k_u32).map_err(|_| RsaError::DataTooLargeForKeySize)?;
+    let len = mask.len();
+    if len == 0 {
+        // Vacuous case: nothing to do. Matches C behaviour where
+        // PKCS1_MGF1 returns success with an empty output buffer.
+        return Ok(());
+    }
 
-    // RFC 8017 §7.1.1 constraints. Use checked arithmetic to avoid overflow
-    // even on absurdly small / pathological key sizes.
+    let mut outlen: usize = 0;
+    let mut counter: u32 = 0;
+
+    while outlen < len {
+        // I2OSP(counter, 4) — big-endian 4-byte encoding of the counter.
+        let cnt = counter.to_be_bytes();
+
+        // T = T || Hash(seed || I2OSP(counter, 4))
+        let mut ctx: Box<dyn Digest> = create_digest(digest)?;
+        ctx.update(seed)?;
+        ctx.update(&cnt)?;
+        let mut block = ctx.finalize()?;
+
+        let remaining = len - outlen;
+        if remaining >= mdlen {
+            mask[outlen..outlen + mdlen].copy_from_slice(&block);
+            outlen += mdlen;
+        } else {
+            mask[outlen..len].copy_from_slice(&block[..remaining]);
+            outlen = len;
+        }
+
+        // Zero out the per-iteration block buffer; the mask itself will
+        // be cleared by the caller when appropriate.
+        block.zeroize();
+
+        // Advance the counter using checked arithmetic (Rule R6: no bare
+        // narrowing casts; overflow is structurally impossible for any
+        // realistic mask length but we still check).
+        counter = counter.checked_add(1).ok_or_else(|| {
+            CryptoError::Encoding("MGF1: counter overflow".to_string())
+        })?;
+    }
+
+    Ok(())
+}
+
+// =============================================================================
+// 6. oaep_encode — EME-OAEP encoding (RFC 8017 §7.1.1)
+// =============================================================================
+
+/// EME-OAEP encoding of a message into the encoded-message buffer.
+///
+/// Performs the OAEP encoding described in RFC 8017 §7.1.1, **excluding**
+/// the final RSA primitive. Given an output buffer `encoded` of length
+/// `k` (the RSA modulus length in bytes) and a message `M`, fills
+/// `encoded` with the EM block:
+///
+/// ```text
+/// EM = 0x00 || maskedSeed || maskedDB
+/// where
+///     DB         = lHash || PS || 0x01 || M
+///     dbMask     = MGF1(seed, k - hLen - 1)
+///     maskedDB   = DB XOR dbMask
+///     seedMask   = MGF1(maskedDB, hLen)
+///     maskedSeed = seed XOR seedMask
+/// ```
+///
+/// Translates `ossl_rsa_padding_add_PKCS1_OAEP_mgf1_ex` from
+/// `crypto/rsa/rsa_oaep.c` lines 54-161.
+///
+/// # Arguments
+///
+/// * `encoded` — output buffer of length `k` (the RSA modulus length in
+///   bytes). On success, populated with the encoded message; on
+///   failure, zeroed via [`Zeroize`].
+/// * `message` — the plaintext to encode (`M` in RFC 8017 notation).
+/// * `params` — OAEP parameters (digest, MGF1 digest, label).
+///
+/// # Errors
+///
+/// * Returns `OaepError::DataTooLargeForKeySize` (wrapped in
+///   [`CryptoError`]) if `message.len() > k - 2*hLen - 2`.
+/// * Returns `OaepError::InvalidOaepParametersValue` if `encoded` is too
+///   small to hold any OAEP message under the chosen hash, or if the
+///   chosen digest has zero output size.
+/// * Returns `OaepError::DigestNotAllowed` /
+///   `OaepError::InvalidMgf1Digest` under FIPS mode for unapproved
+///   digests.
+/// * Propagates underlying random-byte and digest engine errors.
+///
+/// # Security
+///
+/// The seed, dbMask, and seedMask intermediate buffers are zeroized on
+/// every code path. The output buffer is zeroized on the error path so
+/// that partial state cannot leak.
+pub fn oaep_encode(
+    encoded: &mut [u8],
+    message: &[u8],
+    params: &OaepParams,
+) -> CryptoResult<()> {
+    // ---- 1. Resolve digest sizes ------------------------------------
+    let digest = params.digest;
+    let mgf1_digest = params.mgf1_digest_effective();
+
+    // FIPS mode (when enabled) gates the acceptable digest set.
+    validate_oaep_digest_fips(digest)?;
+    validate_mgf1_digest_fips(mgf1_digest)?;
+
+    let mdlen = digest.digest_size();
+    if mdlen == 0 {
+        return Err(OaepError::InvalidOaepParametersValue(
+            "OAEP digest has zero output size",
+        )
+        .into());
+    }
+
+    // ---- 2. Compute geometric constraints ---------------------------
+    // k = |EM|, the RSA modulus length in bytes.
+    let k = encoded.len();
+
+    // Minimum k for OAEP is 2*hLen + 2 (lHash || 0x01 || empty PS || empty M
+    // would still overflow without at least one separator byte, so the C
+    // reference treats k < 2*hLen + 2 as an invalid parameter).
     let two_mdlen_plus_2 = mdlen
         .checked_mul(2)
         .and_then(|v| v.checked_add(2))
-        .ok_or_else(|| {
-            CryptoError::Encoding("OAEP: overflow computing key size threshold".to_string())
-        })?;
+        .ok_or(OaepError::InvalidOaepParametersValue(
+            "OAEP digest size too large",
+        ))?;
+
     if k < two_mdlen_plus_2 {
-        let actual = u32::try_from(k.saturating_mul(8)).unwrap_or(u32::MAX);
-        let min = u32::try_from(two_mdlen_plus_2.saturating_mul(8)).unwrap_or(u32::MAX);
-        return Err(RsaError::KeyTooSmall {
-            min_bits: min,
-            actual_bits: actual,
-        }
+        return Err(OaepError::InvalidOaepParametersValue(
+            "OAEP output buffer smaller than 2*hLen + 2",
+        )
         .into());
     }
+
     // Maximum message length: k - 2*hLen - 2.
     let max_msg = k - two_mdlen_plus_2;
-    if msg.len() > max_msg {
-        return Err(RsaError::DataTooLargeForKeySize.into());
+    if message.len() > max_msg {
+        return Err(OaepError::DataTooLargeForKeySize.into());
     }
 
-    // Compute lHash = Hash(L).
-    let lhash = hash_label(&params.label, hash)?;
+    debug!(
+        digest = %digest.name(),
+        mgf1_digest = %mgf1_digest.name(),
+        k,
+        msg_len = message.len(),
+        "OAEP encode: parameters validated"
+    );
+
+    // ---- 3. Compute lHash = Hash(label) -----------------------------
+    let lhash = hash_label(&params.label, digest)?;
     debug_assert_eq!(lhash.len(), mdlen);
 
-    // Build EM = 0x00 || maskedSeed || maskedDB, total length k bytes.
+    // ---- 4. Lay out EM in the output buffer -------------------------
     //
-    // Layout positions (matches rsa_oaep.c):
-    //   em[0]                       = 0x00
-    //   em[1 .. 1 + mdlen]          = seed       (later masked)
-    //   em[1 + mdlen ..]            = db         (later masked); length k - mdlen - 1
+    //   EM = 0x00 || maskedSeed || maskedDB
+    //   where DB = lHash || PS || 0x01 || M and |DB| = k - hLen - 1
     //
-    // db = lHash || PS (zeros) || 0x01 || M, total length k - mdlen - 1.
-    let mut em = vec![0u8; k];
+    // We first fill the buffer with the unmasked layout, then apply
+    // the MGF1-derived masks in place.
+    //
+    // Byte ranges in `encoded`:
+    //   [0]                                     0x00
+    //   [1..=mdlen]                             seed (random)
+    //   [db_off..db_off + mdlen]                lHash
+    //   [db_off + mdlen..one_pos]               PS (zero padding)
+    //   [one_pos]                               0x01 separator
+    //   [one_pos + 1..one_pos + 1 + msg.len()]  M (the message)
     let db_off = 1 + mdlen;
     let db_len = k - db_off;
+    let one_pos = db_off + db_len - message.len() - 1;
 
-    // db[0..mdlen] = lHash
-    em[db_off..db_off + mdlen].copy_from_slice(&lhash);
-
-    // db[mdlen..db_len - msg.len() - 1] is already zero (PS) from vec init.
-
-    // db[db_len - msg.len() - 1] = 0x01
-    let one_pos = db_off + db_len - msg.len() - 1;
-    em[one_pos] = 0x01;
-
-    // db[db_len - msg.len()..] = M
-    if !msg.is_empty() {
-        em[one_pos + 1..one_pos + 1 + msg.len()].copy_from_slice(msg);
+    // Zero the entire output first so that any "leftover" PS bytes are
+    // already 0x00.
+    for b in encoded.iter_mut() {
+        *b = 0u8;
     }
 
-    // Generate a random seed of mdlen bytes into em[1..=mdlen].
-    rand_bytes(&mut em[1..=mdlen])?;
+    // First byte is 0x00 (already zeroed above, but explicit for clarity).
+    encoded[0] = 0x00;
 
-    // First MGF1: dbmask = MGF1(seed, db_len). Apply to db.
+    // Place lHash at the start of DB.
+    encoded[db_off..db_off + mdlen].copy_from_slice(&lhash);
+
+    // Place 0x01 separator.
+    encoded[one_pos] = 0x01;
+
+    // Place message after the separator.
+    if !message.is_empty() {
+        encoded[one_pos + 1..one_pos + 1 + message.len()].copy_from_slice(message);
+    }
+
+    // ---- 5. Generate the random seed --------------------------------
+    rand_bytes(&mut encoded[1..=mdlen])?;
+
+    // ---- 6. dbMask = MGF1(seed, k - hLen - 1); maskedDB = DB XOR dbMask
     let mut dbmask = vec![0u8; db_len];
     {
-        let seed_slice = &em[1..=mdlen];
-        pkcs1_mgf1(&mut dbmask, seed_slice, mgf1_hash).inspect_err(|_e| {
-            // Wipe before propagating to ensure we don't leak any partial mask.
-            let mut tmp = dbmask.clone();
-            tmp.zeroize();
-        })?;
+        let seed_slice = &encoded[1..=mdlen];
+        // Run MGF1; if it fails, zeroize buffers before returning.
+        if let Err(e) = mgf1(&mut dbmask, seed_slice, mgf1_digest) {
+            dbmask.zeroize();
+            for b in encoded.iter_mut() {
+                *b = 0u8;
+            }
+            return Err(e);
+        }
     }
-    for (i, mask_byte) in dbmask.iter().enumerate().take(db_len) {
-        em[db_off + i] ^= *mask_byte;
+    for (i, mask_byte) in dbmask.iter().enumerate() {
+        encoded[db_off + i] ^= *mask_byte;
     }
     dbmask.zeroize();
 
-    // Second MGF1: seedmask = MGF1(maskedDB, mdlen). Apply to seed.
+    // ---- 7. seedMask = MGF1(maskedDB, hLen); maskedSeed = seed XOR seedMask
     let mut seedmask = vec![0u8; mdlen];
     {
-        let masked_db = &em[db_off..db_off + db_len];
-        pkcs1_mgf1(&mut seedmask, masked_db, mgf1_hash).inspect_err(|_e| {
-            let mut tmp = seedmask.clone();
-            tmp.zeroize();
-        })?;
+        let masked_db = &encoded[db_off..db_off + db_len];
+        if let Err(e) = mgf1(&mut seedmask, masked_db, mgf1_digest) {
+            seedmask.zeroize();
+            for b in encoded.iter_mut() {
+                *b = 0u8;
+            }
+            return Err(e);
+        }
     }
-    for (i, mask_byte) in seedmask.iter().enumerate().take(mdlen) {
-        em[1 + i] ^= *mask_byte;
+    for (i, mask_byte) in seedmask.iter().enumerate() {
+        encoded[1 + i] ^= *mask_byte;
     }
     seedmask.zeroize();
 
-    // em[0] is already 0x00 (from vec init). EM is now ready: exactly k bytes.
-    debug_assert_eq!(em.len(), k);
-
-    // RSA primitive: ciphertext = EM ^ e mod n. We pass PaddingMode::None
-    // because the OAEP padding has already been applied above. The em
-    // buffer length equals k exactly, satisfying no_padding_add's
-    // exact-length contract (see super::no_padding_add).
-    let ct_result = public_encrypt(key, &em, PaddingMode::None);
-
-    // Wipe EM regardless of success: it contains the random seed and the
-    // padded plaintext, both of which should not linger on the stack /
-    // heap.
-    em.zeroize();
-
-    let ct = ct_result?;
-    debug!(
-        ciphertext_len = ct.len(),
-        "RSA oaep_encrypt: produced ciphertext"
-    );
-    Ok(ct)
+    debug_assert_eq!(encoded.len(), k);
+    trace!("OAEP encode: complete");
+    Ok(())
 }
 
+
 // =============================================================================
-// OAEP decrypt (constant-time, Manger defense)
+// 7. oaep_decode — EME-OAEP decoding (RFC 8017 §7.1.2) — CONSTANT TIME
 // =============================================================================
 
-/// RSA-OAEP decrypts `ciphertext` with the private `key` and the
-/// supplied OAEP parameters, returning the recovered plaintext.
+/// EME-OAEP decoding of an encoded message.
 ///
-/// Translates `RSA_padding_check_PKCS1_OAEP_mgf1` followed by the
-/// private RSA primitive from `crypto/rsa/rsa_oaep.c` (lines 200–340).
-/// The RSA private operation is delegated to [`super::private_decrypt`]
-/// with [`PaddingMode::None`] (which performs blinding, CRT modular
-/// exponentiation, and the Bellcore fault defense). The OAEP decoding
-/// runs in **constant time** here to defeat Manger's attack:
+/// Performs the OAEP decoding described in RFC 8017 §7.1.2, **excluding**
+/// the inverse RSA primitive (which the caller must perform first to
+/// recover `EM` from the ciphertext). Recovers and returns the
+/// plaintext message `M` from the encoded message `EM`.
 ///
-/// - Length check on the leading `0x00` byte uses
-///   `constant_time::constant_time_is_zero`.
-/// - Label-hash comparison uses `constant_time::constant_time_eq` on
-///   each byte and accumulates into the `good` mask (no early exit).
-/// - The separator scan touches every position from `mdlen` to `db_len-1`.
-/// - Message extraction uses a bit-shifted memmove that runs the same
-///   number of XOR / select operations regardless of where the separator
-///   was found.
-/// - The success / failure return is selected via
-///   `constant_time::constant_time_select_int`.
+/// **SECURITY CRITICAL.** This function executes in time independent of
+/// the encoded message contents, modulo the variable-length output. All
+/// integrity checks are accumulated into a single `good` mask using the
+/// constant-time primitives in [`openssl_common::constant_time`]; the
+/// mask is collapsed to a `Result` only at the very end. This defends
+/// against Manger's attack and Bleichenbacher-style oracles that target
+/// PKCS#1 padding-error timing variability.
+///
+/// Translates `ossl_rsa_padding_check_PKCS1_OAEP_mgf1_ex` from
+/// `crypto/rsa/rsa_oaep.c` lines 163-308.
+///
+/// # Arguments
+///
+/// * `encoded` — the OAEP-encoded message `EM`. Must have length exactly
+///   equal to `key_size`.
+/// * `params` — OAEP parameters; MUST match the parameters used at
+///   encoding time (label, digest, MGF1 digest).
+/// * `key_size` — RSA modulus size in bytes (`k = RSA_size(rsa)` in C).
+///
+/// # Returns
+///
+/// The decoded original message `M`. The returned `Vec<u8>` length
+/// equals the length of the message that was originally encoded.
 ///
 /// # Errors
 ///
-/// Returns [`RsaError::OaepDecodingError`] on **any** decode-time
-/// failure (length, leading-byte, label-hash, missing separator).
-/// The same error variant is returned for every failure mode to
-/// prevent ciphertext-distinguishing oracles.
-pub fn oaep_decrypt(
-    key: &RsaPrivateKey,
-    ciphertext: &[u8],
+/// * Returns `OaepError::OaepDecodingError` (wrapped in [`CryptoError`])
+///   if any integrity check fails. The single, opaque error is
+///   intentional — exposing the specific failure cause would create a
+///   timing oracle for Manger's attack.
+/// * Returns `OaepError::InvalidOaepParametersValue` if `key_size` is
+///   too small for the chosen digest, or if `encoded.len() != key_size`.
+/// * Returns `OaepError::DigestNotAllowed` /
+///   `OaepError::InvalidMgf1Digest` under FIPS mode for unapproved
+///   digests.
+///
+/// # Constant-time Properties
+///
+/// * Length-input: every check produces a `u32` mask; the masks are
+///   bitwise-`AND`ed into a single `good` accumulator and never branched on.
+/// * The 0x01 separator scan is implemented as a single linear sweep
+///   that updates `zeroth_one_index` via `constant_time_select`.
+/// * The output extraction uses an `O(log₂ db_len)` cascade of
+///   conditional moves (one per power of two ≤ `db_len`) so that the
+///   memory-access pattern is independent of the actual message length.
+pub fn oaep_decode(
+    encoded: &[u8],
     params: &OaepParams,
+    key_size: usize,
 ) -> CryptoResult<Vec<u8>> {
-    trace!(
-        ct_len = ciphertext.len(),
-        hash = ?params.hash,
-        mgf1 = ?params.mgf1_hash_effective(),
-        label_len = params.label.len(),
-        "RSA oaep_decrypt",
-    );
+    // ---- 1. Resolve digest sizes ------------------------------------
+    let digest = params.digest;
+    let mgf1_digest = params.mgf1_digest_effective();
 
-    let hash = params.hash;
-    let mgf1_hash = params.mgf1_hash_effective();
-    let mdlen = hash.digest_size();
+    validate_oaep_digest_fips(digest)?;
+    validate_mgf1_digest_fips(mgf1_digest)?;
+
+    let mdlen = digest.digest_size();
     if mdlen == 0 {
-        return Err(CryptoError::Encoding(
-            "OAEP: hash has zero digest size".to_string(),
-        ));
+        return Err(OaepError::InvalidOaepParametersValue(
+            "OAEP digest has zero output size",
+        )
+        .into());
     }
 
-    let k_u32 = key.key_size_bytes();
-    let k = usize::try_from(k_u32).map_err(|_| RsaError::DataTooLargeForKeySize)?;
-
-    // Bounds check — the smallest legal RSA-OAEP key is 2*hLen + 2.
+    // ---- 2. Validate input length -----------------------------------
     let two_mdlen_plus_2 = mdlen
         .checked_mul(2)
         .and_then(|v| v.checked_add(2))
-        .ok_or_else(|| {
-            CryptoError::Encoding("OAEP: overflow computing key size threshold".to_string())
-        })?;
-    if k < two_mdlen_plus_2 {
+        .ok_or(OaepError::InvalidOaepParametersValue(
+            "OAEP digest size too large",
+        ))?;
+    if key_size < two_mdlen_plus_2 {
+        return Err(OaepError::InvalidOaepParametersValue(
+            "OAEP key_size smaller than 2*hLen + 2",
+        )
+        .into());
+    }
+    if encoded.len() != key_size {
         return Err(oaep_decode_error());
     }
 
-    // Run the RSA private primitive (blinding + CRT + Bellcore defense).
-    // PaddingMode::None means private_decrypt returns the raw decrypted
-    // bytes (no_padding_check is just to_vec()).
-    let mut em = private_decrypt(key, ciphertext, PaddingMode::None)?;
+    // ---- 3. Working copy of EM -------------------------------------
+    // We need a mutable buffer to keep the constant-time guarantees;
+    // operations on `&[u8]` via indexing would also be constant-time
+    // but we'd still allocate temporaries. We allocate exactly once.
+    let mut em: Vec<u8> = encoded.to_vec();
 
-    // private_decrypt with PaddingMode::None always returns exactly k
-    // bytes for valid input. If for any reason it does not, treat that
-    // as a decode failure (avoid panic on slicing).
-    if em.len() != k {
-        em.zeroize();
-        return Err(oaep_decode_error());
-    }
-
-    // ---- Begin constant-time OAEP decode ----
+    // ---- 4. Manger defense: first byte must be 0x00 -----------------
     //
-    // From here on, `good` accumulates validity bits via bitwise AND.
-    // Every step ANDs in its result so that *no* later step can recover
-    // a "good" status if any earlier step failed. We do not branch on
-    // any value derived from `em` apart from the final `good` selection
-    // at the very end.
-
-    // Manger defense: the leading byte must be 0x00.
+    // C reference: crypto/rsa/rsa_oaep.c line 248 —
+    //     good = constant_time_is_zero(em[0]);
+    //
+    // `good` carries `0xFFFFFFFF` if all checks pass, `0x00000000`
+    // otherwise. ANDing in subsequent check results preserves the
+    // accumulator's all-or-nothing semantics.
     let mut good: u32 = constant_time::constant_time_is_zero(u32::from(em[0]));
 
-    // Layout: em[0] || maskedSeed[mdlen] || maskedDB[db_len].
     let db_off = 1 + mdlen;
-    let db_len = k - db_off;
+    let db_len = key_size - db_off;
 
-    // Recover seed = maskedSeed ^ MGF1(maskedDB, mdlen).
+    // ---- 5. Recover seed = maskedSeed XOR MGF1(maskedDB, hLen) ------
     let mut seedmask = vec![0u8; mdlen];
-    pkcs1_mgf1(&mut seedmask, &em[db_off..db_off + db_len], mgf1_hash).inspect_err(|_e| {
-        em.zeroize();
+    if let Err(e) = mgf1(&mut seedmask, &em[db_off..db_off + db_len], mgf1_digest) {
         seedmask.zeroize();
-    })?;
+        em.zeroize();
+        return Err(e);
+    }
     let mut seed = vec![0u8; mdlen];
-    for (i, mask_byte) in seedmask.iter().enumerate().take(mdlen) {
+    for (i, mask_byte) in seedmask.iter().enumerate() {
         seed[i] = em[1 + i] ^ *mask_byte;
     }
     seedmask.zeroize();
 
-    // Recover db = maskedDB ^ MGF1(seed, db_len).
+    // ---- 6. Recover DB = maskedDB XOR MGF1(seed, k - hLen - 1) ------
     let mut dbmask = vec![0u8; db_len];
-    pkcs1_mgf1(&mut dbmask, &seed, mgf1_hash).inspect_err(|_e| {
-        em.zeroize();
-        seed.zeroize();
+    if let Err(e) = mgf1(&mut dbmask, &seed, mgf1_digest) {
         dbmask.zeroize();
-    })?;
+        seed.zeroize();
+        em.zeroize();
+        return Err(e);
+    }
     let mut db = vec![0u8; db_len];
-    for (i, mask_byte) in dbmask.iter().enumerate().take(db_len) {
+    for (i, mask_byte) in dbmask.iter().enumerate() {
         db[i] = em[db_off + i] ^ *mask_byte;
     }
     dbmask.zeroize();
     seed.zeroize();
 
-    // Compute lHash = Hash(L) and compare against db[0..mdlen] in
-    // constant time. We accumulate eq-bits across every position so that
-    // partial mismatches do not allow an early-exit timing oracle.
-    let lhash = hash_label(&params.label, hash).inspect_err(|_e| {
-        em.zeroize();
-        db.zeroize();
-    })?;
-    debug_assert_eq!(lhash.len(), mdlen);
+    // ---- 7. Constant-time lHash comparison --------------------------
+    let lhash = match hash_label(&params.label, digest) {
+        Ok(h) => h,
+        Err(e) => {
+            em.zeroize();
+            db.zeroize();
+            return Err(e);
+        }
+    };
 
     let mut hash_eq: u32 = u32::MAX;
     for i in 0..mdlen {
@@ -565,158 +820,303 @@ pub fn oaep_decrypt(
     }
     good &= hash_eq;
 
-    // Separator scan: find the position of the first 0x01 byte after
-    // the lHash region. We scan every position from mdlen through
-    // db_len - 1, regardless of whether we have already found a
-    // separator, so the timing depends only on db_len, not on the
-    // separator's position. `found` is 0 until a 0x01 has been seen,
-    // then 0xFFFF_FFFF for all subsequent positions.
+    // ---- 8. Find 0x01 separator in constant time --------------------
     //
-    // We also OR-in `nonzero_before_one` for every byte that was
-    // non-zero before the first 0x01; the spec requires those bytes to
-    // all be zero (the PS region). Any non-zero byte before the
-    // separator is a decode failure.
+    // C reference: crypto/rsa/rsa_oaep.c lines 274-296.
+    //
+    // Iterate over DB[hLen..]:
+    //   - `pre_one`     = !found    (true while we haven't hit 0x01 yet)
+    //   - `is_one`      = (byte == 1)
+    //   - `is_zero`     = (byte == 0)
+    //   - `bad_pad`    |= pre_one & !is_one & !is_zero
+    //                     (any non-{0,1} byte before the separator)
+    //   - `take_now`    = pre_one & is_one
+    //                     (this is the 0x01 separator we want)
+    //   - `zeroth_one_index = ct_select(take_now, i, zeroth_one_index)`
+    //   - `found       |= take_now`
+    //
+    // After the scan:
+    //   * `good &= found`     (we must have found the separator)
+    //   * `good &= !bad_pad`  (no junk in PS)
     let mut found: u32 = 0;
     let mut zeroth_one_index: u32 = 0;
     let mut bad_pad: u32 = 0;
+
     for (i, byte_val) in db.iter().enumerate().skip(mdlen) {
         let byte = u32::from(*byte_val);
         let is_one = constant_time::constant_time_eq(byte, 1);
         let is_zero = constant_time::constant_time_is_zero(byte);
-
-        // Once `found` has been set, subsequent positions are message
-        // bytes — they may be anything. So we only check `is_zero` for
-        // positions where !found && !is_one. If at one of those
-        // positions the byte is non-zero, that's bad padding.
-        let pre_one = !found; // 0xFFFF_FFFF before the first 0x01, 0 after
+        let pre_one = !found;
         bad_pad |= pre_one & !is_one & !is_zero;
-
-        // Capture the index of the first 0x01 byte. We use
-        // constant_time_select to keep this branch-free: when
-        // !found && is_one, store i; otherwise leave the previous value.
         let take_now = pre_one & is_one;
+        // `db_len < 2^32` for any realistic key, so `i as u32` is
+        // lossless. We still use `try_from` for Rule R6 compliance.
         let i_u32 = u32::try_from(i).unwrap_or(u32::MAX);
         zeroth_one_index = constant_time::constant_time_select(take_now, i_u32, zeroth_one_index);
-
-        // Mark `found` once we've seen the first 0x01.
         found |= take_now;
     }
     good &= found;
     good &= !bad_pad;
 
-    // The message starts at db[zeroth_one_index + 1] and runs to db[db_len - 1].
-    // mlen = (db_len - 1 - zeroth_one_index). Compute as u32.
+    // ---- 9. Compute the message length ------------------------------
+    //
+    // mlen = db_len - 1 - zeroth_one_index
+    //   (the message starts immediately after the separator at index
+    //    `zeroth_one_index` and runs to the end of DB).
+    //
+    // We use saturating arithmetic so a malformed `zeroth_one_index >=
+    // db_len` cannot wrap around and produce a huge length; `good` will
+    // already be zeroed in that case.
     let db_len_u32 = u32::try_from(db_len).unwrap_or(u32::MAX);
-    // If `good` is 0 (failure), zero out the index so subsequent math
-    // produces a deterministic value but does not panic — but we must
-    // still preserve constant-time properties. zeroth_one_index could
-    // be 0 even on success (impossible because the loop starts at mdlen),
-    // so any value is fine here for the failure branch. We compute mlen
-    // as db_len - 1 - zeroth_one_index, saturating at 0 if invalid.
     let mlen_u32 = db_len_u32
         .saturating_sub(1)
         .saturating_sub(zeroth_one_index);
 
-    // ---- Constant-time message extraction (bit-shifted memmove) ----
+    // ---- 10. Constant-time message extraction (left-shift cascade) --
     //
-    // Translates the C loop at rsa_oaep.c lines 311–321 (and earlier
-    // variants going back to OpenSSL 1.1.1). We need to shift db left by
-    // `zeroth_one_index + 1` bytes so that the message starts at db[0].
-    // Doing this with a naive memmove would leak `zeroth_one_index`
-    // through the access pattern, so we use a power-of-two-shift
-    // strategy: for each bit position `b` in `shift`, conditionally
-    // shift db left by `2^b` bytes if that bit is set.
-    //
-    // The number of outer iterations is `ceil(log2(db_len))` — purely a
-    // function of db_len (public information), not the secret index.
+    // We need to copy `db[zeroth_one_index + 1 ..]` to the front of `db`
+    // without leaking `zeroth_one_index` through the memory-access
+    // pattern. The C code does this with a `O(log₂ db_len)` cascade:
+    // for each power-of-two `bit ≤ db_len`, we conditionally shift `db`
+    // left by `bit` bytes if `(shift & bit) != 0`, where `shift =
+    // zeroth_one_index + 1`. After all bits have been processed, the
+    // first `mlen` bytes of `db` hold the recovered message.
     let shift = zeroth_one_index.saturating_add(1);
     let mut bit: u32 = 1;
-    // Determine the highest bit we ever need to consider: enough to
-    // cover any possible value of `shift` ≤ db_len.
     while bit < db_len_u32 && bit != 0 {
         let bit_set = constant_time::constant_time_eq(shift & bit, bit);
+        // Convert `bit` to a usize distance for indexing.
         let dist = usize::try_from(bit).unwrap_or(0);
-        // Conditionally rotate db left by `dist` bytes when bit_set.
-        // We do this in-place using a per-byte select.
         if dist == 0 {
             break;
         }
-        // Forward iteration is safe because for each i in 0..db_len, we
-        // read db[i + dist] (or 0 if out of range) and write to db[i].
-        // The read uses the *current* db, so we must capture src before
-        // overwriting. Since we iterate i ascending, db[i] is overwritten
-        // before db[i + dist] is read for i + dist; that means once
-        // i >= db_len - dist, db[i + dist] would be reading something
-        // already mutated. To stay correct, we capture each src byte
-        // into a temporary, then write. Since dist > 0, db[i + dist]
-        // when i = 0 hasn't been touched yet; for i = 1, db[1 + dist]
-        // also hasn't been touched, etc. — db[j] is written when
-        // we're processing row j, and we read db[j + dist]. Since j
-        // grows by 1 each step, j + dist > j, so we're always reading
-        // ahead of where we've written. Safe.
+        // Build a u8 mask: 0xFF when bit_set is non-zero, 0x00 otherwise.
+        // `constant_time_is_zero_8` returns 0xFF when its argument is
+        // zero, so we negate `bit_set` first.
+        let mask_u8 = constant_time::constant_time_is_zero_8(!bit_set);
         for i in 0..db_len {
             let src = if i + dist < db_len { db[i + dist] } else { 0 };
-            // bit_set is u32: 0xFFFF_FFFF if true, 0 if false.
-            // We need a u8 mask. Use constant_time_is_zero_8 on (!bit_set)
-            // to derive the u8 form: when bit_set != 0, !bit_set == 0,
-            // is_zero_8(0) == 0xFF. When bit_set == 0, is_zero_8(non-zero) == 0.
-            let mask_u8 = constant_time::constant_time_is_zero_8(!bit_set);
             db[i] = constant_time::constant_time_select_8(mask_u8, src, db[i]);
         }
         bit = bit.wrapping_shl(1);
     }
 
-    // After the shift, db[0..mlen] holds the recovered message (when
-    // `good` is true). Now build the output buffer of length `mlen` (or
-    // 0 on failure) and copy db[0..mlen] into it under constant time.
+    // ---- 11. Allocate the output buffer -----------------------------
     //
-    // We compute the output capacity from mlen_u32. On failure mlen is
-    // ill-defined, but selecting between (good ? mlen : 0) handles that.
+    // We always allocate the maximum possible message length (db_len -
+    // 1) and copy that much from `db`; the caller never gets to see
+    // bytes beyond `mlen`. Returning a fixed-length buffer here would
+    // also work but is cumbersome for callers, so we truncate to
+    // `mlen_usize` at the very end.
+    //
+    // Note: `mlen_safe` is `mlen_u32` if `good` is all-ones (i.e., all
+    // checks passed); otherwise it is 0. This prevents a malformed
+    // ciphertext from triggering an overlong allocation.
     let mlen_safe = constant_time::constant_time_select(good, mlen_u32, 0);
     let mlen_usize = usize::try_from(mlen_safe).unwrap_or(0);
 
-    // Allocate the output buffer at the maximum possible size to avoid
-    // a length-dependent allocation, then truncate. The maximum message
-    // length in OAEP is db_len - 1 (when there is no PS).
     let max_msg_len = db_len.saturating_sub(1);
     let mut out = vec![0u8; max_msg_len];
-    out.copy_from_slice(&db[..max_msg_len]);
+    if max_msg_len > 0 {
+        out.copy_from_slice(&db[..max_msg_len]);
+    }
 
-    // Wipe internal buffers before returning.
     em.zeroize();
     db.zeroize();
 
-    // Final decision: if good != 0, return the first mlen_usize bytes;
-    // otherwise return the OaepDecodingError.
+    // ---- 12. Final selection — collapse `good` mask to Result -------
     //
-    // We use constant_time::constant_time_select_int to choose between
-    // (mlen_usize as i32) and -1 in constant time, then branch on the
-    // sign of the result. The branch on the final return is unavoidable
-    // — but it is on a value that already encodes both validity and
-    // length, so an attacker observing the timing of this single branch
-    // learns no more than "did decryption succeed or fail", which is
-    // the IND-CCA2-permitted leak.
+    // We use `constant_time_select_int` to pick `mlen_usize` (cast to
+    // i32) when `good == 0xFFFFFFFF`, or `-1` otherwise. A negative
+    // result indicates failure; a non-negative result is the recovered
+    // message length.
     let mlen_i32 = i32::try_from(mlen_usize).unwrap_or(-1);
     let result_i32 = constant_time::constant_time_select_int(good, mlen_i32, -1);
+
     if result_i32 < 0 {
+        // Zero out the candidate output before discarding to avoid
+        // leaking partial decoded data through stack reuse.
         out.zeroize();
         return Err(oaep_decode_error());
     }
-    let final_len = usize::try_from(result_i32).map_err(|_| oaep_decode_error())?;
+
+    // Result is non-negative; truncate to the recovered length.
+    let final_len = usize::try_from(result_i32).unwrap_or(0);
     if final_len > out.len() {
+        // Shouldn't be reachable given the saturating arithmetic above,
+        // but defend against it.
         out.zeroize();
         return Err(oaep_decode_error());
     }
     out.truncate(final_len);
-    debug!(
-        plaintext_len = out.len(),
-        "RSA oaep_decrypt: decoded plaintext"
-    );
+
     Ok(out)
 }
 
 // =============================================================================
-// Tests
+// 8. Convenience wrappers — oaep_encode_default / oaep_decode_default
+// =============================================================================
+
+/// One-shot OAEP encode with default parameters (SHA-1, no label).
+///
+/// Convenience wrapper matching the legacy C
+/// `RSA_padding_add_PKCS1_OAEP` from `crypto/rsa/rsa_oaep.c` line 39.
+/// Equivalent to:
+///
+/// ```ignore
+/// oaep_encode(encoded, message, &OaepParams::default())
+/// ```
+pub fn oaep_encode_default(encoded: &mut [u8], message: &[u8]) -> CryptoResult<()> {
+    oaep_encode(encoded, message, &OaepParams::default())
+}
+
+/// One-shot OAEP decode with default parameters (SHA-1, no label).
+///
+/// Convenience wrapper matching the legacy C
+/// `RSA_padding_check_PKCS1_OAEP` from `crypto/rsa/rsa_oaep.c` line 163.
+/// Equivalent to:
+///
+/// ```ignore
+/// oaep_decode(encoded, &OaepParams::default(), key_size)
+/// ```
+pub fn oaep_decode_default(encoded: &[u8], key_size: usize) -> CryptoResult<Vec<u8>> {
+    oaep_decode(encoded, &OaepParams::default(), key_size)
+}
+
+
+// =============================================================================
+// 9. High-level RSA-OAEP encrypt / decrypt (preserved for crate-internal use)
+// =============================================================================
+
+/// Encrypt a message under RSA-OAEP using the given public key.
+///
+/// This is the high-level convenience wrapper that:
+/// 1. Calls [`oaep_encode`] to produce the encoded message `EM`.
+/// 2. Applies the RSA encryption primitive to `EM` to produce the
+///    ciphertext.
+///
+/// Equivalent to the C code path
+/// `RSA_padding_add_PKCS1_OAEP_mgf1 + rsa_ossl_public_encrypt`. Used
+/// internally by the EVP layer; external callers normally route
+/// through `EVP_PKEY_encrypt` instead.
+///
+/// # Errors
+///
+/// Propagates errors from [`oaep_encode`] and from the underlying RSA
+/// primitive. The intermediate `EM` buffer is zeroized before return on
+/// every code path so plaintext-derived state cannot leak.
+pub fn oaep_encrypt(
+    key: &RsaPublicKey,
+    msg: &[u8],
+    params: &OaepParams,
+) -> CryptoResult<Vec<u8>> {
+    // Compute k from the public modulus.
+    let k_u32 = key.key_size_bytes();
+    let k = usize::try_from(k_u32).map_err(|_| RsaError::DataTooLargeForKeySize)?;
+
+    // Reject zero-sized keys before allocating; would otherwise be
+    // caught by oaep_encode's parameter validation but the dedicated
+    // RsaError makes the failure semantics clearer for crate-internal
+    // callers.
+    let mdlen = params.digest.digest_size();
+    let two_mdlen_plus_2 = mdlen
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(2))
+        .ok_or(RsaError::DataTooLargeForKeySize)?;
+    if k < two_mdlen_plus_2 {
+        return Err(RsaError::KeyTooSmall {
+            min_bits: u32::try_from(two_mdlen_plus_2.saturating_mul(8)).unwrap_or(u32::MAX),
+            actual_bits: k_u32.saturating_mul(8),
+        }
+        .into());
+    }
+
+    // Translate "data too large" so the legacy crate-level error type
+    // is preserved for callers that relied on `RsaError::DataTooLargeForKeySize`.
+    let max_msg = k - two_mdlen_plus_2;
+    if msg.len() > max_msg {
+        return Err(RsaError::DataTooLargeForKeySize.into());
+    }
+
+    // Build EM via the schema-required primitive.
+    let mut em = vec![0u8; k];
+    let encode_result = oaep_encode(&mut em, msg, params);
+    if let Err(e) = encode_result {
+        em.zeroize();
+        return Err(e);
+    }
+
+    // Apply the RSA primitive (no further padding).
+    let ct_result = public_encrypt(key, &em, PaddingMode::None);
+
+    // Always wipe `em` regardless of outcome — it contains the
+    // randomised but plaintext-derived encoded message.
+    em.zeroize();
+
+    ct_result
+}
+
+/// Decrypt an RSA-OAEP ciphertext using the given private key.
+///
+/// This is the high-level convenience wrapper that:
+/// 1. Applies the RSA decryption primitive to the ciphertext to
+///    recover `EM`.
+/// 2. Calls [`oaep_decode`] to verify integrity and extract the
+///    plaintext.
+///
+/// **SECURITY:** Both stages of this function preserve constant-time
+/// properties — `private_decrypt` returns the raw `EM` without
+/// inspection, and [`oaep_decode`] performs all integrity checks in
+/// constant time relative to the encoded message contents.
+///
+/// Equivalent to the C code path
+/// `rsa_ossl_private_decrypt + RSA_padding_check_PKCS1_OAEP_mgf1`.
+///
+/// # Errors
+///
+/// Propagates errors from the RSA primitive and from [`oaep_decode`].
+/// Returns `RsaError::OaepDecodingError` (via the [`From`] chain) when
+/// integrity checks fail.
+pub fn oaep_decrypt(
+    key: &RsaPrivateKey,
+    ciphertext: &[u8],
+    params: &OaepParams,
+) -> CryptoResult<Vec<u8>> {
+    let k_u32 = key.key_size_bytes();
+    let k = usize::try_from(k_u32).map_err(|_| RsaError::DataTooLargeForKeySize)?;
+
+    let mdlen = params.digest.digest_size();
+    let two_mdlen_plus_2 = mdlen
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(2))
+        .ok_or(RsaError::DataTooLargeForKeySize)?;
+    if k < two_mdlen_plus_2 {
+        return Err(RsaError::KeyTooSmall {
+            min_bits: u32::try_from(two_mdlen_plus_2.saturating_mul(8)).unwrap_or(u32::MAX),
+            actual_bits: k_u32.saturating_mul(8),
+        }
+        .into());
+    }
+
+    // Apply the RSA primitive to recover EM.
+    let mut em = private_decrypt(key, ciphertext, PaddingMode::None)?;
+    if em.len() != k {
+        em.zeroize();
+        return Err(oaep_decode_error());
+    }
+
+    // Decode via the schema-required primitive.
+    let result = oaep_decode(&em, params, k);
+
+    // Always wipe `em` — it contains the encoded message which is
+    // derived from the plaintext.
+    em.zeroize();
+
+    result
+}
+
+// =============================================================================
+// 10. Tests
 // =============================================================================
 
 #[cfg(test)]
@@ -724,52 +1124,44 @@ pub fn oaep_decrypt(
     clippy::expect_used,
     clippy::unwrap_used,
     clippy::panic,
-    reason = "test code conventionally uses expect/unwrap/panic with descriptive messages \
-              for fast-fail diagnostics; the crate-level `#![deny(clippy::expect_used)]` and \
-              `#![deny(clippy::unwrap_used)]` apply to library code, not test code."
+    reason = "test code conventionally uses expect/unwrap/panic for clarity over robustness"
 )]
 mod tests {
-    //! Unit tests for the RSA-OAEP submodule.
-    //!
-    //! These tests verify:
-    //! - Parameter construction / defaults / NID round-trip.
-    //! - Encrypt → decrypt round-trip with a freshly generated key
-    //!   (across multiple message sizes and labels).
-    //! - Tamper detection: ciphertext flip → decode failure with
-    //!   `OaepDecodingError`.
-    //! - Wrong label / hash detection: decode with mismatched params
-    //!   fails.
-
     use super::*;
     use crate::rsa::{generate_key, RsaKeyGenParams};
 
-    /// Helper: generate a small (2048-bit) test key. 2048 is the minimum
-    /// recommended size for new RSA keys per NIST SP 800-131A Rev. 2.
+    /// Helper to obtain a fresh 2048-bit RSA key pair for round-trip
+    /// tests. Generation is the dominant cost of these tests.
     fn test_keypair() -> super::super::RsaKeyPair {
-        generate_key(&RsaKeyGenParams::default()).expect("RSA-2048 key generation should succeed")
+        generate_key(&RsaKeyGenParams::default())
+            .expect("RSA-2048 key generation should succeed")
     }
 
+    // ---- OaepParams API --------------------------------------------
+
     #[test]
-    fn oaep_params_default_is_sha256() {
+    fn oaep_params_default_is_sha1() {
         let p = OaepParams::default();
-        assert_eq!(p.hash, DigestAlgorithm::Sha256);
-        assert_eq!(p.mgf1_hash, None);
+        assert_eq!(p.digest, DigestAlgorithm::Sha1);
+        assert_eq!(p.mgf1_digest, None);
         assert!(p.label.is_empty());
-        assert_eq!(p.mgf1_hash_effective(), DigestAlgorithm::Sha256);
+        assert_eq!(p.mgf1_digest_effective(), DigestAlgorithm::Sha1);
     }
 
     #[test]
-    fn oaep_params_with_hash() {
-        let p = OaepParams::with_hash(DigestAlgorithm::Sha384);
-        assert_eq!(p.hash, DigestAlgorithm::Sha384);
-        assert_eq!(p.mgf1_hash_effective(), DigestAlgorithm::Sha384);
+    fn oaep_params_with_digest() {
+        let p = OaepParams::default().with_digest(DigestAlgorithm::Sha384);
+        assert_eq!(p.digest, DigestAlgorithm::Sha384);
+        assert_eq!(p.mgf1_digest, None);
+        assert_eq!(p.mgf1_digest_effective(), DigestAlgorithm::Sha384);
     }
 
     #[test]
     fn oaep_params_mgf1_override() {
-        let p =
-            OaepParams::with_hash(DigestAlgorithm::Sha256).with_mgf1_hash(DigestAlgorithm::Sha512);
-        assert_eq!(p.mgf1_hash_effective(), DigestAlgorithm::Sha512);
+        let p = OaepParams::default().with_mgf1_digest(DigestAlgorithm::Sha512);
+        assert_eq!(p.digest, DigestAlgorithm::Sha1);
+        assert_eq!(p.mgf1_digest, Some(DigestAlgorithm::Sha512));
+        assert_eq!(p.mgf1_digest_effective(), DigestAlgorithm::Sha512);
     }
 
     #[test]
@@ -780,145 +1172,348 @@ mod tests {
 
     #[test]
     fn oaep_params_nid_roundtrip() {
-        let p = OaepParams::with_hash(DigestAlgorithm::Sha256);
-        let oaep_nid = p.oaep_hash_nid().expect("SHA-256 has an NID");
-        let mgf1_nid = p.mgf1_hash_nid().expect("SHA-256 has an NID");
-        let recovered = OaepParams::from_nids(oaep_nid, mgf1_nid).expect("NIDs round-trip");
-        assert_eq!(recovered.hash, DigestAlgorithm::Sha256);
-        assert_eq!(recovered.mgf1_hash_effective(), DigestAlgorithm::Sha256);
+        let p = OaepParams::default()
+            .with_digest(DigestAlgorithm::Sha256)
+            .with_mgf1_digest(DigestAlgorithm::Sha384);
+        let oaep_nid = p.oaep_digest_nid().expect("SHA-256 has OSSL NID");
+        let mgf1_nid = p.mgf1_digest_nid().expect("SHA-384 has OSSL NID");
+        let q = OaepParams::from_nids(oaep_nid, mgf1_nid).expect("both NIDs are known");
+        assert_eq!(q.digest, DigestAlgorithm::Sha256);
+        assert_eq!(q.mgf1_digest_effective(), DigestAlgorithm::Sha384);
     }
+
+    // ---- mgf1 -------------------------------------------------------
+
+    #[test]
+    fn mgf1_zero_length_output_is_noop() {
+        let mut mask: [u8; 0] = [];
+        mgf1(&mut mask, b"seed", DigestAlgorithm::Sha256).expect("MGF1 with empty mask is no-op");
+    }
+
+    #[test]
+    fn mgf1_deterministic_for_same_seed() {
+        let mut mask_a = [0u8; 64];
+        let mut mask_b = [0u8; 64];
+        mgf1(&mut mask_a, b"seed-bytes", DigestAlgorithm::Sha256).unwrap();
+        mgf1(&mut mask_b, b"seed-bytes", DigestAlgorithm::Sha256).unwrap();
+        assert_eq!(mask_a, mask_b);
+    }
+
+    #[test]
+    fn mgf1_different_seeds_produce_different_masks() {
+        let mut mask_a = [0u8; 32];
+        let mut mask_b = [0u8; 32];
+        mgf1(&mut mask_a, b"seed-a", DigestAlgorithm::Sha256).unwrap();
+        mgf1(&mut mask_b, b"seed-b", DigestAlgorithm::Sha256).unwrap();
+        assert_ne!(mask_a, mask_b);
+    }
+
+    #[test]
+    fn mgf1_truncates_when_mask_smaller_than_block() {
+        // SHA-256 produces 32-byte blocks. Request 7 bytes; the
+        // result should be the first 7 bytes of a single block.
+        let mut short_mask = [0u8; 7];
+        let mut full_block = [0u8; 32];
+        mgf1(&mut short_mask, b"seed", DigestAlgorithm::Sha256).unwrap();
+        mgf1(&mut full_block, b"seed", DigestAlgorithm::Sha256).unwrap();
+        assert_eq!(&short_mask, &full_block[..7]);
+    }
+
+    #[test]
+    fn mgf1_spans_multiple_blocks() {
+        // SHA-256 = 32-byte blocks. Request 100 bytes ⇒ 4 blocks
+        // truncated to 100. First 32 bytes must equal Hash(seed||0)
+        // and bytes 32..64 must equal Hash(seed||1).
+        let mut mask = [0u8; 100];
+        mgf1(&mut mask, b"seed", DigestAlgorithm::Sha256).unwrap();
+        // Verify the first block matches the standalone block-0 output.
+        let mut block0 = [0u8; 32];
+        mgf1(&mut block0, b"seed", DigestAlgorithm::Sha256).unwrap();
+        assert_eq!(&mask[..32], &block0);
+    }
+
+    // ---- oaep_encode / oaep_decode (byte-buffer primitives) --------
+
+    #[test]
+    fn oaep_encode_decode_roundtrip_default_params() {
+        let k = 256; // 2048-bit modulus.
+        let mut em = vec![0u8; k];
+        let msg = b"hello, OAEP!";
+        oaep_encode(&mut em, msg, &OaepParams::default()).expect("encode succeeds");
+        let recovered = oaep_decode(&em, &OaepParams::default(), k).expect("decode succeeds");
+        assert_eq!(recovered, msg);
+    }
+
+    #[test]
+    fn oaep_encode_decode_roundtrip_sha256() {
+        let k = 256;
+        let params = OaepParams::default().with_digest(DigestAlgorithm::Sha256);
+        let mut em = vec![0u8; k];
+        let msg = b"the quick brown fox jumps over the lazy dog";
+        oaep_encode(&mut em, msg, &params).unwrap();
+        let recovered = oaep_decode(&em, &params, k).unwrap();
+        assert_eq!(recovered, msg);
+    }
+
+    #[test]
+    fn oaep_encode_decode_roundtrip_with_label() {
+        let k = 256;
+        let params = OaepParams::default().with_label(b"context-bind".to_vec());
+        let mut em = vec![0u8; k];
+        let msg = b"bound message";
+        oaep_encode(&mut em, msg, &params).unwrap();
+        let recovered = oaep_decode(&em, &params, k).unwrap();
+        assert_eq!(recovered, msg);
+    }
+
+    #[test]
+    fn oaep_encode_decode_roundtrip_empty_message() {
+        let k = 256;
+        let mut em = vec![0u8; k];
+        oaep_encode(&mut em, &[], &OaepParams::default()).unwrap();
+        let recovered = oaep_decode(&em, &OaepParams::default(), k).unwrap();
+        assert!(recovered.is_empty());
+    }
+
+    #[test]
+    fn oaep_encode_two_invocations_produce_different_em() {
+        // OAEP is randomised: same plaintext, same parameters ⇒
+        // different EM each time (because the seed differs).
+        let k = 256;
+        let mut em1 = vec![0u8; k];
+        let mut em2 = vec![0u8; k];
+        oaep_encode(&mut em1, b"msg", &OaepParams::default()).unwrap();
+        oaep_encode(&mut em2, b"msg", &OaepParams::default()).unwrap();
+        assert_ne!(em1, em2);
+    }
+
+    #[test]
+    fn oaep_encode_message_too_long_returns_error() {
+        let k = 256;
+        // Default uses SHA-1 (hLen=20), so max msg = 256 - 42 = 214 bytes.
+        let mut em = vec![0u8; k];
+        let too_long = vec![0u8; 215];
+        let err = oaep_encode(&mut em, &too_long, &OaepParams::default())
+            .expect_err("message too long should be rejected");
+        // The error path shouldn't leak via partial writes.
+        assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    #[test]
+    fn oaep_encode_buffer_too_small_returns_error() {
+        // 2*hLen + 2 = 42 for SHA-1; a 30-byte buffer is too small.
+        let mut em = vec![0u8; 30];
+        let err = oaep_encode(&mut em, b"hi", &OaepParams::default())
+            .expect_err("undersized buffer rejected");
+        assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    #[test]
+    fn oaep_decode_tampered_em_fails() {
+        let k = 256;
+        let mut em = vec![0u8; k];
+        oaep_encode(&mut em, b"msg", &OaepParams::default()).unwrap();
+        // Flip a bit in the masked DB region.
+        em[100] ^= 0x01;
+        let err = oaep_decode(&em, &OaepParams::default(), k)
+            .expect_err("tampered EM should fail to decode");
+        assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    #[test]
+    fn oaep_decode_wrong_label_fails() {
+        let k = 256;
+        let enc_params = OaepParams::default().with_label(b"correct".to_vec());
+        let dec_params = OaepParams::default().with_label(b"wrong".to_vec());
+        let mut em = vec![0u8; k];
+        oaep_encode(&mut em, b"msg", &enc_params).unwrap();
+        let err = oaep_decode(&em, &dec_params, k)
+            .expect_err("mismatched label should fail");
+        assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    #[test]
+    fn oaep_decode_wrong_digest_fails() {
+        let k = 256;
+        let enc_params = OaepParams::default().with_digest(DigestAlgorithm::Sha256);
+        let dec_params = OaepParams::default().with_digest(DigestAlgorithm::Sha384);
+        let mut em = vec![0u8; k];
+        oaep_encode(&mut em, b"msg", &enc_params).unwrap();
+        let err = oaep_decode(&em, &dec_params, k)
+            .expect_err("digest mismatch should fail");
+        assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    #[test]
+    fn oaep_decode_wrong_first_byte_fails() {
+        // Manger defense: first byte must be 0x00.
+        let k = 256;
+        let mut em = vec![0u8; k];
+        oaep_encode(&mut em, b"msg", &OaepParams::default()).unwrap();
+        em[0] = 0x01;
+        let err = oaep_decode(&em, &OaepParams::default(), k)
+            .expect_err("non-zero first byte must fail");
+        assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    #[test]
+    fn oaep_decode_short_em_fails() {
+        // EM length mismatch with key_size.
+        let k = 256;
+        let em = vec![0u8; 100];
+        let err = oaep_decode(&em, &OaepParams::default(), k)
+            .expect_err("length mismatch should fail");
+        assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    // ---- oaep_encode_default / oaep_decode_default ------------------
+
+    #[test]
+    fn oaep_encode_default_decode_default_roundtrip() {
+        let k = 256;
+        let mut em = vec![0u8; k];
+        oaep_encode_default(&mut em, b"default params").unwrap();
+        let recovered = oaep_decode_default(&em, k).unwrap();
+        assert_eq!(recovered, b"default params");
+    }
+
+    // ---- OaepError --------------------------------------------------
+
+    #[test]
+    fn oaep_error_into_crypto_error() {
+        let err: CryptoError = OaepError::DataTooLargeForKeySize.into();
+        assert!(matches!(err, CryptoError::Encoding(_)));
+        let err: CryptoError = OaepError::OaepDecodingError.into();
+        assert!(matches!(err, CryptoError::Encoding(_)));
+        let err: CryptoError = OaepError::InvalidOaepParametersValue("test").into();
+        assert!(matches!(err, CryptoError::Encoding(_)));
+        let err: CryptoError = OaepError::DigestNotAllowed.into();
+        assert!(matches!(err, CryptoError::AlgorithmNotFound(_)));
+        let err: CryptoError = OaepError::InvalidMgf1Digest.into();
+        assert!(matches!(err, CryptoError::AlgorithmNotFound(_)));
+    }
+
+    #[test]
+    fn oaep_error_display_messages_are_useful() {
+        let err = OaepError::DataTooLargeForKeySize;
+        assert!(err.to_string().contains("data too large"));
+        let err = OaepError::OaepDecodingError;
+        assert!(err.to_string().contains("decoding error"));
+        let err = OaepError::InvalidOaepParametersValue("oops");
+        assert!(err.to_string().contains("oops"));
+    }
+
+    // ---- High-level oaep_encrypt / oaep_decrypt --------------------
 
     #[test]
     fn oaep_roundtrip_empty_message_default_params() {
         let kp = test_keypair();
-        let pubkey = kp.public_key();
-        let privkey = kp.private_key();
-        let params = OaepParams::default();
-
-        let ct = oaep_encrypt(&pubkey, b"", &params).expect("encrypt empty");
-        assert_eq!(ct.len(), usize::try_from(pubkey.key_size_bytes()).unwrap());
-        let pt = oaep_decrypt(privkey, &ct, &params).expect("decrypt empty");
-        assert_eq!(pt, b"");
+        let ct = oaep_encrypt(&kp.public_key(), &[], &OaepParams::default()).unwrap();
+        let pt = oaep_decrypt(kp.private_key(), &ct, &OaepParams::default()).unwrap();
+        assert!(pt.is_empty());
     }
 
     #[test]
     fn oaep_roundtrip_short_message_default_params() {
         let kp = test_keypair();
-        let pubkey = kp.public_key();
-        let privkey = kp.private_key();
-        let params = OaepParams::default();
         let msg = b"the quick brown fox jumps over the lazy dog";
-
-        let ct = oaep_encrypt(&pubkey, msg, &params).expect("encrypt short");
-        let pt = oaep_decrypt(privkey, &ct, &params).expect("decrypt short");
+        let ct = oaep_encrypt(&kp.public_key(), msg, &OaepParams::default()).unwrap();
+        let pt = oaep_decrypt(kp.private_key(), &ct, &OaepParams::default()).unwrap();
         assert_eq!(pt, msg);
     }
 
     #[test]
     fn oaep_roundtrip_with_label() {
         let kp = test_keypair();
-        let pubkey = kp.public_key();
-        let privkey = kp.private_key();
         let params = OaepParams::default().with_label(b"context-binding-label".to_vec());
-        let msg = b"secret payload";
-
-        let ct = oaep_encrypt(&pubkey, msg, &params).expect("encrypt with label");
-        let pt = oaep_decrypt(privkey, &ct, &params).expect("decrypt with label");
+        let msg = b"bound to a label";
+        let ct = oaep_encrypt(&kp.public_key(), msg, &params).unwrap();
+        let pt = oaep_decrypt(kp.private_key(), &ct, &params).unwrap();
         assert_eq!(pt, msg);
     }
 
     #[test]
     fn oaep_roundtrip_sha384() {
         let kp = test_keypair();
-        let pubkey = kp.public_key();
-        let privkey = kp.private_key();
-        let params = OaepParams::with_hash(DigestAlgorithm::Sha384);
-        let msg = b"sha-384-test";
-
-        let ct = oaep_encrypt(&pubkey, msg, &params).expect("encrypt sha384");
-        let pt = oaep_decrypt(privkey, &ct, &params).expect("decrypt sha384");
+        let params = OaepParams::default().with_digest(DigestAlgorithm::Sha384);
+        let msg = b"sha384 oaep test";
+        let ct = oaep_encrypt(&kp.public_key(), msg, &params).unwrap();
+        let pt = oaep_decrypt(kp.private_key(), &ct, &params).unwrap();
         assert_eq!(pt, msg);
     }
 
     #[test]
-    fn oaep_roundtrip_distinct_mgf1_hash() {
+    fn oaep_roundtrip_distinct_mgf1_digest() {
         let kp = test_keypair();
-        let pubkey = kp.public_key();
-        let privkey = kp.private_key();
-        let params =
-            OaepParams::with_hash(DigestAlgorithm::Sha256).with_mgf1_hash(DigestAlgorithm::Sha384);
-        let msg = b"distinct-mgf1-hash-test";
-
-        let ct = oaep_encrypt(&pubkey, msg, &params).expect("encrypt distinct mgf1");
-        let pt = oaep_decrypt(privkey, &ct, &params).expect("decrypt distinct mgf1");
+        let params = OaepParams::default()
+            .with_digest(DigestAlgorithm::Sha256)
+            .with_mgf1_digest(DigestAlgorithm::Sha384);
+        let msg = b"distinct hash and MGF1";
+        let ct = oaep_encrypt(&kp.public_key(), msg, &params).unwrap();
+        let pt = oaep_decrypt(kp.private_key(), &ct, &params).unwrap();
         assert_eq!(pt, msg);
     }
 
     #[test]
     fn oaep_message_too_long_returns_error() {
         let kp = test_keypair();
-        let pubkey = kp.public_key();
-        let params = OaepParams::default();
-        // For a 2048-bit (256-byte) modulus with SHA-256 (32-byte) hash,
-        // the maximum plaintext is 256 - 2*32 - 2 = 190 bytes.
-        let too_long = vec![0x42u8; 256];
-        let result = oaep_encrypt(&pubkey, &too_long, &params);
-        assert!(result.is_err(), "encrypt should reject overlong message");
+        // 2048-bit key: 256-byte modulus.
+        // SHA-1 default: max msg = 256 - 42 = 214 bytes.
+        // 256-byte message is >>> 214 and must be rejected.
+        let too_long = vec![0u8; 256];
+        let err = oaep_encrypt(&kp.public_key(), &too_long, &OaepParams::default())
+            .expect_err("oversize plaintext should be rejected");
+        // RsaError::DataTooLargeForKeySize maps to CryptoError::Encoding.
+        assert!(matches!(err, CryptoError::Encoding(_)));
     }
 
     #[test]
     fn oaep_tampered_ciphertext_fails_decode() {
         let kp = test_keypair();
-        let pubkey = kp.public_key();
-        let privkey = kp.private_key();
-        let params = OaepParams::default();
-        let msg = b"tamper-test";
-
-        let mut ct = oaep_encrypt(&pubkey, msg, &params).expect("encrypt ok");
-        // Flip one bit in the middle of the ciphertext.
+        let mut ct = oaep_encrypt(&kp.public_key(), b"tamper-me", &OaepParams::default()).unwrap();
+        // Flip a bit somewhere in the middle of the ciphertext.
         let mid = ct.len() / 2;
-        ct[mid] ^= 0x80;
-
-        let result = oaep_decrypt(privkey, &ct, &params);
-        assert!(result.is_err(), "decrypt should reject tampered ciphertext");
+        ct[mid] ^= 0x01;
+        let err = oaep_decrypt(kp.private_key(), &ct, &OaepParams::default())
+            .expect_err("tampered ciphertext must not decode");
+        // Could be either Encoding (OAEP integrity) or Encoding via
+        // RsaError::OaepDecodingError; both map to CryptoError::Encoding.
+        assert!(matches!(err, CryptoError::Encoding(_)));
     }
 
     #[test]
     fn oaep_wrong_label_fails_decode() {
         let kp = test_keypair();
-        let pubkey = kp.public_key();
-        let privkey = kp.private_key();
         let enc_params = OaepParams::default().with_label(b"correct-label".to_vec());
         let dec_params = OaepParams::default().with_label(b"wrong-label".to_vec());
-        let msg = b"label-mismatch-test";
-
-        let ct = oaep_encrypt(&pubkey, msg, &enc_params).expect("encrypt ok");
-        let result = oaep_decrypt(privkey, &ct, &dec_params);
-        assert!(result.is_err(), "decrypt should reject mismatched label");
+        let ct = oaep_encrypt(&kp.public_key(), b"msg", &enc_params).unwrap();
+        let err = oaep_decrypt(kp.private_key(), &ct, &dec_params)
+            .expect_err("wrong label must fail integrity check");
+        assert!(matches!(err, CryptoError::Encoding(_)));
     }
 
     #[test]
-    fn oaep_wrong_hash_fails_decode() {
+    fn oaep_wrong_digest_fails_decode() {
         let kp = test_keypair();
-        let pubkey = kp.public_key();
-        let privkey = kp.private_key();
-        let enc_params = OaepParams::with_hash(DigestAlgorithm::Sha256);
-        let dec_params = OaepParams::with_hash(DigestAlgorithm::Sha384);
-        let msg = b"hash-mismatch-test";
-
-        let ct = oaep_encrypt(&pubkey, msg, &enc_params).expect("encrypt ok");
-        let result = oaep_decrypt(privkey, &ct, &dec_params);
-        assert!(result.is_err(), "decrypt should reject mismatched hash");
+        let enc_params = OaepParams::default().with_digest(DigestAlgorithm::Sha256);
+        let dec_params = OaepParams::default().with_digest(DigestAlgorithm::Sha384);
+        let ct = oaep_encrypt(&kp.public_key(), b"msg", &enc_params).unwrap();
+        let err = oaep_decrypt(kp.private_key(), &ct, &dec_params)
+            .expect_err("wrong digest must fail integrity check");
+        assert!(matches!(err, CryptoError::Encoding(_)));
     }
 
     #[test]
     fn oaep_ciphertext_length_equals_modulus_bytes() {
         let kp = test_keypair();
         let pubkey = kp.public_key();
-        let params = OaepParams::default();
-        let msg = b"len-check";
-        let ct = oaep_encrypt(&pubkey, msg, &params).expect("encrypt ok");
-        let expected = usize::try_from(pubkey.key_size_bytes()).unwrap();
-        assert_eq!(ct.len(), expected, "OAEP ciphertext is exactly k bytes");
+        let ct = oaep_encrypt(&pubkey, b"x", &OaepParams::default()).unwrap();
+        // Per Rule R6: lossless conversion. ct.len() can never exceed
+        // u32::MAX in practice (RSA moduli are at most a few KiB), but
+        // we use try_from rather than `as` so the cast lint stays
+        // satisfied without a justification.
+        let ct_len_u32 = u32::try_from(ct.len()).expect("ciphertext length fits in u32");
+        assert_eq!(ct_len_u32, pubkey.key_size_bytes());
     }
 }
+
