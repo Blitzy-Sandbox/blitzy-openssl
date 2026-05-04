@@ -1,1173 +1,2009 @@
-//! RSA-PSS (Probabilistic Signature Scheme) per RFC 8017 §8.1 / §9.1.
+// crates/openssl-crypto/src/rsa/pss.rs
+//
+// PSS (Probabilistic Signature Scheme) implementation per RFC 8017 §8.1 / §9.1.
+//
+// Translates the C implementation from `crypto/rsa/rsa_pss.c` (424 lines)
+// into idiomatic, safe Rust. Provides EMSA-PSS encoding and verification
+// with configurable hash functions, MGF1, and salt lengths, plus the small
+// PKCS#1 v1.5 DigestInfo helpers shared with `crypto/rsa/rsa_sign.c`.
+
+// `unsafe_code` is `forbid`den at the crate root (see
+// `crates/openssl-crypto/src/lib.rs`); we therefore omit the per-module
+// `#![deny(unsafe_code)]` to satisfy E0453 ("deny incompatible with
+// previous forbid"). Cast lints below remain active.
+#![deny(clippy::cast_possible_truncation)]
+#![deny(clippy::cast_possible_wrap)]
+#![deny(clippy::cast_sign_loss)]
+
+//! PSS (Probabilistic Signature Scheme) implementation per RFC 8017 §8.1/§9.1.
 //!
-//! Provides PSS signature generation and verification using EMSA-PSS encoding.
-//! Translates `crypto/rsa/rsa_pss.c` (~400 lines) and the related metadata
-//! plumbing in `include/crypto/rsa.h` into idiomatic Rust.
+//! Translates the C implementation from `crypto/rsa/rsa_pss.c` (424 lines).
+//! Provides EMSA-PSS encoding and verification with configurable hash
+//! functions, MGF1, and salt lengths, plus auxiliary types for PSS-restricted
+//! keys and PKCS#1 v1.5 signature scheme support.
 //!
-//! ## Source Mapping
+//! # PSS Signature Workflow
 //!
-//! | Rust Component                       | C Source                                                | Purpose |
-//! |--------------------------------------|---------------------------------------------------------|---------|
-//! | [`PssSaltLength`]                    | `include/openssl/rsa.h::RSA_PSS_SALTLEN_*`              | Typed salt-length sentinels (replaces integer constants) |
-//! | [`PssParams30`]                      | `include/crypto/rsa.h::RSA_PSS_PARAMS_30`               | PSS metadata stored on RSASSA-PSS keys (RFC 4055) |
-//! | [`DEFAULT_PSS_PARAMS_30`]            | `crypto/rsa/rsa_pss.c::default_RSASSA_PSS_params`       | Default PSS parameter set: `{SHA-1, MGF1(SHA-1), 20, 1}` |
-//! | [`PssParams30::is_unrestricted`]     | `crypto/rsa/rsa_pss.c::ossl_rsa_pss_params_30_is_unrestricted` | Detect unrestricted (zero-init) parameter sets |
-//! | [`PssParams30::set_defaults`]        | `crypto/rsa/rsa_pss.c::ossl_rsa_pss_params_30_set_defaults`   | Apply RFC 4055 defaults for unset fields |
-//! | [`PssParams`]                        | `crypto/rsa/rsa_pss.c` (parameters of encode/verify)    | Lightweight parameter bundle for sign/verify operations |
-//! | [`pss_sign`]                         | `crypto/rsa/rsa_pss.c::ossl_rsa_padding_add_PKCS1_PSS_mgf1` | RFC 8017 §9.1.1 EMSA-PSS-Encode (signature generation) |
-//! | [`pss_verify`]                       | `crypto/rsa/rsa_pss.c::ossl_rsa_verify_PKCS1_PSS_mgf1`  | RFC 8017 §9.1.2 EMSA-PSS-Verify (signature verification) |
-//! | [`pkcs1_mgf1`]                       | `crypto/rsa/rsa_oaep.c::PKCS1_MGF1`                     | RFC 8017 §B.2.1 MGF1 mask generation (shared with OAEP) |
+//! 1. **Sign:** `Hash(M)` → [`pss_encode`] → `RSA private op` → signature
+//! 2. **Verify:** signature → `RSA public op` → [`pss_verify`]
 //!
-//! ## RFC 8017 §9.1 EMSA-PSS Overview
+//! # Salt Length Special Values
 //!
-//! Probabilistic Signature Scheme (PSS) provides provably-secure RSA
-//! signatures with random salting. The encoded message has the form:
+//! The C code defines several special salt-length sentinels (negative
+//! integers). In Rust they are encoded as variants of [`PssSaltLength`] (Rule
+//! R5: nullability over sentinels).
+//!
+//! | C constant                            | Numeric | Rust variant                      |
+//! |---------------------------------------|---------|-----------------------------------|
+//! | `RSA_PSS_SALTLEN_DIGEST`              | -1      | [`PssSaltLength::DigestLength`]   |
+//! | `RSA_PSS_SALTLEN_AUTO`                | -2      | [`PssSaltLength::Auto`]           |
+//! | `RSA_PSS_SALTLEN_MAX`                 | -3      | [`PssSaltLength::Max`]            |
+//! | `RSA_PSS_SALTLEN_AUTO_DIGEST_MAX`     | -4      | [`PssSaltLength::AutoDigestMax`]  |
+//! | (any non-negative integer)            | ≥ 0     | [`PssSaltLength::Fixed`]          |
+//!
+//! # EM Layout (RFC 8017 §9.1.1)
 //!
 //! ```text
 //! EM = maskedDB || H || 0xBC
-//!
-//! Where:
-//!   maskedDB = DB ⊕ MGF1(H, len(DB))
-//!   DB       = PS (zeros) || 0x01 || salt
-//!   H        = Hash(0x00..00 || mHash || salt)   ; 8 zero bytes prefix
-//!   mHash    = Hash(M)                             ; M is the message
+//! maskedDB = DB ⊕ MGF1(H, len(DB))
+//! DB       = PS (zero bytes) || 0x01 || salt
+//! H        = Hash(0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 || mHash || salt)
 //! ```
 //!
-//! The leading zero bits in `EM[0]` are masked out so that `EM` is
-//! representable in `keysize - 1` bits (interpreted as a big integer
-//! strictly less than the modulus n).
+//! # Source Map
 //!
-//! ## Salt Length Conventions
+//! | Rust item                       | C source                                              |
+//! |---------------------------------|-------------------------------------------------------|
+//! | [`PssSaltLength`]               | `RSA_PSS_SALTLEN_*` macros (`include/openssl/rsa.h`)  |
+//! | [`PssParams`]                   | parameter bag in `ossl_rsa_padding_add_PKCS1_PSS_*`   |
+//! | [`PssParams30`]                 | `RSA_PSS_PARAMS_30` (`crypto/rsa/rsa_local.h`)        |
+//! | [`DEFAULT_PSS_PARAMS_30`]       | `ossl_rsa_default_pss_params` defaults                |
+//! | [`pss_encode`]                  | `ossl_rsa_padding_add_PKCS1_PSS_mgf1_ex` (`rsa_pss.c`)|
+//! | [`pss_verify`]                  | `ossl_rsa_verify_PKCS1_PSS_mgf1` (`rsa_pss.c`)        |
+//! | [`Pkcs1v15SignParams`]          | parameter bundle for `RSA_sign` (`rsa_sign.c`)        |
+//! | [`digest_info_prefix`]          | `ossl_rsa_digestinfo_encoding` (`rsa_sign.c`)         |
 //!
-//! - `PssSaltLength::Digest`            (`-1`): salt length equals hash output length
-//! - `PssSaltLength::Auto`              (`-2`): autorecover during verify; same as `MaxSign` during sign
-//! - `PssSaltLength::Max`               (`-3`): maximum salt allowed by modulus
-//! - `PssSaltLength::AutoDigestMax`     (`-4`): auto, capped at digest length
-//! - `PssSaltLength::Custom(n)`         (≥0): explicit byte count
+//! # Security & Implementation Notes
 //!
-//! ## Security Notes
+//! - All random salt bytes come from [`crate::rand::rand_bytes`] (Rule R5/R6).
+//! - The trailer-byte and first-octet checks fail fast before any
+//!   cryptographic comparison.
+//! - All intermediate buffers (salt, derived-block, masked DB) implement
+//!   [`Zeroize`] and are wiped explicitly. (See AAP §0.7.6.)
+//! - The final `H == H'` comparison uses
+//!   [`openssl_common::constant_time::memcmp`], which is implemented with
+//!   `subtle::ConstantTimeEq` to avoid timing oracles.
+//! - Per Rule R8 the crate root forbids `unsafe_code` (`#![forbid(unsafe_code)]`
+//!   in `crates/openssl-crypto/src/lib.rs`); not a single `unsafe` block exists
+//!   in this module.
+//! - Per Rule R6 every length / offset arithmetic uses `checked_add` /
+//!   `checked_sub`; surviving casts (`u32` ↔ `u8` for the MS-bit shift,
+//!   `i32` round-trip for legacy integer codes) are width-bounded and
+//!   carry inline justifications.
 //!
-//! - The salt is generated cryptographically via [`crate::rand::rand_bytes`].
-//! - All comparisons against the trailer byte `0xBC` are performed before the
-//!   hash recomputation step to fail fast on malformed signatures.
-//! - The salt buffer is securely zeroized after use via the `zeroize` crate.
-//! - Verification uses a constant-time hash comparison (`constant_time::memcmp`).
+//! # References
 //!
-//! ## Design Rules Enforced
-//!
-//! - **R5 (Nullability):** Hash algorithms are `Option<DigestAlgorithm>`
-//!   (defaulting via [`PssParams30::set_defaults`] when needed). Salt length is
-//!   the [`PssSaltLength`] enum, not a sentinel integer.
-//! - **R6 (Lossless Casts):** Length math uses `usize`/`u32` with checked
-//!   arithmetic; no bare `as` narrowing.
-//! - **R8 (No Unsafe):** `#![forbid(unsafe_code)]` is inherited at the crate
-//!   level. PSS performs zero unsafe operations.
-//! - **§0.7.6 (Secure Erasure):** Salt buffers are wiped via `zeroize`.
+//! - RFC 8017 §8.1: RSASSA-PSS
+//! - RFC 8017 §9.1: EMSA-PSS-Encode / EMSA-PSS-Verify
+//! - RFC 8017 §B.2.1: MGF1
+//! - RFC 4055: PSS-restricted RSA keys (the `RSA_PSS_PARAMS_30` schema)
+
+// =============================================================================
+// Imports
+// =============================================================================
 
 use openssl_common::constant_time;
 use openssl_common::error::{CryptoError, CryptoResult};
-use openssl_common::param::{ParamSet, ParamValue};
+use zeroize::Zeroize;
 
-use crate::bn::{montgomery, BigNum};
 use crate::hash::{create_digest, Digest, DigestAlgorithm};
 use crate::rand::rand_bytes;
 
-use tracing::{debug, trace};
-use zeroize::Zeroize;
+use super::oaep::mgf1;
 
-use super::{RsaError, RsaPrivateKey, RsaPublicKey};
+// =============================================================================
+// Constants
+// =============================================================================
 
-// -----------------------------------------------------------------------------
-// Constants (algorithm identifiers — translated from C NID values)
-// -----------------------------------------------------------------------------
-
-/// Numeric identifier for the MGF1 mask generation function.
+/// Numeric identifier for the MGF1 mask-generation function.
 ///
-/// Translates `NID_mgf1` from `crypto/objects/objects.h`. The PSS specification
-/// (RFC 4055) defines MGF1 as the only standard mask generation function for
-/// PSS, so this is effectively a constant.
+/// Mirrors `NID_mgf1` from OpenSSL's NID table. Used as the
+/// [`PssMaskGen::algorithm_nid`] value when the default MGF1 is selected.
 pub const NID_MGF1: u32 = 911;
 
-/// PSS trailer byte per RFC 8017 §9.1.1 step 11 — `EM[emLen-1] = 0xBC`.
+/// PSS trailer byte per RFC 8017 §9.1.1 step 11.
+///
+/// The encoded message must end with this byte: `EM[emLen-1] == 0xBC`.
 const PSS_TRAILER_BYTE: u8 = 0xBC;
 
-/// Default trailer field per RFC 4055 — `1` indicates the `0xBC` trailer byte.
+/// Default `trailerField` per RFC 4055.
+///
+/// `1` is the only value the standard permits and indicates the trailer
+/// byte `0xBC` shown above.
 const DEFAULT_TRAILER_FIELD: i32 = 1;
 
 /// Default salt length when none is specified, per RFC 4055.
+///
+/// 20 bytes matches the SHA-1 output size and is the historical default
+/// inherited from the RFC 4055 schema.
 const DEFAULT_SALT_LEN: i32 = 20;
 
-// -----------------------------------------------------------------------------
-// PssSaltLength (replaces RSA_PSS_SALTLEN_* sentinel integers)
-// -----------------------------------------------------------------------------
+// =============================================================================
+// PssError — typed error enum for PSS-specific failures
+// =============================================================================
 
-/// PSS salt length specification.
+/// Errors that can occur during PSS encoding, decoding, verification, and
+/// parameter validation.
 ///
-/// Replaces C `#define RSA_PSS_SALTLEN_DIGEST -1`, `RSA_PSS_SALTLEN_AUTO -2`,
-/// `RSA_PSS_SALTLEN_MAX -3`, `RSA_PSS_SALTLEN_AUTO_DIGEST_MAX -4` from
-/// `include/openssl/rsa.h` with a typed enum (Rule R5).
+/// Replaces the C `ERR_raise(ERR_LIB_RSA, RSA_R_*)` pattern from
+/// `crypto/rsa/rsa_pss.c`. Each variant maps to one or more `RSA_R_*` reason
+/// codes:
+///
+/// | Variant                              | C reason code                          |
+/// |--------------------------------------|----------------------------------------|
+/// | [`PssError::SaltLengthCheckFailed`]  | `RSA_R_SLEN_CHECK_FAILED`              |
+/// | [`PssError::DataTooLargeForKeySize`] | `RSA_R_DATA_TOO_LARGE_FOR_KEY_SIZE`    |
+/// | [`PssError::InvalidPssParameters`]   | `RSA_R_INVALID_PSS_PARAMETERS`         |
+/// | [`PssError::PssVerificationFailed`]  | EMSA-PSS-Verify hash mismatch          |
+/// | [`PssError::FirstOctetInvalid`]      | `RSA_R_FIRST_OCTET_INVALID`            |
+/// | [`PssError::LastOctetInvalid`]       | `RSA_R_LAST_OCTET_INVALID`             |
+/// | [`PssError::InvalidPadding`]         | `RSA_R_INVALID_PADDING` / `BAD_E_VALUE`|
+///
+/// `PssError` converts into [`CryptoError`] via the implemented [`From`]
+/// impl so call sites can return `CryptoResult<T>` directly using the `?`
+/// operator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PssError {
+    /// The recovered salt length does not match the expected length
+    /// (`RSA_R_SLEN_CHECK_FAILED`, `rsa_pss.c` line 78).
+    SaltLengthCheckFailed,
+
+    /// The encoded-message length is shorter than `hLen + sLen + 2` so PSS
+    /// cannot proceed for the given key size
+    /// (`RSA_R_DATA_TOO_LARGE_FOR_KEY_SIZE`, `rsa_pss.c` lines 230-234).
+    DataTooLargeForKeySize,
+
+    /// The PSS parameters are inconsistent (e.g. zero-sized digest, an
+    /// invalid trailer field, or unsupported algorithm combination).
+    InvalidPssParameters,
+
+    /// The recovered hash `H'` did not equal the supplied `H` field; the
+    /// signature is rejected.
+    PssVerificationFailed,
+
+    /// The leftmost byte of the encoded message is not `0x00` after
+    /// clearing the high bits (`RSA_R_FIRST_OCTET_INVALID`,
+    /// `rsa_pss.c` lines 89-100).
+    FirstOctetInvalid,
+
+    /// The trailer byte is not `0xBC` (`RSA_R_LAST_OCTET_INVALID`,
+    /// `rsa_pss.c` lines 101-104).
+    LastOctetInvalid,
+
+    /// The padding string `PS` does not consist of zero bytes terminated by
+    /// `0x01`, or some other DB-region invariant has been violated.
+    InvalidPadding,
+}
+
+impl core::fmt::Display for PssError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            PssError::SaltLengthCheckFailed => f.write_str("PSS salt-length check failed"),
+            PssError::DataTooLargeForKeySize => f.write_str("PSS data too large for key size"),
+            PssError::InvalidPssParameters => f.write_str("invalid PSS parameters"),
+            PssError::PssVerificationFailed => f.write_str("PSS verification failed"),
+            PssError::FirstOctetInvalid => f.write_str("PSS first octet invalid"),
+            PssError::LastOctetInvalid => f.write_str("PSS last octet invalid (trailer != 0xBC)"),
+            PssError::InvalidPadding => f.write_str("invalid PSS padding"),
+        }
+    }
+}
+
+impl std::error::Error for PssError {}
+
+/// Maps a typed [`PssError`] into the unified [`CryptoError`] enum.
+///
+/// The mapping mirrors the C error category: encoding-time failures map to
+/// [`CryptoError::Encoding`], verification-time failures map to
+/// [`CryptoError::Verification`].
+impl From<PssError> for CryptoError {
+    fn from(value: PssError) -> Self {
+        match value {
+            PssError::DataTooLargeForKeySize
+            | PssError::InvalidPssParameters
+            | PssError::FirstOctetInvalid
+            | PssError::LastOctetInvalid
+            | PssError::InvalidPadding => CryptoError::Encoding(value.to_string()),
+            PssError::SaltLengthCheckFailed | PssError::PssVerificationFailed => {
+                CryptoError::Verification(value.to_string())
+            }
+        }
+    }
+}
+
+// =============================================================================
+// PssSaltLength — typed salt-length specification (Rule R5)
+// =============================================================================
+
+/// PSS salt-length specification.
+///
+/// Replaces the C `RSA_PSS_SALTLEN_*` integer sentinels (`-1` … `-4`) with
+/// a typed enum, satisfying Rule R5 ("nullability over sentinels"). The
+/// numeric round-trip helpers [`PssSaltLength::as_legacy_int`] /
+/// [`PssSaltLength::from_legacy_int`] preserve interoperability with the
+/// integer-based `OSSL_PARAM` API.
+///
+/// | C macro                              | Numeric | Variant                |
+/// |--------------------------------------|---------|------------------------|
+/// | `RSA_PSS_SALTLEN_DIGEST`             | -1      | [`Self::DigestLength`] |
+/// | `RSA_PSS_SALTLEN_AUTO`               | -2      | [`Self::Auto`]         |
+/// | `RSA_PSS_SALTLEN_MAX`                | -3      | [`Self::Max`]          |
+/// | `RSA_PSS_SALTLEN_AUTO_DIGEST_MAX`    | -4      | [`Self::AutoDigestMax`]|
+/// | (any non-negative integer)           | ≥ 0     | [`Self::Fixed`]        |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PssSaltLength {
-    /// Salt length equals the digest output length (`-1`).
-    Digest,
-    /// Autorecover during verification; equivalent to `Max` during signing
-    /// (`-2`).
+    /// Salt length equals the hash output length
+    /// (C: `RSA_PSS_SALTLEN_DIGEST` = -1).
+    DigestLength,
+
+    /// Auto-recover the salt length from the signature during verify.
+    /// On the encoding side this behaves identically to [`Self::Max`]
+    /// (C: `RSA_PSS_SALTLEN_AUTO` = -2 / `RSA_PSS_SALTLEN_MAX_SIGN` = -2).
     Auto,
-    /// Use the maximum salt length permitted by the modulus (`-3`).
+
+    /// Use the maximum salt length permitted by the modulus
+    /// (C: `RSA_PSS_SALTLEN_MAX` = -3).
     Max,
-    /// Auto, but capped at the digest length (`-4`).
+
+    /// Auto-recover for verify, but cap at the digest length when encoding
+    /// (FIPS 186-4 compliant default — C: `RSA_PSS_SALTLEN_AUTO_DIGEST_MAX`
+    /// = -4).
     AutoDigestMax,
-    /// Explicit salt byte count.
-    Custom(usize),
+
+    /// Explicit salt length in bytes.
+    Fixed(usize),
 }
 
 impl PssSaltLength {
-    /// Convert this salt length into the corresponding negative sentinel used
-    /// by C OpenSSL.
+    /// Encodes this variant into the corresponding legacy `int` sentinel.
     ///
-    /// Returns:
-    ///   - `Custom(n)` → `n as i32`
-    ///   - `Digest`    → `-1`
-    ///   - `Auto`      → `-2`
-    ///   - `Max`       → `-3`
-    ///   - `AutoDigestMax` → `-4`
-    pub fn as_legacy_int(&self) -> i32 {
+    /// The returned value matches the C macros declared in
+    /// `include/openssl/rsa.h` and is suitable for round-tripping through
+    /// `OSSL_PARAM` parameter bags.
+    pub fn as_legacy_int(self) -> i32 {
         match self {
-            PssSaltLength::Digest => -1,
+            PssSaltLength::DigestLength => -1,
             PssSaltLength::Auto => -2,
             PssSaltLength::Max => -3,
             PssSaltLength::AutoDigestMax => -4,
-            PssSaltLength::Custom(n) => i32::try_from(*n).unwrap_or(i32::MAX),
+            // BOUNDED: callers that exceed `i32::MAX` are out of spec; an
+            // overflow truncation would yield a negative value which would
+            // collide with one of the sentinels above. Use saturation so the
+            // value is preserved as `i32::MAX` instead.
+            PssSaltLength::Fixed(n) => i32::try_from(n).unwrap_or(i32::MAX),
         }
     }
 
-    /// Construct from the C sentinel integer convention.
-    pub fn from_legacy_int(value: i32) -> Self {
+    /// Decodes a legacy integer sentinel back into the typed variant.
+    ///
+    /// Returns [`PssError::InvalidPssParameters`] if the value falls outside
+    /// the documented range (`< -4`).
+    pub fn from_legacy_int(value: i32) -> Result<Self, PssError> {
         match value {
-            -1 => PssSaltLength::Digest,
-            -2 => PssSaltLength::Auto,
-            -3 => PssSaltLength::Max,
-            -4 => PssSaltLength::AutoDigestMax,
+            -1 => Ok(PssSaltLength::DigestLength),
+            -2 => Ok(PssSaltLength::Auto),
+            -3 => Ok(PssSaltLength::Max),
+            -4 => Ok(PssSaltLength::AutoDigestMax),
             n if n >= 0 => {
-                // `n >= 0` proven by match guard; `usize::try_from` cannot fail
-                // on platforms where `usize::MAX >= i32::MAX` (32-bit and 64-bit
-                // targets supported by this crate). Falls back to a safe default
-                // in the impossible 16-bit case.
-                PssSaltLength::Custom(usize::try_from(n).unwrap_or(0))
+                // BOUNDED: `n >= 0` means the cast cannot wrap; further
+                // narrowing into `usize` is safe on every supported target
+                // (32- and 64-bit pointers).
+                Ok(PssSaltLength::Fixed(n.unsigned_abs() as usize))
             }
-            _ => PssSaltLength::Auto,
+            _ => Err(PssError::InvalidPssParameters),
         }
     }
 }
 
-// -----------------------------------------------------------------------------
-// Mask Generation Function metadata
-// -----------------------------------------------------------------------------
+// =============================================================================
+// PssMaskGen — mask-generation algorithm specification
+// =============================================================================
 
-/// PSS mask-generation function metadata.
+/// Mask-generation algorithm (currently always MGF1) and its hash function.
 ///
-/// Translates the inner anonymous struct of `RSA_PSS_PARAMS_30::mask_gen` from
-/// `include/crypto/rsa.h` lines 22-25:
+/// Mirrors the inner `mask_gen` field of the C `RSA_PSS_PARAMS_30` struct
+/// from `crypto/rsa/rsa_local.h`:
 ///
-/// ```c
+/// ```text
 /// struct {
-///     int algorithm_nid;       /* Currently always NID_mgf1 */
+///     int algorithm_nid;     /* always NID_mgf1 */
 ///     int hash_algorithm_nid;
 /// } mask_gen;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PssMaskGen {
-    /// MGF algorithm identifier — currently always [`NID_MGF1`].
+    /// Numeric identifier of the mask-generation algorithm. Currently the
+    /// only supported value is [`NID_MGF1`].
     pub algorithm_nid: u32,
-    /// Inner hash function used by MGF1. `None` means "unset"; the default is
-    /// SHA-1 per RFC 4055.
+
+    /// Hash function used by the mask-generation function. `None` means
+    /// "inherit the message digest" — this is the unrestricted default.
     pub hash_algorithm: Option<DigestAlgorithm>,
 }
 
 impl PssMaskGen {
-    /// Construct the default MGF specification: MGF1 with SHA-1.
+    /// Returns the canonical default `MGF1` mask-generation specification
+    /// inheriting the message digest.
+    ///
+    /// Equivalent to the C struct initialiser `{NID_mgf1, NID_undef}` —
+    /// callers resolve the unset hash via [`PssParams30::resolved_mgf1_hash`].
     pub const fn default_mgf1() -> Self {
         Self {
             algorithm_nid: NID_MGF1,
-            hash_algorithm: Some(DigestAlgorithm::Sha1),
+            hash_algorithm: None,
         }
     }
 }
 
-// -----------------------------------------------------------------------------
-// PssParams30 (the RFC 4055 RSASSA-PSS-params structure)
-// -----------------------------------------------------------------------------
-
-/// PSS parameter set stored on RSASSA-PSS public/private keys.
-///
-/// Translates `RSA_PSS_PARAMS_30` from `include/crypto/rsa.h` lines 20-28:
-///
-/// ```c
-/// typedef struct rsa_pss_params_30_st {
-///     int hash_algorithm_nid;
-///     struct {
-///         int algorithm_nid;            /* Currently always NID_mgf1 */
-///         int hash_algorithm_nid;
-///     } mask_gen;
-///     int salt_len;
-///     int trailer_field;
-/// } RSA_PSS_PARAMS_30;
-/// ```
-///
-/// Per RFC 4055 §3.1, when a field is absent (`hash_algorithm == None`,
-/// `salt_len == -1`, `trailer_field == -1`), the corresponding default is
-/// applied via [`Self::set_defaults`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PssParams30 {
-    /// Message hash algorithm. `None` = unset (use default SHA-1).
-    pub hash_algorithm: Option<DigestAlgorithm>,
-    /// Mask generation function specification.
-    pub mask_gen: PssMaskGen,
-    /// Salt length in bytes. `-1` = unset (use default 20).
-    pub salt_len: i32,
-    /// Trailer field value. `-1` = unset (use default 1, encoded as `0xBC`).
-    pub trailer_field: i32,
+impl Default for PssMaskGen {
+    fn default() -> Self {
+        Self::default_mgf1()
+    }
 }
 
-/// Default PSS parameters per RFC 4055 §3.1.
+// =============================================================================
+// PssParams30 — RFC 4055 PSS-restricted parameter bundle
+// =============================================================================
+
+/// PSS-restricted parameter bundle, mirroring the C `RSA_PSS_PARAMS_30`
+/// struct.
 ///
-/// Translates `default_RSASSA_PSS_params` from `crypto/rsa/rsa_pss.c` lines
-/// 314-322:
+/// All fields use [`Option`] (Rule R5) so an "unrestricted" parameter set is
+/// represented by `None` everywhere. The C code uses the integer `0` /
+/// `NID_undef` as the unset sentinel — the Rust translation makes this
+/// explicit at the type level.
 ///
-/// ```c
-/// static const RSA_PSS_PARAMS_30 default_RSASSA_PSS_params = {
-///     NID_sha1,                /* default hashAlgorithm */
-///     { NID_mgf1, NID_sha1 },  /* default maskGenAlgorithm + MGF1 hash */
-///     20,                      /* default saltLength */
-///     1                        /* default trailerField */
-/// };
+/// `Copy` is implemented because the consumer in
+/// `crates/openssl-provider/src/implementations/keymgmt/rsa.rs::absorb_pss_params`
+/// dereference-copies a `&PssParams30` into a mutable local before applying
+/// setter mutations.
+///
+/// # Source map
+///
+/// | Method                                | C function                                |
+/// |---------------------------------------|-------------------------------------------|
+/// | `set_hash_algorithm`                  | `ossl_rsa_pss_params_30_set_hashalg`      |
+/// | `set_mgf1_hash_algorithm`             | `ossl_rsa_pss_params_30_set_maskgenhashalg` |
+/// | `set_salt_len`                        | `ossl_rsa_pss_params_30_set_saltlen`      |
+/// | `set_trailer_field`                   | `ossl_rsa_pss_params_30_set_trailerfield` |
+/// | `set_defaults`                        | `ossl_rsa_pss_params_30_set_defaults`     |
+/// | `is_unrestricted`                     | `ossl_rsa_pss_params_30_is_unrestricted`  |
+/// | `resolved_hash`                       | `ossl_rsa_pss_params_30_hashalg`          |
+/// | `resolved_mgf1_hash`                  | `ossl_rsa_pss_params_30_maskgenhashalg`   |
+/// | `resolved_salt_len`                   | `ossl_rsa_pss_params_30_saltlen`          |
+/// | `resolved_trailer_field`              | `ossl_rsa_pss_params_30_trailerfield`     |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PssParams30 {
+    /// Hash algorithm for the message digest.
+    /// `None` means "unrestricted" — callers should fall back to the
+    /// default [`DEFAULT_PSS_PARAMS_30`] hash.
+    pub hash_algorithm: Option<DigestAlgorithm>,
+
+    /// Mask-generation algorithm and its hash function.
+    pub mask_gen_algorithm: PssMaskGen,
+
+    /// Explicit salt length in bytes.
+    /// `None` means "unrestricted"; the resolved value falls back to the
+    /// RFC 4055 default of 20 bytes.
+    pub salt_length: Option<i32>,
+
+    /// `trailerField` per RFC 4055 (always 1 in valid encodings).
+    /// `None` means "unrestricted".
+    pub trailer_field: Option<i32>,
+}
+
+/// The canonical default PSS parameter set per RFC 4055 §A.2.3.
+///
+/// Mirrors the C `default_RSASSA_PSS_params` static at `rsa_pss.c:314-322`:
+///
+/// ```text
+/// {
+///     hashAlgorithm    = sha1,
+///     maskGenAlgorithm = mgf1SHA1,
+///     saltLength       = 20,
+///     trailerField     = 1   (encodes as 0xBC)
+/// }
 /// ```
 pub const DEFAULT_PSS_PARAMS_30: PssParams30 = PssParams30 {
     hash_algorithm: Some(DigestAlgorithm::Sha1),
-    mask_gen: PssMaskGen {
+    mask_gen_algorithm: PssMaskGen {
         algorithm_nid: NID_MGF1,
         hash_algorithm: Some(DigestAlgorithm::Sha1),
     },
-    salt_len: DEFAULT_SALT_LEN,
-    trailer_field: DEFAULT_TRAILER_FIELD,
+    salt_length: Some(DEFAULT_SALT_LEN),
+    trailer_field: Some(DEFAULT_TRAILER_FIELD),
 };
 
 impl PssParams30 {
-    /// Create an unrestricted (zero-initialized) parameter set, equivalent to
-    /// `memset(p, 0, sizeof(*p))` in C.
+    /// Constructs a fully-unrestricted parameter set (every field `None`).
     ///
-    /// An unrestricted set means "no PSS-specific parameter constraints exist
-    /// on this key — pick parameters at signing time".
-    pub const fn unrestricted() -> Self {
+    /// This is the "no PSS restriction" state; callers querying any
+    /// `resolved_*` accessor receive the RFC 4055 defaults.
+    pub const fn new() -> Self {
         Self {
             hash_algorithm: None,
-            mask_gen: PssMaskGen {
-                algorithm_nid: 0,
+            mask_gen_algorithm: PssMaskGen {
+                algorithm_nid: NID_MGF1,
                 hash_algorithm: None,
             },
-            salt_len: 0,
-            trailer_field: 0,
+            salt_length: None,
+            trailer_field: None,
         }
     }
 
-    /// Returns `true` if this parameter set is unrestricted.
+    /// Replaces this parameter bundle with the canonical defaults.
     ///
-    /// Translates `ossl_rsa_pss_params_30_is_unrestricted` from
-    /// `crypto/rsa/rsa_pss.c` line 332. The C version performs
-    /// `memcmp(rsa_pss_params, &pss_params_30_unrestricted, sizeof(...))`
-    /// against a zero-initialized struct.
-    pub fn is_unrestricted(&self) -> bool {
-        self.hash_algorithm.is_none()
-            && self.mask_gen.algorithm_nid == 0
-            && self.mask_gen.hash_algorithm.is_none()
-            && self.salt_len == 0
-            && self.trailer_field == 0
-    }
-
-    /// Apply RFC 4055 defaults for any unset fields.
-    ///
-    /// Translates `ossl_rsa_pss_params_30_set_defaults` from
-    /// `crypto/rsa/rsa_pss.c` line 324:
-    ///
-    /// ```c
-    /// int ossl_rsa_pss_params_30_set_defaults(RSA_PSS_PARAMS_30 *rsa_pss_params)
-    /// {
-    ///     if (rsa_pss_params == NULL)
-    ///         return 0;
-    ///     *rsa_pss_params = default_RSASSA_PSS_params;
-    ///     return 1;
-    /// }
-    /// ```
+    /// Translates `ossl_rsa_pss_params_30_set_defaults` (rsa_pss.c:324-330).
     pub fn set_defaults(&mut self) {
         *self = DEFAULT_PSS_PARAMS_30;
     }
 
-    /// Resolve the message hash algorithm with default fallback.
+    /// Returns `true` when every field is unset (`None`).
     ///
-    /// Translates `ossl_rsa_pss_params_30_hashalg`. If unset, returns SHA-1.
-    pub fn resolved_hash(&self) -> DigestAlgorithm {
-        self.hash_algorithm.unwrap_or(DigestAlgorithm::Sha1)
+    /// Translates `ossl_rsa_pss_params_30_is_unrestricted`
+    /// (rsa_pss.c:332-342). The C version checks for "all-zero" structs;
+    /// in Rust the typed `Option` representation makes this trivial.
+    pub fn is_unrestricted(&self) -> bool {
+        self.hash_algorithm.is_none()
+            && self.mask_gen_algorithm.hash_algorithm.is_none()
+            && self.salt_length.is_none()
+            && self.trailer_field.is_none()
     }
 
-    /// Resolve the MGF1 hash algorithm with default fallback.
+    /// Sets the message-digest algorithm.
     ///
-    /// Translates `ossl_rsa_pss_params_30_maskgenhashalg`.
-    pub fn resolved_mgf1_hash(&self) -> DigestAlgorithm {
-        self.mask_gen
-            .hash_algorithm
+    /// Translates `ossl_rsa_pss_params_30_set_hashalg` (rsa_pss.c:351-358).
+    pub fn set_hash_algorithm(&mut self, alg: DigestAlgorithm) {
+        self.hash_algorithm = Some(alg);
+    }
+
+    /// Sets the MGF1 hash algorithm.
+    ///
+    /// Translates `ossl_rsa_pss_params_30_set_maskgenhashalg`
+    /// (rsa_pss.c:360-367).
+    pub fn set_mgf1_hash_algorithm(&mut self, alg: DigestAlgorithm) {
+        self.mask_gen_algorithm.hash_algorithm = Some(alg);
+    }
+
+    /// Sets the salt length.
+    ///
+    /// Translates `ossl_rsa_pss_params_30_set_saltlen` (rsa_pss.c:369-376).
+    /// The C accessor takes a signed `int` and stores any value, even the
+    /// negative sentinels — this Rust port preserves that contract for
+    /// round-trip compatibility with `OSSL_PARAM`-based callers.
+    pub fn set_salt_len(&mut self, salt_len: i32) {
+        self.salt_length = Some(salt_len);
+    }
+
+    /// Sets the trailer field.
+    ///
+    /// Translates `ossl_rsa_pss_params_30_set_trailerfield`
+    /// (rsa_pss.c:378-385).
+    pub fn set_trailer_field(&mut self, trailer: i32) {
+        self.trailer_field = Some(trailer);
+    }
+
+    /// Returns the resolved message-digest algorithm, falling back to the
+    /// RFC 4055 default of SHA-1 when unset.
+    ///
+    /// Translates `ossl_rsa_pss_params_30_hashalg` (rsa_pss.c:387-392).
+    pub fn resolved_hash(&self) -> DigestAlgorithm {
+        self.hash_algorithm
+            .or(DEFAULT_PSS_PARAMS_30.hash_algorithm)
             .unwrap_or(DigestAlgorithm::Sha1)
     }
 
-    /// Resolve the salt length with default fallback.
+    /// Returns the resolved MGF1 hash algorithm, falling back to the
+    /// message digest default of SHA-1 when unset.
     ///
-    /// Translates `ossl_rsa_pss_params_30_saltlen`. Returns the configured
-    /// length (or `DEFAULT_SALT_LEN` if `salt_len < 0`).
+    /// Translates `ossl_rsa_pss_params_30_maskgenhashalg`
+    /// (rsa_pss.c:401-406).
+    pub fn resolved_mgf1_hash(&self) -> DigestAlgorithm {
+        self.mask_gen_algorithm
+            .hash_algorithm
+            .or(DEFAULT_PSS_PARAMS_30.mask_gen_algorithm.hash_algorithm)
+            .unwrap_or(DigestAlgorithm::Sha1)
+    }
+
+    /// Returns the resolved salt length, falling back to the RFC 4055
+    /// default of 20.
+    ///
+    /// Translates `ossl_rsa_pss_params_30_saltlen` (rsa_pss.c:408-413).
     pub fn resolved_salt_len(&self) -> i32 {
-        if self.salt_len < 0 {
-            DEFAULT_SALT_LEN
-        } else {
-            self.salt_len
-        }
+        self.salt_length.unwrap_or(DEFAULT_SALT_LEN)
     }
 
-    /// Resolve the trailer field with default fallback.
+    /// Returns the resolved trailer field, falling back to `1`
+    /// (encoded as `0xBC`).
     ///
-    /// Translates `ossl_rsa_pss_params_30_trailerfield`. Returns the configured
-    /// trailer field (or `DEFAULT_TRAILER_FIELD` if unset).
+    /// Translates `ossl_rsa_pss_params_30_trailerfield` (rsa_pss.c:415-420).
     pub fn resolved_trailer_field(&self) -> i32 {
-        if self.trailer_field < 0 {
-            DEFAULT_TRAILER_FIELD
-        } else {
-            self.trailer_field
-        }
-    }
-
-    /// Set the message hash algorithm.
-    pub fn set_hash_algorithm(&mut self, hash: DigestAlgorithm) {
-        self.hash_algorithm = Some(hash);
-    }
-
-    /// Set the MGF1 inner hash algorithm.
-    pub fn set_mgf1_hash_algorithm(&mut self, hash: DigestAlgorithm) {
-        self.mask_gen.hash_algorithm = Some(hash);
-        self.mask_gen.algorithm_nid = NID_MGF1;
-    }
-
-    /// Set the salt length explicitly.
-    pub fn set_salt_len(&mut self, salt_len: i32) {
-        self.salt_len = salt_len;
-    }
-
-    /// Set the trailer field.
-    pub fn set_trailer_field(&mut self, trailer_field: i32) {
-        self.trailer_field = trailer_field;
-    }
-
-    /// Serialize PSS parameters into a [`ParamSet`] for provider transport.
-    ///
-    /// Translates `ossl_rsa_pss_params_30_todata`. The parameter names follow
-    /// `OSSL_PKEY_PARAM_RSA_DIGEST`, `OSSL_PKEY_PARAM_RSA_MASKGENFUNC`,
-    /// `OSSL_PKEY_PARAM_RSA_PSS_SALTLEN` from `core_names.h`.
-    pub fn to_params(&self) -> ParamSet {
-        let mut params = ParamSet::new();
-        if let Some(h) = self.hash_algorithm {
-            params.set("rsa-digest", ParamValue::Utf8String(h.name().to_string()));
-        }
-        if let Some(mgf1h) = self.mask_gen.hash_algorithm {
-            params.set(
-                "rsa-mgf1-digest",
-                ParamValue::Utf8String(mgf1h.name().to_string()),
-            );
-        }
-        params.set(
-            "rsa-pss-saltlen",
-            ParamValue::Int32(self.resolved_salt_len()),
-        );
-        params.set(
-            "rsa-pss-trailerfield",
-            ParamValue::Int32(self.resolved_trailer_field()),
-        );
-        params
-    }
-
-    /// Deserialize PSS parameters from a [`ParamSet`].
-    ///
-    /// Translates `ossl_rsa_pss_params_30_fromdata`. Missing fields remain at
-    /// their unset defaults, allowing the caller to apply [`Self::set_defaults`]
-    /// or selectively override.
-    pub fn from_params(params: &ParamSet) -> CryptoResult<Self> {
-        let mut out = Self::unrestricted();
-
-        if params.contains("rsa-digest") {
-            if let Some(ParamValue::Utf8String(s)) = params.get("rsa-digest") {
-                out.hash_algorithm = crate::hash::algorithm_from_name(s);
-            }
-        }
-        if params.contains("rsa-mgf1-digest") {
-            if let Some(ParamValue::Utf8String(s)) = params.get("rsa-mgf1-digest") {
-                out.mask_gen.hash_algorithm = crate::hash::algorithm_from_name(s);
-                out.mask_gen.algorithm_nid = NID_MGF1;
-            }
-        }
-        // Use `get_typed::<i32>` for type-safe integer extraction. This handles
-        // both missing keys and type mismatches uniformly and also accepts an
-        // `Int64` value within the `i32` range (per `FromParam` semantics).
-        if params.contains("rsa-pss-saltlen") {
-            if let Ok(n) = params.get_typed::<i32>("rsa-pss-saltlen") {
-                out.salt_len = n;
-            }
-        }
-        if params.contains("rsa-pss-trailerfield") {
-            if let Ok(n) = params.get_typed::<i32>("rsa-pss-trailerfield") {
-                out.trailer_field = n;
-            }
-        }
-        Ok(out)
+        self.trailer_field.unwrap_or(DEFAULT_TRAILER_FIELD)
     }
 }
 
-impl Default for PssParams30 {
-    fn default() -> Self {
-        DEFAULT_PSS_PARAMS_30
-    }
-}
+// =============================================================================
+// PssParams — lightweight runtime parameter bundle for encode/verify
+// =============================================================================
 
-// -----------------------------------------------------------------------------
-// PssParams (lightweight per-operation parameter struct)
-// -----------------------------------------------------------------------------
-
-/// Parameters for a single PSS sign or verify operation.
+/// Lightweight PSS signature parameter bundle for one-shot encode / verify
+/// calls.
 ///
-/// Distinct from [`PssParams30`]: the latter describes long-term key metadata
-/// (per RFC 4055), whereas [`PssParams`] is the immediate set of parameters
-/// supplied to a sign/verify call.
-#[derive(Debug, Clone, Copy)]
+/// Distinct from [`PssParams30`], which models the long-lived RFC 4055
+/// parameter restrictions that travel with a key. This struct is the bag
+/// of arguments that the C function
+/// `ossl_rsa_padding_add_PKCS1_PSS_mgf1_ex()` takes (digest, MGF1 hash, salt
+/// length). It is intended to be constructed at the call site, populated, and
+/// consumed.
+///
+/// All fields are typed (no integer sentinels) per Rule R5: the nullable
+/// MGF1 digest is `Option<DigestAlgorithm>` and the salt length is the
+/// [`PssSaltLength`] enum.
+///
+/// `Copy` is derived so callers can pass `PssParams` by value cheaply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PssParams {
-    /// Message hash algorithm.
-    pub hash: DigestAlgorithm,
-    /// MGF1 inner hash algorithm. If `None`, defaults to `hash` per RFC 8017.
-    pub mgf1_hash: Option<DigestAlgorithm>,
-    /// Salt length specification.
-    pub salt_len: PssSaltLength,
+    /// Hash function used to digest the message (`Hash` in RFC 8017).
+    pub digest: DigestAlgorithm,
+
+    /// Hash function used by MGF1. `None` means "inherit `digest`" — this
+    /// matches the C contract where `mgf1Hash == NULL` falls back to
+    /// `Hash` (`rsa_pss.c` line 62 / 195).
+    pub mgf1_digest: Option<DigestAlgorithm>,
+
+    /// Salt-length specification.
+    pub salt_length: PssSaltLength,
+
+    /// Trailer field; the only spec-compliant value is `1`, which encodes
+    /// as the byte `0xBC`.
+    pub trailer_field: u8,
 }
 
 impl PssParams {
-    /// Construct a new PSS parameter set with the given hash and salt length.
-    /// MGF1 will use the same hash as the message hash (RFC 8017 default).
-    pub fn new(hash: DigestAlgorithm, salt_len: PssSaltLength) -> Self {
+    /// Constructs a new `PssParams` with the given digest, defaults for
+    /// MGF1 (inherited) and salt length (`DigestLength`), and the standard
+    /// trailer byte.
+    ///
+    /// Mirrors the common C call pattern: pick the message digest, leave
+    /// MGF1 NULL (inherit), default sLen to hLen.
+    pub const fn new(digest: DigestAlgorithm) -> Self {
         Self {
-            hash,
-            mgf1_hash: None,
-            salt_len,
+            digest,
+            mgf1_digest: None,
+            salt_length: PssSaltLength::DigestLength,
+            trailer_field: 1,
         }
     }
 
-    /// Construct a new PSS parameter set specifying both hash functions.
-    pub fn with_mgf1_hash(
-        hash: DigestAlgorithm,
-        mgf1_hash: DigestAlgorithm,
-        salt_len: PssSaltLength,
-    ) -> Self {
+    /// Builder-style setter: explicitly choose the MGF1 hash function.
+    #[must_use]
+    pub const fn with_mgf1_hash(mut self, mgf1: DigestAlgorithm) -> Self {
+        self.mgf1_digest = Some(mgf1);
+        self
+    }
+
+    /// Builder-style setter: choose the salt-length specification.
+    #[must_use]
+    pub const fn with_salt_length(mut self, salt: PssSaltLength) -> Self {
+        self.salt_length = salt;
+        self
+    }
+
+    /// Returns the effective MGF1 hash, falling back to [`Self::digest`].
+    ///
+    /// Translates the C pattern: `if (mgf1Hash == NULL) mgf1Hash = Hash;`
+    /// (`rsa_pss.c` lines 62 and 195).
+    pub fn effective_mgf1_digest(&self) -> DigestAlgorithm {
+        self.mgf1_digest.unwrap_or(self.digest)
+    }
+
+    /// Backwards-compatible alias for [`Self::effective_mgf1_digest`]; some
+    /// callers reach for the longer name `resolved_mgf1_digest`.
+    pub fn resolved_mgf1_digest(&self) -> DigestAlgorithm {
+        self.effective_mgf1_digest()
+    }
+
+    /// Validates the parameter bundle for internal consistency.
+    ///
+    /// Returns [`PssError::InvalidPssParameters`] when:
+    /// - the trailer field is not `1` (the only RFC-compliant value), or
+    /// - the digest has zero output size (e.g. an unsupported algorithm).
+    pub fn validate(&self) -> CryptoResult<()> {
+        if self.trailer_field != 1 {
+            return Err(PssError::InvalidPssParameters.into());
+        }
+        if self.digest.digest_size() == 0 {
+            return Err(PssError::InvalidPssParameters.into());
+        }
+        if self.effective_mgf1_digest().digest_size() == 0 {
+            return Err(PssError::InvalidPssParameters.into());
+        }
+        Ok(())
+    }
+
+    /// Returns `true` if this parameter set is fully default and so is
+    /// equivalent to the canonical [`DEFAULT_PSS_PARAMS_30`] setting.
+    pub fn is_unrestricted(&self) -> bool {
+        matches!(self.digest, DigestAlgorithm::Sha1)
+            && self.mgf1_digest.is_none()
+            && matches!(self.salt_length, PssSaltLength::DigestLength)
+            && self.trailer_field == 1
+    }
+
+    /// Resolves the salt length in bytes for the encoding side, given the
+    /// available encoded-message length and digest size.
+    ///
+    /// Implements the salt-length resolution logic from `rsa_pss.c` lines
+    /// 198-238 in a self-contained, side-effect-free way.
+    pub fn resolve_salt_length(&self, em_len: usize, hash_len: usize) -> CryptoResult<usize> {
+        resolve_salt_len_encode(self.salt_length, em_len, hash_len)
+    }
+}
+
+impl Default for PssParams {
+    fn default() -> Self {
         Self {
-            hash,
-            mgf1_hash: Some(mgf1_hash),
-            salt_len,
-        }
-    }
-
-    /// Returns the resolved MGF1 hash algorithm (defaulting to the message
-    /// hash if unspecified, per RFC 8017).
-    pub fn resolved_mgf1_hash(&self) -> DigestAlgorithm {
-        self.mgf1_hash.unwrap_or(self.hash)
-    }
-}
-
-// -----------------------------------------------------------------------------
-// PKCS1_MGF1 — RFC 8017 §B.2.1 mask generation function
-// -----------------------------------------------------------------------------
-
-/// MGF1 mask generation function per RFC 8017 §B.2.1 / NIST SP 800-56B §7.2.2.2.
-///
-/// Translates `PKCS1_MGF1` from `crypto/rsa/rsa_oaep.c` lines 350-393. This is
-/// the shared MGF1 implementation used by both PSS and OAEP padding modes.
-///
-/// # Arguments
-/// * `mask` - Output buffer to fill with mask bytes.
-/// * `seed` - The seed input to MGF1.
-/// * `hash` - The hash function to invoke for each MGF block.
-///
-/// # Algorithm
-/// ```text
-/// for counter = 0, 1, 2, ...:
-///     C = I2OSP(counter, 4)              ; 4-byte big-endian
-///     T = T || Hash(seed || C)
-/// mask = first |mask| bytes of T
-/// ```
-pub(crate) fn pkcs1_mgf1(mask: &mut [u8], seed: &[u8], hash: DigestAlgorithm) -> CryptoResult<()> {
-    let mdlen = hash.digest_size();
-    if mdlen == 0 {
-        return Err(CryptoError::Encoding(format!(
-            "MGF1: hash {hash:?} has zero digest size"
-        )));
-    }
-
-    let len = mask.len();
-    let mut outlen: usize = 0;
-    let mut counter: u32 = 0;
-
-    while outlen < len {
-        let cnt = counter.to_be_bytes();
-        let mut ctx: Box<dyn Digest> = create_digest(hash)?;
-        ctx.update(seed)?;
-        ctx.update(&cnt)?;
-        let block = ctx.finalize()?;
-
-        let remaining = len - outlen;
-        if remaining >= mdlen {
-            mask[outlen..outlen + mdlen].copy_from_slice(&block);
-            outlen += mdlen;
-        } else {
-            mask[outlen..len].copy_from_slice(&block[..remaining]);
-            outlen = len;
-        }
-
-        counter = counter
-            .checked_add(1)
-            .ok_or_else(|| CryptoError::Encoding("MGF1 counter overflow".to_string()))?;
-    }
-
-    Ok(())
-}
-
-// -----------------------------------------------------------------------------
-// EMSA-PSS-Encode — RFC 8017 §9.1.1
-// -----------------------------------------------------------------------------
-
-/// Resolve a [`PssSaltLength`] specification into an actual byte count for the
-/// encode (sign) path.
-///
-/// Translates the salt-length sentinel resolution at `crypto/rsa/rsa_pss.c`
-/// lines 199-227.
-///
-/// # Arguments
-/// * `salt_spec` - The requested salt length sentinel.
-/// * `hlen`      - The output length of the message hash.
-/// * `emlen`     - The encoded-message length in bytes (after MSB adjust).
-///
-/// # Returns
-/// The resolved salt length in bytes.
-fn resolve_salt_len_encode(
-    salt_spec: PssSaltLength,
-    hlen: usize,
-    emlen: usize,
-) -> CryptoResult<usize> {
-    let max_salt = emlen
-        .checked_sub(hlen)
-        .and_then(|v| v.checked_sub(2))
-        .ok_or(RsaError::DataTooLargeForKeySize)?;
-
-    match salt_spec {
-        PssSaltLength::Digest => {
-            if hlen > max_salt {
-                return Err(RsaError::DataTooLargeForKeySize.into());
-            }
-            Ok(hlen)
-        }
-        PssSaltLength::Auto | PssSaltLength::Max => Ok(max_salt),
-        PssSaltLength::AutoDigestMax => Ok(core::cmp::min(hlen, max_salt)),
-        PssSaltLength::Custom(n) => {
-            if n > max_salt {
-                return Err(RsaError::DataTooLargeForKeySize.into());
-            }
-            Ok(n)
+            // RFC 8017 default per Appendix A.2.3.
+            digest: DigestAlgorithm::Sha1,
+            mgf1_digest: None,
+            salt_length: PssSaltLength::DigestLength,
+            trailer_field: 1,
         }
     }
 }
 
-/// Encode a message using EMSA-PSS-Encode per RFC 8017 §9.1.1.
+// =============================================================================
+// PKCS#1 v1.5 signature support
+// =============================================================================
+
+/// PKCS#1 v1.5 signature parameter bundle (RSASSA-PKCS1-v1_5).
 ///
-/// Translates `ossl_rsa_padding_add_PKCS1_PSS_mgf1` from
-/// `crypto/rsa/rsa_pss.c` lines 173-289.
+/// Used for legacy `RSA_sign` / `RSA_verify` operations that prepend a
+/// DER-encoded `DigestInfo` structure to the message digest before the
+/// RSA private key operation.
 ///
-/// # Arguments
-/// * `em`        - Output buffer of length `emlen` (`= ceil((modBits-1)/8)`).
-/// * `mhash`     - Message hash digest.
-/// * `hash_alg`  - Hash function used to compute `mhash`.
-/// * `mgf1_hash` - MGF1 inner hash function. If `None`, defaults to `hash_alg`.
-/// * `salt_spec` - Salt length specification.
-/// * `mod_bits`  - Modulus size in bits (so that EM fits in `mod_bits - 1` bits).
-fn emsa_pss_encode(
-    em: &mut [u8],
-    mhash: &[u8],
-    hash_alg: DigestAlgorithm,
-    mgf1_hash: Option<DigestAlgorithm>,
-    salt_spec: PssSaltLength,
-    mod_bits: u32,
-) -> CryptoResult<()> {
-    let hlen = hash_alg.digest_size();
-    if mhash.len() != hlen {
-        return Err(CryptoError::Encoding(format!(
-            "EMSA-PSS-Encode: mHash length {} != digest size {}",
-            mhash.len(),
-            hlen
-        )));
-    }
-    let mgf1md = mgf1_hash.unwrap_or(hash_alg);
-
-    // Step: msbits = (modBits - 1) & 7; if msbits == 0, EM[0] is set to 0 and
-    // all PSS work happens in EM[1..].
-    let msbits = ((mod_bits
-        .checked_sub(1)
-        .ok_or(RsaError::DataTooLargeForKeySize)?)
-        & 0x7) as u8;
-    let total_emlen = em.len();
-
-    let (em_offset, emlen) = if msbits == 0 {
-        // Force the leading byte to zero so the integer fits in (modBits - 1) bits.
-        em[0] = 0;
-        (
-            1usize,
-            total_emlen
-                .checked_sub(1)
-                .ok_or(RsaError::DataTooLargeForKeySize)?,
-        )
-    } else {
-        (0usize, total_emlen)
-    };
-
-    if emlen
-        < hlen
-            .checked_add(2)
-            .ok_or(RsaError::DataTooLargeForKeySize)?
-    {
-        return Err(RsaError::DataTooLargeForKeySize.into());
-    }
-
-    // Resolve sLen.
-    let slen = resolve_salt_len_encode(salt_spec, hlen, emlen)?;
-
-    // maskedDBLen = emLen - hLen - 1
-    let masked_db_len = emlen
-        .checked_sub(hlen)
-        .and_then(|v| v.checked_sub(1))
-        .ok_or(RsaError::DataTooLargeForKeySize)?;
-
-    // Generate random salt.
-    let mut salt: Vec<u8> = vec![0u8; slen];
-    if slen > 0 {
-        rand_bytes(&mut salt[..])?;
-    }
-
-    // Compute H = Hash(0x00..00 (8 bytes) || mHash || salt).
-    let mut ctx = create_digest(hash_alg)?;
-    let zeroes = [0u8; 8];
-    ctx.update(&zeroes)?;
-    ctx.update(mhash)?;
-    ctx.update(&salt)?;
-    let h = ctx.finalize()?;
-    if h.len() != hlen {
-        salt.zeroize();
-        return Err(CryptoError::Encoding(format!(
-            "EMSA-PSS-Encode: H length {} != hlen {}",
-            h.len(),
-            hlen
-        )));
-    }
-
-    // Compute dbMask = MGF1(H, maskedDBLen) directly into the maskedDB region
-    // of EM. Layout of EM (from offset em_offset):
-    //   [0 .. masked_db_len)       == maskedDB
-    //   [masked_db_len .. emlen-1) == H
-    //   [emlen-1]                  == 0xBC
-    let db_start = em_offset;
-    let h_start = em_offset
-        .checked_add(masked_db_len)
-        .ok_or(RsaError::DataTooLargeForKeySize)?;
-    let trailer_idx = em_offset
-        .checked_add(emlen)
-        .and_then(|v| v.checked_sub(1))
-        .ok_or(RsaError::DataTooLargeForKeySize)?;
-
-    // Generate the mask into the DB region.
-    pkcs1_mgf1(&mut em[db_start..db_start + masked_db_len], &h, mgf1md)?;
-
-    // XOR DB into the mask in-place. DB is laid out as:
-    //   PS (zeros) of length (masked_db_len - slen - 1)
-    //   0x01 (1 byte)
-    //   salt (sLen bytes)
-    let ps_len = masked_db_len
-        .checked_sub(slen)
-        .and_then(|v| v.checked_sub(1))
-        .ok_or(RsaError::DataTooLargeForKeySize)?;
-
-    // PS bytes: XOR with 0 → no change.
-    // 0x01 separator:
-    em[db_start + ps_len] ^= 0x01;
-    // salt:
-    for i in 0..slen {
-        em[db_start + ps_len + 1 + i] ^= salt[i];
-    }
-
-    // Mask off leading bits to fit in (modBits - 1) bits.
-    if msbits != 0 {
-        em[db_start] &= 0xFFu8 >> (8 - msbits);
-    }
-
-    // Place H.
-    em[h_start..h_start + hlen].copy_from_slice(&h);
-
-    // Trailer byte.
-    em[trailer_idx] = PSS_TRAILER_BYTE;
-
-    // Securely cleanse salt.
-    salt.zeroize();
-
-    trace!(
-        "EMSA-PSS-Encode: hash={:?}, mgf1={:?}, sLen={}, emLen={}, msbits={}",
-        hash_alg,
-        mgf1md,
-        slen,
-        emlen,
-        msbits
-    );
-
-    Ok(())
+/// This struct only holds the digest algorithm because PKCS#1 v1.5
+/// signatures have no other tunable parameters — unlike PSS, there is
+/// no salt and no MGF.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pkcs1v15SignParams {
+    /// Hash algorithm whose digest is being signed.
+    pub digest: DigestAlgorithm,
 }
 
-// -----------------------------------------------------------------------------
-// EMSA-PSS-Verify — RFC 8017 §9.1.2
-// -----------------------------------------------------------------------------
-
-/// Verify a message-encoded representative using EMSA-PSS-Verify per RFC 8017
-/// §9.1.2.
-///
-/// Translates `ossl_rsa_verify_PKCS1_PSS_mgf1` from `crypto/rsa/rsa_pss.c`
-/// lines 45-156.
-///
-/// # Arguments
-/// * `em`        - Encoded message representative recovered from the signature.
-/// * `mhash`     - Expected message hash digest (already computed).
-/// * `hash_alg`  - Hash function used to compute `mhash`.
-/// * `mgf1_hash` - MGF1 inner hash function. If `None`, defaults to `hash_alg`.
-/// * `salt_spec` - Salt length specification (or [`PssSaltLength::Auto`] to
-///   recover from the signature).
-/// * `mod_bits`  - Modulus size in bits.
-///
-/// # Returns
-/// `Ok(salt_len)` if the signature is valid, else `Err`.
-fn emsa_pss_verify(
-    em: &[u8],
-    mhash: &[u8],
-    hash_alg: DigestAlgorithm,
-    mgf1_hash: Option<DigestAlgorithm>,
-    salt_spec: PssSaltLength,
-    mod_bits: u32,
-) -> CryptoResult<usize> {
-    let hlen = hash_alg.digest_size();
-    if mhash.len() != hlen {
-        return Err(CryptoError::Encoding(format!(
-            "EMSA-PSS-Verify: mHash length {} != digest size {}",
-            mhash.len(),
-            hlen
-        )));
-    }
-    let mgf1md = mgf1_hash.unwrap_or(hash_alg);
-
-    let msbits = ((mod_bits
-        .checked_sub(1)
-        .ok_or(RsaError::DataTooLargeForKeySize)?)
-        & 0x7) as u8;
-    let total_emlen = em.len();
-
-    // Top-bits check: any bit beyond the leading msbits must be zero.
-    if msbits != 0 {
-        let top_mask: u8 = 0xFFu8 << msbits;
-        if em[0] & top_mask != 0 {
-            return Err(RsaError::FirstOctetInvalid.into());
-        }
-    } else if em[0] != 0 {
-        return Err(RsaError::FirstOctetInvalid.into());
-    }
-
-    let (em_offset, emlen) = if msbits == 0 {
-        (
-            1usize,
-            total_emlen
-                .checked_sub(1)
-                .ok_or(RsaError::DataTooLargeForKeySize)?,
-        )
-    } else {
-        (0usize, total_emlen)
-    };
-
-    if emlen
-        < hlen
-            .checked_add(2)
-            .ok_or(RsaError::DataTooLargeForKeySize)?
-    {
-        return Err(RsaError::DataTooLargeForKeySize.into());
-    }
-
-    let trailer_idx = em_offset
-        .checked_add(emlen)
-        .and_then(|v| v.checked_sub(1))
-        .ok_or(RsaError::DataTooLargeForKeySize)?;
-    if em[trailer_idx] != PSS_TRAILER_BYTE {
-        return Err(CryptoError::Verification(
-            "EMSA-PSS-Verify: trailer byte != 0xBC".to_string(),
-        ));
-    }
-
-    let masked_db_len = emlen
-        .checked_sub(hlen)
-        .and_then(|v| v.checked_sub(1))
-        .ok_or(RsaError::DataTooLargeForKeySize)?;
-    let db_start = em_offset;
-    let h_start = em_offset
-        .checked_add(masked_db_len)
-        .ok_or(RsaError::DataTooLargeForKeySize)?;
-
-    // Allocate db buffer = MGF1(H, maskedDBLen) ⊕ EM[masked_db_region]
-    let mut db: Vec<u8> = vec![0u8; masked_db_len];
-    pkcs1_mgf1(&mut db, &em[h_start..h_start + hlen], mgf1md)?;
-
-    for i in 0..masked_db_len {
-        db[i] ^= em[db_start + i];
-    }
-
-    // Mask off leading bits to fit in (modBits - 1) bits.
-    if msbits != 0 {
-        db[0] &= 0xFFu8 >> (8 - msbits);
-    }
-
-    // Locate the 0x01 separator. The DB layout is:
-    //   PS (zeros) || 0x01 || salt
-    let mut i: usize = 0;
-    while i < masked_db_len && db[i] == 0 {
-        i = i.saturating_add(1);
-    }
-    if i >= masked_db_len || db[i] != 0x01 {
-        return Err(CryptoError::Verification(
-            "EMSA-PSS-Verify: 0x01 separator not found".to_string(),
-        ));
-    }
-    let salt_offset = i.checked_add(1).ok_or(RsaError::DataTooLargeForKeySize)?;
-    let recovered_slen = masked_db_len
-        .checked_sub(salt_offset)
-        .ok_or(RsaError::DataTooLargeForKeySize)?;
-
-    // Salt-length policy enforcement.
-    match salt_spec {
-        PssSaltLength::Auto | PssSaltLength::AutoDigestMax => {
-            // Accept any salt length; AutoDigestMax additionally checks a cap.
-            if matches!(salt_spec, PssSaltLength::AutoDigestMax) && recovered_slen > hlen {
-                return Err(RsaError::SaltLengthCheckFailed.into());
-            }
-        }
-        PssSaltLength::Digest => {
-            if recovered_slen != hlen {
-                return Err(RsaError::SaltLengthCheckFailed.into());
-            }
-        }
-        PssSaltLength::Max => {
-            // Max means salt fills all remaining space — caller may want to
-            // verify there were no PS bytes; but RFC 8017 does not mandate
-            // this. We accept any recovered length here.
-        }
-        PssSaltLength::Custom(expected) => {
-            if recovered_slen != expected {
-                return Err(RsaError::SaltLengthCheckFailed.into());
-            }
-        }
-    }
-
-    // Recompute H' = Hash(0x00..00 || mHash || salt) and compare.
-    let salt = &db[salt_offset..masked_db_len];
-    let mut ctx = create_digest(hash_alg)?;
-    let zeroes = [0u8; 8];
-    ctx.update(&zeroes)?;
-    ctx.update(mhash)?;
-    ctx.update(salt)?;
-    let h_prime = ctx.finalize()?;
-
-    let valid = constant_time::memcmp(&h_prime, &em[h_start..h_start + hlen]);
-
-    // Securely cleanse the recovered DB.
-    db.zeroize();
-
-    if valid {
-        debug!(
-            "EMSA-PSS-Verify OK: hash={:?}, mgf1={:?}, sLen={}",
-            hash_alg, mgf1md, recovered_slen
-        );
-        Ok(recovered_slen)
-    } else {
-        Err(CryptoError::Verification(
-            "EMSA-PSS-Verify: hash mismatch".to_string(),
-        ))
+impl Pkcs1v15SignParams {
+    /// Constructs a new parameter bundle for the given digest.
+    pub const fn new(digest: DigestAlgorithm) -> Self {
+        Self { digest }
     }
 }
 
 // -----------------------------------------------------------------------------
-// Public API: pss_sign / pss_verify
+// DigestInfo prefix tables (mirrors `crypto/rsa/rsa_sign.c` lines 40-200)
 // -----------------------------------------------------------------------------
+//
+// These constant byte arrays are the DER-encoded `DigestInfo` ASN.1
+// structures *minus* the hash bytes themselves. The C header file
+// pre-encodes these as `static const unsigned char` arrays via the
+// `ENCODE_DIGESTINFO_SHA` and `ENCODE_DIGESTINFO_MD` macros and exports
+// them through `ossl_rsa_digestinfo_encoding()`.
+//
+// ASN.1 type byte references:
+//   ASN1_SEQUENCE      = 0x30
+//   ASN1_OID           = 0x06
+//   ASN1_NULL          = 0x05
+//   ASN1_OCTET_STRING  = 0x04
+//
+// For each algorithm the format is:
+//   SEQUENCE {
+//     SEQUENCE {
+//       OID <hash algorithm>,
+//       NULL
+//     },
+//     OCTET STRING <hash bytes — appended at runtime>
+//   }
+//
+// The byte sequence ends with `[0x04, <hash_len>]` so the caller can
+// concatenate `prefix || hash` to get the full DigestInfo.
 
-/// Sign a message hash using RSASSA-PSS per RFC 8017 §8.1.1.
+/// SHA-1 `DigestInfo` DER prefix (15 bytes, OID 1.3.14.3.2.26).
+const DIGEST_INFO_SHA1: &[u8] = &[
+    0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14,
+];
+
+/// SHA-224 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.4).
+const DIGEST_INFO_SHA224: &[u8] = &[
+    0x30, 0x2d, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x04, 0x05,
+    0x00, 0x04, 0x1c,
+];
+
+/// SHA-256 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.1).
+const DIGEST_INFO_SHA256: &[u8] = &[
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+    0x00, 0x04, 0x20,
+];
+
+/// SHA-384 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.2).
+const DIGEST_INFO_SHA384: &[u8] = &[
+    0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02, 0x05,
+    0x00, 0x04, 0x30,
+];
+
+/// SHA-512 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.3).
+const DIGEST_INFO_SHA512: &[u8] = &[
+    0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
+    0x00, 0x04, 0x40,
+];
+
+/// SHA-512/224 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.5).
+/// Output size matches SHA-224 (28 bytes).
+const DIGEST_INFO_SHA512_224: &[u8] = &[
+    0x30, 0x2d, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x05, 0x05,
+    0x00, 0x04, 0x1c,
+];
+
+/// SHA-512/256 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.6).
+/// Output size matches SHA-256 (32 bytes).
+const DIGEST_INFO_SHA512_256: &[u8] = &[
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x06, 0x05,
+    0x00, 0x04, 0x20,
+];
+
+/// SHA3-224 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.7).
+const DIGEST_INFO_SHA3_224: &[u8] = &[
+    0x30, 0x2d, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x07, 0x05,
+    0x00, 0x04, 0x1c,
+];
+
+/// SHA3-256 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.8).
+const DIGEST_INFO_SHA3_256: &[u8] = &[
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x08, 0x05,
+    0x00, 0x04, 0x20,
+];
+
+/// SHA3-384 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.9).
+const DIGEST_INFO_SHA3_384: &[u8] = &[
+    0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x09, 0x05,
+    0x00, 0x04, 0x30,
+];
+
+/// SHA3-512 `DigestInfo` DER prefix (19 bytes, OID 2.16.840.1.101.3.4.2.10).
+const DIGEST_INFO_SHA3_512: &[u8] = &[
+    0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0a, 0x05,
+    0x00, 0x04, 0x40,
+];
+
+/// MD5 `DigestInfo` DER prefix (18 bytes, OID 1.2.840.113549.2.5).
+const DIGEST_INFO_MD5: &[u8] = &[
+    0x30, 0x20, 0x30, 0x0c, 0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x05, 0x05, 0x00,
+    0x04, 0x10,
+];
+
+/// MD2 `DigestInfo` DER prefix (18 bytes, OID 1.2.840.113549.2.2).
+const DIGEST_INFO_MD2: &[u8] = &[
+    0x30, 0x20, 0x30, 0x0c, 0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x02, 0x05, 0x00,
+    0x04, 0x10,
+];
+
+/// MD4 `DigestInfo` DER prefix (18 bytes).
 ///
-/// Composes EMSA-PSS-Encode (RFC 8017 §9.1.1) with the RSA private-key
-/// operation. The encoded message representative `EM` is treated as a
-/// big-endian integer `m`, raised to the private exponent modulo `n`, and the
-/// resulting integer is encoded back to a fixed-length byte string `s` of
-/// length `k = ceil(modBits / 8)`.
+/// Note: the OID's final octet is `0x03`, mirroring the
+/// `ENCODE_DIGESTINFO_MD(md4, 0x03, ...)` macro invocation from
+/// `crypto/rsa/rsa_sign.c` line 104. This deviates from RFC 1320
+/// (which assigns MD4 the OID 1.2.840.113549.2.4) but matches what
+/// the upstream OpenSSL implementation emits on the wire — required
+/// for behavioral parity with existing FFI consumers.
+const DIGEST_INFO_MD4: &[u8] = &[
+    0x30, 0x20, 0x30, 0x0c, 0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x03, 0x05, 0x00,
+    0x04, 0x10,
+];
+
+/// MDC-2 `DigestInfo` DER prefix (14 bytes, OID 2.5.8.3.101).
+const DIGEST_INFO_MDC2: &[u8] = &[
+    0x30, 0x1c, 0x30, 0x08, 0x06, 0x04, 0x55, 0x08, 0x03, 0x65, 0x05, 0x00, 0x04, 0x10,
+];
+
+/// RIPEMD-160 `DigestInfo` DER prefix (15 bytes, OID 1.3.36.3.2.1).
+const DIGEST_INFO_RIPEMD160: &[u8] = &[
+    0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x24, 0x03, 0x02, 0x01, 0x05, 0x00, 0x04, 0x14,
+];
+
+/// SM3 `DigestInfo` DER prefix (18 bytes, OID 1.2.156.10197.1.401).
+const DIGEST_INFO_SM3: &[u8] = &[
+    0x30, 0x30, 0x30, 0x0c, 0x06, 0x08, 0x2a, 0x81, 0x1c, 0xcf, 0x55, 0x01, 0x83, 0x78, 0x05, 0x00,
+    0x04, 0x20,
+];
+
+/// Returns the DER-encoded `DigestInfo` prefix bytes for the given hash
+/// algorithm, or `None` if the algorithm has no defined PKCS#1 v1.5
+/// encoding.
 ///
-/// # Arguments
-/// * `key`    - RSA private key.
-/// * `mhash`  - Message hash digest.
-/// * `params` - PSS parameter bundle.
+/// The caller appends `digest.digest_size()` bytes of hash output to the
+/// returned prefix to form the complete `DigestInfo` to be RSA-signed.
 ///
-/// # Returns
-/// The signature `s` as a `k`-byte big-endian octet string.
+/// Mirrors the switch in `ossl_rsa_digestinfo_encoding(int md_nid, ...)`
+/// from `crypto/rsa/rsa_sign.c` lines 145-200.
+pub fn digest_info_prefix(digest: DigestAlgorithm) -> Option<&'static [u8]> {
+    match digest {
+        DigestAlgorithm::Sha1 => Some(DIGEST_INFO_SHA1),
+        DigestAlgorithm::Sha224 => Some(DIGEST_INFO_SHA224),
+        DigestAlgorithm::Sha256 => Some(DIGEST_INFO_SHA256),
+        DigestAlgorithm::Sha384 => Some(DIGEST_INFO_SHA384),
+        DigestAlgorithm::Sha512 => Some(DIGEST_INFO_SHA512),
+        DigestAlgorithm::Sha512_224 => Some(DIGEST_INFO_SHA512_224),
+        DigestAlgorithm::Sha512_256 => Some(DIGEST_INFO_SHA512_256),
+        DigestAlgorithm::Sha3_224 => Some(DIGEST_INFO_SHA3_224),
+        DigestAlgorithm::Sha3_256 => Some(DIGEST_INFO_SHA3_256),
+        DigestAlgorithm::Sha3_384 => Some(DIGEST_INFO_SHA3_384),
+        DigestAlgorithm::Sha3_512 => Some(DIGEST_INFO_SHA3_512),
+        DigestAlgorithm::Md5 => Some(DIGEST_INFO_MD5),
+        DigestAlgorithm::Md2 => Some(DIGEST_INFO_MD2),
+        DigestAlgorithm::Md4 => Some(DIGEST_INFO_MD4),
+        DigestAlgorithm::Mdc2 => Some(DIGEST_INFO_MDC2),
+        DigestAlgorithm::Ripemd160 => Some(DIGEST_INFO_RIPEMD160),
+        DigestAlgorithm::Sm3 => Some(DIGEST_INFO_SM3),
+        // No standard PKCS#1 v1.5 DigestInfo encoding for these:
+        DigestAlgorithm::Md5Sha1
+        | DigestAlgorithm::Whirlpool
+        | DigestAlgorithm::Shake128
+        | DigestAlgorithm::Shake256
+        | DigestAlgorithm::Blake2b256
+        | DigestAlgorithm::Blake2b512
+        | DigestAlgorithm::Blake2s256 => None,
+    }
+}
+
+// =============================================================================
+// EMSA-PSS — salt length resolution helper (encode side)
+// =============================================================================
+
+/// Resolves the salt length in bytes for the encoding (signing) side of
+/// EMSA-PSS, mirroring the C sentinel handling at `rsa_pss.c` lines 198-238.
+///
+/// This helper is module-private and consumed by both [`PssParams::
+/// resolve_salt_length`] and [`pss_encode`]. The verification side uses a
+/// different resolution path because [`PssSaltLength::Auto`] and
+/// [`PssSaltLength::AutoDigestMax`] mean *recover from the signature*
+/// rather than *use the maximum*.
+///
+/// # Algorithm (RFC 8017 §9.1.1 / OpenSSL `rsa_pss.c`):
+///
+/// | Variant            | Resolved length                                 |
+/// |--------------------|-------------------------------------------------|
+/// | `DigestLength`     | `hash_len`                                      |
+/// | `Auto`             | `em_len - hash_len - 2` (same as `Max`)         |
+/// | `Max`              | `em_len - hash_len - 2`                         |
+/// | `AutoDigestMax`    | `min(em_len - hash_len - 2, hash_len)`          |
+/// | `Fixed(n)`         | `n` if `n <= em_len - hash_len - 2`, else error |
 ///
 /// # Errors
-/// - [`RsaError::KeyTooSmall`] if the key cannot accommodate `hLen + sLen + 2`.
-/// - [`CryptoError::Encoding`] for malformed `mhash`.
-/// - [`CryptoError::Common`] propagated from `BigNum` modular operations.
-pub fn pss_sign(key: &RsaPrivateKey, mhash: &[u8], params: PssParams) -> CryptoResult<Vec<u8>> {
-    let mod_bits = key.key_size_bits();
-    let k = key.key_size_bytes() as usize;
+///
+/// Returns [`PssError::DataTooLargeForKeySize`] (mapped to
+/// [`CryptoError::Encoding`]) when:
+///   * `em_len < hash_len + 2` — modulus too small for any PSS encoding, or
+///   * an explicit `Fixed(n)` exceeds the maximum permitted by the modulus.
+///
+/// # Rule R6 — Lossless Casts
+///
+/// All length arithmetic uses `checked_sub` to guard against modulus values
+/// that would underflow `usize`.
+fn resolve_salt_len_encode(
+    salt: PssSaltLength,
+    em_len: usize,
+    hash_len: usize,
+) -> CryptoResult<usize> {
+    // Precondition shared by every variant: the EM block must hold at
+    // least the hash output and the trailer (`0xBC`) plus the leading
+    // `0x01` separator.  Equivalent to the C check
+    // `if (emLen < hLen + 2) goto err;` at `rsa_pss.c:228`.
+    let max_salt = em_len
+        .checked_sub(hash_len)
+        .and_then(|v| v.checked_sub(2))
+        .ok_or_else(|| CryptoError::from(PssError::DataTooLargeForKeySize))?;
 
-    // emLen = ceil((modBits - 1) / 8) ; k = ceil(modBits / 8). When (modBits-1)
-    // is a multiple of 8, emLen = k - 1. Otherwise emLen = k.
-    let emlen = if mod_bits % 8 == 0 {
-        k.checked_sub(1).ok_or(RsaError::KeyTooSmall {
-            min_bits: 512,
-            actual_bits: mod_bits,
-        })?
-    } else {
-        k
-    };
+    match salt {
+        // -1 ⇒ sLen = hLen
+        PssSaltLength::DigestLength => Ok(hash_len),
 
-    let mut em: Vec<u8> = vec![0u8; emlen];
-    emsa_pss_encode(
-        &mut em,
-        mhash,
-        params.hash,
-        params.mgf1_hash,
-        params.salt_len,
-        mod_bits,
-    )?;
+        // -2 / -3 ⇒ maximize.  C source maps `MAX_SIGN`/`AUTO`/`MAX`
+        // all to `RSA_PSS_SALTLEN_MAX` before the size check.
+        PssSaltLength::Auto | PssSaltLength::Max => Ok(max_salt),
 
-    // Convert EM to BigNum, perform private-key exponentiation, encode to
-    // k-byte big-endian.
-    let m = BigNum::from_bytes_be(&em);
-    em.zeroize();
+        // -4 ⇒ FIPS 186-4 default: maximize, but cap at hLen so the
+        // resulting encoding stays within the bound `0 <= sLen <= hLen`
+        // mandated by FIPS.  C source: `if (sLenMax >= 0 && sLen >
+        // sLenMax) sLen = sLenMax;`
+        PssSaltLength::AutoDigestMax => Ok(max_salt.min(hash_len)),
 
-    let n = key.modulus();
-    if m.cmp(n) != core::cmp::Ordering::Less {
-        return Err(RsaError::DataTooLargeForKeySize.into());
+        // Explicit value: must fit the modulus.
+        PssSaltLength::Fixed(n) => {
+            if n > max_salt {
+                Err(CryptoError::from(PssError::DataTooLargeForKeySize))
+            } else {
+                Ok(n)
+            }
+        }
     }
-
-    // Compute s = m^d mod n via CRT-accelerated modular exponentiation.
-    // Note: super::crt_mod_exp takes (input, key) — opposite of what we'd write.
-    let s = super::crt_mod_exp(&m, key)?;
-
-    // Encode s to a k-byte big-endian octet string.
-    let signature = s.to_bytes_be_padded(k).map_err(|_| {
-        CryptoError::Encoding("RSA-PSS sign: signature encoding failed".to_string())
-    })?;
-
-    debug!(
-        "RSA-PSS sign: bits={}, hash={:?}, sLen={:?}",
-        mod_bits, params.hash, params.salt_len
-    );
-
-    Ok(signature)
 }
 
-/// Verify a RSASSA-PSS signature per RFC 8017 §8.1.2.
+// =============================================================================
+// EMSA-PSS — encode (sign side)
+// =============================================================================
+
+/// Eight zero bytes prepended to `mHash` during the `M'` construction
+/// (RFC 8017 §9.1.1 step 5):
+///
+/// ```text
+/// M' = (0x)00 00 00 00 00 00 00 00 || mHash || salt
+/// ```
+///
+/// Mirrors the C constant `static const unsigned char zeroes[] = {0,0,...}`
+/// declared at the top of `rsa_pss.c`.
+const PSS_M_PRIME_PREFIX: [u8; 8] = [0u8; 8];
+
+/// EMSA-PSS encoding per RFC 8017 §9.1.1.
+///
+/// Translates `ossl_rsa_padding_add_PKCS1_PSS_mgf1()` from `crypto/rsa/
+/// rsa_pss.c` lines 173-282.  Produces an encoded message `EM` of length
+/// `ceil(emBits / 8)` bytes which can then be turned into a signature via
+/// the RSA private-key primitive.
 ///
 /// # Arguments
-/// * `key`       - RSA public key.
-/// * `mhash`     - Message hash digest.
-/// * `signature` - Candidate signature octet string.
-/// * `params`    - PSS parameter bundle.
 ///
-/// # Returns
-/// `Ok(salt_len)` indicating verification success and the recovered salt
-/// length, otherwise an `Err` describing the failure reason.
-pub fn pss_verify(
-    key: &RsaPublicKey,
-    mhash: &[u8],
-    signature: &[u8],
-    params: PssParams,
-) -> CryptoResult<usize> {
-    let mod_bits = key.key_size_bits();
-    let k = key.key_size_bytes() as usize;
+/// * `em` — output buffer of length **exactly** `ceil(em_bits / 8)`.
+///   Filled with the encoded message.
+/// * `em_bits` — intended length of `EM` in bits, **typically
+///   `modBits - 1`** where `modBits` is the bit-length of the RSA modulus.
+/// * `m_hash` — the message hash `Hash(M)`. Must be exactly
+///   `params.digest.digest_size()` bytes.
+/// * `params` — PSS parameter bundle (digest, MGF1 digest, salt length,
+///   trailer byte).
+///
+/// # Errors
+///
+/// * [`PssError::InvalidPssParameters`] — `params` invalid (e.g. trailer
+///   field not `1`, zero-size digest selected).
+/// * [`PssError::DataTooLargeForKeySize`] — `em` too short for the chosen
+///   parameter set (`emLen < hLen + sLen + 2`).
+/// * [`PssError::PssVerificationFailed`] — `m_hash` length differs from
+///   the digest size (caller bug).
+///
+/// # RFC 8017 §9.1.1 algorithm
+///
+/// ```text
+/// 1.  if mHash.len() != hLen, error
+/// 2.  if emLen < hLen + sLen + 2, error
+/// 3.  generate random salt of sLen bytes
+/// 4.  M' = 0x00 00 00 00 00 00 00 00 || mHash || salt
+/// 5.  H  = Hash(M')
+/// 6.  PS = (emLen − sLen − hLen − 2) zero bytes
+/// 7.  DB = PS || 0x01 || salt
+/// 8.  dbMask = MGF1(H, emLen − hLen − 1)
+/// 9.  maskedDB = DB XOR dbMask
+/// 10. clear leftmost (8 · emLen − emBits) bits of maskedDB[0]
+/// 11. EM = maskedDB || H || 0xBC
+/// ```
+///
+/// # Security Notes
+///
+/// * The salt is generated with the cryptographic DRBG via
+///   [`crate::rand::rand_bytes`] and is zeroized after use per
+///   AAP §0.7.6.
+/// * `M'`, `dbMask`, and the salt buffer are all passed through
+///   [`Zeroize::zeroize`] before they leave scope.
+pub fn pss_encode(
+    em: &mut [u8],
+    em_bits: usize,
+    m_hash: &[u8],
+    params: &PssParams,
+) -> CryptoResult<()> {
+    // -----------------------------------------------------------------
+    // Step 0 — parameter validation (rsa_pss.c:184-218 sentinel handling)
+    // -----------------------------------------------------------------
+    params.validate()?;
 
-    if signature.len() != k {
-        return Err(CryptoError::Verification(format!(
-            "RSA-PSS verify: signature length {} != k {}",
-            signature.len(),
-            k
-        )));
+    let hash_alg = params.digest;
+    let mgf1_alg = params.effective_mgf1_digest();
+    let h_len = hash_alg.digest_size();
+
+    // Caller bug if the hash slice does not match the announced digest
+    // size — every legitimate caller funnels `m_hash` through
+    // `hash::digest()` whose output length is exactly `hash.digest_size()`.
+    if m_hash.len() != h_len {
+        return Err(CryptoError::from(PssError::InvalidPssParameters));
     }
 
-    let s = BigNum::from_bytes_be(signature);
-    let n = key.modulus();
-    if s.cmp(n) != core::cmp::Ordering::Less {
-        return Err(CryptoError::Verification(
-            "RSA-PSS verify: signature representative >= n".to_string(),
-        ));
-    }
+    // -----------------------------------------------------------------
+    // Step 1 — compute the leftmost-bit mask (`MSBits`) and adjust EM.
+    //
+    // `em_bits` represents the intended bit length of EM, which is one
+    // less than the modulus bit-length.  When `em_bits` is a multiple
+    // of 8 we have `MSBits = 0` and the C code prepends a `0x00` byte
+    // before continuing with `emLen-1` octets of "real" EM.
+    // -----------------------------------------------------------------
+    // Rule R6: `em_bits & 0x7` always fits a `u8`; we keep it as `u32`
+    // for the arithmetic below.
+    let ms_bits: u32 = u32::try_from(em_bits & 0x7).unwrap_or(0);
+    let full_em_len = em.len();
 
-    // Compute m = s^e mod n.
-    let m = montgomery::mod_exp(&s, key.public_exponent(), n)?;
-
-    let emlen = if mod_bits % 8 == 0 {
-        k.checked_sub(1).ok_or(CryptoError::Verification(
-            "RSA-PSS verify: degenerate emLen".to_string(),
-        ))?
+    // emLen as defined in RFC 8017 = ceil(em_bits / 8) = full_em_len
+    // when MSBits != 0, or full_em_len - 1 when MSBits == 0 (the leading
+    // 0x00 has already been counted in `em.len()`).
+    let (em_slice, em_len): (&mut [u8], usize) = if ms_bits == 0 {
+        if full_em_len == 0 {
+            return Err(CryptoError::from(PssError::DataTooLargeForKeySize));
+        }
+        em[0] = 0;
+        let (_lead, rest) = em.split_at_mut(1);
+        let len = rest.len();
+        (rest, len)
     } else {
-        k
+        let len = full_em_len;
+        (em, len)
     };
 
-    let em = m
-        .to_bytes_be_padded(emlen)
-        .map_err(|_| CryptoError::Verification("RSA-PSS verify: EM encoding failed".to_string()))?;
+    // -----------------------------------------------------------------
+    // Step 2 — resolve the salt length (rsa_pss.c:228-238)
+    // -----------------------------------------------------------------
+    if em_len < h_len.saturating_add(2) {
+        return Err(CryptoError::from(PssError::DataTooLargeForKeySize));
+    }
+    let s_len = resolve_salt_len_encode(params.salt_length, em_len, h_len)?;
 
-    let recovered_slen = emsa_pss_verify(
-        &em,
-        mhash,
-        params.hash,
-        params.mgf1_hash,
-        params.salt_len,
-        mod_bits,
-    )?;
+    // -----------------------------------------------------------------
+    // Step 3 — generate the random salt (rsa_pss.c:241-247)
+    // -----------------------------------------------------------------
+    let mut salt: Vec<u8> = vec![0u8; s_len];
+    if s_len > 0 {
+        rand_bytes(&mut salt)?;
+    }
 
-    Ok(recovered_slen)
+    // -----------------------------------------------------------------
+    // Step 4 — compute H = Hash(0x00...00 || mHash || salt)
+    //   (rsa_pss.c:248-258)
+    // -----------------------------------------------------------------
+    // maskedDBLen = emLen − hLen − 1
+    let masked_db_len = em_len
+        .checked_sub(h_len)
+        .and_then(|v| v.checked_sub(1))
+        .ok_or_else(|| CryptoError::from(PssError::DataTooLargeForKeySize))?;
+
+    let mut h_buf: Vec<u8> = {
+        let mut ctx: Box<dyn Digest> = create_digest(hash_alg)?;
+        ctx.update(&PSS_M_PRIME_PREFIX)?;
+        ctx.update(m_hash)?;
+        if s_len > 0 {
+            ctx.update(&salt)?;
+        }
+        ctx.finalize()?
+    };
+
+    if h_buf.len() != h_len {
+        // Defensive: digest implementations must produce `digest_size()`
+        // bytes.  If this ever fires we treat it as a parameter error.
+        h_buf.zeroize();
+        salt.zeroize();
+        return Err(CryptoError::from(PssError::InvalidPssParameters));
+    }
+
+    // -----------------------------------------------------------------
+    // Step 5 — generate dbMask in EM[0..maskedDBLen] via MGF1
+    //   (rsa_pss.c:260-262)
+    // -----------------------------------------------------------------
+    {
+        let (db_region, h_region) = em_slice.split_at_mut(masked_db_len);
+        // Copy H to its slot so subsequent steps can safely view it via
+        // the shared slice; we still hold the raw bytes in `h_buf` for
+        // potential debugging but those will be wiped at the end.
+        h_region[..h_len].copy_from_slice(&h_buf);
+        // MGF1(H, maskedDBLen) → dbMask.
+        mgf1(db_region, &h_buf, mgf1_alg)?;
+
+        // ---------------------------------------------------------
+        // Step 6 — XOR 0x01 marker and salt into the masked DB
+        //   (rsa_pss.c:266-274)
+        //
+        // PS is implicit (zeros XOR with mask = mask), so we only
+        // touch the trailing `1 + sLen` bytes of `db_region`.
+        // ---------------------------------------------------------
+        // Offset of the `0x01` marker = emLen − sLen − hLen − 2
+        let one_offset = em_len
+            .checked_sub(s_len)
+            .and_then(|v| v.checked_sub(h_len))
+            .and_then(|v| v.checked_sub(2))
+            .ok_or_else(|| CryptoError::from(PssError::DataTooLargeForKeySize))?;
+
+        // XOR the 0x01 separator
+        db_region[one_offset] ^= 0x01;
+
+        // XOR the salt bytes that follow the 0x01 marker
+        if s_len > 0 {
+            // BOUNDED: `one_offset + 1 + s_len == masked_db_len` by the
+            // size invariants we already checked (em_len ≥ s_len + h_len + 2).
+            // Note: `salt` was allocated with `vec![0u8; s_len]`, so its
+            // length is exactly `s_len` and `.iter().enumerate()` yields
+            // exactly the same `s_len` indices as the original `0..s_len`
+            // range-based loop while satisfying clippy::needless_range_loop.
+            let salt_offset = one_offset
+                .checked_add(1)
+                .ok_or_else(|| CryptoError::from(PssError::DataTooLargeForKeySize))?;
+            for (i, &salt_byte) in salt.iter().enumerate() {
+                let idx = salt_offset
+                    .checked_add(i)
+                    .ok_or_else(|| CryptoError::from(PssError::DataTooLargeForKeySize))?;
+                db_region[idx] ^= salt_byte;
+            }
+        }
+
+        // ---------------------------------------------------------
+        // Step 7 — clear leftmost (8·emLen − em_bits) bits in
+        //   maskedDB[0]  (rsa_pss.c:278-279)
+        //
+        // When MSBits == 0 the mask is `0xFF >> 8` which is 0,
+        // matching the C code which conditions this on MSBits.
+        // ---------------------------------------------------------
+        if ms_bits != 0 {
+            // BOUNDED: `8 - ms_bits` ranges 1..=7, so the right shift
+            // is well within the `u8` width.
+            let shift = 8u32.saturating_sub(ms_bits);
+            // Rule R6: shift only fits 0..=7; cast through `u8` after
+            // masking the lower nibble defensively.
+            let mask: u8 = 0xFFu8 >> (shift & 0x7);
+            db_region[0] &= mask;
+        }
+
+        // ---------------------------------------------------------
+        // Step 8 — set the trailer byte EM[emLen-1] = 0xBC
+        //   (rsa_pss.c:284-285)
+        // ---------------------------------------------------------
+        // BOUNDED: `em_len >= 2` so `em_len - 1` is in range.
+        let trailer_idx = em_len
+            .checked_sub(1)
+            .ok_or_else(|| CryptoError::from(PssError::DataTooLargeForKeySize))?;
+        h_region[trailer_idx - masked_db_len] = PSS_TRAILER_BYTE;
+    }
+
+    // -----------------------------------------------------------------
+    // Step 9 — secure cleanup of intermediate buffers
+    // -----------------------------------------------------------------
+    h_buf.zeroize();
+    salt.zeroize();
+
+    Ok(())
 }
 
-// -----------------------------------------------------------------------------
+// =============================================================================
+// EMSA-PSS — verify side
+// =============================================================================
+
+/// EMSA-PSS verification per RFC 8017 §9.1.2.
+///
+/// Translates `ossl_rsa_verify_PKCS1_PSS_mgf1()` from `crypto/rsa/rsa_pss.c`
+/// lines 44-160.  Given the encoded message recovered from a signature
+/// via the RSA public-key primitive, this function checks that the
+/// encoding is consistent with the supplied message hash.
+///
+/// # Arguments
+///
+/// * `em` — encoded message recovered from the signature.
+/// * `em_bits` — intended length of `EM` in bits (modBits − 1).
+/// * `m_hash` — the original message hash, exactly `digest.digest_size()`
+///   bytes.
+/// * `params` — PSS parameters used during signing.
+///
+/// # Errors
+///
+/// All failure modes from RFC 8017 §9.1.2 are surfaced as [`PssError`]
+/// variants:
+///
+/// * [`PssError::FirstOctetInvalid`]   — leftmost bit-mask check failed.
+/// * [`PssError::LastOctetInvalid`]    — trailer byte ≠ `0xBC`.
+/// * [`PssError::DataTooLargeForKeySize`] — `emLen < hLen + sLen + 2`.
+/// * [`PssError::SaltLengthCheckFailed`] — salt length does not match
+///   the explicitly requested length.
+/// * [`PssError::InvalidPadding`]      — leftmost bits of `DB[0]` not zero,
+///   or PS bytes corrupted, or `0x01` separator missing.
+/// * [`PssError::PssVerificationFailed`] — final hash mismatch.
+///
+/// # Constant-Time Guarantees
+///
+/// The H ?= H′ comparison uses [`openssl_common::constant_time::memcmp`]
+/// (a wrapper around `subtle::ConstantTimeEq`), preventing timing-based
+/// signature forgery.  Earlier checks (trailer byte, leftmost bits, PS
+/// scan) are *not* constant-time; they cannot be because they short-circuit
+/// on structural validity rather than on secret-dependent data.  This
+/// matches the behaviour of OpenSSL's C reference.
+pub fn pss_verify(
+    em: &[u8],
+    em_bits: usize,
+    m_hash: &[u8],
+    params: &PssParams,
+) -> CryptoResult<()> {
+    // -----------------------------------------------------------------
+    // Step 0 — parameter & input validation
+    // -----------------------------------------------------------------
+    params.validate()?;
+
+    let hash_alg = params.digest;
+    let mgf1_alg = params.effective_mgf1_digest();
+    let h_len = hash_alg.digest_size();
+
+    if m_hash.len() != h_len {
+        return Err(CryptoError::from(PssError::InvalidPssParameters));
+    }
+
+    // -----------------------------------------------------------------
+    // Step 1 — handle the leftmost zero byte when MSBits == 0
+    //   (rsa_pss.c:80-100)
+    // -----------------------------------------------------------------
+    // Rule R6: `em_bits & 0x7` is in 0..=7 and fits any integer type.
+    let ms_bits: u32 = u32::try_from(em_bits & 0x7).unwrap_or(0);
+
+    if em.is_empty() {
+        return Err(CryptoError::from(PssError::DataTooLargeForKeySize));
+    }
+
+    // Check the leftmost-bit constraint: EM[0] must have its top
+    // (8 − MSBits) bits zero.  The C code computes
+    // `if (EM[0] & (0xFF << MSBits))`.
+    if ms_bits == 0 {
+        // C: if EM[0] != 0 → first-octet violation (then EM++; emLen--).
+        if em[0] != 0 {
+            return Err(CryptoError::from(PssError::FirstOctetInvalid));
+        }
+    } else {
+        // BOUNDED: ms_bits in 1..=7 — shift width is safe.
+        // Mask of the bits that *must* be zero (the high (8 - ms_bits)
+        // bits of the first byte).
+        let shift = 8u32.saturating_sub(ms_bits);
+        // `0xFF << ms_bits` → bits [ms_bits..7] in the C version.
+        // We get the equivalent by inverting `(0xFF >> (8-ms_bits))`.
+        let allowed_low: u8 = 0xFFu8 >> (shift & 0x7);
+        let high_mask: u8 = !allowed_low;
+        if em[0] & high_mask != 0 {
+            return Err(CryptoError::from(PssError::FirstOctetInvalid));
+        }
+    }
+
+    // Determine the working slice and its effective length.
+    let (work, em_len): (&[u8], usize) = if ms_bits == 0 {
+        // Skip the leading 0x00 byte
+        let rest = &em[1..];
+        (rest, rest.len())
+    } else {
+        (em, em.len())
+    };
+
+    if em_len < h_len.saturating_add(2) {
+        return Err(CryptoError::from(PssError::DataTooLargeForKeySize));
+    }
+
+    // -----------------------------------------------------------------
+    // Step 2 — resolve / sanity-check the salt length
+    //   (rsa_pss.c:69-78, 102-110)
+    // -----------------------------------------------------------------
+    // The signing-side maximum permitted by the modulus.
+    let max_s_len = em_len
+        .checked_sub(h_len)
+        .and_then(|v| v.checked_sub(2))
+        .ok_or_else(|| CryptoError::from(PssError::DataTooLargeForKeySize))?;
+
+    // Initial value:
+    //   * `Some(n)` for explicit / digest-length specifications,
+    //   * `None` for auto-recovery modes which figure out the salt
+    //     length from the position of the 0x01 separator.
+    let mut declared_s_len: Option<usize> = match params.salt_length {
+        PssSaltLength::DigestLength => Some(h_len),
+        PssSaltLength::Auto | PssSaltLength::AutoDigestMax => None,
+        PssSaltLength::Max => {
+            // C code unconditionally sets sLen = emLen - hLen - 2 in
+            // this branch (rsa_pss.c:103-104); treat it as an explicit
+            // length equal to the maximum.
+            Some(max_s_len)
+        }
+        PssSaltLength::Fixed(n) => Some(n),
+    };
+
+    if let Some(n) = declared_s_len {
+        if n > max_s_len {
+            return Err(CryptoError::from(PssError::DataTooLargeForKeySize));
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Step 3 — verify trailer byte EM[emLen-1] == 0xBC
+    //   (rsa_pss.c:111-114)
+    // -----------------------------------------------------------------
+    let last_idx = em_len
+        .checked_sub(1)
+        .ok_or_else(|| CryptoError::from(PssError::DataTooLargeForKeySize))?;
+    if work[last_idx] != PSS_TRAILER_BYTE {
+        return Err(CryptoError::from(PssError::LastOctetInvalid));
+    }
+
+    // -----------------------------------------------------------------
+    // Step 4 — split EM into maskedDB || H || 0xBC
+    //   (rsa_pss.c:115-117)
+    // -----------------------------------------------------------------
+    let masked_db_len = em_len
+        .checked_sub(h_len)
+        .and_then(|v| v.checked_sub(1))
+        .ok_or_else(|| CryptoError::from(PssError::DataTooLargeForKeySize))?;
+    // BOUNDED: `masked_db_len + h_len + 1 == em_len` by construction.
+    let masked_db = &work[..masked_db_len];
+    let h_slice = &work[masked_db_len..masked_db_len + h_len];
+
+    // -----------------------------------------------------------------
+    // Step 5 — compute dbMask = MGF1(H, maskedDBLen)
+    //   (rsa_pss.c:118-120)
+    // -----------------------------------------------------------------
+    let mut db: Vec<u8> = vec![0u8; masked_db_len];
+    mgf1(&mut db, h_slice, mgf1_alg)?;
+
+    // -----------------------------------------------------------------
+    // Step 6 — DB = maskedDB XOR dbMask  (rsa_pss.c:124-125)
+    // -----------------------------------------------------------------
+    for i in 0..masked_db_len {
+        db[i] ^= masked_db[i];
+    }
+
+    // -----------------------------------------------------------------
+    // Step 7 — clear leftmost bits of DB[0]  (rsa_pss.c:127)
+    // -----------------------------------------------------------------
+    if ms_bits != 0 && !db.is_empty() {
+        // BOUNDED: ms_bits ∈ 1..=7 — shift is safe.
+        let shift = 8u32.saturating_sub(ms_bits);
+        let mask: u8 = 0xFFu8 >> (shift & 0x7);
+        db[0] &= mask;
+    }
+
+    // -----------------------------------------------------------------
+    // Step 8 — find the 0x01 separator after PS  (rsa_pss.c:129-138)
+    //
+    // Skip leading zeros until we hit a non-zero byte; that byte must
+    // be 0x01.  Anything else means the padding was tampered with.
+    // -----------------------------------------------------------------
+    let mut idx: usize = 0;
+    while idx < masked_db_len.saturating_sub(1) && db[idx] == 0 {
+        // BOUNDED: bounded by masked_db_len which is bounded by em_len
+        idx = if let Some(v) = idx.checked_add(1) {
+            v
+        } else {
+            db.zeroize();
+            return Err(CryptoError::from(PssError::InvalidPadding));
+        };
+    }
+    if idx >= masked_db_len || db[idx] != 0x01 {
+        db.zeroize();
+        return Err(CryptoError::from(PssError::InvalidPadding));
+    }
+    // BOUNDED: idx < masked_db_len, so idx + 1 ≤ masked_db_len.
+    let salt_start = idx
+        .checked_add(1)
+        .ok_or_else(|| CryptoError::from(PssError::InvalidPadding))?;
+
+    // Recovered salt length = remaining bytes after the 0x01 marker.
+    // BOUNDED: salt_start ≤ masked_db_len so subtraction never wraps.
+    let recovered_s_len = masked_db_len
+        .checked_sub(salt_start)
+        .ok_or_else(|| CryptoError::from(PssError::InvalidPadding))?;
+
+    // -----------------------------------------------------------------
+    // Step 9 — salt-length cross-check  (rsa_pss.c:139-149)
+    // -----------------------------------------------------------------
+    if let Some(expected) = declared_s_len {
+        if recovered_s_len != expected {
+            db.zeroize();
+            return Err(CryptoError::from(PssError::SaltLengthCheckFailed));
+        }
+    }
+    declared_s_len = Some(recovered_s_len);
+
+    // -----------------------------------------------------------------
+    // Step 10 — recompute H' = Hash(0x00...00 || mHash || salt)
+    //   (rsa_pss.c:150-158)
+    // -----------------------------------------------------------------
+    let mut h_prime: Vec<u8> = {
+        let mut ctx: Box<dyn Digest> = create_digest(hash_alg)?;
+        ctx.update(&PSS_M_PRIME_PREFIX)?;
+        ctx.update(m_hash)?;
+        if recovered_s_len > 0 {
+            // BOUNDED: salt_start + recovered_s_len == masked_db_len.
+            ctx.update(&db[salt_start..salt_start + recovered_s_len])?;
+        }
+        ctx.finalize()?
+    };
+
+    // -----------------------------------------------------------------
+    // Step 11 — constant-time H' == H comparison  (rsa_pss.c:159)
+    // -----------------------------------------------------------------
+    let matches = constant_time::memcmp(&h_prime, h_slice);
+
+    // Secure cleanup before returning either branch.
+    h_prime.zeroize();
+    db.zeroize();
+
+    if matches {
+        // `declared_s_len` is `Some(recovered_s_len)` at this point;
+        // the C version writes back `*sLenOut = sLen`.  We don't expose
+        // that as an out-parameter — callers can re-derive it from the
+        // signature by re-running the verify if they care.
+        let _ = declared_s_len;
+        Ok(())
+    } else {
+        Err(CryptoError::from(PssError::PssVerificationFailed))
+    }
+}
+
+// =============================================================================
 // Tests
-// -----------------------------------------------------------------------------
+// =============================================================================
 
 #[cfg(test)]
-#[allow(
-    clippy::expect_used,
-    clippy::unwrap_used,
-    clippy::panic,
-    reason = "test code conventionally uses expect/unwrap/panic with descriptive messages \
-              for fast-fail diagnostics; the crate-level `#![deny(clippy::expect_used)]` and \
-              `#![deny(clippy::unwrap_used)]` apply to library code, not test code."
-)]
 mod tests {
     use super::*;
 
+    // ---------------------------------------------------------------------
+    // PssError → CryptoError mapping
+    // ---------------------------------------------------------------------
+
     #[test]
-    fn default_params_match_rfc4055() {
-        let p = DEFAULT_PSS_PARAMS_30;
-        assert_eq!(p.hash_algorithm, Some(DigestAlgorithm::Sha1));
-        assert_eq!(p.mask_gen.algorithm_nid, NID_MGF1);
-        assert_eq!(p.mask_gen.hash_algorithm, Some(DigestAlgorithm::Sha1));
-        assert_eq!(p.salt_len, 20);
-        assert_eq!(p.trailer_field, 1);
+    fn pss_error_display_strings_are_descriptive() {
+        // Every variant must produce a non-empty, human-readable message.
+        for err in [
+            PssError::SaltLengthCheckFailed,
+            PssError::DataTooLargeForKeySize,
+            PssError::InvalidPssParameters,
+            PssError::PssVerificationFailed,
+            PssError::FirstOctetInvalid,
+            PssError::LastOctetInvalid,
+            PssError::InvalidPadding,
+        ] {
+            let s = format!("{}", err);
+            assert!(!s.is_empty(), "Display string empty for {:?}", err);
+            assert!(
+                s.len() > 5,
+                "Display string too short for {:?}: {:?}",
+                err,
+                s
+            );
+        }
     }
 
     #[test]
-    fn unrestricted_is_zero_init() {
-        let p = PssParams30::unrestricted();
-        assert!(p.is_unrestricted());
-        assert_eq!(p.hash_algorithm, None);
-        assert_eq!(p.salt_len, 0);
-        assert_eq!(p.trailer_field, 0);
+    fn pss_error_maps_encoding_failures_to_encoding_variant() {
+        // Encoding-time errors should map to CryptoError::Encoding.
+        for err in [
+            PssError::DataTooLargeForKeySize,
+            PssError::InvalidPssParameters,
+            PssError::FirstOctetInvalid,
+            PssError::LastOctetInvalid,
+            PssError::InvalidPadding,
+        ] {
+            let mapped: CryptoError = err.clone().into();
+            assert!(
+                matches!(mapped, CryptoError::Encoding(_)),
+                "Expected Encoding for {:?}, got {:?}",
+                err,
+                mapped
+            );
+        }
     }
 
     #[test]
-    fn defaults_overrides_unset() {
-        let mut p = PssParams30::unrestricted();
+    fn pss_error_maps_verification_failures_to_verification_variant() {
+        for err in [
+            PssError::SaltLengthCheckFailed,
+            PssError::PssVerificationFailed,
+        ] {
+            let mapped: CryptoError = err.clone().into();
+            assert!(
+                matches!(mapped, CryptoError::Verification(_)),
+                "Expected Verification for {:?}, got {:?}",
+                err,
+                mapped
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // PssSaltLength legacy-int round-trip
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn salt_length_sentinels_match_c_macros() {
+        assert_eq!(PssSaltLength::DigestLength.as_legacy_int(), -1);
+        assert_eq!(PssSaltLength::Auto.as_legacy_int(), -2);
+        assert_eq!(PssSaltLength::Max.as_legacy_int(), -3);
+        assert_eq!(PssSaltLength::AutoDigestMax.as_legacy_int(), -4);
+        assert_eq!(PssSaltLength::Fixed(0).as_legacy_int(), 0);
+        assert_eq!(PssSaltLength::Fixed(32).as_legacy_int(), 32);
+    }
+
+    #[test]
+    fn salt_length_round_trip_through_legacy_int() {
+        for v in [
+            PssSaltLength::DigestLength,
+            PssSaltLength::Auto,
+            PssSaltLength::Max,
+            PssSaltLength::AutoDigestMax,
+            PssSaltLength::Fixed(0),
+            PssSaltLength::Fixed(20),
+            PssSaltLength::Fixed(64),
+        ] {
+            let n = v.as_legacy_int();
+            let back = PssSaltLength::from_legacy_int(n).unwrap();
+            assert_eq!(v, back, "round-trip failed for {:?}", v);
+        }
+    }
+
+    #[test]
+    fn salt_length_from_legacy_int_rejects_out_of_range() {
+        assert!(PssSaltLength::from_legacy_int(-5).is_err());
+        assert!(PssSaltLength::from_legacy_int(-100).is_err());
+        // Non-negative values always succeed (Fixed)
+        assert!(PssSaltLength::from_legacy_int(0).is_ok());
+        assert!(PssSaltLength::from_legacy_int(1024).is_ok());
+    }
+
+    // ---------------------------------------------------------------------
+    // PssMaskGen / PssParams30 default behaviour
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn mask_gen_default_is_mgf1_with_no_explicit_hash() {
+        let mg = PssMaskGen::default_mgf1();
+        assert_eq!(mg.algorithm_nid, NID_MGF1);
+        assert!(mg.hash_algorithm.is_none());
+        // Default impl matches default_mgf1
+        assert_eq!(PssMaskGen::default(), mg);
+    }
+
+    #[test]
+    fn pss_params30_new_is_unrestricted() {
+        let p = PssParams30::new();
         assert!(p.is_unrestricted());
-        p.set_defaults();
+        // resolved_* falls back to RFC 4055 defaults
+        assert_eq!(p.resolved_hash(), DigestAlgorithm::Sha1);
+        assert_eq!(p.resolved_mgf1_hash(), DigestAlgorithm::Sha1);
+        assert_eq!(p.resolved_salt_len(), DEFAULT_SALT_LEN);
+        assert_eq!(p.resolved_trailer_field(), DEFAULT_TRAILER_FIELD);
+    }
+
+    #[test]
+    fn pss_params30_set_defaults_yields_default_constant() {
+        let mut p = PssParams30::new();
+        p.set_hash_algorithm(DigestAlgorithm::Sha256);
+        p.set_mgf1_hash_algorithm(DigestAlgorithm::Sha256);
+        p.set_salt_len(32);
+        p.set_trailer_field(1);
+        // Should no longer be unrestricted
         assert!(!p.is_unrestricted());
+        // Reset to defaults — equals the published constant.
+        p.set_defaults();
         assert_eq!(p, DEFAULT_PSS_PARAMS_30);
     }
 
     #[test]
-    fn salt_length_legacy_int_round_trip() {
-        for v in [-4, -3, -2, -1, 0, 20, 32, 64] {
-            let s = PssSaltLength::from_legacy_int(v);
-            assert_eq!(s.as_legacy_int(), v);
+    fn pss_params30_resolved_methods_use_set_values() {
+        let mut p = PssParams30::new();
+        p.set_hash_algorithm(DigestAlgorithm::Sha384);
+        p.set_mgf1_hash_algorithm(DigestAlgorithm::Sha512);
+        p.set_salt_len(48);
+        p.set_trailer_field(1);
+        assert_eq!(p.resolved_hash(), DigestAlgorithm::Sha384);
+        assert_eq!(p.resolved_mgf1_hash(), DigestAlgorithm::Sha512);
+        assert_eq!(p.resolved_salt_len(), 48);
+        assert_eq!(p.resolved_trailer_field(), 1);
+    }
+
+    #[test]
+    fn pss_params30_is_copy() {
+        // Compile-time check that the type is Copy.
+        let p = PssParams30::new();
+        let _q = p; // copy
+        let _r = p; // copy again — would not compile if not Copy
+    }
+
+    // ---------------------------------------------------------------------
+    // PssParams (lightweight) defaults & resolution
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn pss_params_default_matches_rfc8017() {
+        let p = PssParams::default();
+        assert_eq!(p.digest, DigestAlgorithm::Sha1);
+        assert!(p.mgf1_digest.is_none());
+        assert_eq!(p.salt_length, PssSaltLength::DigestLength);
+        assert_eq!(p.trailer_field, 1);
+        assert!(p.is_unrestricted());
+    }
+
+    #[test]
+    fn pss_params_effective_mgf1_falls_back_to_digest() {
+        let p = PssParams::new(DigestAlgorithm::Sha256);
+        assert_eq!(p.effective_mgf1_digest(), DigestAlgorithm::Sha256);
+        assert_eq!(p.resolved_mgf1_digest(), DigestAlgorithm::Sha256);
+
+        let q = PssParams::new(DigestAlgorithm::Sha256).with_mgf1_hash(DigestAlgorithm::Sha384);
+        assert_eq!(q.effective_mgf1_digest(), DigestAlgorithm::Sha384);
+    }
+
+    #[test]
+    fn pss_params_validate_rejects_invalid_trailer() {
+        let mut p = PssParams::new(DigestAlgorithm::Sha256);
+        p.trailer_field = 2;
+        let err = p.validate().unwrap_err();
+        assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    #[test]
+    fn pss_params_resolve_salt_length_for_each_variant() {
+        // For SHA-256: hLen = 32.  For a 2048-bit modulus emLen = 256.
+        let h = 32;
+        let em = 256;
+
+        // DigestLength → hLen
+        let p = PssParams::new(DigestAlgorithm::Sha256);
+        assert_eq!(p.resolve_salt_length(em, h).unwrap(), h);
+
+        // Max → emLen − hLen − 2
+        let p = PssParams::new(DigestAlgorithm::Sha256).with_salt_length(PssSaltLength::Max);
+        assert_eq!(p.resolve_salt_length(em, h).unwrap(), em - h - 2);
+
+        // Auto behaves like Max on encoding
+        let p = PssParams::new(DigestAlgorithm::Sha256).with_salt_length(PssSaltLength::Auto);
+        assert_eq!(p.resolve_salt_length(em, h).unwrap(), em - h - 2);
+
+        // AutoDigestMax → min(max, hLen)
+        let p =
+            PssParams::new(DigestAlgorithm::Sha256).with_salt_length(PssSaltLength::AutoDigestMax);
+        assert_eq!(p.resolve_salt_length(em, h).unwrap(), h);
+
+        // Fixed(n) within range
+        let p = PssParams::new(DigestAlgorithm::Sha256).with_salt_length(PssSaltLength::Fixed(64));
+        assert_eq!(p.resolve_salt_length(em, h).unwrap(), 64);
+
+        // Fixed(n) too large rejected
+        let p = PssParams::new(DigestAlgorithm::Sha256)
+            .with_salt_length(PssSaltLength::Fixed(em - h - 1));
+        assert!(matches!(
+            p.resolve_salt_length(em, h),
+            Err(CryptoError::Encoding(_))
+        ));
+    }
+
+    #[test]
+    fn pss_params_resolve_salt_length_rejects_undersized_modulus() {
+        // emLen = 30, hLen = 32 — fails the `emLen >= hLen + 2` check.
+        let p = PssParams::new(DigestAlgorithm::Sha256);
+        assert!(matches!(
+            p.resolve_salt_length(30, 32),
+            Err(CryptoError::Encoding(_))
+        ));
+    }
+
+    // ---------------------------------------------------------------------
+    // resolve_salt_len_encode helper
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn resolve_salt_len_encode_handles_all_variants() {
+        let em = 256;
+        let h = 32;
+        assert_eq!(
+            resolve_salt_len_encode(PssSaltLength::DigestLength, em, h).unwrap(),
+            32
+        );
+        assert_eq!(
+            resolve_salt_len_encode(PssSaltLength::Max, em, h).unwrap(),
+            em - h - 2
+        );
+        assert_eq!(
+            resolve_salt_len_encode(PssSaltLength::Auto, em, h).unwrap(),
+            em - h - 2
+        );
+        assert_eq!(
+            resolve_salt_len_encode(PssSaltLength::AutoDigestMax, em, h).unwrap(),
+            h
+        );
+        assert_eq!(
+            resolve_salt_len_encode(PssSaltLength::Fixed(20), em, h).unwrap(),
+            20
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Pkcs1v15SignParams
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn pkcs1v15_sign_params_constructor_preserves_digest() {
+        let p = Pkcs1v15SignParams::new(DigestAlgorithm::Sha384);
+        assert_eq!(p.digest, DigestAlgorithm::Sha384);
+        // Copy works
+        let q = p;
+        assert_eq!(p, q);
+    }
+
+    // ---------------------------------------------------------------------
+    // digest_info_prefix — at least the SHA family must round-trip
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn digest_info_prefix_returns_some_for_standard_hashes() {
+        // Every hash listed in the C `ossl_rsa_digestinfo_encoding` switch
+        // must yield a non-empty DER prefix.  We list them explicitly so
+        // a missing arm is caught at compile time.
+        let cases = [
+            DigestAlgorithm::Sha1,
+            DigestAlgorithm::Sha224,
+            DigestAlgorithm::Sha256,
+            DigestAlgorithm::Sha384,
+            DigestAlgorithm::Sha512,
+            DigestAlgorithm::Sha512_224,
+            DigestAlgorithm::Sha512_256,
+            DigestAlgorithm::Sha3_224,
+            DigestAlgorithm::Sha3_256,
+            DigestAlgorithm::Sha3_384,
+            DigestAlgorithm::Sha3_512,
+            DigestAlgorithm::Md5,
+            DigestAlgorithm::Md2,
+            DigestAlgorithm::Md4,
+            DigestAlgorithm::Mdc2,
+            DigestAlgorithm::Ripemd160,
+            DigestAlgorithm::Sm3,
+        ];
+        for alg in cases {
+            let p = digest_info_prefix(alg);
+            assert!(p.is_some(), "missing DigestInfo prefix for {:?}", alg);
+            let bytes = p.unwrap();
+            assert!(!bytes.is_empty(), "empty prefix for {:?}", alg);
+            // Every prefix begins with 0x30 (SEQUENCE).
+            assert_eq!(bytes[0], 0x30, "bad SEQUENCE byte for {:?}", alg);
         }
     }
 
     #[test]
-    fn pss_params_default_mgf1_matches_hash() {
-        let p = PssParams::new(DigestAlgorithm::Sha256, PssSaltLength::Digest);
-        assert_eq!(p.resolved_mgf1_hash(), DigestAlgorithm::Sha256);
-        let p2 = PssParams::with_mgf1_hash(
-            DigestAlgorithm::Sha256,
-            DigestAlgorithm::Sha384,
-            PssSaltLength::Digest,
+    fn digest_info_prefix_returns_none_for_unsupported_hashes() {
+        let cases = [
+            DigestAlgorithm::Md5Sha1,
+            DigestAlgorithm::Whirlpool,
+            DigestAlgorithm::Shake128,
+            DigestAlgorithm::Shake256,
+            DigestAlgorithm::Blake2b256,
+            DigestAlgorithm::Blake2b512,
+            DigestAlgorithm::Blake2s256,
+        ];
+        for alg in cases {
+            assert!(
+                digest_info_prefix(alg).is_none(),
+                "unexpected DigestInfo prefix for {:?}",
+                alg
+            );
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // pss_encode → pss_verify round-trip
+    // ---------------------------------------------------------------------
+
+    /// Helper: 2048-bit modulus has 256-byte EM and `em_bits = 2047`.
+    fn rfc8017_2048_em_bits() -> usize {
+        2047
+    }
+
+    #[test]
+    fn pss_round_trip_sha256_default_salt() {
+        // mHash for an arbitrary input — actual hash value is irrelevant
+        // for the round-trip; encode + verify use the same value.
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher
+            .update(b"OpenSSL -> Rust PSS round-trip test")
+            .unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let params = PssParams::new(DigestAlgorithm::Sha256);
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        pss_encode(&mut em, em_bits, &m_hash, &params).unwrap();
+
+        // Trailer must be 0xBC.
+        assert_eq!(*em.last().unwrap(), 0xBC);
+        // Top bit of EM[0] must be zero (em_bits is 2047 → MSBits = 7,
+        // so the leftmost bit is forbidden).
+        assert_eq!(em[0] & 0x80, 0);
+
+        // Verify succeeds for the same params.
+        pss_verify(&em, em_bits, &m_hash, &params).unwrap();
+    }
+
+    #[test]
+    fn pss_round_trip_with_explicit_mgf1_hash() {
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"distinct mgf1 hash").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let params =
+            PssParams::new(DigestAlgorithm::Sha256).with_mgf1_hash(DigestAlgorithm::Sha384);
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        pss_encode(&mut em, em_bits, &m_hash, &params).unwrap();
+        pss_verify(&em, em_bits, &m_hash, &params).unwrap();
+    }
+
+    #[test]
+    fn pss_round_trip_with_max_salt_length() {
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"max salt length").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let params = PssParams::new(DigestAlgorithm::Sha256).with_salt_length(PssSaltLength::Max);
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        pss_encode(&mut em, em_bits, &m_hash, &params).unwrap();
+        pss_verify(&em, em_bits, &m_hash, &params).unwrap();
+    }
+
+    #[test]
+    fn pss_round_trip_with_zero_salt_length() {
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"zero salt length").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let params =
+            PssParams::new(DigestAlgorithm::Sha256).with_salt_length(PssSaltLength::Fixed(0));
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        pss_encode(&mut em, em_bits, &m_hash, &params).unwrap();
+        pss_verify(&em, em_bits, &m_hash, &params).unwrap();
+    }
+
+    #[test]
+    fn pss_round_trip_sha384_modbits_3072() {
+        // 3072-bit modulus → emLen = 384, em_bits = 3071.
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha384).unwrap();
+        hasher.update(b"sha-384 round-trip").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let params = PssParams::new(DigestAlgorithm::Sha384);
+        let em_bits = 3071;
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        pss_encode(&mut em, em_bits, &m_hash, &params).unwrap();
+        pss_verify(&em, em_bits, &m_hash, &params).unwrap();
+    }
+
+    #[test]
+    fn pss_verify_detects_tampered_trailer() {
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"tamper").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let params = PssParams::new(DigestAlgorithm::Sha256);
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        pss_encode(&mut em, em_bits, &m_hash, &params).unwrap();
+        // Corrupt the trailer
+        let last = em.len() - 1;
+        em[last] ^= 0x01;
+
+        let err = pss_verify(&em, em_bits, &m_hash, &params).unwrap_err();
+        assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    #[test]
+    fn pss_verify_detects_corrupted_hash() {
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"flip-bit").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let params = PssParams::new(DigestAlgorithm::Sha256);
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        pss_encode(&mut em, em_bits, &m_hash, &params).unwrap();
+        // Flip a middle byte (in the H portion).
+        let mid = em.len() / 2;
+        em[mid] ^= 0xFF;
+
+        let err = pss_verify(&em, em_bits, &m_hash, &params).unwrap_err();
+        // Could be PssVerificationFailed or InvalidPadding depending on
+        // which check fires first — both indicate a forged signature.
+        assert!(
+            matches!(err, CryptoError::Verification(_) | CryptoError::Encoding(_)),
+            "Unexpected error variant: {:?}",
+            err
         );
-        assert_eq!(p2.resolved_mgf1_hash(), DigestAlgorithm::Sha384);
     }
 
     #[test]
-    fn mgf1_zero_length_is_noop() {
-        let mut mask: [u8; 0] = [];
-        pkcs1_mgf1(&mut mask, b"seed", DigestAlgorithm::Sha256).unwrap();
+    fn pss_verify_rejects_wrong_message_hash() {
+        let params = PssParams::new(DigestAlgorithm::Sha256);
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        // Encode for one message…
+        let mut h1: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        h1.update(b"message A").unwrap();
+        let m_hash_a = h1.finalize().unwrap();
+        pss_encode(&mut em, em_bits, &m_hash_a, &params).unwrap();
+
+        // …verify against a different message.
+        let mut h2: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        h2.update(b"message B").unwrap();
+        let m_hash_b = h2.finalize().unwrap();
+
+        let err = pss_verify(&em, em_bits, &m_hash_b, &params).unwrap_err();
+        assert!(matches!(err, CryptoError::Verification(_)));
     }
 
     #[test]
-    fn mgf1_deterministic_known_vector() {
-        // RFC 8017 Appendix B.2.1 example: MGF1 with SHA-256, seed = "foo",
-        // length 32 — recompute deterministically. We do not have the RFC
-        // test vector inline; we instead verify deterministic behavior.
-        let mut a = [0u8; 32];
-        let mut b = [0u8; 32];
-        pkcs1_mgf1(&mut a, b"seed", DigestAlgorithm::Sha256).unwrap();
-        pkcs1_mgf1(&mut b, b"seed", DigestAlgorithm::Sha256).unwrap();
-        assert_eq!(a, b);
-        // Different seed should give a different mask.
-        let mut c = [0u8; 32];
-        pkcs1_mgf1(&mut c, b"different", DigestAlgorithm::Sha256).unwrap();
-        assert_ne!(a, c);
+    fn pss_encode_rejects_wrong_hash_length() {
+        let params = PssParams::new(DigestAlgorithm::Sha256);
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        // Pass a 5-byte "hash" — should be 32.
+        let bogus = [0u8; 5];
+        let err = pss_encode(&mut em, em_bits, &bogus, &params).unwrap_err();
+        assert!(matches!(err, CryptoError::Encoding(_)));
     }
 
     #[test]
-    fn pss_params30_to_from_params_round_trip() {
-        let mut p = PssParams30::default();
-        p.set_hash_algorithm(DigestAlgorithm::Sha256);
-        p.set_mgf1_hash_algorithm(DigestAlgorithm::Sha384);
-        p.set_salt_len(32);
-        p.set_trailer_field(1);
+    fn pss_encode_rejects_too_small_modulus() {
+        let params = PssParams::new(DigestAlgorithm::Sha256);
+        // 256-bit modulus → emLen = 32 but hLen = 32, sLen = 32 → fails
+        // the `emLen >= hLen + sLen + 2` check.
+        let em_bits = 255;
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
 
-        let params = p.to_params();
-        let recovered = PssParams30::from_params(&params).unwrap();
-        assert_eq!(recovered.hash_algorithm, Some(DigestAlgorithm::Sha256));
-        assert_eq!(
-            recovered.mask_gen.hash_algorithm,
-            Some(DigestAlgorithm::Sha384)
-        );
-        assert_eq!(recovered.salt_len, 32);
-        assert_eq!(recovered.trailer_field, 1);
+        let m_hash = vec![0u8; 32];
+        let err = pss_encode(&mut em, em_bits, &m_hash, &params).unwrap_err();
+        assert!(matches!(err, CryptoError::Encoding(_)));
     }
 
     #[test]
-    fn resolve_salt_len_encode_max() {
-        // emlen = 256 (2048-bit key), hlen = 32 (SHA-256) → max salt = 222.
-        let r = resolve_salt_len_encode(PssSaltLength::Max, 32, 256).unwrap();
-        assert_eq!(r, 256 - 32 - 2);
-    }
+    fn pss_round_trip_with_msbits_zero() {
+        // em_bits divisible by 8 → MSBits = 0 case (rsa_pss.c:88).
+        // Use 2056-bit modulus, em_bits = 2056 → MSBits = 0.
+        let em_bits = 2056;
+        let em_len = (em_bits + 7) / 8 + 1; // +1 for the leading 0x00
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"msbits zero case").unwrap();
+        let m_hash = hasher.finalize().unwrap();
 
-    #[test]
-    fn resolve_salt_len_encode_digest() {
-        let r = resolve_salt_len_encode(PssSaltLength::Digest, 32, 256).unwrap();
-        assert_eq!(r, 32);
-    }
+        let params = PssParams::new(DigestAlgorithm::Sha256);
+        let mut em = vec![0u8; em_len];
 
-    #[test]
-    fn resolve_salt_len_encode_custom_too_large_fails() {
-        let err = resolve_salt_len_encode(PssSaltLength::Custom(1000), 32, 256);
-        assert!(err.is_err());
+        pss_encode(&mut em, em_bits, &m_hash, &params).unwrap();
+        // Leading byte should be 0x00 because MSBits == 0.
+        assert_eq!(em[0], 0x00);
+        pss_verify(&em, em_bits, &m_hash, &params).unwrap();
     }
 }
