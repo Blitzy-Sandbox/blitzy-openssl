@@ -31,6 +31,14 @@ pub mod ml_kem;
 /// `providers/implementations/kem/mlx_kem.c` from the C reference.
 pub mod mlx;
 
+/// RSA Key Encapsulation Mechanism (RSASVE) — NIST SP 800-56B Rev.2 §7.2.
+///
+/// Implements RSA Secret Value Encapsulation: encapsulate generates a
+/// random shared secret z ∈ [2, n−2] and encrypts it with raw RSA
+/// (`RSA_NO_PADDING`); decapsulate recovers z by raw RSA decryption.
+/// Translates `providers/implementations/kem/rsa_kem.c` (447 lines).
+pub mod rsa;
+
 // Re-export commonly used items from util for convenience.
 pub use util::{kem_mode_to_name, kem_modename_to_id, KemMode};
 
@@ -50,18 +58,11 @@ pub use util::{kem_mode_to_name, kem_modename_to_id, KemMode};
 /// retained as a lookup alias for non-specific DHKEM queries.
 #[must_use]
 pub fn descriptors() -> Vec<AlgorithmDescriptor> {
-    let mut out = vec![
-        algorithm(
-            &["DHKEM"],
-            "provider=default",
-            "Diffie-Hellman based KEM for HPKE (RFC 9180)",
-        ),
-        algorithm(
-            &["RSA"],
-            "provider=default",
-            "RSA Key Encapsulation Mechanism",
-        ),
-    ];
+    let mut out = vec![algorithm(
+        &["DHKEM"],
+        "provider=default",
+        "Diffie-Hellman based KEM for HPKE (RFC 9180)",
+    )];
     // ML-KEM-512/768/1024 are owned by `ml_kem.rs` per the FIPS 203
     // implementation crate.  Routing through `ml_kem::descriptors()`
     // (instead of inline `algorithm(...)` entries) prevents duplicate
@@ -83,5 +84,9 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
     // `mlx.rs` is reachable from the provider entry point via
     // `implementations::all_kem_descriptors()`.
     out.extend(mlx::descriptors());
+    // Append the RSA-KEM (RSASVE) descriptor. The single canonical name
+    // is "RSA". R10: ensures `rsa.rs` is reachable from the provider
+    // entry point via `implementations::all_kem_descriptors()`.
+    out.extend(rsa::descriptors());
     out
 }
