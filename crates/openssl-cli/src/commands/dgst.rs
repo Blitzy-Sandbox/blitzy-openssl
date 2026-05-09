@@ -95,11 +95,12 @@ use zeroize::Zeroizing;
 use openssl_common::error::CryptoError;
 use openssl_common::param::{ParamBuilder, ParamSet};
 use openssl_crypto::context::LibContext;
-use openssl_crypto::evp::encode_decode::DecoderContext;
+use openssl_crypto::evp::encode_decode::{DecoderContext, KeyFormat};
 use openssl_crypto::evp::mac::{Mac, MacCtx, HMAC};
 use openssl_crypto::evp::md::{MdContext, MessageDigest, SHA256};
 use openssl_crypto::evp::pkey::PKey;
 use openssl_crypto::evp::signature::{DigestSignContext, DigestVerifyContext, Signature};
+use openssl_crypto::hash::DigestAlgorithm;
 
 use crate::lib::opts::Format;
 use crate::lib::password::parse_password_source;
@@ -1014,9 +1015,25 @@ fn resolve_hmac_key(args: &DgstArgs) -> Result<Zeroizing<Vec<u8>>, CryptoError> 
 /// `_want_public` is currently advisory: the underlying decoder returns
 /// the full [`PKey`] regardless, and the caller checks [`PKey::has_public_key`] /
 /// [`PKey::has_private_key`] afterward.
+///
+/// # Rule R3 — `-keyform` propagation
+///
+/// When the caller supplies an explicit `-keyform`, this function maps the
+/// CLI-level [`Format`] enum onto the decoder-level [`KeyFormat`] enum
+/// (`Pem` ↔ `Pem`, `Der` ↔ `Der`) and threads it through
+/// [`DecoderContext::with_format`].  This forces the decoder to skip
+/// auto-detection and use only the requested encoding — matching the C
+/// `apps/lib/apps.c::load_key` behaviour where `format == FORMAT_PEM` /
+/// `FORMAT_ASN1` selects the corresponding `PEM_read_PrivateKey` /
+/// `d2i_PrivateKey_bio` path exclusively.
+///
+/// Other [`Format`] variants (`Base64`, `Pkcs12`, `Smime`, `MsBlob`,
+/// `Pvk`, `Http`, `Nss`, `Text`) are not valid key-loading formats for
+/// `dgst -sign` / `dgst -verify` in either C or this Rust port, and are
+/// rejected with a clear [`CommonError::InvalidArgument`] error.
 fn load_key(
     path: &Path,
-    _format: Option<Format>,
+    format: Option<Format>,
     passin: Option<&str>,
     _want_public: bool,
 ) -> Result<PKey, CryptoError> {
@@ -1024,6 +1041,28 @@ fn load_key(
     let mut reader = BufReader::new(file);
 
     let mut dctx = DecoderContext::new();
+
+    // R3: honour -keyform when present.  Only PEM and DER are valid key
+    // formats for dgst -sign / -verify; reject all other CLI Format
+    // variants explicitly so users see a precise error rather than a
+    // generic "decode failed" message.
+    if let Some(fmt) = format {
+        let key_format = match fmt {
+            Format::Pem => KeyFormat::Pem,
+            Format::Der => KeyFormat::Der,
+            other => {
+                return Err(CryptoError::Common(
+                    openssl_common::error::CommonError::InvalidArgument(format!(
+                        "-keyform: unsupported format {other:?} for key loading; \
+                         only PEM and DER are accepted"
+                    )),
+                ));
+            }
+        };
+        debug!(?key_format, path = %path.display(), "dgst: load_key honouring explicit -keyform");
+        dctx = dctx.with_format(key_format);
+    }
+
     if let Some(pp) = passin {
         dctx = dctx.with_passphrase(pp.as_bytes());
     }
@@ -1034,12 +1073,52 @@ fn load_key(
     })
 }
 
-/// Validate `-sigopt name:value` syntax.
+/// Allowlist of recognised `-sigopt` parameter names.
 ///
-/// We accept any well-formed `name:value` pair but do not currently
-/// forward them to the underlying signature provider.  See the comment
-/// in `do_sign` for the rationale.  Empty inputs and inputs without a
-/// colon are rejected with a clear message.
+/// Mirrors the names accepted by the C `apps/dgst.c` →
+/// `EVP_PKEY_CTX_ctrl_str` path:
+///
+/// * `digest`            — selects the digest used by RSA-PSS / DSA / EC
+/// * `rsa_padding_mode`  — `pkcs1` / `pss` / `oaep` / `none` / `x931`
+/// * `rsa_pss_saltlen`   — explicit salt length (or `digest`, `max`, `auto`)
+/// * `rsa_mgf1_md`       — MGF1 hash for RSA-PSS
+/// * `salt_len`          — synonym for `rsa_pss_saltlen` accepted by C
+///
+/// Adding a name here is a deliberate widening of the public CLI
+/// contract; the corresponding wiring in [`do_sign`] /
+/// [`do_verify`] must be updated in lock-step so the parameter is
+/// actually forwarded to the signature provider.
+///
+/// **Rule R3** — every entry in this allowlist must have a matching
+/// read-site in the signature provider; entries that are accepted at the
+/// CLI surface but silently dropped downstream are a propagation
+/// violation and must not be added here.
+const RECOGNISED_SIGOPT_NAMES: &[&str] = &[
+    "digest",
+    "rsa_padding_mode",
+    "rsa_pss_saltlen",
+    "rsa_mgf1_md",
+    "salt_len",
+];
+
+/// Validate `-sigopt name:value` syntax **and** the parameter name.
+///
+/// Empty inputs and inputs without a colon are rejected with a clear
+/// message.  In addition, the parameter `name` (the token before the
+/// first `:`) is checked against [`RECOGNISED_SIGOPT_NAMES`]; unknown
+/// names are rejected so that a typo such as `rsa_padding:pss` or a
+/// silently-dropped option like `rsa_oaep_md:sha256` (which the dgst
+/// surface does not yet wire through) raises an error instead of
+/// degenerating into a default-padding signature.
+///
+/// This closes a CWE-327 hole identified in the code review where
+/// `rsa_padding_mode:pss` was silently dropped on the dgst path,
+/// causing RSA-PSS requests to fall back to PKCS#1 v1.5 without
+/// warning.  Until the dgst signature path actually forwards these
+/// options to `DigestSignContext`, accepting them at the CLI surface
+/// would be a propagation lie.  The allowlist is the contract between
+/// the CLI and the underlying provider; growing it without growing the
+/// forwarding logic is a Rule R3 violation.
 fn validate_sigopts(opts: &[String]) -> Result<(), CryptoError> {
     for opt in opts {
         let trimmed = opt.trim();
@@ -1057,7 +1136,27 @@ fn validate_sigopts(opts: &[String]) -> Result<(), CryptoError> {
                 )),
             ));
         }
-        debug!(sigopt = %trimmed, "dgst: parsed sigopt (validation only)");
+
+        // R3: extract the parameter name (everything before the first
+        // ':') and reject any name that is not in the recognised
+        // allowlist.  We compare case-insensitively because the C
+        // OpenSSL CLI accepts `rsa_padding_mode` and `RSA_PADDING_MODE`
+        // interchangeably.
+        let name_raw = trimmed.split(':').next().unwrap_or("").trim();
+        let name_lower = name_raw.to_ascii_lowercase();
+        if !RECOGNISED_SIGOPT_NAMES
+            .iter()
+            .any(|allowed| *allowed == name_lower.as_str())
+        {
+            return Err(CryptoError::Common(
+                openssl_common::error::CommonError::InvalidArgument(format!(
+                    "-sigopt: unknown parameter name '{name_raw}'; \
+                     expected one of: {}",
+                    RECOGNISED_SIGOPT_NAMES.join(", ")
+                )),
+            ));
+        }
+        debug!(sigopt = %trimmed, name = %name_lower, "dgst: validated sigopt name against allowlist");
     }
     Ok(())
 }
@@ -1368,36 +1467,35 @@ fn open_output(out: Option<&Path>) -> Result<Box<dyn Write>, CryptoError> {
 /// providers.
 ///
 /// Mirrors the output of `EVP_MD_do_all_provided` invoked by the C
-/// `-list` option (apps/dgst.c line 178).  We hard-code the union of
-/// constants exposed in [`openssl_crypto::evp::md`] because the method
-/// store does not expose a public enumeration API.  The order matches
-/// the alphabetic ordering used by the C source.
+/// `-list` option (apps/dgst.c line 178).  The Rust port enumerates the
+/// canonical [`DigestAlgorithm::ALL`] constant — the single source of
+/// truth for digest variants in the `openssl-crypto` crate — and emits
+/// each variant's [`DigestAlgorithm::name`] string.  This eliminates the
+/// previous hardcoded list which had drifted out of sync with the enum
+/// (missing MD2, MD4, MDC2, WHIRLPOOL, BLAKE2B-256 and using stale
+/// aliases such as `RIPEMD-160` instead of the canonical `RIPEMD160`).
+///
+/// # Rule R3 — write-site / read-site coherence
+///
+/// The write-site is [`DigestAlgorithm::ALL`] in
+/// `crates/openssl-crypto/src/hash/mod.rs`; the read-site is this
+/// function.  Adding a digest variant to the enum automatically extends
+/// the CLI `-list` output without any code change here, eliminating a
+/// previous propagation gap where new variants in the enum were not
+/// reflected in the CLI's advertised capabilities.
+///
+/// # Output ordering
+///
+/// `DigestAlgorithm::ALL` is declared in variant-declaration order; the
+/// CLI sorts the resulting names alphabetically before returning, in
+/// keeping with the C `EVP_MD_do_all_provided` callback used by
+/// `apps/dgst.c` which yields names in the order of the method-store
+/// hash, which itself sorts lexicographically for stable output.
 fn supported_digests() -> Vec<&'static str> {
-    // The constants exposed by openssl_crypto::evp::md are the canonical
-    // names accepted by `MessageDigest::fetch`.  We deliberately omit
-    // legacy aliases to match the default-provider catalog of OpenSSL 4.0.
-    vec![
-        "BLAKE2B-512",
-        "BLAKE2S-256",
-        "MD5",
-        "MD5-SHA1",
-        "NULL",
-        "RIPEMD-160",
-        "SHA1",
-        "SHA2-224",
-        "SHA2-256",
-        "SHA2-384",
-        "SHA2-512",
-        "SHA2-512/224",
-        "SHA2-512/256",
-        "SHA3-224",
-        "SHA3-256",
-        "SHA3-384",
-        "SHA3-512",
-        "SHAKE-128",
-        "SHAKE-256",
-        "SM3",
-    ]
+    let mut names: Vec<&'static str> =
+        DigestAlgorithm::ALL.iter().map(DigestAlgorithm::name).collect();
+    names.sort_unstable();
+    names
 }
 
 // =============================================================================

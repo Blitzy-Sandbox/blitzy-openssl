@@ -22,10 +22,32 @@
 //! | TDES-Wrap | DES-EDE3-WRAP (RFC 3217)                | 168 bits      | 64    | 0    |
 //!
 //! Stream modes (OFB / CFB / CFB1 / CFB8) report a block size of 1 in their
-//! parameter set, while block modes (ECB / CBC) report 8.  Single DES is
-//! cryptographically broken and exposed only for legacy interoperability;
-//! it is gated behind `provider=default` so existing applications can fetch
-//! it explicitly when migrating.
+//! parameter set, while block modes (ECB / CBC) report 8.
+//!
+//! # Provider Split (Default vs. Legacy)
+//!
+//! Per NIST SP 800-131A, single-key DES (56 effective bits) and DESX
+//! (constant-time-distinguishable from single DES under chosen-plaintext
+//! attack) are formally deprecated for new work.  To enforce this guidance
+//! at the provider boundary while preserving interoperability with archival
+//! workflows (CMS, PKCS#12, legacy TLS sessions, etc.), the DES family
+//! splits its descriptors across two providers:
+//!
+//! - **Default provider** ([`descriptors`]): exposes only the
+//!   triple-DES variants (`TDES-EDE3-*`, `TDES-EDE2-*`, `DES-EDE3-WRAP`).
+//!   Triple-DES with three independent keys retains 112 bits of effective
+//!   security per SP 800-57 and remains acceptable for legacy data.
+//! - **Legacy provider** ([`legacy_descriptors`]): exposes the
+//!   single-DES variants (`DES-ECB`, `DES-CBC`, `DES-OFB`, `DES-CFB`,
+//!   `DES-CFB1`, `DES-CFB8`) and DESX-CBC.  Callers must explicitly
+//!   activate the legacy provider via `OSSL_PROVIDER_load(libctx, "legacy")`
+//!   (or the Rust equivalent) before they can fetch these algorithms,
+//!   making the security trade-off an auditable, intentional decision
+//!   rather than a silent default.
+//!
+//! Triple-DES weak-key, semi-weak-key, and degenerate component-key
+//! rejection (FIPS 46-3 §A.4) is enforced by both code paths uniformly;
+//! the split governs reachability, not validation.
 //!
 //! # Source Mapping
 //!
@@ -68,9 +90,14 @@
 //! - **R8 (Zero Unsafe):** Zero `unsafe` blocks; provider-side dispatch is
 //!   exclusively through Rust trait objects.
 //! - **R9 (Warning-Free):** Every public item carries a `///` doc comment.
-//! - **R10 (Wiring):** Every type is reachable through
-//!   `DefaultProvider → ciphers::descriptors() → des::descriptors()` →
-//!   per-cipher constructors.
+//! - **R10 (Wiring):** Default-provider types (Triple-DES variants and
+//!   `DES-EDE3-WRAP`) are reachable through
+//!   `DefaultProvider → ciphers::descriptors() → des::descriptors()`;
+//!   legacy-provider types (single-DES variants and `DESX-CBC`) are
+//!   reachable through
+//!   `LegacyProvider → ciphers::legacy_descriptors() → des::legacy_descriptors()`
+//!   → per-cipher constructors.  Both paths are exercised by integration
+//!   tests in this module's `tests` submodule.
 
 use super::common::{
     generic_block_update, generic_get_params, generic_init_key, generic_stream_update,
@@ -82,6 +109,7 @@ use openssl_common::error::{ProviderError, ProviderResult};
 use openssl_common::param::{ParamSet, ParamValue};
 use openssl_crypto::symmetric::des::{Des, DesKeySchedule, TripleDes};
 use std::fmt;
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // =============================================================================
@@ -410,6 +438,104 @@ fn fill_random_des_key(out: &mut [u8]) -> ProviderResult<()> {
     for chunk in out.chunks_exact_mut(DES_KEY_BYTES) {
         if let Ok(arr) = <&mut [u8; DES_KEY_BYTES]>::try_from(chunk) {
             DesKeySchedule::set_odd_parity(arr);
+        }
+    }
+    Ok(())
+}
+
+/// Validates each 8-byte component of a Triple-DES key against the FIPS 46-3
+/// weak/semi-weak key set.
+///
+/// `TripleDes::new` (in `openssl-crypto::symmetric::des`) explicitly bypasses
+/// per-component weak-key checks via `DesKeySchedule::set_key_unchecked` per
+/// the FIPS 46-3 §A.4 design rationale (a TDES key whose components are weak
+/// individually is *not* automatically a weak TDES key).  However, for the
+/// provider boundary we follow the more conservative recommendation and reject
+/// such keys outright — a weak component yields a self-inverting sub-cipher
+/// which can leak structure to an attacker even within an EDE pipeline.
+///
+/// This function is invoked from the provider-level `init_common` paths for
+/// `TdesCipher` and `TdesWrapCipher` *before* the engine schedule is built,
+/// so any rejection occurs before key material reaches the constant-time
+/// schedule routines.  The temporary 8-byte component buffer is zeroed on
+/// every exit path.
+///
+/// Returns `Ok(())` for valid keys and for keys of unexpected length (length
+/// validation is the caller's responsibility — this helper is a no-op on
+/// non-TDES key sizes so it can be called without a prior length switch).
+///
+/// # Errors
+/// Returns [`ProviderError::Init`] when any 8-byte component matches an entry
+/// in the FIPS 46-3 §A.4 weak / semi-weak / possibly-weak key list.
+fn validate_tdes_component_weak_keys(key: &[u8]) -> ProviderResult<()> {
+    let component_count = match key.len() {
+        TDES_EDE2_KEY_BYTES => 2usize,
+        TDES_EDE3_KEY_BYTES => 3usize,
+        // Length validation is performed by the caller; on an unexpected
+        // length we silently succeed so the caller can produce its own
+        // length-specific diagnostic.
+        _ => return Ok(()),
+    };
+
+    for i in 0..component_count {
+        let mut comp = [0u8; DES_KEY_BYTES];
+        comp.copy_from_slice(&key[i * DES_KEY_BYTES..(i + 1) * DES_KEY_BYTES]);
+        // `DesKeySchedule::is_weak_key` performs its own constant-time
+        // comparison against the WEAK_KEYS table; we pass an owned 8-byte
+        // array so the engine API surface is satisfied exactly.
+        let is_weak = DesKeySchedule::is_weak_key(&comp);
+        comp.zeroize();
+        if is_weak {
+            return Err(ProviderError::Init(format!(
+                "TDES component K{} is a weak/semi-weak key (FIPS 46-3 §A.4)",
+                i + 1
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Rejects degenerate Triple-DES keys per NIST SP 800-67 Rev. 2 §3.4.
+///
+/// A Triple-DES EDE key (K1‖K2‖K3) collapses to single-DES when K1 == K2,
+/// and a three-key TDES collapses to two-key TDES when K2 == K3.  Both
+/// collapses defeat the security uplift TDES is intended to provide and
+/// must be rejected at the provider boundary regardless of whether the
+/// engine schedule routines accept the underlying key bytes.
+///
+/// Comparison uses `subtle::ConstantTimeEq` to keep the timing of the
+/// rejection independent of which component pair matches.
+///
+/// Returns `Ok(())` for valid keys and for non-TDES key lengths (a no-op
+/// on unexpected lengths so callers can emit their own length diagnostic).
+///
+/// # Errors
+/// Returns [`ProviderError::Init`] when K1 == K2 (collapses to single-DES)
+/// or when K2 == K3 in a three-key bundle (collapses to two-key TDES).
+fn validate_tdes_degenerate_keys(key: &[u8]) -> ProviderResult<()> {
+    let len = key.len();
+    if len == TDES_EDE2_KEY_BYTES || len == TDES_EDE3_KEY_BYTES {
+        let k1 = &key[0..DES_KEY_BYTES];
+        let k2 = &key[DES_KEY_BYTES..2 * DES_KEY_BYTES];
+        // Constant-time comparison; the `bool::from(Choice)` conversion
+        // collapses the SCA-resistant Choice into a regular boolean only
+        // after the comparison has finished.
+        if bool::from(k1.ct_eq(k2)) {
+            return Err(ProviderError::Init(
+                "TDES key has K1==K2, collapsing to single-DES \
+                 (NIST SP 800-67 Rev. 2 §3.4)"
+                    .into(),
+            ));
+        }
+        if len == TDES_EDE3_KEY_BYTES {
+            let k3 = &key[2 * DES_KEY_BYTES..TDES_EDE3_KEY_BYTES];
+            if bool::from(k2.ct_eq(k3)) {
+                return Err(ProviderError::Init(
+                    "TDES key has K2==K3, collapsing to two-key TDES \
+                     (NIST SP 800-67 Rev. 2 §3.4)"
+                        .into(),
+                ));
+            }
         }
     }
     Ok(())
@@ -1707,6 +1833,17 @@ impl TdesCipherContext {
             }
         }
 
+        // Reject weak/semi-weak key components and degenerate K1==K2 / K2==K3
+        // bundles before building the engine schedule.  `TripleDes::new` (in
+        // `openssl-crypto::symmetric::des`) explicitly bypasses these checks
+        // via `DesKeySchedule::set_key_unchecked` per FIPS 46-3 §A.4 design
+        // rationale, so the rejection has to happen at the provider boundary.
+        // Both helpers are no-ops on unexpected key lengths; the `key.len()`
+        // check above guarantees we are at TDES_EDE2_KEY_BYTES or
+        // TDES_EDE3_KEY_BYTES when these calls run.
+        validate_tdes_component_weak_keys(key)?;
+        validate_tdes_degenerate_keys(key)?;
+
         let triple = TripleDes::new(key)
             .map_err(|e| ProviderError::Init(format!("Triple-DES key schedule failed: {e}")))?;
         self.cipher = Some(triple);
@@ -2307,6 +2444,16 @@ impl TdesWrapCipherContext {
         // The IV is generated internally on wrap; on unwrap the wrap_iv
         // constant is used.  Caller-supplied IV is ignored to match
         // `IMPLEMENT_WRAP_CIPHER(... ivbits=0)`.
+
+        // Reject weak/semi-weak component keys and degenerate K1==K2 / K2==K3
+        // bundles before building the engine schedule.  `TripleDes::new`
+        // intentionally bypasses these checks per FIPS 46-3 §A.4 rationale,
+        // so the provider boundary is responsible for the rejection here.
+        // The length check above guarantees the key is exactly
+        // TDES_EDE3_KEY_BYTES (24) bytes when these calls run.
+        validate_tdes_component_weak_keys(key)?;
+        validate_tdes_degenerate_keys(key)?;
+
         let triple = TripleDes::new(key)
             .map_err(|e| ProviderError::Init(format!("Triple-DES key schedule failed: {e}")))?;
         self.cipher = Some(triple);
@@ -2584,15 +2731,14 @@ impl CipherContext for TdesWrapCipherContext {
 // Algorithm Descriptors
 // =============================================================================
 
-/// Returns the 18 algorithm descriptors registered by the DES family.
+/// Returns the 11 default-provider algorithm descriptors registered by the
+/// DES family.
 ///
-/// Composition (matching the C providers' default-provider registration):
+/// Composition (matching the C providers' default-provider registration for
+/// non-deprecated TDES variants):
 ///
 /// | Family    | Count | Names                                          |
 /// |-----------|-------|------------------------------------------------|
-/// | DES       |   6   | `DES-ECB`, `DES-CBC`, `DES-OFB`, `DES-CFB`,    |
-/// |           |       | `DES-CFB1`, `DES-CFB8`                         |
-/// | DESX      |   1   | `DESX-CBC`                                     |
 /// | TDES-EDE3 |   6   | `DES-EDE3-ECB`, `DES-EDE3-CBC`, `DES-EDE3-OFB`,|
 /// |           |       | `DES-EDE3-CFB`, `DES-EDE3-CFB1`, `DES-EDE3-CFB8`|
 /// | TDES-EDE2 |   4   | `DES-EDE-ECB`, `DES-EDE-CBC`, `DES-EDE-OFB`,   |
@@ -2600,64 +2746,16 @@ impl CipherContext for TdesWrapCipherContext {
 /// | TDES-Wrap |   1   | `DES-EDE3-WRAP`                                |
 ///
 /// All entries advertise `property = "provider=default"` to match
-/// `defltprov.c::deflt_ciphers[]`; legacy DES single-key variants are
-/// registered in the *default* provider for backward compatibility (the C
-/// code does the same).
+/// `defltprov.c::deflt_ciphers[]`. Single-key DES (`DES-*`) and DESX
+/// (`DESX-CBC`) variants are **deprecated** per NIST SP 800-131A and have
+/// been moved into the *legacy* provider; see [`legacy_descriptors`] for
+/// those entries. Callers that need single-DES or DESX must explicitly
+/// activate the legacy provider, making the security trade-off an
+/// auditable, intentional decision rather than a silent default.
 pub fn descriptors() -> Vec<AlgorithmDescriptor> {
-    let mut descs = Vec::with_capacity(18);
+    let mut descs = Vec::with_capacity(11);
 
-    // ---- 1. Single DES — 6 modes -------------------------------------------
-    let des_modes: &[(&'static str, DesCipherMode, &'static str)] = &[
-        (
-            "DES-ECB",
-            DesCipherMode::Ecb,
-            "DES Electronic Codebook mode cipher (legacy, default provider)",
-        ),
-        (
-            "DES-CBC",
-            DesCipherMode::Cbc,
-            "DES Cipher Block Chaining mode cipher (legacy, default provider)",
-        ),
-        (
-            "DES-OFB",
-            DesCipherMode::Ofb,
-            "DES Output Feedback mode cipher (legacy, default provider)",
-        ),
-        (
-            "DES-CFB",
-            DesCipherMode::Cfb,
-            "DES Cipher Feedback (64-bit) mode cipher (legacy, default provider)",
-        ),
-        (
-            "DES-CFB1",
-            DesCipherMode::Cfb1,
-            "DES Cipher Feedback (1-bit) mode cipher (legacy, default provider)",
-        ),
-        (
-            "DES-CFB8",
-            DesCipherMode::Cfb8,
-            "DES Cipher Feedback (8-bit) mode cipher (legacy, default provider)",
-        ),
-    ];
-    for (name, mode, description) in des_modes {
-        // Sanity-construct to reject any future inconsistency at startup.
-        let _ = DesCipher::new(name, *mode);
-        descs.push(make_cipher_descriptor(
-            vec![*name],
-            "provider=default",
-            description,
-        ));
-    }
-
-    // ---- 2. DESX — 1 mode --------------------------------------------------
-    let _ = DesxCipher::new("DESX-CBC");
-    descs.push(make_cipher_descriptor(
-        vec!["DESX-CBC"],
-        "provider=default",
-        "DESX-CBC cipher (DES with input/output XOR whitening, legacy)",
-    ));
-
-    // ---- 3. TDES EDE3 (24-byte key) — 6 modes ------------------------------
+    // ---- 1. TDES EDE3 (24-byte key) — 6 modes ------------------------------
     let tdes_ede3_modes: &[(&'static str, TdesCipherMode, &'static str)] = &[
         (
             "DES-EDE3-ECB",
@@ -2699,7 +2797,7 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
         ));
     }
 
-    // ---- 4. TDES EDE2 (16-byte key, 2-key variant) — 4 modes ---------------
+    // ---- 2. TDES EDE2 (16-byte key, 2-key variant) — 4 modes ---------------
     let tdes_ede2_modes: &[(&'static str, TdesCipherMode, &'static str)] = &[
         (
             "DES-EDE-ECB",
@@ -2731,7 +2829,7 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
         ));
     }
 
-    // ---- 5. TDES Key Wrap (RFC 3217) — 1 entry -----------------------------
+    // ---- 3. TDES Key Wrap (RFC 3217) — 1 entry -----------------------------
     let _ = TdesWrapCipher::new("DES-EDE3-WRAP");
     descs.push(make_cipher_descriptor(
         vec!["DES-EDE3-WRAP"],
@@ -2740,4 +2838,804 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
     ));
 
     descs
+}
+
+/// Returns the 7 legacy-provider algorithm descriptors registered by the
+/// DES family.
+///
+/// These are the deprecated single-key DES variants and the DESX whitening
+/// construction. They are gated behind the *legacy* provider — matching the
+/// migration applied in `legacy.rs` to Blowfish/CAST5/IDEA/SEED/RC2/RC4/RC5
+/// — to make their use an explicit, auditable opt-in for callers that must
+/// retain compatibility with old data formats.
+///
+/// Composition:
+///
+/// | Family | Count | Names                                          |
+/// |--------|-------|------------------------------------------------|
+/// | DES    |   6   | `DES-ECB`, `DES-CBC`, `DES-OFB`, `DES-CFB`,    |
+/// |        |       | `DES-CFB1`, `DES-CFB8`                         |
+/// | DESX   |   1   | `DESX-CBC`                                     |
+///
+/// All entries advertise `property = "provider=legacy"` so the algorithm
+/// fetch logic only resolves them when the caller has explicitly loaded
+/// the legacy provider via `OSSL_PROVIDER_load(libctx, "legacy")` (or its
+/// Rust equivalent).
+///
+/// # Wiring Path (Rule R10)
+///
+/// ```text
+/// LegacyProvider::query_operation(OperationType::Cipher)
+///   → implementations::all_legacy_cipher_descriptors()
+///     → ciphers::legacy_descriptors()
+///       → des::legacy_descriptors()  // this function
+/// ```
+#[cfg(feature = "des")]
+#[must_use]
+pub fn legacy_descriptors() -> Vec<AlgorithmDescriptor> {
+    let mut descs = Vec::with_capacity(7);
+
+    // ---- 1. Single DES — 6 modes (LEGACY) ----------------------------------
+    let des_modes: &[(&'static str, DesCipherMode, &'static str)] = &[
+        (
+            "DES-ECB",
+            DesCipherMode::Ecb,
+            "DES Electronic Codebook mode cipher (legacy provider, deprecated)",
+        ),
+        (
+            "DES-CBC",
+            DesCipherMode::Cbc,
+            "DES Cipher Block Chaining mode cipher (legacy provider, deprecated)",
+        ),
+        (
+            "DES-OFB",
+            DesCipherMode::Ofb,
+            "DES Output Feedback mode cipher (legacy provider, deprecated)",
+        ),
+        (
+            "DES-CFB",
+            DesCipherMode::Cfb,
+            "DES Cipher Feedback (64-bit) mode cipher (legacy provider, deprecated)",
+        ),
+        (
+            "DES-CFB1",
+            DesCipherMode::Cfb1,
+            "DES Cipher Feedback (1-bit) mode cipher (legacy provider, deprecated)",
+        ),
+        (
+            "DES-CFB8",
+            DesCipherMode::Cfb8,
+            "DES Cipher Feedback (8-bit) mode cipher (legacy provider, deprecated)",
+        ),
+    ];
+    for (name, mode, description) in des_modes {
+        // Sanity-construct to reject any future inconsistency at startup.
+        let _ = DesCipher::new(name, *mode);
+        descs.push(make_cipher_descriptor(
+            vec![*name],
+            "provider=legacy",
+            description,
+        ));
+    }
+
+    // ---- 2. DESX — 1 mode (LEGACY) -----------------------------------------
+    let _ = DesxCipher::new("DESX-CBC");
+    descs.push(make_cipher_descriptor(
+        vec!["DESX-CBC"],
+        "provider=legacy",
+        "DESX-CBC cipher (DES with input/output XOR whitening, legacy provider, deprecated)",
+    ));
+
+    descs
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    // RATIONALE: Within the `#[cfg(test)]` test module the `expect`, `unwrap`,
+    // and `panic!` patterns are idiomatic for asserting setup invariants and
+    // failing fast on unexpected branches. The clippy.toml guidance explicitly
+    // permits these patterns in tests with a justification (see workspace
+    // `Cargo.toml` `[workspace.lints.clippy]` notes for `unwrap_used`,
+    // `expect_used`, and `panic`). Production code in this file uses
+    // `Result<T, ProviderError>` everywhere — these allowances are scoped
+    // exclusively to the test module.
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // FIPS 46-3 §A.4 weak/semi-weak DES key fixtures
+    // -------------------------------------------------------------------------
+
+    /// All-zero parity-bits DES weak key (FIPS 46-3 §A.4 entry #1).
+    const WEAK_KEY_ALL_01: [u8; DES_KEY_BYTES] =
+        [0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
+    /// All-one parity-bits DES weak key (FIPS 46-3 §A.4 entry #4).
+    const WEAK_KEY_ALL_FE: [u8; DES_KEY_BYTES] =
+        [0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE];
+    /// FIPS 46-3 §A.4 semi-weak key — one half of the (1F,0E) / (E0,F1) pair.
+    const SEMI_WEAK_1F_0E: [u8; DES_KEY_BYTES] =
+        [0x1F, 0x1F, 0x1F, 0x1F, 0x0E, 0x0E, 0x0E, 0x0E];
+    /// FIPS 46-3 §A.4 semi-weak key — the complementary half of the same pair.
+    const SEMI_WEAK_E0_F1: [u8; DES_KEY_BYTES] =
+        [0xE0, 0xE0, 0xE0, 0xE0, 0xF1, 0xF1, 0xF1, 0xF1];
+
+    /// Three distinct, non-weak DES sub-keys for positive-control tests.
+    const GOOD_K1: [u8; DES_KEY_BYTES] =
+        [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+    const GOOD_K2: [u8; DES_KEY_BYTES] =
+        [0x21, 0x43, 0x65, 0x87, 0xA9, 0xCB, 0xED, 0x0F];
+    const GOOD_K3: [u8; DES_KEY_BYTES] =
+        [0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA];
+
+    // -------------------------------------------------------------------------
+    // Helpers: assemble TDES-EDE2 (K1||K2) and TDES-EDE3 (K1||K2||K3) keys
+    // -------------------------------------------------------------------------
+
+    fn make_ede2_key(
+        k1: &[u8; DES_KEY_BYTES],
+        k2: &[u8; DES_KEY_BYTES],
+    ) -> [u8; TDES_EDE2_KEY_BYTES] {
+        let mut out = [0u8; TDES_EDE2_KEY_BYTES];
+        out[0..DES_KEY_BYTES].copy_from_slice(k1);
+        out[DES_KEY_BYTES..2 * DES_KEY_BYTES].copy_from_slice(k2);
+        out
+    }
+
+    fn make_ede3_key(
+        k1: &[u8; DES_KEY_BYTES],
+        k2: &[u8; DES_KEY_BYTES],
+        k3: &[u8; DES_KEY_BYTES],
+    ) -> [u8; TDES_EDE3_KEY_BYTES] {
+        let mut out = [0u8; TDES_EDE3_KEY_BYTES];
+        out[0..DES_KEY_BYTES].copy_from_slice(k1);
+        out[DES_KEY_BYTES..2 * DES_KEY_BYTES].copy_from_slice(k2);
+        out[2 * DES_KEY_BYTES..3 * DES_KEY_BYTES].copy_from_slice(k3);
+        out
+    }
+
+    // -------------------------------------------------------------------------
+    // TDES-EDE2 — weak-component rejection
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tdes_ede2_rejects_weak_k1() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE-ECB", TdesCipherMode::Ecb, TDES_EDE2_KEY_BYTES);
+        let key = make_ede2_key(&WEAK_KEY_ALL_01, &GOOD_K2);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("weak K1 must be rejected");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1") && msg.contains("weak"),
+                    "expected K1/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tdes_ede2_rejects_weak_k2() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE-ECB", TdesCipherMode::Ecb, TDES_EDE2_KEY_BYTES);
+        let key = make_ede2_key(&GOOD_K1, &WEAK_KEY_ALL_FE);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("weak K2 must be rejected");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K2") && msg.contains("weak"),
+                    "expected K2/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tdes_ede2_rejects_semi_weak_k1() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE-ECB", TdesCipherMode::Ecb, TDES_EDE2_KEY_BYTES);
+        let key = make_ede2_key(&SEMI_WEAK_1F_0E, &GOOD_K2);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("semi-weak K1 must be rejected");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1") && msg.contains("weak"),
+                    "expected K1/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // TDES-EDE3 — weak-component rejection
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tdes_ede3_rejects_weak_k1() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE3-ECB", TdesCipherMode::Ecb, TDES_EDE3_KEY_BYTES);
+        let key = make_ede3_key(&WEAK_KEY_ALL_01, &GOOD_K2, &GOOD_K3);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("weak K1 must be rejected");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1") && msg.contains("weak"),
+                    "expected K1/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tdes_ede3_rejects_weak_k2() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE3-ECB", TdesCipherMode::Ecb, TDES_EDE3_KEY_BYTES);
+        let key = make_ede3_key(&GOOD_K1, &WEAK_KEY_ALL_FE, &GOOD_K3);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("weak K2 must be rejected");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K2") && msg.contains("weak"),
+                    "expected K2/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tdes_ede3_rejects_semi_weak_k3() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE3-ECB", TdesCipherMode::Ecb, TDES_EDE3_KEY_BYTES);
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K2, &SEMI_WEAK_E0_F1);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("semi-weak K3 must be rejected");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K3") && msg.contains("weak"),
+                    "expected K3/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // TDES — degenerate-key (K1==K2 / K2==K3) rejection
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tdes_ede2_rejects_k1_eq_k2() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE-ECB", TdesCipherMode::Ecb, TDES_EDE2_KEY_BYTES);
+        let key = make_ede2_key(&GOOD_K1, &GOOD_K1);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("K1==K2 must be rejected (collapses to single-DES)");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1==K2") && msg.contains("single-DES"),
+                    "expected K1==K2/single-DES message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tdes_ede3_rejects_k1_eq_k2() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE3-ECB", TdesCipherMode::Ecb, TDES_EDE3_KEY_BYTES);
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K1, &GOOD_K3);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("K1==K2 must be rejected (collapses to single-DES)");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1==K2") && msg.contains("single-DES"),
+                    "expected K1==K2/single-DES message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tdes_ede3_rejects_k2_eq_k3() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE3-ECB", TdesCipherMode::Ecb, TDES_EDE3_KEY_BYTES);
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K2, &GOOD_K2);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("K2==K3 must be rejected (collapses to two-key TDES)");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K2==K3") && msg.contains("two-key TDES"),
+                    "expected K2==K3/two-key TDES message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // TDES — positive controls (distinct, non-weak components)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tdes_ede2_accepts_distinct_nonweak_components() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE-ECB", TdesCipherMode::Ecb, TDES_EDE2_KEY_BYTES);
+        let key = make_ede2_key(&GOOD_K1, &GOOD_K2);
+        ctx.encrypt_init(&key, None, None)
+            .expect("distinct non-weak EDE2 key must initialise");
+    }
+
+    #[test]
+    fn tdes_ede3_accepts_distinct_nonweak_components() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE3-ECB", TdesCipherMode::Ecb, TDES_EDE3_KEY_BYTES);
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K2, &GOOD_K3);
+        ctx.encrypt_init(&key, None, None)
+            .expect("distinct non-weak EDE3 key must initialise");
+    }
+
+    // -------------------------------------------------------------------------
+    // TDES — decrypt direction is symmetrically validated
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tdes_ede3_decrypt_rejects_weak_k1() {
+        let mut ctx =
+            TdesCipherContext::new("DES-EDE3-ECB", TdesCipherMode::Ecb, TDES_EDE3_KEY_BYTES);
+        let key = make_ede3_key(&WEAK_KEY_ALL_01, &GOOD_K2, &GOOD_K3);
+        let err = ctx
+            .decrypt_init(&key, None, None)
+            .expect_err("weak K1 must be rejected on the decrypt path too");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1") && msg.contains("weak"),
+                    "expected K1/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // TDES-EDE3-WRAP — weak-component rejection
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tdes_wrap_rejects_weak_k1() {
+        let mut ctx = TdesWrapCipherContext::new("DES-EDE3-WRAP");
+        let key = make_ede3_key(&WEAK_KEY_ALL_01, &GOOD_K2, &GOOD_K3);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("weak K1 must be rejected for wrap mode");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1") && msg.contains("weak"),
+                    "expected K1/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tdes_wrap_rejects_weak_k2() {
+        let mut ctx = TdesWrapCipherContext::new("DES-EDE3-WRAP");
+        let key = make_ede3_key(&GOOD_K1, &WEAK_KEY_ALL_FE, &GOOD_K3);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("weak K2 must be rejected for wrap mode");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K2") && msg.contains("weak"),
+                    "expected K2/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tdes_wrap_rejects_semi_weak_k3() {
+        let mut ctx = TdesWrapCipherContext::new("DES-EDE3-WRAP");
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K2, &SEMI_WEAK_1F_0E);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("semi-weak K3 must be rejected for wrap mode");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K3") && msg.contains("weak"),
+                    "expected K3/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // TDES-EDE3-WRAP — degenerate-key rejection
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tdes_wrap_rejects_k1_eq_k2() {
+        let mut ctx = TdesWrapCipherContext::new("DES-EDE3-WRAP");
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K1, &GOOD_K3);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("K1==K2 must be rejected for wrap mode");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1==K2") && msg.contains("single-DES"),
+                    "expected K1==K2/single-DES message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tdes_wrap_rejects_k2_eq_k3() {
+        let mut ctx = TdesWrapCipherContext::new("DES-EDE3-WRAP");
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K2, &GOOD_K2);
+        let err = ctx
+            .encrypt_init(&key, None, None)
+            .expect_err("K2==K3 must be rejected for wrap mode");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K2==K3") && msg.contains("two-key TDES"),
+                    "expected K2==K3/two-key TDES message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // TDES-EDE3-WRAP — positive control
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn tdes_wrap_accepts_distinct_nonweak_components() {
+        let mut ctx = TdesWrapCipherContext::new("DES-EDE3-WRAP");
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K2, &GOOD_K3);
+        ctx.encrypt_init(&key, None, None)
+            .expect("distinct non-weak EDE3 key must initialise wrap context");
+    }
+
+    // -------------------------------------------------------------------------
+    // Direct helper-function tests — isolated behaviour, length-guard semantics
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn helper_validate_tdes_component_weak_keys_rejects_first_position() {
+        let key = make_ede3_key(&WEAK_KEY_ALL_FE, &GOOD_K2, &GOOD_K3);
+        let err = validate_tdes_component_weak_keys(&key)
+            .expect_err("weak K1 must be detected by helper");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1") && msg.contains("weak"),
+                    "expected K1/weak message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn helper_validate_tdes_component_weak_keys_accepts_distinct_components() {
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K2, &GOOD_K3);
+        validate_tdes_component_weak_keys(&key)
+            .expect("non-weak components must pass helper validation");
+    }
+
+    #[test]
+    fn helper_validate_tdes_degenerate_keys_rejects_k1_eq_k2() {
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K1, &GOOD_K3);
+        let err = validate_tdes_degenerate_keys(&key)
+            .expect_err("K1==K2 must be detected by helper");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K1==K2") && msg.contains("single-DES"),
+                    "expected K1==K2/single-DES message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn helper_validate_tdes_degenerate_keys_rejects_k2_eq_k3() {
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K2, &GOOD_K2);
+        let err = validate_tdes_degenerate_keys(&key)
+            .expect_err("K2==K3 must be detected by helper");
+        match err {
+            ProviderError::Init(msg) => {
+                assert!(
+                    msg.contains("K2==K3") && msg.contains("two-key TDES"),
+                    "expected K2==K3/two-key TDES message, got: {msg}"
+                );
+            }
+            other => panic!("expected ProviderError::Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn helper_validate_tdes_degenerate_keys_accepts_distinct_components() {
+        let key = make_ede3_key(&GOOD_K1, &GOOD_K2, &GOOD_K3);
+        validate_tdes_degenerate_keys(&key)
+            .expect("distinct components must pass helper validation");
+    }
+
+    #[test]
+    fn helper_validate_tdes_degenerate_keys_silent_on_unexpected_lengths() {
+        // The degenerate-key helper guards on length — unexpected sizes are
+        // silently OK because the dispatching `init_common` already rejected
+        // them upstream with a clearer error.
+        let too_short = [0u8; 7];
+        validate_tdes_degenerate_keys(&too_short).expect("len < 16 must be silently OK");
+        let off_size = [0u8; 17];
+        validate_tdes_degenerate_keys(&off_size).expect("len ≠ 16 / 24 must be silently OK");
+    }
+
+    #[test]
+    fn helper_validate_tdes_component_weak_keys_silent_on_unexpected_lengths() {
+        // Same length-guard rationale as the degenerate-key helper.
+        let too_short = [0u8; 7];
+        validate_tdes_component_weak_keys(&too_short).expect("len < 16 must be silently OK");
+        let off_size = [0u8; 17];
+        validate_tdes_component_weak_keys(&off_size).expect("len ≠ 16 / 24 must be silently OK");
+    }
+
+    // =========================================================================
+    // Provider Split Tests — `descriptors()` (default) vs
+    // `legacy_descriptors()` (legacy)
+    // =========================================================================
+    //
+    // After applying the NIST SP 800-131A provider split (see module-level
+    // doc-comment), single-key DES (DES-ECB / DES-CBC / DES-OFB / DES-CFB /
+    // DES-CFB1 / DES-CFB8) and DESX-CBC are exposed only by the **legacy
+    // provider** (`provider=legacy`); three-key TDES (DES-EDE3-*) and
+    // two-key TDES (DES-EDE-*) plus DES-EDE3-WRAP remain in the **default
+    // provider** (`provider=default`).
+    //
+    // These tests pin the split so that accidental regressions — a future
+    // contributor moving DES-EDE3-CBC into `legacy_descriptors()` or
+    // re-introducing DES-CBC into `descriptors()` — are caught immediately
+    // by `cargo test -p openssl-provider`.
+    //
+    // Wiring (Rule R10): both `descriptors()` and `legacy_descriptors()`
+    // are reached from the entry point via
+    // `openssl_provider::implementations::ciphers::{descriptors,
+    // legacy_descriptors}` -> `des::{descriptors, legacy_descriptors}`.
+
+    #[test]
+    fn descriptors_returns_eleven_default_provider_entries() {
+        let descs = descriptors();
+        let len = descs.len();
+        assert_eq!(
+            len, 11,
+            "default provider must expose exactly 11 TDES descriptors after \
+             the NIST SP 800-131A split (6 TDES-EDE3 modes + 4 TDES-EDE2 \
+             modes + 1 TDES-EDE3-WRAP); got {len} entries"
+        );
+    }
+
+    #[test]
+    fn descriptors_all_use_default_provider_property() {
+        for desc in descriptors() {
+            let names = &desc.names;
+            let property = desc.property;
+            assert_eq!(
+                property, "provider=default",
+                "default-provider descriptor for {names:?} must advertise \
+                 property=`provider=default`, got `{property}`"
+            );
+        }
+    }
+
+    #[test]
+    fn descriptors_excludes_single_des_modes() {
+        // After NIST SP 800-131A, single-key DES is deprecated and moves
+        // to the legacy provider.  The default provider must NOT advertise
+        // any single-DES mode (only TDES-EDE3 / TDES-EDE2 / DES-EDE3-WRAP
+        // may remain).
+        let descs = descriptors();
+        for forbidden in [
+            "DES-ECB", "DES-CBC", "DES-OFB", "DES-CFB", "DES-CFB1", "DES-CFB8",
+        ] {
+            assert!(
+                !descs.iter().any(|d| d.names.contains(&forbidden)),
+                "default provider must not advertise legacy single-DES mode \
+                 `{forbidden}` — single-DES belongs to `legacy_descriptors()` \
+                 per NIST SP 800-131A"
+            );
+        }
+    }
+
+    #[test]
+    fn descriptors_excludes_desx_cbc() {
+        let descs = descriptors();
+        assert!(
+            !descs.iter().any(|d| d.names.contains(&"DESX-CBC")),
+            "default provider must not advertise legacy DESX-CBC — DESX is \
+             a deprecated DES whitening construction and belongs to \
+             `legacy_descriptors()` per NIST SP 800-131A"
+        );
+    }
+
+    #[test]
+    fn descriptors_includes_all_tdes_ede3_modes() {
+        let descs = descriptors();
+        for required in [
+            "DES-EDE3-ECB",
+            "DES-EDE3-CBC",
+            "DES-EDE3-OFB",
+            "DES-EDE3-CFB",
+            "DES-EDE3-CFB1",
+            "DES-EDE3-CFB8",
+        ] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&required)),
+                "default provider must advertise three-key TDES mode \
+                 `{required}` — three-key TDES remains permitted for legacy \
+                 use through 2023 per NIST SP 800-131A"
+            );
+        }
+    }
+
+    #[test]
+    fn descriptors_includes_all_tdes_ede2_modes() {
+        let descs = descriptors();
+        for required in ["DES-EDE-ECB", "DES-EDE-CBC", "DES-EDE-OFB", "DES-EDE-CFB"] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&required)),
+                "default provider must advertise two-key TDES mode `{required}`"
+            );
+        }
+    }
+
+    #[test]
+    fn descriptors_includes_tdes_ede3_wrap() {
+        let descs = descriptors();
+        assert!(
+            descs.iter().any(|d| d.names.contains(&"DES-EDE3-WRAP")),
+            "default provider must advertise DES-EDE3-WRAP key-wrap mode \
+             (RFC 3217 three-key TDES key wrap)"
+        );
+    }
+
+    #[test]
+    fn legacy_descriptors_returns_seven_legacy_provider_entries() {
+        let descs = legacy_descriptors();
+        let len = descs.len();
+        assert_eq!(
+            len, 7,
+            "legacy provider must expose exactly 7 deprecated DES-family \
+             descriptors after the NIST SP 800-131A split (6 single-DES \
+             modes + 1 DESX-CBC); got {len} entries"
+        );
+    }
+
+    #[test]
+    fn legacy_descriptors_all_use_legacy_provider_property() {
+        for desc in legacy_descriptors() {
+            let names = &desc.names;
+            let property = desc.property;
+            assert_eq!(
+                property, "provider=legacy",
+                "legacy-provider descriptor for {names:?} must advertise \
+                 property=`provider=legacy`, got `{property}`"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_descriptors_includes_all_single_des_modes() {
+        let descs = legacy_descriptors();
+        for required in [
+            "DES-ECB", "DES-CBC", "DES-OFB", "DES-CFB", "DES-CFB1", "DES-CFB8",
+        ] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&required)),
+                "legacy provider must advertise single-DES mode `{required}` \
+                 — deprecated per NIST SP 800-131A and accessible only \
+                 through explicit legacy provider opt-in"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_descriptors_includes_desx_cbc() {
+        let descs = legacy_descriptors();
+        assert!(
+            descs.iter().any(|d| d.names.contains(&"DESX-CBC")),
+            "legacy provider must advertise DESX-CBC — deprecated DES \
+             whitening construction accessible only through explicit \
+             legacy provider opt-in per NIST SP 800-131A"
+        );
+    }
+
+    #[test]
+    fn legacy_descriptors_excludes_all_tdes_modes() {
+        // Three-key TDES (DES-EDE3-*) and two-key TDES (DES-EDE-*) plus
+        // DES-EDE3-WRAP remain in the default provider for legacy
+        // compatibility through 2023 per NIST SP 800-131A.  They MUST NOT
+        // be duplicated in the legacy provider.
+        let descs = legacy_descriptors();
+        for forbidden in [
+            "DES-EDE3-ECB",
+            "DES-EDE3-CBC",
+            "DES-EDE3-OFB",
+            "DES-EDE3-CFB",
+            "DES-EDE3-CFB1",
+            "DES-EDE3-CFB8",
+            "DES-EDE-ECB",
+            "DES-EDE-CBC",
+            "DES-EDE-OFB",
+            "DES-EDE-CFB",
+            "DES-EDE3-WRAP",
+        ] {
+            assert!(
+                !descs.iter().any(|d| d.names.contains(&forbidden)),
+                "legacy provider must not advertise TDES mode `{forbidden}` \
+                 — three-key/two-key TDES belongs to `descriptors()` per \
+                 NIST SP 800-131A"
+            );
+        }
+    }
+
+    #[test]
+    fn descriptors_and_legacy_descriptors_are_disjoint() {
+        // Sanity: no algorithm name appears in BOTH default and legacy
+        // providers.  A given algorithm name belongs to exactly one
+        // provider after the split.
+        let default = descriptors();
+        let legacy = legacy_descriptors();
+        for d in &default {
+            for name in &d.names {
+                assert!(
+                    !legacy.iter().any(|l| l.names.contains(name)),
+                    "algorithm name `{name}` must not appear in BOTH default \
+                     and legacy providers — names belong to exactly one \
+                     provider after the NIST SP 800-131A split"
+                );
+            }
+        }
+    }
 }

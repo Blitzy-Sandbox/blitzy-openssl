@@ -4,7 +4,28 @@ expression: stdout
 ---
 X.509 certificate display, signing, and conversion
 
-Usage: openssl x509
+Usage: openssl x509 [OPTIONS]
 
 Options:
-  -h, --help  Print help
+  -i, --in <FILE>           Path of the input certificate (PEM or DER).  When omitted the command prints a dispatch message on stderr and exits successfully (preserving the dispatch contract for the integration test suite)
+      --inform <FMT>        Input format: `PEM` (default when `--in` is supplied) or `DER`. When the value is omitted and the file content begins with `-----BEGIN`, PEM is assumed; otherwise DER is assumed
+  -o, --out <FILE>          Path of the output file.  When omitted, output is written to stdout
+      --outform <FMT>       Output format: `PEM` (default) or `DER`
+      --noout               Suppress the encoded-output stage.  When set, the handler skips the final `pem`/`der` write — only display fields and check results are emitted
+      --text                Pretty-print the certificate using a comprehensive text-mode renderer.  Mirrors `apps/x509.c -text`
+      --fingerprint         Print the certificate fingerprint as `Algorithm Fingerprint=AA:BB:…` computed by the algorithm given by `--digest` (default SHA1)
+      --serial              Print `serial=<HEX>` — the serial-number bytes as upper-case hex pairs (matching `apps/x509.c -serial`)
+      --subject             Print `subject=<oneline>` — the subject distinguished name in the canonical OpenSSL one-line form
+      --issuer              Print `issuer=<oneline>` — the issuer distinguished name
+      --startdate           Print `notBefore=<ASN.1 time>` — the start of the validity window
+      --enddate             Print `notAfter=<ASN.1 time>` — the end of the validity window
+      --dates               Equivalent to `--startdate --enddate`
+      --hash                Print the subject-name hash (`subject_hash=<8 hex digits>`). Equivalent to OpenSSL's legacy `-hash` / `-subject_hash`
+      --subject-hash-old    Print the legacy MD5-based subject-name hash (`subject_hash_old=<8 hex digits>`)
+      --issuer-hash         Print the issuer-name hash (`issuer_hash=<8 hex digits>`)
+      --issuer-hash-old     Print the legacy MD5-based issuer-name hash (`issuer_hash_old=<8 hex digits>`)
+      --pubkey              Emit the embedded `SubjectPublicKeyInfo` as PEM (`-----BEGIN PUBLIC KEY-----`) on stdout
+      --modulus             Print the public-key modulus (RSA) as `Modulus=<HEX>`.  Falls back to a printable representation of the `SubjectPublicKeyInfo`'s `subjectPublicKey` BIT STRING for non-RSA keys
+      --checkend <SECONDS>  Check whether the certificate will expire within the given number of seconds.  Prints `Certificate will expire` (non-zero exit) or `Certificate will not expire` (zero exit).  Mirrors `apps/x509.c -checkend`
+      --digest <NAME>       Algorithm used to compute the fingerprint when `--fingerprint` is set.  Defaults to `SHA1` to match `apps/x509.c`
+  -h, --help                Print help

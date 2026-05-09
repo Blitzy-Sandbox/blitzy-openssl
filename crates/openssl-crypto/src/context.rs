@@ -303,6 +303,30 @@ impl EvpMethodStoreData {
         self.entries.get(&key).map(|entry| entry.nid)
     }
 
+    /// Looks up a full cached entry, returning both the NID and the
+    /// provider name that supplied the algorithm.
+    ///
+    /// Used by [`crate::evp::fetch_method()`] to reconstruct the cached
+    /// method object on a cache hit. Returns `None` when no matching
+    /// entry exists.
+    ///
+    /// Rule R5: returns `Option` instead of a sentinel value.
+    pub(crate) fn lookup_entry(
+        &self,
+        operation_id: u32,
+        algorithm_name: &str,
+        property_query: &str,
+    ) -> Option<(Nid, String)> {
+        let key = MethodStoreKey {
+            operation_id,
+            algorithm_name: algorithm_name.to_string(),
+            property_query: property_query.to_string(),
+        };
+        self.entries
+            .get(&key)
+            .map(|entry| (entry.nid, entry.provider_name.clone()))
+    }
+
     /// Clears all cached methods, forcing re-fetch from providers.
     ///
     /// Called when providers are loaded or unloaded to ensure stale

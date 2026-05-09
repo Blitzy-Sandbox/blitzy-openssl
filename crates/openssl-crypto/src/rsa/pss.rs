@@ -937,6 +937,93 @@ fn resolve_salt_len_encode(
 }
 
 // =============================================================================
+// FIPS 186-5 §A.1.2 — salt length validation
+// =============================================================================
+
+/// Validates that the requested PSS salt length is approved under FIPS
+/// 186-5 §A.1.2 / SP 800-131A.
+///
+/// Translates the FIPS provider's salt-length sanity check from
+/// `providers/implementations/signature/rsa_sig.c` (`rsa_check_padding`
+/// helper, see also `crypto/rsa/rsa_pss.c` lines 184-218 sentinel
+/// handling). FIPS 186-5 §A.1.2 mandates `0 < sLen <= hLen` for the PSS
+/// signature scheme; deterministic PSS (`sLen == 0`) is **not** an
+/// approved service. Encode-time `Auto` and `Max` are rejected because
+/// their resolved values can exceed `hLen` for typical 2048/3072-bit
+/// moduli, which would violate the FIPS bound.
+///
+/// Approval matrix (active under `fips_module`):
+/// | [`PssSaltLength`] variant      | FIPS verdict | Rationale                                      |
+/// |--------------------------------|--------------|------------------------------------------------|
+/// | `DigestLength` (=hLen)         | ✅ accept    | Canonical FIPS 186-5 §A.1.2 default.           |
+/// | `AutoDigestMax` (≤hLen)        | ✅ accept    | Capped at hLen on the encode side.             |
+/// | `Fixed(n)` with `1 ≤ n ≤ hLen` | ✅ accept    | Bounded by FIPS 186-5 §A.1.2.                  |
+/// | `Fixed(0)`                     | ❌ reject    | Deterministic PSS — not approved.              |
+/// | `Fixed(n)` with `n > hLen`     | ❌ reject    | Exceeds FIPS bound.                            |
+/// | `Auto`                         | ❌ reject    | May resolve to `Max > hLen` at encode time.    |
+/// | `Max`                          | ❌ reject    | Likely exceeds hLen for ≥2048-bit moduli.      |
+///
+/// All rejections surface as [`PssError::InvalidPssParameters`], which
+/// maps to [`CryptoError::Encoding`] via the standard
+/// `From<PssError> for CryptoError` impl, so callers receive a uniform
+/// "encoding failed" signal without leaking the specific sentinel that
+/// triggered the rejection.
+///
+/// This function is gated on the `fips_module` cargo feature; it is
+/// inert when the feature is disabled. The signature is preserved
+/// unconditionally so that downstream callers do not need conditional
+/// compilation.
+#[cfg(feature = "fips_module")]
+#[allow(
+    clippy::match_same_arms,
+    reason = "Each rejection arm documents a distinct FIPS 186-5 §A.1.2 violation \
+              (deterministic PSS, oversized fixed length, unbounded sentinel) — \
+              merging would erase the audit-relevant rationale comments."
+)]
+fn validate_pss_salt_length_fips(
+    salt_length: PssSaltLength,
+    hash_len: usize,
+) -> Result<(), PssError> {
+    match salt_length {
+        // sLen == hLen — the canonical FIPS 186-5 §A.1.2 default.
+        PssSaltLength::DigestLength => Ok(()),
+        // Capped at hLen during encode-time resolution. SAFE.
+        PssSaltLength::AutoDigestMax => Ok(()),
+        // Deterministic PSS is NOT a FIPS-approved service. The C
+        // reference (`rsa_pss.c:208-215`) explicitly rejects sLen == 0
+        // when the FIPS module flag is asserted.
+        PssSaltLength::Fixed(0) => Err(PssError::InvalidPssParameters),
+        // Bounded fixed lengths — accept iff 1 <= sLen <= hLen.
+        PssSaltLength::Fixed(n) if n <= hash_len => Ok(()),
+        // Fixed length exceeds hLen — outside the FIPS 186-5 §A.1.2
+        // bound.
+        PssSaltLength::Fixed(_) => Err(PssError::InvalidPssParameters),
+        // `Auto` and `Max` resolve to (em_len - hLen - 2) at encode
+        // time, which routinely exceeds hLen for 2048/3072/4096-bit
+        // moduli. Reject under FIPS to enforce the §A.1.2 bound at
+        // parameter-validation time rather than allowing a runtime
+        // length-check failure deeper in the encode pipeline.
+        PssSaltLength::Auto | PssSaltLength::Max => Err(PssError::InvalidPssParameters),
+    }
+}
+
+// Inert when the `fips_module` feature is disabled. Defined as a no-op
+// so the call sites remain identical between builds; we keep the
+// `Result<(), PssError>` return type intentionally so callers don't
+// need cfg-conditional `?` operators.
+#[cfg(not(feature = "fips_module"))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "Symmetry with the FIPS-enabled variant; callers use `?` regardless."
+)]
+fn validate_pss_salt_length_fips(
+    _salt_length: PssSaltLength,
+    _hash_len: usize,
+) -> Result<(), PssError> {
+    Ok(())
+}
+
+// =============================================================================
 // EMSA-PSS — encode (sign side)
 // =============================================================================
 
@@ -1015,6 +1102,11 @@ pub fn pss_encode(
     let hash_alg = params.digest;
     let mgf1_alg = params.effective_mgf1_digest();
     let h_len = hash_alg.digest_size();
+
+    // FIPS 186-5 §A.1.2 — reject `sLen == 0` and any salt length that
+    // exceeds `hLen` (or sentinels that resolve to such). Inert when the
+    // `fips_module` feature is disabled.
+    validate_pss_salt_length_fips(params.salt_length, h_len)?;
 
     // Caller bug if the hash slice does not match the announced digest
     // size — every legitimate caller funnels `m_hash` through
@@ -1237,6 +1329,10 @@ pub fn pss_verify(
     let hash_alg = params.digest;
     let mgf1_alg = params.effective_mgf1_digest();
     let h_len = hash_alg.digest_size();
+
+    // FIPS 186-5 §A.1.2 — same gate as the encode side. Inert when the
+    // `fips_module` feature is disabled.
+    validate_pss_salt_length_fips(params.salt_length, h_len)?;
 
     if m_hash.len() != h_len {
         return Err(CryptoError::from(PssError::InvalidPssParameters));
@@ -1846,6 +1942,12 @@ mod tests {
         pss_verify(&em, em_bits, &m_hash, &params).unwrap();
     }
 
+    /// Round-trip test using `PssSaltLength::Max`, which is **rejected under FIPS**
+    /// per FIPS 186-5 §A.1.2 (only `DigestLength`/`AutoDigestMax`/`Fixed(1..=h_len)`
+    /// are permitted). The test is therefore gated to non-FIPS builds; the
+    /// FIPS-mode rejection of `Max` is exercised by
+    /// `validate_pss_salt_length_fips_active_rejects_auto_and_max`.
+    #[cfg(not(feature = "fips_module"))]
     #[test]
     fn pss_round_trip_with_max_salt_length() {
         let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
@@ -1861,6 +1963,13 @@ mod tests {
         pss_verify(&em, em_bits, &m_hash, &params).unwrap();
     }
 
+    /// Round-trip test using `PssSaltLength::Fixed(0)` (deterministic PSS), which
+    /// is **rejected under FIPS** per FIPS 186-5 §A.1.2 (salt length must be
+    /// strictly positive). The test is therefore gated to non-FIPS builds; the
+    /// FIPS-mode rejection is exercised by
+    /// `validate_pss_salt_length_fips_active_rejects_fixed_zero` and
+    /// `pss_encode_rejects_deterministic_under_fips`.
+    #[cfg(not(feature = "fips_module"))]
     #[test]
     fn pss_round_trip_with_zero_salt_length() {
         let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
@@ -2005,5 +2114,241 @@ mod tests {
         // Leading byte should be 0x00 because MSBits == 0.
         assert_eq!(em[0], 0x00);
         pss_verify(&em, em_bits, &m_hash, &params).unwrap();
+    }
+
+    // =========================================================================
+    // FIPS 186-5 §A.1.2 salt-length validation tests
+    //
+    // These exercise `validate_pss_salt_length_fips()` directly. The helper has
+    // two compile-time-gated branches: an active branch (under
+    // `fips_module`) that enforces 1 <= sLen <= hLen, and an inert branch that
+    // is a permissive no-op. We test both branches so the conditional
+    // compilation does not silently skip coverage on either configuration.
+    // =========================================================================
+
+    /// In non-FIPS builds the helper must be a permissive no-op accepting
+    /// every possible `PssSaltLength` variant — including sentinels like
+    /// `Fixed(0)` and `Fixed(usize::MAX)` that would be rejected under
+    /// `fips_module`.
+    #[cfg(not(feature = "fips_module"))]
+    #[test]
+    fn validate_pss_salt_length_fips_inert_accepts_all_variants() {
+        let h_len = 32; // SHA-256 digest size
+
+        // All five PssSaltLength variants must be accepted.
+        validate_pss_salt_length_fips(PssSaltLength::DigestLength, h_len).unwrap();
+        validate_pss_salt_length_fips(PssSaltLength::Auto, h_len).unwrap();
+        validate_pss_salt_length_fips(PssSaltLength::Max, h_len).unwrap();
+        validate_pss_salt_length_fips(PssSaltLength::AutoDigestMax, h_len).unwrap();
+
+        // Boundary Fixed cases — all must succeed when FIPS is OFF.
+        validate_pss_salt_length_fips(PssSaltLength::Fixed(0), h_len).unwrap();
+        validate_pss_salt_length_fips(PssSaltLength::Fixed(1), h_len).unwrap();
+        validate_pss_salt_length_fips(PssSaltLength::Fixed(h_len), h_len).unwrap();
+        validate_pss_salt_length_fips(PssSaltLength::Fixed(h_len + 1), h_len).unwrap();
+        validate_pss_salt_length_fips(PssSaltLength::Fixed(usize::MAX), h_len).unwrap();
+    }
+
+    /// In FIPS builds, `DigestLength` (== hLen) is the canonical FIPS 186-5
+    /// §A.1.2 default and must be unconditionally accepted.
+    #[cfg(feature = "fips_module")]
+    #[test]
+    fn validate_pss_salt_length_fips_active_accepts_digest_length() {
+        // Test across multiple hash sizes.
+        for h_len in [20usize, 28, 32, 48, 64] {
+            validate_pss_salt_length_fips(PssSaltLength::DigestLength, h_len)
+                .expect("DigestLength must always be accepted under FIPS");
+        }
+    }
+
+    /// In FIPS builds, `AutoDigestMax` is the encode-time variant that is
+    /// guaranteed to resolve to ≤ hLen and must be accepted.
+    #[cfg(feature = "fips_module")]
+    #[test]
+    fn validate_pss_salt_length_fips_active_accepts_auto_digest_max() {
+        for h_len in [20usize, 28, 32, 48, 64] {
+            validate_pss_salt_length_fips(PssSaltLength::AutoDigestMax, h_len)
+                .expect("AutoDigestMax must always be accepted under FIPS");
+        }
+    }
+
+    /// In FIPS builds, `Fixed(n)` for `1 <= n <= hLen` must be accepted —
+    /// these are the bounded fixed lengths permitted by FIPS 186-5 §A.1.2.
+    #[cfg(feature = "fips_module")]
+    #[test]
+    fn validate_pss_salt_length_fips_active_accepts_fixed_within_bounds() {
+        // SHA-256 (hLen = 32): exhaustively check every legal fixed length.
+        let h_len = 32;
+        for n in 1..=h_len {
+            validate_pss_salt_length_fips(PssSaltLength::Fixed(n), h_len)
+                .unwrap_or_else(|_| panic!("Fixed({n}) must be accepted under FIPS at hLen=32"));
+        }
+
+        // SHA-384, SHA-512: spot-check the upper bound.
+        validate_pss_salt_length_fips(PssSaltLength::Fixed(48), 48).unwrap();
+        validate_pss_salt_length_fips(PssSaltLength::Fixed(64), 64).unwrap();
+
+        // SHA-1 lower bound.
+        validate_pss_salt_length_fips(PssSaltLength::Fixed(1), 20).unwrap();
+        validate_pss_salt_length_fips(PssSaltLength::Fixed(20), 20).unwrap();
+    }
+
+    /// In FIPS builds, `Fixed(0)` (deterministic PSS) must be rejected per
+    /// FIPS 186-5 §A.1.2 — deterministic PSS is not an approved service.
+    #[cfg(feature = "fips_module")]
+    #[test]
+    fn validate_pss_salt_length_fips_active_rejects_fixed_zero() {
+        for h_len in [20usize, 28, 32, 48, 64] {
+            let err = validate_pss_salt_length_fips(PssSaltLength::Fixed(0), h_len)
+                .expect_err("Fixed(0) must be rejected under FIPS — deterministic PSS not allowed");
+            assert!(
+                matches!(err, PssError::InvalidPssParameters),
+                "Expected InvalidPssParameters for Fixed(0) at hLen={h_len}, got {err:?}"
+            );
+        }
+    }
+
+    /// In FIPS builds, `Fixed(n)` for `n > hLen` must be rejected — exceeds
+    /// the FIPS 186-5 §A.1.2 bound.
+    #[cfg(feature = "fips_module")]
+    #[test]
+    fn validate_pss_salt_length_fips_active_rejects_fixed_exceeding_hlen() {
+        let h_len = 32; // SHA-256
+
+        // Just over the boundary.
+        let err = validate_pss_salt_length_fips(PssSaltLength::Fixed(h_len + 1), h_len)
+            .expect_err("Fixed(hLen+1) must be rejected under FIPS");
+        assert!(matches!(err, PssError::InvalidPssParameters));
+
+        // Well over the boundary.
+        let err = validate_pss_salt_length_fips(PssSaltLength::Fixed(64), h_len).expect_err(
+            "Fixed(64) must be rejected under FIPS at hLen=32",
+        );
+        assert!(matches!(err, PssError::InvalidPssParameters));
+
+        // Pathological extreme.
+        let err = validate_pss_salt_length_fips(PssSaltLength::Fixed(usize::MAX), h_len)
+            .expect_err("Fixed(usize::MAX) must be rejected under FIPS");
+        assert!(matches!(err, PssError::InvalidPssParameters));
+    }
+
+    /// In FIPS builds, `Auto` and `Max` must be rejected because their
+    /// resolved values can exceed hLen for typical 2048/3072-bit moduli.
+    #[cfg(feature = "fips_module")]
+    #[test]
+    fn validate_pss_salt_length_fips_active_rejects_auto_and_max() {
+        for h_len in [20usize, 28, 32, 48, 64] {
+            let err = validate_pss_salt_length_fips(PssSaltLength::Auto, h_len)
+                .expect_err("Auto must be rejected under FIPS");
+            assert!(
+                matches!(err, PssError::InvalidPssParameters),
+                "Expected InvalidPssParameters for Auto at hLen={h_len}, got {err:?}"
+            );
+
+            let err = validate_pss_salt_length_fips(PssSaltLength::Max, h_len)
+                .expect_err("Max must be rejected under FIPS");
+            assert!(
+                matches!(err, PssError::InvalidPssParameters),
+                "Expected InvalidPssParameters for Max at hLen={h_len}, got {err:?}"
+            );
+        }
+    }
+
+    /// Integration-level test: in FIPS builds, `pss_encode()` must propagate
+    /// the FIPS rejection from the helper for `Fixed(0)` (deterministic PSS).
+    #[cfg(feature = "fips_module")]
+    #[test]
+    fn pss_encode_rejects_deterministic_under_fips() {
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"fips encode reject deterministic").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let mut params = PssParams::new(DigestAlgorithm::Sha256);
+        params.salt_length = PssSaltLength::Fixed(0); // Deterministic PSS.
+
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        let err = pss_encode(&mut em, em_bits, &m_hash, &params)
+            .expect_err("Deterministic PSS must be rejected under FIPS");
+        assert!(
+            matches!(err, CryptoError::Encoding(_)),
+            "Expected Encoding error for deterministic PSS under FIPS, got {err:?}"
+        );
+    }
+
+    /// Integration-level test: in FIPS builds, `pss_encode()` must propagate
+    /// the FIPS rejection from the helper for `Fixed(n)` exceeding hLen.
+    #[cfg(feature = "fips_module")]
+    #[test]
+    fn pss_encode_rejects_oversized_salt_under_fips() {
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"fips encode reject oversized salt").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let mut params = PssParams::new(DigestAlgorithm::Sha256);
+        // SHA-256 has hLen=32; Fixed(33) must be rejected under FIPS.
+        params.salt_length = PssSaltLength::Fixed(33);
+
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        let err = pss_encode(&mut em, em_bits, &m_hash, &params)
+            .expect_err("Salt > hLen must be rejected under FIPS");
+        assert!(
+            matches!(err, CryptoError::Encoding(_)),
+            "Expected Encoding error for oversized salt under FIPS, got {err:?}"
+        );
+    }
+
+    /// Integration-level test: in FIPS builds, `pss_verify()` must reject
+    /// signatures that were encoded with non-FIPS-approved salt lengths,
+    /// even before reaching the H == H' constant-time comparison.
+    #[cfg(feature = "fips_module")]
+    #[test]
+    fn pss_verify_rejects_non_fips_salt_under_fips() {
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"fips verify reject").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let mut params = PssParams::new(DigestAlgorithm::Sha256);
+        params.salt_length = PssSaltLength::Auto; // Encode-time sentinel — not FIPS-approved.
+
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let em = vec![0u8; em_len]; // Content irrelevant — gate fires first.
+
+        let err = pss_verify(&em, em_bits, &m_hash, &params)
+            .expect_err("Auto salt must be rejected under FIPS");
+        assert!(
+            matches!(err, CryptoError::Encoding(_)),
+            "Expected Encoding error for Auto salt under FIPS, got {err:?}"
+        );
+    }
+
+    /// Integration-level test: in non-FIPS builds, `Fixed(0)` (deterministic
+    /// PSS) must continue to work — confirms the inert branch is truly
+    /// a no-op and does not accidentally enforce FIPS bounds.
+    #[cfg(not(feature = "fips_module"))]
+    #[test]
+    fn pss_encode_accepts_deterministic_in_non_fips_builds() {
+        let mut hasher: Box<dyn Digest> = create_digest(DigestAlgorithm::Sha256).unwrap();
+        hasher.update(b"non-fips deterministic round trip").unwrap();
+        let m_hash = hasher.finalize().unwrap();
+
+        let mut params = PssParams::new(DigestAlgorithm::Sha256);
+        params.salt_length = PssSaltLength::Fixed(0); // Deterministic PSS.
+
+        let em_bits = rfc8017_2048_em_bits();
+        let em_len = (em_bits + 7) / 8;
+        let mut em = vec![0u8; em_len];
+
+        // Encode + verify round-trip must succeed in non-FIPS builds.
+        pss_encode(&mut em, em_bits, &m_hash, &params)
+            .expect("Deterministic PSS must encode successfully in non-FIPS builds");
+        pss_verify(&em, em_bits, &m_hash, &params)
+            .expect("Deterministic PSS must verify successfully in non-FIPS builds");
     }
 }

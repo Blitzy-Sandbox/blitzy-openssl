@@ -448,6 +448,22 @@ pub const GCM_TLS_FIXED_IV_LEN: usize = 4;
 /// TLS tag length for GCM (16 bytes, always full-length in TLS).
 pub const GCM_TLS_TAG_LEN: usize = 16;
 
+/// Standard NIST-approved GCM tag lengths per SP 800-38D §5.2.1.1.
+///
+/// NIST SP 800-38D constrains GCM tag sizes to the discrete set
+/// {128, 120, 112, 104, 96, 64, 32} bits, which corresponds to byte
+/// lengths {16, 15, 14, 13, 12, 8, 4}.  Implementations MUST reject
+/// non-conforming sizes (e.g., 5, 6, 7, 9, 10, 11 bytes) to prevent
+/// truncation that does not meet the standard's security analysis.
+///
+/// References:
+/// - NIST SP 800-38D §5.2.1.1 ("The supported tag lengths shall be one
+///   of the following: 128, 120, 112, 104, or 96 bits.  For certain
+///   applications ... 64 or 32 bits MAY be used.")
+/// - RFC 5116 §5.1 (AEAD-AES-128-GCM tag is 16 bytes)
+/// - RFC 5288 §3 (TLS GCM tag is 16 bytes / `GCM_TLS_TAG_LEN`)
+pub const GCM_NIST_TAG_LENGTHS: &[usize] = &[4, 8, 12, 13, 14, 15, 16];
+
 /// CCM (Counter with CBC-MAC) AEAD operation state.
 ///
 /// Holds all mutable state required during a CCM encryption or decryption
@@ -1020,11 +1036,16 @@ pub fn generic_stream_update(
 // AEAD Validation Helpers
 // =============================================================================
 
-/// Validates a GCM authentication tag length.
+/// Validates a GCM authentication tag length against the strict
+/// NIST SP 800-38D §5.2.1.1 set.
 ///
-/// GCM tags must be between 4 and 16 bytes (inclusive) per NIST SP 800-38D
-/// §5.2.1.  The standard tag sizes are 128, 120, 112, 104, 96, 64, or 32
-/// bits (16, 15, 14, 13, 12, 8, or 4 bytes).
+/// NIST SP 800-38D constrains GCM tag sizes to {128, 120, 112, 104, 96,
+/// 64, 32} bits — i.e., byte lengths {16, 15, 14, 13, 12, 8, 4}.  Earlier
+/// implementations of this helper accepted any length in `4..=16`, which
+/// admits non-conforming truncations (5, 6, 7, 9, 10, 11 bytes) that fall
+/// outside the standard's security analysis.  This validator now rejects
+/// those non-NIST values explicitly per the strict set defined in
+/// [`GCM_NIST_TAG_LENGTHS`].
 ///
 /// # Parameters
 ///
@@ -1032,12 +1053,18 @@ pub fn generic_stream_update(
 ///
 /// # Returns
 ///
-/// - `Ok(())` if the tag length is valid.
+/// - `Ok(())` if the tag length is one of {4, 8, 12, 13, 14, 15, 16}.
 /// - `Err(ProviderError)` describing why the tag length is invalid.
+///
+/// # Security
+///
+/// CWE-327 (use of a broken or risky cryptographic algorithm) is mitigated
+/// here by refusing to operate with truncated tag sizes that NIST has not
+/// approved for the underlying GHASH/AES-CTR composition.
 pub fn gcm_validate_tag_len(len: usize) -> ProviderResult<()> {
-    if !(GCM_MIN_TAG_LEN..=GCM_MAX_TAG_LEN).contains(&len) {
+    if !GCM_NIST_TAG_LENGTHS.contains(&len) {
         return Err(ProviderError::Dispatch(format!(
-            "GCM tag length must be {GCM_MIN_TAG_LEN}..={GCM_MAX_TAG_LEN} bytes, got {len}"
+            "GCM tag length must be one of {GCM_NIST_TAG_LENGTHS:?} bytes per NIST SP 800-38D §5.2.1.1, got {len}"
         )));
     }
     Ok(())
@@ -1505,10 +1532,13 @@ mod tests {
 
     #[test]
     fn gcm_tag_len_valid_range() {
-        for len in 4..=16 {
+        // Per NIST SP 800-38D §5.2.1.1, only the discrete set
+        // {128, 120, 112, 104, 96, 64, 32} bits is approved for GCM tags,
+        // which corresponds to byte lengths {16, 15, 14, 13, 12, 8, 4}.
+        for len in [4, 8, 12, 13, 14, 15, 16] {
             assert!(
                 gcm_validate_tag_len(len).is_ok(),
-                "tag len {len} should be valid"
+                "tag len {len} should be valid (NIST-approved)"
             );
         }
     }
@@ -1522,6 +1552,20 @@ mod tests {
     #[test]
     fn gcm_tag_len_too_long() {
         assert!(gcm_validate_tag_len(17).is_err());
+    }
+
+    #[test]
+    fn gcm_tag_len_non_nist_rejected() {
+        // Lengths between GCM_MIN_TAG_LEN (4) and GCM_MAX_TAG_LEN (16)
+        // that are NOT in the NIST-approved set must be rejected to
+        // mitigate CWE-327 — accepting non-NIST truncations would expose
+        // GCM to authentication strengths that NIST has not analyzed.
+        for len in [5usize, 6, 7, 9, 10, 11] {
+            assert!(
+                gcm_validate_tag_len(len).is_err(),
+                "tag len {len} should be rejected (non-NIST per SP 800-38D §5.2.1.1)"
+            );
+        }
     }
 
     #[test]

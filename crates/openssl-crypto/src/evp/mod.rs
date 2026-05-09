@@ -61,8 +61,104 @@
 //! | `EVP_KEYEXCH_fetch()` | `KeyExchange::fetch()` |
 //! | `EVP_ASYM_CIPHER_fetch()` | `AsymCipher::fetch()` |
 //! | `EVP_KEYMGMT_fetch()` | `KeyMgmt::fetch()` |
-//! | `OSSL_METHOD_STORE` | `EvpMethodStore` |
-//! | `EVP_set_default_properties()` | `set_default_properties()` |
+//! | `OSSL_METHOD_STORE` | [`EvpMethodStore`] / [`crate::context::EvpMethodStoreData`] |
+//! | `EVP_set_default_properties()` | [`set_default_properties()`] |
+//! | `OSSL_PROVIDER_get_capabilities()` | [`fetch_method()`] returns [`CachedMethod`] |
+//!
+//! ## `OSSL_PARAM` Migration Reference
+//!
+//! C OpenSSL exposes algorithm parameters through dynamically typed
+//! `OSSL_PARAM` arrays (string name + type tag + raw bytes pointer +
+//! length).  This Rust translation replaces the runtime-typed bag with
+//! strongly typed parameter structs per algorithm category, providing
+//! compile-time type safety while preserving the wire-format mapping
+//! required for FFI compatibility.  The table below shows the
+//! correspondence between the most frequently used `OSSL_PARAM` names
+//! (~400 unique parameter strings exist across the codebase) and their
+//! typed Rust struct field equivalents.  See [`crate::evp::cipher`],
+//! [`crate::evp::kdf`], [`crate::evp::mac`], [`crate::evp::md`], and
+//! [`crate::evp::pkey`] for the full per-algorithm parameter sets.
+//!
+//! | C `OSSL_PARAM` name | Rust struct::field | Type | Notes |
+//! |---|---|---|---|
+//! | `OSSL_CIPHER_PARAM_KEYLEN` (`"keylen"`) | `CipherParams::key_len` | `usize` | Required; algorithm-specific |
+//! | `OSSL_CIPHER_PARAM_IVLEN` (`"ivlen"`) | `CipherParams::iv_len` | `usize` | Required for non-ECB modes |
+//! | `OSSL_CIPHER_PARAM_IV` (`"iv"`) | `CipherParams::iv` | `Option<Vec<u8>>` | Rule R5 nullable |
+//! | `OSSL_CIPHER_PARAM_PADDING` (`"padding"`) | `CipherParams::padding` | `bool` | Default differs from C — see [`cipher`] docs |
+//! | `OSSL_CIPHER_PARAM_AEAD_TAG` (`"tag"`) | `CipherCtx::aead_tag` | `Vec<u8>` | Length validated per algorithm |
+//! | `OSSL_CIPHER_PARAM_AEAD_TAGLEN` (`"taglen"`) | `CipherParams::aead_tag_len` | `usize` | GCM: {12,13,14,15,16}; CCM: {4,6,8,10,12,14,16} |
+//! | `OSSL_KDF_PARAM_KEY` (`"key"`) | `KdfParams::key` | `Option<Vec<u8>>` | Rule R5 nullable |
+//! | `OSSL_KDF_PARAM_SALT` (`"salt"`) | `KdfParams::salt` | `Option<Vec<u8>>` | HKDF: optional; PBKDF2: required |
+//! | `OSSL_KDF_PARAM_INFO` (`"info"`) | `KdfParams::info` | `Option<Vec<u8>>` | HKDF context-info input |
+//! | `OSSL_KDF_PARAM_DIGEST` (`"digest"`) | `KdfParams::digest` | `Option<String>` | Hash algorithm name |
+//! | `OSSL_KDF_PARAM_ITER` (`"iter"`) | `KdfParams::iterations` | `u32` | PBKDF2 iteration count |
+//! | `OSSL_MAC_PARAM_KEY` (`"key"`) | `MacParams::key` | `Vec<u8>` | Required |
+//! | `OSSL_MAC_PARAM_DIGEST` (`"digest"`) | `MacParams::digest` | `Option<String>` | HMAC digest name |
+//! | `OSSL_MAC_PARAM_SIZE` (`"size"`) | `MacParams::output_size` | `Option<usize>` | XMAC output length |
+//! | `OSSL_DIGEST_PARAM_XOFLEN` (`"xoflen"`) | `MdParams::xof_len` | `Option<usize>` | SHAKE128/256 only |
+//! | `OSSL_DIGEST_PARAM_BLOCK_SIZE` (`"blocksize"`) | `MdParams::block_size` | `usize` | Read-only metadata |
+//! | `OSSL_PKEY_PARAM_RSA_N` (`"n"`) | `PKeyParams::rsa_n` | `Vec<u8>` (BE bytes) | RSA modulus |
+//! | `OSSL_PKEY_PARAM_RSA_E` (`"e"`) | `PKeyParams::rsa_e` | `Vec<u8>` (BE bytes) | RSA public exponent |
+//! | `OSSL_PKEY_PARAM_RSA_D` (`"d"`) | `PKeyParams::rsa_d` | `Zeroizing<Vec<u8>>` | RSA private exponent (zeroized on drop) |
+//! | `OSSL_PKEY_PARAM_EC_PUB_X` (`"qx"`) | `PKeyParams::ec_pub_x` | `Vec<u8>` (BE bytes) | EC public key X-coordinate |
+//! | `OSSL_PKEY_PARAM_GROUP_NAME` (`"group"`) | `PKeyParams::ec_group` | `Option<String>` | Curve name (e.g., `"P-256"`) |
+//! | `OSSL_PKEY_PARAM_PROPERTIES` (`"properties"`) | `fetch_method` `properties` arg | `Option<&str>` | Property query string |
+//! | `OSSL_RAND_PARAM_STATE` (`"state"`) | `RandCtx::state` | `RandState` enum | DRBG state machine |
+//! | `OSSL_RAND_PARAM_STRENGTH` (`"strength"`) | `RandParams::strength` | `u32` | Security strength in bits |
+//! | `OSSL_SIGNATURE_PARAM_DIGEST` (`"digest"`) | `SignatureParams::digest` | `Option<String>` | Pre-hash function name |
+//! | `OSSL_SIGNATURE_PARAM_PAD_MODE` (`"pad-mode"`) | `SignatureParams::padding_mode` | `RsaPaddingMode` enum | RSA: PKCS#1 / PSS / OAEP |
+//! | `OSSL_SIGNATURE_PARAM_PSS_SALTLEN` (`"saltlen"`) | `SignatureParams::pss_salt_len` | `Option<usize>` | RSA-PSS salt length |
+//! | `OSSL_SIGNATURE_PARAM_MGF1_DIGEST` (`"mgf1-digest"`) | `SignatureParams::mgf1_digest` | `Option<String>` | RSA-PSS MGF1 hash |
+//! | `OSSL_KEM_PARAM_OPERATION` (`"operation"`) | `KemCtx::operation` | `KemOperation` enum | Encapsulate / decapsulate |
+//! | `OSSL_KEYMGMT_PARAM_*` | `KeyMgmtParams::*` | per-algorithm | See [`keymgmt`] docs |
+//!
+//! ### Type Tag Mapping
+//!
+//! | C type tag | Rust representation |
+//! |---|---|
+//! | `OSSL_PARAM_INTEGER` | `i64` / `u64` (validated narrowing per Rule R6) |
+//! | `OSSL_PARAM_UNSIGNED_INTEGER` | `u32` / `u64` |
+//! | `OSSL_PARAM_REAL` | `f64` |
+//! | `OSSL_PARAM_UTF8_STRING` | `String` / `&str` |
+//! | `OSSL_PARAM_UTF8_PTR` | `Cow<'_, str>` (for borrowed/owned strings) |
+//! | `OSSL_PARAM_OCTET_STRING` | `Vec<u8>` / `&[u8]` |
+//! | `OSSL_PARAM_OCTET_PTR` | `Cow<'_, [u8]>` |
+//!
+//! ## Dual-Store Architecture
+//!
+//! This module defines two method-store types with distinct roles:
+//!
+//! 1. **[`EvpMethodStore`] (this module)** — A standalone, self-contained
+//!    cache type intended for unit-test fixtures and isolated algorithm
+//!    lookup tables.  It carries its own `RwLock` and stores rich
+//!    [`CachedMethod`] objects (name + provider + description + NID).
+//!    Production code does **not** use this type directly.
+//!
+//! 2. **[`crate::context::EvpMethodStoreData`] (production cache)** — The
+//!    real cache integrated into [`LibContext`] via the
+//!    [`LibContext::evp_method_store()`](crate::context::LibContext)
+//!    accessor.  It stores compact `(NID, provider_name)` tuples keyed by
+//!    `(operation_id, algorithm_name, property_query)` and is invalidated
+//!    whenever providers are loaded or unloaded.
+//!
+//! ### Recommended API: [`fetch_method()`]
+//!
+//! Production callers should use the [`fetch_method()`] helper, which:
+//!
+//! - Looks up the requested algorithm in the [`LibContext`]-attached cache.
+//! - On a cache miss, selects an activated provider that satisfies the
+//!   property query (e.g., `"provider=fips"`), maps the algorithm name to
+//!   a [`Nid`] via [`nid_for_algorithm_name()`], and inserts the result
+//!   into the cache for future fetches.
+//! - On a cache hit, reconstructs the full [`CachedMethod`] from the
+//!   stored entry without re-querying providers.
+//!
+//! This dual-store design preserves the existing test-friendly
+//! [`EvpMethodStore`] API while ensuring all production fetches funnel
+//! through the [`LibContext`] cache, satisfying AAP §0.7.1's algorithm
+//! caching requirement and Rule R10 wiring (caller chain:
+//! `openssl_cli::main` → algorithm fetch → [`fetch_method()`] →
+//! [`LibContext::evp_method_store()`](crate::context::LibContext)).
 //!
 //! ## Rules Enforced
 //!
@@ -690,6 +786,311 @@ pub fn register_algorithm_name(name: &str, nid: Nid) -> CryptoResult<()> {
     Ok(())
 }
 
+/// Reverse lookup: maps a canonical algorithm name to its [`Nid`].
+///
+/// This is the inverse of [`lookup_algorithm_name`].  Comparisons are
+/// case-insensitive (ASCII) so callers can pass user-supplied names without
+/// worrying about exact casing of the canonical form.  Returns `None`
+/// (Rule R5) when the name is not in the well-known mapping table.
+///
+/// Translates the C-side `OBJ_sn2nid()` / `OBJ_ln2nid()` lookup pattern
+/// from `crypto/objects/obj_dat.c` for the subset of algorithms tracked
+/// by the EVP layer.  Unknown names return `None` rather than
+/// `Nid::UNDEF` so callers can distinguish "not in the table" from "the
+/// undefined NID was deliberately registered" — the latter is an error
+/// condition rejected by [`register_algorithm_name`].
+///
+/// # Examples
+///
+/// ```
+/// use openssl_crypto::evp::nid_for_algorithm_name;
+/// use openssl_common::Nid;
+///
+/// assert_eq!(nid_for_algorithm_name("SHA2-256"), Some(Nid::SHA256));
+/// assert_eq!(nid_for_algorithm_name("sha2-256"), Some(Nid::SHA256));
+/// assert_eq!(nid_for_algorithm_name("AES-256-GCM"), Some(Nid::AES_256_GCM));
+/// assert!(nid_for_algorithm_name("not-an-algorithm").is_none());
+/// ```
+pub fn nid_for_algorithm_name(name: &str) -> Option<Nid> {
+    // Match the canonical names returned by `lookup_algorithm_name` plus
+    // common aliases (e.g., "SHA-256" for "SHA2-256") that the C layer
+    // accepts via OBJ_NAME_add(OBJ_NAME_TYPE_*_ALIAS, ...).  All comparisons
+    // are case-insensitive per the OpenSSL convention.
+    let normalised = name.trim();
+    if normalised.is_empty() {
+        trace!("evp: nid lookup for empty name — returning None");
+        return None;
+    }
+
+    if normalised.eq_ignore_ascii_case("SHA1") || normalised.eq_ignore_ascii_case("SHA-1") {
+        return Some(Nid::SHA1);
+    }
+    if normalised.eq_ignore_ascii_case("SHA2-256") || normalised.eq_ignore_ascii_case("SHA-256") {
+        return Some(Nid::SHA256);
+    }
+    if normalised.eq_ignore_ascii_case("SHA2-384") || normalised.eq_ignore_ascii_case("SHA-384") {
+        return Some(Nid::SHA384);
+    }
+    if normalised.eq_ignore_ascii_case("SHA2-512") || normalised.eq_ignore_ascii_case("SHA-512") {
+        return Some(Nid::SHA512);
+    }
+    if normalised.eq_ignore_ascii_case("SHA3-256") {
+        return Some(Nid::SHA3_256);
+    }
+    if normalised.eq_ignore_ascii_case("SHA3-384") {
+        return Some(Nid::SHA3_384);
+    }
+    if normalised.eq_ignore_ascii_case("SHA3-512") {
+        return Some(Nid::SHA3_512);
+    }
+    if normalised.eq_ignore_ascii_case("MD5") {
+        return Some(Nid::MD5);
+    }
+    if normalised.eq_ignore_ascii_case("AES-128-GCM") {
+        return Some(Nid::AES_128_GCM);
+    }
+    if normalised.eq_ignore_ascii_case("AES-256-GCM") {
+        return Some(Nid::AES_256_GCM);
+    }
+    if normalised.eq_ignore_ascii_case("ChaCha20-Poly1305") {
+        return Some(Nid::CHACHA20_POLY1305);
+    }
+    if normalised.eq_ignore_ascii_case("RSA") {
+        return Some(Nid::RSA);
+    }
+    if normalised.eq_ignore_ascii_case("EC") {
+        return Some(Nid::EC);
+    }
+    if normalised.eq_ignore_ascii_case("ED25519") {
+        return Some(Nid::ED25519);
+    }
+    if normalised.eq_ignore_ascii_case("X25519") {
+        return Some(Nid::X25519);
+    }
+    if normalised.eq_ignore_ascii_case("ML-KEM-768") {
+        return Some(Nid::ML_KEM_768);
+    }
+
+    trace!(name = name, "evp: name not found in NID map");
+    None
+}
+
+// ============================================================================
+// Provider selection for property-query-aware fetch
+// ============================================================================
+
+/// Selects an activated provider that satisfies the given property query.
+///
+/// Implements the subset of `OSSL_PROPERTY_query` resolution required by
+/// [`fetch_method`].  The matching rules are evaluated in priority order:
+///
+/// 1. If the query contains `provider=NAME` and `NAME` is currently
+///    activated, that provider is returned regardless of other properties.
+/// 2. If the query contains `fips=yes` and the `"fips"` provider is
+///    activated, it is returned.
+/// 3. Otherwise, the first activated provider yielded by the underlying
+///    provider store is returned.  Callers that require a specific
+///    provider must use rule 1 (`provider=NAME`) to pin selection
+///    explicitly; absent such a pin the choice among multiple activated
+///    providers is intentionally implementation-defined and may not match
+///    registration order.
+///
+/// Returns [`CryptoError::Provider`] when no provider satisfies the query
+/// (for example, no providers are activated, or a `provider=` request
+/// names an unknown provider).  The error message preserves the original
+/// query string for diagnostic value.
+///
+/// # Rule R5
+///
+/// Uses `Option<&str>` for the optional query and returns
+/// `CryptoResult<String>` rather than encoding "no provider" via an empty
+/// string.
+fn select_provider_for_query(ctx: &LibContext, query: &str) -> CryptoResult<String> {
+    let store = ctx.provider_store();
+
+    // Rule 1: explicit `provider=` pin overrides everything else.
+    if let Some(pinned) = parse_property(query, "provider") {
+        if store.is_activated(pinned) {
+            debug!(
+                provider = pinned,
+                query = query,
+                "evp: provider selected via provider= property pin"
+            );
+            return Ok(pinned.to_string());
+        }
+    }
+
+    // Rule 2: explicit FIPS opt-in.
+    if let Some(value) = parse_property(query, "fips") {
+        if value.eq_ignore_ascii_case("yes") && store.is_activated("fips") {
+            debug!(query = query, "evp: FIPS provider selected via fips=yes");
+            return Ok("fips".to_string());
+        }
+    }
+
+    // Rule 3: fall back to the first activated provider.
+    if let Some(first) = store.activated_names().next() {
+        let owned = first.to_string();
+        trace!(
+            provider = %owned,
+            query = query,
+            "evp: defaulting to first activated provider"
+        );
+        return Ok(owned);
+    }
+
+    warn!(query = query, "evp: no activated provider satisfies query");
+    Err(CryptoError::Provider(format!(
+        "no activated provider satisfies property query '{query}'"
+    )))
+}
+
+/// Parses a single `key=value` token from a property-query string.
+///
+/// Accepts the simplified subset of the OpenSSL property syntax used by
+/// [`fetch_method`]: a comma-separated list of `key=value` tokens with
+/// optional surrounding whitespace.  Returns the value associated with
+/// `key`, or `None` if the key is absent.  Comparisons of the key name
+/// are case-insensitive; the returned value is preserved verbatim.
+fn parse_property<'a>(query: &'a str, key: &str) -> Option<&'a str> {
+    if query.is_empty() {
+        return None;
+    }
+    for token in query.split(',') {
+        let trimmed = token.trim();
+        if let Some((k, v)) = trimmed.split_once('=') {
+            if k.trim().eq_ignore_ascii_case(key) {
+                return Some(v.trim());
+            }
+        }
+    }
+    None
+}
+
+// ============================================================================
+// fetch_method — canonical EVP fetch with property-query plumbing
+// ============================================================================
+
+/// Canonical EVP algorithm fetch with property-query and cache plumbing.
+///
+/// This is the production entry point for resolving an algorithm name +
+/// property query into a [`CachedMethod`] backed by an activated provider.
+/// It implements the algorithm-fetch caching layer required by AAP §0.7.1
+/// by delegating to [`crate::context::EvpMethodStoreData`] held by the
+/// supplied [`LibContext`]:
+///
+/// - **Cache hit:** the stored `(nid, provider_name)` tuple is rehydrated
+///   into a fresh [`CachedMethod`] and returned without consulting any
+///   provider.  No locks are held across the rehydration step.
+/// - **Cache miss:** [`select_provider_for_query`] is invoked to find an
+///   activated provider that satisfies the property query, the algorithm
+///   name is mapped to a [`Nid`] via [`nid_for_algorithm_name`] (falling
+///   back to [`Nid::UNDEF`] for provider-supplied algorithms not in the
+///   well-known mapping), and the resolution is inserted into the cache
+///   under the same key for subsequent fetches.
+///
+/// This bridges the two method-store implementations described in the
+/// module-level [Dual-Store Architecture](self#dual-store-architecture)
+/// section: callers see a single `fetch_method` API while the cache is
+/// transparently shared with all other consumers of the same `LibContext`.
+///
+/// # Property Query Semantics
+///
+/// `properties` is `None` for the default query (equivalent to `""`).
+/// Non-empty queries are passed verbatim to [`select_provider_for_query`]
+/// for matching; supported keys today are `provider=NAME` and `fips=yes`.
+/// Unknown keys are silently ignored to preserve forward compatibility
+/// with future property tags.
+///
+/// # Errors
+///
+/// - [`CryptoError::Provider`] when no activated provider satisfies the
+///   property query.
+/// - Any error returned by [`select_provider_for_query`] for malformed
+///   queries.
+///
+/// # Examples
+///
+/// ```no_run
+/// use openssl_crypto::context::LibContext;
+/// use openssl_crypto::evp::{fetch_method, OperationId};
+///
+/// let ctx = LibContext::new();
+/// // (assume providers have been registered + activated)
+/// let method = fetch_method(&ctx, OperationId::Digest, "SHA2-256", None);
+/// ```
+pub fn fetch_method(
+    ctx: &LibContext,
+    operation: OperationId,
+    name: &str,
+    properties: Option<&str>,
+) -> CryptoResult<CachedMethod> {
+    // Normalise inputs once so cache keys are consistent across callers.
+    let property_query = properties.unwrap_or("");
+    let operation_u32 = operation as u32;
+
+    // Cache lookup: hold the read lock only long enough to copy the
+    // (nid, provider_name) tuple — see Rule R7 lock-scope guidance.
+    {
+        let store = ctx.evp_method_store();
+        if let Some((nid, provider_name)) =
+            store.lookup_entry(operation_u32, name, property_query)
+        {
+            debug!(
+                operation = %operation,
+                name = name,
+                provider = %provider_name,
+                "evp::fetch_method: cache hit"
+            );
+            return Ok(CachedMethod {
+                name: name.to_string(),
+                provider_name,
+                description: None,
+                nid,
+            });
+        }
+    }
+
+    trace!(
+        operation = %operation,
+        name = name,
+        query = property_query,
+        "evp::fetch_method: cache miss — selecting provider"
+    );
+
+    // Cache miss: resolve the provider and the canonical NID.
+    let provider_name = select_provider_for_query(ctx, property_query)?;
+    let nid = nid_for_algorithm_name(name).unwrap_or(Nid::UNDEF);
+
+    // Populate the cache for future fetches.  The write lock scope is
+    // bounded to a single `insert` — no provider work is performed under
+    // the lock, satisfying Rule R7 (Lock Granularity).
+    {
+        let mut store = ctx.evp_method_store_mut();
+        store.insert(
+            operation_u32,
+            name.to_string(),
+            property_query.to_string(),
+            nid,
+            provider_name.clone(),
+        );
+    }
+
+    info!(
+        operation = %operation,
+        name = name,
+        provider = %provider_name,
+        "evp::fetch_method: resolved and cached"
+    );
+
+    Ok(CachedMethod {
+        name: name.to_string(),
+        provider_name,
+        description: None,
+        nid,
+    })
+}
+
 // ============================================================================
 // Unit tests
 // ============================================================================
@@ -1031,5 +1432,406 @@ mod tests {
         assert_eq!(method.provider_name, "default");
         assert!(method.description.is_some());
         assert!(!method.nid.is_undef());
+    }
+
+    // ========================================================================
+    // Tests for nid_for_algorithm_name (REVERSE lookup helper)
+    // ========================================================================
+
+    #[test]
+    fn test_nid_for_algorithm_name_canonical() {
+        // All 16 canonical names should resolve to their declared NIDs.
+        assert_eq!(nid_for_algorithm_name("SHA1"), Some(Nid::SHA1));
+        assert_eq!(nid_for_algorithm_name("SHA2-256"), Some(Nid::SHA256));
+        assert_eq!(nid_for_algorithm_name("SHA2-384"), Some(Nid::SHA384));
+        assert_eq!(nid_for_algorithm_name("SHA2-512"), Some(Nid::SHA512));
+        assert_eq!(nid_for_algorithm_name("SHA3-256"), Some(Nid::SHA3_256));
+        assert_eq!(nid_for_algorithm_name("SHA3-384"), Some(Nid::SHA3_384));
+        assert_eq!(nid_for_algorithm_name("SHA3-512"), Some(Nid::SHA3_512));
+        assert_eq!(nid_for_algorithm_name("MD5"), Some(Nid::MD5));
+        assert_eq!(
+            nid_for_algorithm_name("AES-128-GCM"),
+            Some(Nid::AES_128_GCM)
+        );
+        assert_eq!(
+            nid_for_algorithm_name("AES-256-GCM"),
+            Some(Nid::AES_256_GCM)
+        );
+        assert_eq!(
+            nid_for_algorithm_name("ChaCha20-Poly1305"),
+            Some(Nid::CHACHA20_POLY1305)
+        );
+        assert_eq!(nid_for_algorithm_name("RSA"), Some(Nid::RSA));
+        assert_eq!(nid_for_algorithm_name("EC"), Some(Nid::EC));
+        assert_eq!(nid_for_algorithm_name("ED25519"), Some(Nid::ED25519));
+        assert_eq!(nid_for_algorithm_name("X25519"), Some(Nid::X25519));
+        assert_eq!(
+            nid_for_algorithm_name("ML-KEM-768"),
+            Some(Nid::ML_KEM_768)
+        );
+    }
+
+    #[test]
+    fn test_nid_for_algorithm_name_aliases() {
+        // The hyphenated SHA-N spellings are accepted as aliases for SHA1
+        // and SHA2-N per the C `OBJ_NAME_add(..._ALIAS)` convention.
+        assert_eq!(nid_for_algorithm_name("SHA-1"), Some(Nid::SHA1));
+        assert_eq!(nid_for_algorithm_name("SHA-256"), Some(Nid::SHA256));
+        assert_eq!(nid_for_algorithm_name("SHA-384"), Some(Nid::SHA384));
+        assert_eq!(nid_for_algorithm_name("SHA-512"), Some(Nid::SHA512));
+    }
+
+    #[test]
+    fn test_nid_for_algorithm_name_case_insensitive() {
+        // All comparisons are case-insensitive per OpenSSL convention.
+        assert_eq!(nid_for_algorithm_name("sha2-256"), Some(Nid::SHA256));
+        assert_eq!(
+            nid_for_algorithm_name("Aes-256-Gcm"),
+            Some(Nid::AES_256_GCM)
+        );
+        assert_eq!(
+            nid_for_algorithm_name("chacha20-poly1305"),
+            Some(Nid::CHACHA20_POLY1305)
+        );
+        assert_eq!(nid_for_algorithm_name("rsa"), Some(Nid::RSA));
+        assert_eq!(
+            nid_for_algorithm_name("ML-kem-768"),
+            Some(Nid::ML_KEM_768)
+        );
+        assert_eq!(nid_for_algorithm_name("md5"), Some(Nid::MD5));
+    }
+
+    #[test]
+    fn test_nid_for_algorithm_name_trims_whitespace() {
+        // Leading/trailing whitespace is stripped before lookup.
+        assert_eq!(
+            nid_for_algorithm_name("  SHA2-256  "),
+            Some(Nid::SHA256)
+        );
+        assert_eq!(nid_for_algorithm_name("\tRSA\n"), Some(Nid::RSA));
+    }
+
+    #[test]
+    fn test_nid_for_algorithm_name_unknown_returns_none() {
+        // Names outside the canonical/alias map yield None.
+        assert!(nid_for_algorithm_name("not-an-algorithm").is_none());
+        assert!(nid_for_algorithm_name("BLAKE2B").is_none());
+        assert!(nid_for_algorithm_name("DES-CBC").is_none());
+        assert!(nid_for_algorithm_name("SHA-2").is_none());
+    }
+
+    #[test]
+    fn test_nid_for_algorithm_name_empty_returns_none() {
+        // Empty and whitespace-only inputs short-circuit to None.
+        assert!(nid_for_algorithm_name("").is_none());
+        assert!(nid_for_algorithm_name("   ").is_none());
+        assert!(nid_for_algorithm_name("\t").is_none());
+    }
+
+    // ========================================================================
+    // Tests for parse_property (private property-query parser)
+    // ========================================================================
+
+    #[test]
+    fn test_parse_property_extracts_value() {
+        // Single-token query.
+        assert_eq!(
+            parse_property("provider=default", "provider"),
+            Some("default")
+        );
+        // Multi-token query: extract a leading and a non-leading key.
+        assert_eq!(
+            parse_property("provider=foo,fips=yes", "provider"),
+            Some("foo")
+        );
+        assert_eq!(
+            parse_property("provider=foo,fips=yes", "fips"),
+            Some("yes")
+        );
+    }
+
+    #[test]
+    fn test_parse_property_case_insensitive_key() {
+        // The key match ignores ASCII case; the value is preserved verbatim.
+        assert_eq!(parse_property("PROVIDER=Foo", "provider"), Some("Foo"));
+        assert_eq!(parse_property("provider=Foo", "PROVIDER"), Some("Foo"));
+        assert_eq!(parse_property("Fips=Yes", "fips"), Some("Yes"));
+    }
+
+    #[test]
+    fn test_parse_property_with_whitespace() {
+        // Both keys and values are trimmed; surrounding whitespace tolerated.
+        assert_eq!(
+            parse_property("  provider = foo  ", "provider"),
+            Some("foo")
+        );
+        assert_eq!(
+            parse_property("provider=foo, fips = yes ", "fips"),
+            Some("yes")
+        );
+    }
+
+    #[test]
+    fn test_parse_property_missing_key_returns_none() {
+        // Key not present in the query.
+        assert!(parse_property("provider=foo", "fips").is_none());
+        assert!(parse_property("provider=foo,fips=yes", "default").is_none());
+    }
+
+    #[test]
+    fn test_parse_property_empty_query_returns_none() {
+        // Empty query short-circuits to None (no need to walk the loop).
+        assert!(parse_property("", "provider").is_none());
+    }
+
+    #[test]
+    fn test_parse_property_token_without_equals_skipped() {
+        // Tokens lacking '=' are skipped entirely; valid neighbours still resolve.
+        assert!(parse_property("provider", "provider").is_none());
+        assert!(parse_property("flag,provider=foo", "flag").is_none());
+        assert_eq!(
+            parse_property("flag,provider=foo", "provider"),
+            Some("foo")
+        );
+    }
+
+    // ========================================================================
+    // Tests for select_provider_for_query (private dispatch resolver)
+    // ========================================================================
+
+    #[test]
+    fn test_select_provider_for_query_no_providers_errors() {
+        // No providers activated → CryptoError::Provider with the original query.
+        let ctx = LibContext::new();
+        let result = select_provider_for_query(&ctx, "");
+        assert!(matches!(result, Err(CryptoError::Provider(_))));
+    }
+
+    #[test]
+    fn test_select_provider_for_query_provider_pin_wins() {
+        // Rule 1: explicit `provider=NAME` wins over registration order.
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("default".to_string(), 100);
+            store.activate("default");
+            store.register("legacy".to_string(), 50);
+            store.activate("legacy");
+        }
+        let result = select_provider_for_query(&ctx, "provider=legacy").unwrap();
+        assert_eq!(result, "legacy");
+    }
+
+    #[test]
+    fn test_select_provider_for_query_provider_pin_inactive_falls_back() {
+        // `provider=NAME` where NAME is unknown/inactive falls through to
+        // Rule 3 (first activated provider in registration order).
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("default".to_string(), 100);
+            store.activate("default");
+        }
+        let result =
+            select_provider_for_query(&ctx, "provider=nonexistent").unwrap();
+        assert_eq!(result, "default");
+    }
+
+    #[test]
+    fn test_select_provider_for_query_fips_yes() {
+        // Rule 2: `fips=yes` returns "fips" when the FIPS provider is activated.
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("default".to_string(), 100);
+            store.activate("default");
+            store.register("fips".to_string(), 200);
+            store.activate("fips");
+        }
+        let result = select_provider_for_query(&ctx, "fips=yes").unwrap();
+        assert_eq!(result, "fips");
+    }
+
+    #[test]
+    fn test_select_provider_for_query_fips_yes_inactive_falls_back() {
+        // `fips=yes` without an activated FIPS provider falls through to Rule 3.
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("default".to_string(), 100);
+            store.activate("default");
+        }
+        let result = select_provider_for_query(&ctx, "fips=yes").unwrap();
+        assert_eq!(result, "default");
+    }
+
+    #[test]
+    fn test_select_provider_for_query_default_picks_activated() {
+        // Rule 3: with no explicit pin and no FIPS opt-in, fall back to an
+        // activated provider.  The provider store is HashMap-backed, so the
+        // iteration order across multiple activated providers is
+        // intentionally implementation-defined; we therefore assert only
+        // that the returned name is one of the activated providers, which
+        // is the stable contract callers can rely on without an explicit
+        // `provider=NAME` pin.
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("first".to_string(), 100);
+            store.activate("first");
+            store.register("second".to_string(), 50);
+            store.activate("second");
+        }
+        let result = select_provider_for_query(&ctx, "").unwrap();
+        assert!(
+            result == "first" || result == "second",
+            "expected one of the activated providers, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_select_provider_for_query_default_single_activated() {
+        // With a single activated provider the result is fully deterministic
+        // and must equal that provider's name regardless of any other
+        // registered-but-deactivated entries.
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("only".to_string(), 100);
+            store.activate("only");
+            // Register but do NOT activate a second provider; it must not
+            // be selected by Rule 3.
+            store.register("dormant".to_string(), 50);
+        }
+        let result = select_provider_for_query(&ctx, "").unwrap();
+        assert_eq!(result, "only");
+    }
+
+    // ========================================================================
+    // Tests for fetch_method (canonical EVP fetch + cache integration)
+    // ========================================================================
+
+    #[test]
+    fn test_fetch_method_cache_miss_then_hit() {
+        // First fetch resolves via select_provider_for_query and inserts
+        // into the cache; second fetch returns the cached entry verbatim.
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("default".to_string(), 100);
+            store.activate("default");
+        }
+
+        let first =
+            fetch_method(&ctx, OperationId::Digest, "SHA2-256", None).unwrap();
+        assert_eq!(first.name, "SHA2-256");
+        assert_eq!(first.provider_name, "default");
+        assert_eq!(first.nid, Nid::SHA256);
+        assert!(first.description.is_none());
+
+        // Second fetch must return the same provider/NID — the path runs
+        // through the cache-hit branch and never touches the provider store.
+        let second =
+            fetch_method(&ctx, OperationId::Digest, "SHA2-256", None).unwrap();
+        assert_eq!(second.name, "SHA2-256");
+        assert_eq!(second.provider_name, "default");
+        assert_eq!(second.nid, Nid::SHA256);
+    }
+
+    #[test]
+    fn test_fetch_method_unknown_algorithm_falls_back_to_undef() {
+        // Algorithm names not in the well-known NID map use Nid::UNDEF;
+        // the provider is still resolved per the property query.
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("default".to_string(), 100);
+            store.activate("default");
+        }
+        let method = fetch_method(
+            &ctx,
+            OperationId::Cipher,
+            "VENDOR-CUSTOM-CIPHER",
+            None,
+        )
+        .unwrap();
+        assert_eq!(method.name, "VENDOR-CUSTOM-CIPHER");
+        assert_eq!(method.provider_name, "default");
+        assert!(method.nid.is_undef());
+    }
+
+    #[test]
+    fn test_fetch_method_no_provider_returns_provider_error() {
+        // No providers activated → propagate CryptoError::Provider.
+        let ctx = LibContext::new();
+        let result = fetch_method(&ctx, OperationId::Digest, "SHA2-256", None);
+        assert!(matches!(result, Err(CryptoError::Provider(_))));
+    }
+
+    #[test]
+    fn test_fetch_method_property_query_threaded_through() {
+        // A `provider=` pin must reach select_provider_for_query and override
+        // the default registration-order fallback.
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("default".to_string(), 100);
+            store.activate("default");
+            store.register("legacy".to_string(), 50);
+            store.activate("legacy");
+        }
+        let method = fetch_method(
+            &ctx,
+            OperationId::Cipher,
+            "AES-128-GCM",
+            Some("provider=legacy"),
+        )
+        .unwrap();
+        assert_eq!(method.provider_name, "legacy");
+        assert_eq!(method.nid, Nid::AES_128_GCM);
+    }
+
+    #[test]
+    fn test_fetch_method_separate_cache_keys_per_operation() {
+        // Same algorithm name + different OperationId values occupy distinct
+        // cache slots (the operation_u32 is part of the cache key).
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("default".to_string(), 100);
+            store.activate("default");
+        }
+        // Seed the cache under Digest.
+        let m_digest =
+            fetch_method(&ctx, OperationId::Digest, "SHA2-256", None).unwrap();
+        assert_eq!(m_digest.provider_name, "default");
+        assert_eq!(m_digest.nid, Nid::SHA256);
+
+        // A fetch under Cipher with the same name is a cache miss because
+        // operation IDs differ.  Both lookups land on the same provider in
+        // this test fixture.
+        let m_cipher =
+            fetch_method(&ctx, OperationId::Cipher, "SHA2-256", None).unwrap();
+        assert_eq!(m_cipher.provider_name, "default");
+        assert_eq!(m_cipher.nid, Nid::SHA256);
+    }
+
+    #[test]
+    fn test_fetch_method_none_and_empty_query_share_cache_key() {
+        // Passing None for properties is equivalent to passing Some("") —
+        // both calls populate/hit the same cache key.
+        let ctx = LibContext::new();
+        {
+            let mut store = ctx.provider_store_mut();
+            store.register("default".to_string(), 100);
+            store.activate("default");
+        }
+        let with_none =
+            fetch_method(&ctx, OperationId::Digest, "SHA2-256", None).unwrap();
+        let with_empty =
+            fetch_method(&ctx, OperationId::Digest, "SHA2-256", Some(""))
+                .unwrap();
+        assert_eq!(with_none.nid, with_empty.nid);
+        assert_eq!(with_none.provider_name, with_empty.provider_name);
     }
 }

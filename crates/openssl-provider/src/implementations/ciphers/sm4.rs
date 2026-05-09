@@ -1,7 +1,8 @@
 //! SM4 cipher provider implementations.
 //!
 //! SM4 is a 128-bit block cipher published by China's State Cryptography
-//! Administration (formerly OSCCA) as standard GB/T 32907-2016, originally
+//! Administration (formerly OSCCA) as standard GB/T 32907-2016
+//! (equivalent to OSCCA industry standard GM/T 0002-2012), originally
 //! codified as SMS4 in 2003 for wireless LAN protection. It is a Feistel-like
 //! 32-round network operating on 128-bit blocks with a fixed 128-bit key — no
 //! 192- or 256-bit variants exist, in contrast to AES.

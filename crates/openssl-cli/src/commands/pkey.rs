@@ -72,6 +72,7 @@ use std::sync::Arc;
 
 use clap::Args;
 use tracing::{debug, error, info, warn};
+use zeroize::Zeroizing;
 
 use openssl_common::error::{CommonError, CryptoError};
 use openssl_crypto::context::LibContext;
@@ -416,8 +417,12 @@ impl PkeyArgs {
         match self.output.as_deref() {
             None => Ok(Box::new(BufWriter::new(stdout()))),
             Some(path) => {
-                debug!(path = ?path, "pkey: opening output file");
-                let file = File::create(path).map_err(|e| {
+                debug!(path = ?path, "pkey: opening output file (mode 0600)");
+                // CWE-732 fix: use the secure private-key helper which
+                // sets mode 0o600 atomically on Unix.  The C source
+                // (`apps/pkey.c:188`) uses `bio_open_owner(file, fmt, 1)`
+                // which performs the equivalent chmod after open.
+                let file = crate::lib::opts::create_private_key_file(path).map_err(|e| {
                     error!(path = ?path, error = %e, "pkey: failed to create output file");
                     CryptoError::Io(e)
                 })?;
@@ -616,10 +621,15 @@ impl PkeyArgs {
             "pkey: input format hint (decoder auto-detects PEM vs. DER)"
         );
         let reader = self.open_input_reader()?;
-        let pkey = decode_from_reader(reader, passin.as_deref()).map_err(|e| {
-            error!(error = %e, "pkey: unable to load key");
-            e
-        })?;
+        // `passin` is `Option<Zeroizing<Vec<u8>>>`; downgrade to
+        // `Option<&[u8]>` for the decoder while keeping the original
+        // value alive so its `Drop` zeroes the buffer at end of scope.
+        let pkey = decode_from_reader(reader, passin.as_deref().map(Vec::as_slice)).map_err(
+            |e| {
+                error!(error = %e, "pkey: unable to load key");
+                e
+            },
+        )?;
         debug!(
             key_type = pkey.key_type_name(),
             has_private = pkey.has_private_key(),
@@ -677,7 +687,12 @@ impl PkeyArgs {
                 key_format,
                 selection,
                 cipher.as_ref(),
-                passout.as_deref(),
+                // Same `Zeroizing<Vec<u8>>` → `&[u8]` pattern as for
+                // `passin` above.  The borrow is bounded by the
+                // surrounding `if !self.noout` block so the secret is
+                // zeroed once `passout` falls out of scope at the end
+                // of `execute()`.
+                passout.as_deref().map(Vec::as_slice),
                 &mut writer,
             )?;
         }
@@ -716,18 +731,39 @@ fn internal_error(msg: impl Into<String>) -> CryptoError {
 /// concrete passphrase bytes. Returns `Ok(None)` when the spec is
 /// itself `None` (no flag passed).
 ///
-/// Replaces the C `app_passwd()` helper from `apps/lib/apps.c`. The
-/// returned `Vec<u8>` is *not* itself zeroized — the caller is expected
-/// to consume it immediately and let the
-/// [`zeroize::Zeroizing`]-wrapped intermediate from
-/// [`parse_password_source`] take care of the secure-erasure path.
-fn resolve_password(spec: Option<&str>, kind: &str) -> Result<Option<Vec<u8>>, CryptoError> {
+/// Replaces the C `app_passwd()` helper from `apps/lib/apps.c`.
+///
+/// # Secure erasure (CWE-316 / CWE-908)
+///
+/// The returned `Vec<u8>` is wrapped in [`zeroize::Zeroizing`] so that
+/// the buffer is overwritten with zeros when the value is dropped at
+/// the end of the calling scope.  This matches the C source's
+/// behaviour of `app_passwd()` returning storage that the caller
+/// `OPENSSL_clear_free()`s after consumption (`apps/lib/apps.c:1132`).
+///
+/// Without this wrapping, the previous implementation produced a plain
+/// `Vec<u8>` whose backing buffer would be released back to the
+/// allocator without being scrubbed; subsequent allocations could
+/// observe the passphrase, and a memory dump (core file, hibernation
+/// image, swap) could leak the secret indefinitely.
+///
+/// The intermediate [`Zeroizing<String>`] returned by
+/// [`parse_password_source`] is *also* zeroized on drop; the
+/// `to_vec()` copy is required because the consumers
+/// (`decode_from_reader`, `encode_to_writer`) expect raw bytes.
+fn resolve_password(
+    spec: Option<&str>,
+    kind: &str,
+) -> Result<Option<Zeroizing<Vec<u8>>>, CryptoError> {
     let Some(spec) = spec else {
         return Ok(None);
     };
     let pw = parse_password_source(spec)
         .map_err(|e| internal_error(format!("failed to resolve {kind} source: {e}")))?;
-    Ok(Some(pw.as_bytes().to_vec()))
+    // Wrap the byte vector in `Zeroizing` so the secret is wiped on
+    // drop.  `Zeroizing::new` takes ownership of the `Vec` and impls
+    // `Drop` via the `zeroize` crate's `Zeroize` blanket on `Vec<u8>`.
+    Ok(Some(Zeroizing::new(pw.as_bytes().to_vec())))
 }
 
 /// Writes a human-readable text dump of `pkey` to `writer`. Mirrors
@@ -1167,7 +1203,16 @@ mod tests {
     #[test]
     fn resolve_password_resolves_pass_literal() {
         let res = resolve_password(Some("pass:hunter2"), "passin").unwrap();
-        assert_eq!(res.as_deref(), Some(b"hunter2".as_slice()));
+        // `res` is `Option<Zeroizing<Vec<u8>>>`.  `Zeroizing<T>` derefs
+        // to `T`, so `res.as_deref()` yields `Option<&Vec<u8>>`; map
+        // through `as_slice()` to get the `Option<&[u8]>` that the
+        // assertion compares against.  The Zeroizing wrap (CWE-316/
+        // CWE-908 mitigation) is verified by the type check itself —
+        // this test exercises the literal-value extraction path.
+        assert_eq!(
+            res.as_deref().map(|v| v.as_slice()),
+            Some(b"hunter2".as_slice())
+        );
     }
 
     #[test]

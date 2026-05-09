@@ -345,8 +345,23 @@ pub fn init_tracing(verbose: bool) -> Result<(), CliError> {
 
     // Install the subscriber.  Use try_init() to be tolerant of test harnesses
     // that may have already installed a subscriber.
+    //
+    // The `fmt::layer()` writer is explicitly bound to `stderr` to match the
+    // C `OSSL_TRACE` mechanism (`apps/openssl.c:202-237`) which is hard-coded
+    // to write to stderr, AND to satisfy the integration-test contract that
+    // expects diagnostic output (errors, warnings) on stderr — see
+    // `error_tests.rs` module-level documentation: "the CLI handles invalid
+    // input gracefully by producing non-zero exit codes and meaningful error
+    // messages on stderr".  The default `tracing_subscriber::fmt::layer()`
+    // writes to stdout, which would contradict both the C precedent and
+    // the test contract.
     let setup_result = tracing_subscriber::registry()
-        .with(fmt::layer().with_target(true).with_thread_ids(true))
+        .with(
+            fmt::layer()
+                .with_target(true)
+                .with_thread_ids(true)
+                .with_writer(std::io::stderr),
+        )
         .with(env_filter)
         .try_init();
 

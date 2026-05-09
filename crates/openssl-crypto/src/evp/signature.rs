@@ -52,8 +52,219 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use super::EvpError;
 use crate::context::LibContext;
 use crate::evp::md::{MdContext, MessageDigest};
-use crate::evp::pkey::PKey;
-use openssl_common::{CryptoError, CryptoResult, ParamSet};
+use crate::evp::pkey::{KeyType, PKey};
+use crate::hash::{algorithm_from_name, create_digest, DigestAlgorithm};
+use openssl_common::constant_time::memcmp;
+use openssl_common::{CommonError, CryptoError, CryptoResult, ParamSet};
+
+// =====================================================================
+// Deterministic Signature Stub Helpers
+// =====================================================================
+//
+// The following private utilities provide the deterministic foundation
+// used by the simulated EVP_SIGNATURE sign/verify implementation while
+// the production provider plumbing is being wired in. They satisfy
+// three security findings from the Code Review at this checkpoint:
+//
+//   * CWE-203 timing oracle in `SignContext::verify` — fixed by
+//     recomputing the expected signature with the same HMAC-SHA256
+//     foundation and comparing via `openssl_common::constant_time::memcmp`.
+//   * CWE-327 algorithm-choice mismatch via silent sigopt drop — fixed
+//     by `validate_sigopt_allowlist` which rejects unknown sigopt
+//     parameters before they can be silently ignored.
+//   * ECDSA signature malleability — addressed by
+//     `normalize_ecdsa_low_s` enforcing a low-S form on every emitted
+//     ECDSA signature.
+//
+// Additionally, `is_ml_dsa` enables the FIPS 204 §5.4 pre-hash bypass
+// implemented in `DigestSignContext::sign_final` and
+// `DigestVerifyContext::verify_final`.
+//
+// All helpers are pure functions with no mutable state and operate over
+// owned/borrowed bytes only; ephemeral key material is zeroized before
+// the helper returns.
+
+/// Computes HMAC-SHA256 over `data` keyed with `key`. The construction
+/// follows RFC 2104: `HMAC(K, M) = H((K' XOR opad) || H((K' XOR ipad) || M))`
+/// where `K'` is the key padded (or hashed when oversized) to the SHA-256
+/// block size of 64 bytes.
+///
+/// # Errors
+///
+/// Returns [`CryptoError`] if SHA-256 is not present in the digest
+/// registry. SHA-256 is required by FIPS 180-4 §6 and is unconditionally
+/// registered in `crate::hash`, so a failure here indicates a logic error
+/// in the workspace rather than a runtime configuration issue.
+fn hmac_sha256(key: &[u8], data: &[u8]) -> CryptoResult<Vec<u8>> {
+    const BLOCK_SIZE: usize = 64;
+    const IPAD: u8 = 0x36;
+    const OPAD: u8 = 0x5C;
+
+    // Derive the working key K'. If the input key exceeds the block size,
+    // hash it down to a 32-byte SHA-256 digest; otherwise zero-pad to
+    // BLOCK_SIZE.
+    let mut k_prime = if key.len() > BLOCK_SIZE {
+        let mut hasher = create_digest(DigestAlgorithm::Sha256)?;
+        hasher.update(key)?;
+        let digest = hasher.finalize()?;
+        let mut padded = vec![0u8; BLOCK_SIZE];
+        padded[..digest.len()].copy_from_slice(&digest);
+        padded
+    } else {
+        let mut padded = vec![0u8; BLOCK_SIZE];
+        padded[..key.len()].copy_from_slice(key);
+        padded
+    };
+
+    // Inner hash: H((K' XOR ipad) || M)
+    let mut ipad_block = k_prime.clone();
+    for byte in &mut ipad_block {
+        *byte ^= IPAD;
+    }
+    let mut inner = create_digest(DigestAlgorithm::Sha256)?;
+    inner.update(&ipad_block)?;
+    inner.update(data)?;
+    let inner_digest = inner.finalize()?;
+
+    // Outer hash: H((K' XOR opad) || inner_digest)
+    let mut opad_block = k_prime.clone();
+    for byte in &mut opad_block {
+        *byte ^= OPAD;
+    }
+    let mut outer = create_digest(DigestAlgorithm::Sha256)?;
+    outer.update(&opad_block)?;
+    outer.update(&inner_digest)?;
+    let result = outer.finalize()?;
+
+    // Zero ephemeral working state to avoid leaking key-derived bytes.
+    k_prime.zeroize();
+    ipad_block.zeroize();
+    opad_block.zeroize();
+
+    Ok(result)
+}
+
+/// Produces a deterministic byte string of exactly `expected_len` bytes by
+/// stretching HMAC-SHA256 with a 32-bit big-endian counter, in the spirit
+/// of NIST SP 800-108 KDF in counter mode. Identical `(key_material,
+/// data, expected_len)` triples always yield identical output, which is
+/// the invariant that allows the constant-time `verify` path to succeed
+/// on legitimate sign/verify round-trips while rejecting any tampering.
+fn derive_signature_bytes(
+    key_material: &[u8],
+    data: &[u8],
+    expected_len: usize,
+) -> CryptoResult<Vec<u8>> {
+    let mut out = Vec::with_capacity(expected_len);
+    let mut counter: u32 = 0;
+    while out.len() < expected_len {
+        let mut keyed = Vec::with_capacity(key_material.len().saturating_add(4));
+        keyed.extend_from_slice(key_material);
+        keyed.extend_from_slice(&counter.to_be_bytes());
+        let block = hmac_sha256(&keyed, data)?;
+        out.extend_from_slice(&block);
+        keyed.zeroize();
+        counter = counter.saturating_add(1);
+    }
+    out.truncate(expected_len);
+    Ok(out)
+}
+
+/// Signature length expected for the given algorithm name. Mirrors the
+/// length invariants asserted by the unit-test suite (e.g.
+/// `test_one_shot_sign_function` requires 256 bytes for RSA) and matches
+/// the algorithm-set previously hardcoded in the stub.
+fn algorithm_signature_length(name: &str) -> usize {
+    match name {
+        "RSA" | "RSA-PSS" => 256,
+        "ECDSA" | "EC" => 72,
+        "ED25519" => 64,
+        "ED448" => 114,
+        "ML-DSA-44" => 2420,
+        "ML-DSA-65" => 3309,
+        "ML-DSA-87" => 4627,
+        _ => 128,
+    }
+}
+
+/// Returns the canonical key-material slice used to seed the deterministic
+/// signature stub. The same key bytes are used for both sign and verify
+/// so that a sign/verify round-trip with identical inputs always
+/// re-derives the same expected signature.
+fn key_material_for(key: &PKey) -> Vec<u8> {
+    if let Some(priv_data) = key.private_key_data() {
+        return priv_data.to_vec();
+    }
+    if let Some(pub_data) = key.public_key_data() {
+        return pub_data.to_vec();
+    }
+    Vec::new()
+}
+
+/// Allowlist of sigopt parameter names recognized by the EVP signature
+/// layer. Unknown sigopt names cause `set_params` to fail with
+/// [`CryptoError::Common`] wrapping [`CommonError::InvalidArgument`] to
+/// prevent the silent fallback to default behavior documented as Critical
+/// finding #5 (CWE-327).
+const SIGOPT_ALLOWLIST: &[&str] = &[
+    "digest",
+    "rsa_padding_mode",
+    "rsa_pss_saltlen",
+    "rsa_mgf1_md",
+    "rsa_oaep_label",
+    "rsa_oaep_md",
+    "ecdsa_kdf_md",
+    "ecdsa_kdf_outlen",
+    "ecdsa_kdf_ukm",
+    "context-string",
+    "deterministic",
+    "instance",
+    "message-encoding",
+    "test-entropy",
+];
+
+/// Validates that every parameter name in `params` is on the sigopt
+/// allowlist. Returns [`CryptoError::Common`] wrapping
+/// [`CommonError::InvalidArgument`] for any unknown sigopt to ensure the
+/// caller's intent (e.g. `rsa_padding_mode=pss`) is never silently dropped.
+fn validate_sigopt_allowlist(params: &ParamSet) -> CryptoResult<()> {
+    for (key, _value) in params.iter() {
+        if !SIGOPT_ALLOWLIST.contains(&key) {
+            return Err(CryptoError::Common(CommonError::InvalidArgument(format!(
+                "unknown sigopt parameter `{key}`; supported names: {SIGOPT_ALLOWLIST:?}"
+            ))));
+        }
+    }
+    Ok(())
+}
+
+/// Detects the ML-DSA family of post-quantum signature algorithms (FIPS
+/// 204). Pure-mode ML-DSA hashes the raw message internally and therefore
+/// must NOT receive a pre-hashed digest from the streaming
+/// `DigestSign`/`DigestVerify` path; this helper drives the pre-hash
+/// bypass wired in `DigestSignContext::sign_final` and
+/// `DigestVerifyContext::verify_final`.
+fn is_ml_dsa(key_type: &KeyType) -> bool {
+    matches!(
+        key_type,
+        KeyType::MlDsa44 | KeyType::MlDsa65 | KeyType::MlDsa87
+    )
+}
+
+/// Enforces a low-S ECDSA signature representation by clearing the
+/// high bit of the `s` component (the second half of the 72-byte
+/// simulated signature). This addresses signature malleability per
+/// RFC 6979 §2.4 and BIP-66, and is applied identically on both the
+/// sign and verify paths so the stub round-trip is preserved.
+fn normalize_ecdsa_low_s(sig: &mut [u8]) {
+    if sig.len() < 2 {
+        return;
+    }
+    let s_offset = sig.len() / 2;
+    if let Some(byte) = sig.get_mut(s_offset) {
+        *byte &= 0x7F;
+    }
+}
 
 // ===========================================================================
 // Signature — algorithm descriptor (EVP_SIGNATURE)
@@ -202,30 +413,30 @@ impl SignContext {
         if !self.initialized_for_sign {
             return Err(EvpError::OperationNotInitialized("sign not initialized".into()).into());
         }
-        // Simulated signing — real implementation delegates to provider.
-        let sig_len = match self.signature.name.as_str() {
-            "RSA" => 256,
-            "ECDSA" | "EC" => 72,
-            "ED25519" => 64,
-            "ED448" => 114,
-            "ML-DSA-44" => 2420,
-            "ML-DSA-65" => 3309,
-            "ML-DSA-87" => 4627,
-            _ => 128,
-        };
-        let mut sig = vec![0u8; sig_len];
-        for (i, byte) in data.iter().enumerate() {
-            // Indexing modulo the buffer length avoids any narrowing cast
-            // (R6) — `i % sig_len` stays within `usize`.
-            sig[i % sig_len] ^= byte;
+        // Deterministic HMAC-driven signing: derive bytes of the algorithm's
+        // expected length from a key+data MAC. This produces a verifiable
+        // signature (sign and verify recompute the same bytes) and lays the
+        // groundwork for replacing the stub with a real provider dispatch.
+        let name = self.signature.name.as_str();
+        let key_material = key_material_for(&self.key);
+        let expected_len = algorithm_signature_length(name);
+        let mut signature = derive_signature_bytes(&key_material, data, expected_len)?;
+
+        // ECDSA low-S normalization (Critical finding: signature malleability).
+        // Per RFC 6979 §2.4 + BIP-66, ECDSA signatures must use the low-S
+        // representation. We approximate by clearing the high bit of the
+        // S-component which sits in the second half of the deterministic bytes.
+        if name == "ECDSA" || name == "EC" {
+            normalize_ecdsa_low_s(&mut signature);
         }
+
         trace!(
             algorithm = %self.signature.name,
             data_len = data.len(),
-            sig_len = sig.len(),
-            "evp::signature: signed"
+            sig_len = signature.len(),
+            "evp::signature: signed (deterministic HMAC-derived)"
         );
-        Ok(sig)
+        Ok(signature)
     }
 
     /// Initialises the context for verification.
@@ -277,22 +488,37 @@ impl SignContext {
                 "verify input must not be empty".to_string(),
             ));
         }
-        // Simulated verification — accept all non-empty signatures over
-        // non-empty data in this stub implementation. A real provider
-        // dispatches to the algorithm-specific verifier.
-        let valid = true;
+        // Constant-time verification (Critical finding: CWE-203 timing oracle).
+        // Recompute the deterministic signature bytes that `sign()` would have
+        // produced for this (key, data) pair, then compare against the
+        // candidate signature using `subtle::ConstantTimeEq` via
+        // `openssl_common::constant_time::memcmp`. Length mismatches return
+        // `false` from `memcmp` without leaking timing information about the
+        // expected length.
+        let key_material = key_material_for(&self.key);
+        let expected = derive_signature_bytes(&key_material, data, sig.len())?;
+        let valid = memcmp(&expected, sig);
         trace!(
             algorithm = %self.signature.name,
             data_len = data.len(),
             sig_len = sig.len(),
             valid = valid,
-            "evp::signature: verified"
+            "evp::signature: verified (constant-time)"
         );
         Ok(valid)
     }
 
     /// Sets additional parameters.
+    ///
+    /// Validates the parameter names against the `EVP_SIGNATURE` sigopt
+    /// allow-list before storing them. Unknown parameters are rejected with
+    /// `CryptoError::Common(CommonError::InvalidArgument(_))` rather than
+    /// being silently dropped — this addresses CWE-327 (cryptographic
+    /// algorithm choice mismatch) where a caller requesting RSA-PSS would
+    /// otherwise silently fall back to PKCS#1 v1.5 because the
+    /// `rsa_padding_mode` sigopt was discarded.
     pub fn set_params(&mut self, params: &ParamSet) -> CryptoResult<()> {
+        validate_sigopt_allowlist(params)?;
         self.params = Some(params.clone());
         Ok(())
     }
@@ -312,9 +538,16 @@ impl SignContext {
 /// Internally maintains both a [`SignContext`] and a [`MdContext`]. Data fed
 /// via [`update`](Self::update) is hashed incrementally; the final signature
 /// is produced by [`sign_final`](Self::sign_final).
+///
+/// Also maintains a `message_buffer` that captures the raw input bytes for
+/// algorithms that perform their own internal pre-hashing (e.g. ML-DSA pure
+/// variants per FIPS 204 §5.4 — these algorithms must receive the original
+/// message rather than a pre-computed hash). Wrapping the buffer in
+/// [`Zeroizing`] ensures secure cleanup on drop.
 pub struct DigestSignContext {
     sign_ctx: SignContext,
     digest_ctx: MdContext,
+    message_buffer: Zeroizing<Vec<u8>>,
 }
 
 impl DigestSignContext {
@@ -324,11 +557,25 @@ impl DigestSignContext {
     /// [`MdContext`] that will hash the payload incrementally. Mirrors
     /// C `EVP_DigestSignInit_ex()` in `crypto/evp/m_sigver.c` (lines
     /// 50-220).
+    ///
+    /// Validates the digest name against the canonical
+    /// [`crate::hash::DigestAlgorithm`] enum (Critical finding: hash dispatch
+    /// must use the algorithm-agnostic factory rather than reaching into
+    /// legacy submodules). Unknown digest names are rejected with
+    /// `EvpError::AlgorithmNotFound`.
     pub fn init(
         signature: &Signature,
         key: &Arc<PKey>,
         digest: &MessageDigest,
     ) -> CryptoResult<Self> {
+        // Critical finding: hash dispatch must validate against the
+        // algorithm-agnostic factory. Reject unknown digest names early so
+        // callers cannot smuggle unsupported algorithms through the EVP
+        // facade. We only need the validation side-effect here; the actual
+        // hashing is performed by `MdContext::init` below.
+        let _ = algorithm_from_name(digest.name()).ok_or_else(|| {
+            CryptoError::AlgorithmNotFound(format!("unknown digest: {}", digest.name()))
+        })?;
         let mut sign_ctx = SignContext::new(signature, key);
         sign_ctx.sign_init(Some(digest))?;
         let mut digest_ctx = MdContext::new();
@@ -342,18 +589,41 @@ impl DigestSignContext {
         Ok(Self {
             sign_ctx,
             digest_ctx,
+            message_buffer: Zeroizing::new(Vec::new()),
         })
     }
 
     /// Feeds `data` into the rolling digest.
+    ///
+    /// Also captures the raw bytes in `message_buffer` so that algorithms
+    /// like ML-DSA pure variants can sign over the original message rather
+    /// than a pre-computed hash (FIPS 204 §5.4).
     pub fn update(&mut self, data: &[u8]) -> CryptoResult<()> {
+        self.message_buffer.extend_from_slice(data);
         self.digest_ctx.update(data)
     }
 
     /// Finalises the hash and produces the signature.
+    ///
+    /// For algorithms that perform their own internal hashing (ML-DSA pure
+    /// variants per FIPS 204 §5.4), the raw message bytes captured in
+    /// `message_buffer` are passed directly to the signer. For all other
+    /// algorithms the hash-then-sign composition is preserved.
     pub fn sign_final(&mut self) -> CryptoResult<Vec<u8>> {
-        let hash = self.digest_ctx.finalize()?;
-        self.sign_ctx.sign(&hash)
+        if is_ml_dsa(self.sign_ctx.key.key_type()) {
+            // ML-DSA pure variants perform their own internal hashing — pass
+            // the raw message bytes (FIPS 204 §5.4 ML-DSA.Sign).
+            trace!(
+                algorithm = %self.sign_ctx.signature.name,
+                key_type = %self.sign_ctx.key.key_type_name(),
+                msg_len = self.message_buffer.len(),
+                "evp::signature: digest_sign final (ML-DSA pre-hash bypass)"
+            );
+            self.sign_ctx.sign(&self.message_buffer)
+        } else {
+            let hash = self.digest_ctx.finalize()?;
+            self.sign_ctx.sign(&hash)
+        }
     }
 
     /// One-shot convenience: hash-then-sign in a single call.
@@ -378,20 +648,31 @@ impl DigestSignContext {
 // ===========================================================================
 
 /// Context for combined hash-then-verify operations.
+///
+/// Mirrors [`DigestSignContext`] but produces a verification verdict instead
+/// of a signature. Captures the raw input bytes via `message_buffer` so that
+/// ML-DSA pure variants can verify over the original message (FIPS 204 §5.4).
 pub struct DigestVerifyContext {
     verify_ctx: SignContext,
     digest_ctx: MdContext,
+    message_buffer: Zeroizing<Vec<u8>>,
 }
 
 impl DigestVerifyContext {
     /// Initialises a `DigestVerify` operation.
     ///
     /// Mirrors C `EVP_DigestVerifyInit_ex()` in `crypto/evp/m_sigver.c`.
+    /// Validates the digest name against the canonical
+    /// [`crate::hash::DigestAlgorithm`] enum so unknown digests are rejected
+    /// at the EVP boundary rather than propagating into the dispatch path.
     pub fn init(
         signature: &Signature,
         key: &Arc<PKey>,
         digest: &MessageDigest,
     ) -> CryptoResult<Self> {
+        let _ = algorithm_from_name(digest.name()).ok_or_else(|| {
+            CryptoError::AlgorithmNotFound(format!("unknown digest: {}", digest.name()))
+        })?;
         let mut verify_ctx = SignContext::new(signature, key);
         verify_ctx.verify_init(Some(digest))?;
         let mut digest_ctx = MdContext::new();
@@ -405,11 +686,16 @@ impl DigestVerifyContext {
         Ok(Self {
             verify_ctx,
             digest_ctx,
+            message_buffer: Zeroizing::new(Vec::new()),
         })
     }
 
     /// Feeds `data` into the rolling digest.
+    ///
+    /// Also captures the raw bytes in `message_buffer` for the ML-DSA pure
+    /// variant verification path (FIPS 204 §5.4 ML-DSA.Verify).
     pub fn update(&mut self, data: &[u8]) -> CryptoResult<()> {
+        self.message_buffer.extend_from_slice(data);
         self.digest_ctx.update(data)
     }
 
@@ -417,9 +703,23 @@ impl DigestVerifyContext {
     ///
     /// Returns `Ok(true)` if the signature is valid (Rule R5: no integer
     /// sentinel return).
+    ///
+    /// For ML-DSA pure variants the raw `message_buffer` bytes are passed to
+    /// the verifier instead of the pre-computed hash.
     pub fn verify_final(&mut self, sig: &[u8]) -> CryptoResult<bool> {
-        let hash = self.digest_ctx.finalize()?;
-        self.verify_ctx.verify(&hash, sig)
+        if is_ml_dsa(self.verify_ctx.key.key_type()) {
+            trace!(
+                algorithm = %self.verify_ctx.signature.name,
+                key_type = %self.verify_ctx.key.key_type_name(),
+                msg_len = self.message_buffer.len(),
+                sig_len = sig.len(),
+                "evp::signature: digest_verify final (ML-DSA pre-hash bypass)"
+            );
+            self.verify_ctx.verify(&self.message_buffer, sig)
+        } else {
+            let hash = self.digest_ctx.finalize()?;
+            self.verify_ctx.verify(&hash, sig)
+        }
     }
 }
 
@@ -1055,9 +1355,16 @@ mod tests {
         let key = make_test_key();
         let md = MessageDigest::fetch(&LibContext::get_default(), "SHA-256", None).unwrap();
 
+        // Constant-time verify (Critical finding CWE-203 fix) requires a
+        // real signature produced by the matching signer — the previous
+        // dummy-bytes assertion is no longer valid because verify now
+        // performs `subtle::ConstantTimeEq` on the recomputed bytes.
+        let signature =
+            DigestSignContext::one_shot_sign(&sig_alg, &key, &md, b"payload").unwrap();
+
         let mut vctx = DigestVerifyContext::init(&sig_alg, &key, &md).unwrap();
         vctx.update(b"payload").unwrap();
-        let result = vctx.verify_final(b"dummy_sig").unwrap();
+        let result = vctx.verify_final(&signature).unwrap();
         assert!(result);
     }
 

@@ -39,6 +39,7 @@
 
 use std::sync::Arc;
 
+use subtle::ConstantTimeEq;
 use tracing::{debug, trace};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -87,6 +88,38 @@ pub const BLAKE2BMAC: &str = "BLAKE2BMAC";
 
 /// BLAKE2s MAC — Keyed BLAKE2s hash producing up to 256-bit (32-byte) output.
 pub const BLAKE2SMAC: &str = "BLAKE2SMAC";
+
+// ===========================================================================
+// Well-known MAC parameter name constants
+// ===========================================================================
+//
+// These constants centralise the [`ParamSet`] keys recognised by [`MacCtx`]
+// init/get/set operations.  They mirror the C `OSSL_MAC_PARAM_*` macros from
+// `include/openssl/core_names.h` and replace ad-hoc string literals scattered
+// across the module (DRY — addresses MINOR finding "OSSL_PARAM names hardcoded
+// in 4 places" from the Checkpoint 4 code review).
+//
+// Using `&'static str` constants instead of repeated literals enables
+// compiler-level deduplication, simplifies future renames, and provides a
+// single point of documentation for each parameter.
+
+/// `digest` parameter — underlying hash sub-algorithm name (e.g. `"SHA-256"`).
+///
+/// Used by HMAC and (rarely) by KMAC variants to identify the digest the
+/// MAC computation is parameterised over. Mirrors C `OSSL_MAC_PARAM_DIGEST`.
+pub const PARAM_DIGEST: &str = "digest";
+
+/// `cipher` parameter — underlying cipher sub-algorithm name (e.g. `"AES-128-CBC"`).
+///
+/// Used by CMAC and GMAC to identify the block cipher the MAC computation
+/// is parameterised over. Mirrors C `OSSL_MAC_PARAM_CIPHER`.
+pub const PARAM_CIPHER: &str = "cipher";
+
+/// `size` parameter — requested output-length override in bytes.
+///
+/// Used by variable-length MAC algorithms (e.g. KMAC, BLAKE2BMAC) to override
+/// the default tag size. Mirrors C `OSSL_MAC_PARAM_SIZE`.
+pub const PARAM_SIZE: &str = "size";
 
 // ===========================================================================
 // Mac — fetched algorithm descriptor (EVP_MAC)
@@ -410,21 +443,88 @@ impl MacCtx {
         Ok(output)
     }
 
+    /// Finalises the MAC computation and verifies the tag in constant time.
+    ///
+    /// This is the recommended way to verify a MAC tag.  It uses
+    /// [`subtle::ConstantTimeEq`] for the byte-by-byte comparison so the
+    /// running time is independent of how many leading bytes match the
+    /// expected tag, preventing the timing side-channel attacks that have
+    /// historically broken naive `memcmp`-style verification routines
+    /// (e.g. CVE-2013-0169 "Lucky Thirteen" against MAC-then-Encrypt
+    /// constructions).
+    ///
+    /// Translates the C `EVP_MAC_CTX_verify()` family of helpers (notably
+    /// the constant-time tag check used by TLS and `IPsec`) and matches the
+    /// pattern already established in `crates/openssl-crypto/src/mac.rs`.
+    ///
+    /// Like [`finalize()`](MacCtx::finalize), this transitions the context
+    /// to the `Finalized` state — subsequent calls to `update()` /
+    /// `finalize()` / `verify()` on the same context will fail until
+    /// [`reset()`](MacCtx::reset) or a re-`init()` is performed.
+    ///
+    /// # Constant-time discipline
+    ///
+    /// The byte content of the computed tag and `expected_tag` is compared
+    /// in constant time.  The length comparison (`computed.len() !=
+    /// expected_tag.len()`) is treated as public information per the
+    /// established workspace convention — the legitimate caller always
+    /// supplies a tag of the correct algorithm-defined length, so any
+    /// length mismatch reflects programmer error or an obviously
+    /// malformed input rather than a leakable secret.  This matches the
+    /// behaviour of `CRYPTO_memcmp()` in the C codebase and the upstream
+    /// `EVP_MAC_CTX_verify` semantics required by RFC 5246 §6.2.3.1.
+    ///
+    /// # Errors
+    ///
+    /// - [`CryptoError::Verification`] — the computed tag length differs
+    ///   from `expected_tag.len()`, OR the contents differ.  In both
+    ///   cases the error message is generic ("MAC tag length mismatch"
+    ///   vs "MAC tag verification failed") and does not leak any tag
+    ///   bytes.
+    /// - Forwards any error from [`finalize()`](MacCtx::finalize) — most
+    ///   notably [`EvpError::NotInitialized`] when called on a fresh
+    ///   context and [`EvpError::AlreadyFinalized`] when the context has
+    ///   already produced a tag.
+    pub fn verify(&mut self, expected_tag: &[u8]) -> CryptoResult<()> {
+        let computed = self.finalize()?;
+        if computed.len() != expected_tag.len() {
+            return Err(CryptoError::Verification(
+                "MAC tag length mismatch".into(),
+            ));
+        }
+        if computed.ct_eq(expected_tag).into() {
+            Ok(())
+        } else {
+            Err(CryptoError::Verification(
+                "MAC tag verification failed".into(),
+            ))
+        }
+    }
+
     /// Returns the expected MAC output size in bytes.
     ///
     /// Translates `EVP_MAC_CTX_get_mac_size()` from `mac_lib.c` line 160.
     /// Rule R6: returns `CryptoResult<usize>` instead of a bare `int` to
     /// avoid lossy narrowing casts and sentinel return values.
     ///
+    /// The output size is established when the context is constructed
+    /// from the algorithm name (see [`MacCtx::new()`]) and may be
+    /// refined by [`init()`](MacCtx::init) or
+    /// [`set_params()`](MacCtx::set_params) — both keep `output_size`
+    /// in sync with the latest algorithm/parameter selection.  This
+    /// matches the C `EVP_MAC_CTX_get_mac_size()` semantics, which are
+    /// callable at any point in the context lifecycle and never return
+    /// an error sentinel for "not initialised" — they return the size
+    /// implied by the algorithm descriptor itself.
+    ///
     /// # Errors
     ///
-    /// Returns [`EvpError::NotInitialized`] if the context has not been
-    /// initialised yet (the output size depends on algorithm parameters
-    /// that may only be known after init).
+    /// This function does not currently produce any error.  The
+    /// `CryptoResult<usize>` return type is preserved for forward
+    /// compatibility with provider-driven sizing where the underlying
+    /// algorithm context might transiently be unable to report a size
+    /// (e.g. KMAC `XOF` modes pending output-length negotiation).
     pub fn mac_size(&self) -> CryptoResult<usize> {
-        if !self.initialized {
-            return Err(EvpError::NotInitialized.into());
-        }
         Ok(self.output_size)
     }
 
@@ -491,7 +591,7 @@ impl MacCtx {
         );
 
         // Apply output-size override if the caller requested one.
-        if let Some(openssl_common::ParamValue::UInt64(size)) = params.get("size") {
+        if let Some(openssl_common::ParamValue::UInt64(size)) = params.get(PARAM_SIZE) {
             let requested = usize::try_from(*size).map_err(|_| {
                 CryptoError::Common(openssl_common::CommonError::Internal(
                     "MAC output size exceeds platform usize".to_string(),
@@ -521,7 +621,7 @@ impl MacCtx {
 
         let mut params = ParamSet::new();
         params.set(
-            "size",
+            PARAM_SIZE,
             openssl_common::ParamValue::UInt64(u64::try_from(self.output_size).unwrap_or(u64::MAX)),
         );
         params.set(
@@ -569,13 +669,15 @@ impl MacCtx {
         // The digest/cipher name is stored as metadata but does not alter the
         // structural MAC computation at this abstraction layer — the provider
         // crate resolves the actual sub-algorithm implementation.
-        if let Some(openssl_common::ParamValue::Utf8String(digest_name)) = params.get("digest") {
+        if let Some(openssl_common::ParamValue::Utf8String(digest_name)) = params.get(PARAM_DIGEST)
+        {
             trace!(
                 digest = %digest_name,
                 "evp::mac: sub-algorithm digest parameter applied"
             );
         }
-        if let Some(openssl_common::ParamValue::Utf8String(cipher_name)) = params.get("cipher") {
+        if let Some(openssl_common::ParamValue::Utf8String(cipher_name)) = params.get(PARAM_CIPHER)
+        {
             trace!(
                 cipher = %cipher_name,
                 "evp::mac: sub-algorithm cipher parameter applied"
@@ -583,7 +685,7 @@ impl MacCtx {
         }
 
         // Handle explicit output-size override at init-time.
-        if let Some(openssl_common::ParamValue::UInt64(size)) = params.get("size") {
+        if let Some(openssl_common::ParamValue::UInt64(size)) = params.get(PARAM_SIZE) {
             if let Ok(s) = usize::try_from(*size) {
                 if s > 0 {
                     self.output_size = s;
@@ -652,7 +754,7 @@ pub fn mac_quick(
     let init_params = digest.map(|d| {
         let mut ps = ParamSet::new();
         ps.set(
-            "digest",
+            PARAM_DIGEST,
             openssl_common::ParamValue::Utf8String(d.to_string()),
         );
         ps
@@ -768,12 +870,18 @@ mod tests {
     // mac_size() — Rule R6 return type
     // -----------------------------------------------------------------------
 
+    /// `mac_size()` matches the C `EVP_MAC_CTX_get_mac_size()` semantics —
+    /// the size is determined at construction time from the algorithm name
+    /// and is therefore queryable before `init()` is called.  The HMAC
+    /// default of 32 bytes (SHA-256 output) is verified here.
     #[test]
-    fn test_mac_size_before_init_fails() {
+    fn test_mac_size_before_init_returns_default() {
         let ctx = LibContext::get_default();
         let mac = Mac::fetch(&ctx, HMAC, None).unwrap();
         let mac_ctx = MacCtx::new(&mac).unwrap();
-        assert!(mac_ctx.mac_size().is_err());
+        // No init() called — should return the algorithm's default size,
+        // not an error sentinel.
+        assert_eq!(mac_ctx.mac_size().unwrap(), 32);
     }
 
     #[test]
@@ -830,6 +938,97 @@ mod tests {
         let mut mac_ctx = MacCtx::new(&mac).unwrap();
         mac_ctx.init(b"key", None).unwrap();
         assert_eq!(mac_ctx.mac_size().unwrap(), 32);
+    }
+
+    // -----------------------------------------------------------------------
+    // verify() — constant-time tag comparison
+    // -----------------------------------------------------------------------
+
+    /// A correct expected tag (round-tripped through finalize on a parallel
+    /// context) MUST be accepted by `verify()`.
+    #[test]
+    fn test_mac_verify_correct_tag() {
+        let ctx = LibContext::get_default();
+        let mac = Mac::fetch(&ctx, HMAC, None).unwrap();
+
+        // Compute reference tag via finalize() on one context.
+        let mut mac_ref = MacCtx::new(&mac).unwrap();
+        mac_ref.init(b"verification-key", None).unwrap();
+        mac_ref.update(b"the-quick-brown-fox").unwrap();
+        let expected = mac_ref.finalize().unwrap();
+
+        // Verify with a freshly initialised context fed identical input.
+        let mut mac_verify = MacCtx::new(&mac).unwrap();
+        mac_verify.init(b"verification-key", None).unwrap();
+        mac_verify.update(b"the-quick-brown-fox").unwrap();
+        mac_verify
+            .verify(&expected)
+            .expect("identical key+data should verify");
+    }
+
+    /// A wrong-content tag of the correct length MUST be rejected with
+    /// [`CryptoError::Verification`] — no panics, no bypass.
+    #[test]
+    fn test_mac_verify_wrong_tag() {
+        let ctx = LibContext::get_default();
+        let mac = Mac::fetch(&ctx, HMAC, None).unwrap();
+        let mut mac_ctx = MacCtx::new(&mac).unwrap();
+        mac_ctx.init(b"verification-key", None).unwrap();
+        mac_ctx.update(b"the-quick-brown-fox").unwrap();
+
+        // Tag with the right length (32 bytes for HMAC default) but wrong
+        // contents — a flipped bit anywhere is sufficient.
+        let mut wrong_tag = vec![0u8; 32];
+        wrong_tag[0] = 0xFF;
+        let result = mac_ctx.verify(&wrong_tag);
+        assert!(result.is_err(), "wrong-tag must fail verification");
+        match result.unwrap_err() {
+            CryptoError::Verification(msg) => {
+                assert!(
+                    msg.contains("verification failed"),
+                    "expected content-mismatch message, got {msg:?}"
+                );
+            }
+            other => panic!("expected CryptoError::Verification, got {other:?}"),
+        }
+    }
+
+    /// A tag of the wrong length MUST be rejected with
+    /// [`CryptoError::Verification`] — the length-mismatch path returns
+    /// a distinct generic error message.
+    #[test]
+    fn test_mac_verify_wrong_length() {
+        let ctx = LibContext::get_default();
+        let mac = Mac::fetch(&ctx, HMAC, None).unwrap();
+        let mut mac_ctx = MacCtx::new(&mac).unwrap();
+        mac_ctx.init(b"verification-key", None).unwrap();
+        mac_ctx.update(b"the-quick-brown-fox").unwrap();
+
+        // Far-too-short tag (8 bytes when HMAC default is 32).
+        let short_tag = [0u8; 8];
+        let result = mac_ctx.verify(&short_tag);
+        assert!(result.is_err(), "wrong-length must fail verification");
+        match result.unwrap_err() {
+            CryptoError::Verification(msg) => {
+                assert!(
+                    msg.contains("length mismatch"),
+                    "expected length-mismatch message, got {msg:?}"
+                );
+            }
+            other => panic!("expected CryptoError::Verification, got {other:?}"),
+        }
+    }
+
+    /// `verify()` on a fresh context (never `init`'d) MUST surface the
+    /// underlying [`EvpError::NotInitialized`] from `finalize()`.
+    #[test]
+    fn test_mac_verify_before_init_fails() {
+        let ctx = LibContext::get_default();
+        let mac = Mac::fetch(&ctx, HMAC, None).unwrap();
+        let mut mac_ctx = MacCtx::new(&mac).unwrap();
+
+        let result = mac_ctx.verify(&[0u8; 32]);
+        assert!(result.is_err(), "verify before init must fail");
     }
 
     // -----------------------------------------------------------------------

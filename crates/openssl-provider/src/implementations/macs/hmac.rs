@@ -91,7 +91,41 @@ const TLS_HEADER_SIZE: usize = 13;
 // Digest Algorithm Metadata
 // =============================================================================
 
-/// Supported digest algorithms for HMAC computation.
+/// Supported digest algorithms for HMAC computation (RFC 2104 / FIPS 198-1 subset).
+///
+/// # Architectural Note — Domain-Specific Local Enum
+///
+/// This is an intentional 8-variant subset of the canonical 24-variant
+/// `DigestAlgorithm` defined in `crates/openssl-crypto/src/hash/mod.rs`.
+/// The local enum is **deliberately preserved** — not consolidated with the
+/// canonical workspace-level enum — to honour three behavioural contracts
+/// of the HMAC provider that the canonical enum cannot satisfy without
+/// breaking changes:
+///
+/// 1. **Legacy `OSSL_PARAM` digest-name format compatibility.** The local
+///    `name` accessor returns hyphenated names (`"SHA-1"`, `"SHA-256"`,
+///    `"SHA-512/224"`) matching the original C `hmac_prov.c` parameter
+///    export contract. The canonical enum's `name` accessor returns the
+///    newer `OSSL_DIGEST_NAME_*` macro form (`"SHA1"`, `"SHA2-256"`,
+///    `"SHA2-512/224"`). Switching the format would silently change values
+///    exported via `MacContext::get_params` (see the `algo.output_size()`
+///    site at L774) and the value cached in the `digest_name` field (see
+///    the `algo.name().to_string()` site at L609), breaking the wire-format
+///    contract observed by C consumers and FFI callers.
+///
+/// 2. **Local-only slash-form aliases.** The local `from_name` parser accepts
+///    `"SHA512/224"` and `"SHA512/256"` (slash-only, no hyphen prefix) in
+///    addition to the canonical-supported `"SHA-512/224"` / `"SHA2-512/224"`
+///    and `"SHA512-224"` forms. The canonical `algorithm_from_name`
+///    function in `hash/mod.rs` does NOT recognise the slash-only forms.
+///    Test coverage at L2038 asserts the local-only forms must resolve;
+///    removing them would break the established public API.
+///
+/// 3. **Compile-time evaluability (`const fn`).** The local accessors
+///    `output_size`, `block_size`, and `name` are declared `const fn`,
+///    enabling their use in `const` contexts (e.g., array sizing, static
+///    declarations). The canonical enum's equivalents are runtime
+///    `pub fn` with `#[must_use]` and cannot be evaluated at compile time.
 ///
 /// Each variant carries the algorithm's output size and block size, enabling
 /// the HMAC engine to compute the correct ipad/opad padding per RFC 2104.

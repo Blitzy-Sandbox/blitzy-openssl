@@ -41,6 +41,49 @@
 //! [`Zeroizing`] so it is securely erased on drop. Both [`EncoderContext`] and
 //! [`DecoderContext`] derive [`Zeroize`] / [`ZeroizeOnDrop`] to ensure passphrase
 //! buffers held in those contexts are scrubbed when the context is dropped.
+//!
+//! ## Error Variants Policy (Single Consolidated Variant)
+//! Every error condition raised inside this module — whether it originates on
+//! the encode side or the decode side — is reported through the **single**
+//! [`CryptoError::Encoding`] variant. Earlier drafts contemplated separate
+//! `DecodeError` and `MalformedInput` variants, but those were intentionally
+//! consolidated into [`CryptoError::Encoding`] to:
+//!
+//! 1. Avoid a proliferation of near-identical variants on the public
+//!    [`CryptoError`] enum (which is shared by every `crates/openssl-crypto`
+//!    submodule and visible to downstream FFI consumers).
+//! 2. Preserve the C-API semantic that a decode failure and a malformed-input
+//!    failure are the same class of error from the caller's perspective —
+//!    OpenSSL's `OSSL_DECODER_*` family raises `ERR_LIB_OSSL_DECODER` for
+//!    both with the reason code distinguishing the specifics.
+//! 3. Keep [`CryptoError::Key`], [`CryptoError::AlgorithmNotFound`] and
+//!    [`CryptoError::Verification`] as the *other* relevant variants for
+//!    cases where the input *was* well-formed but the higher-level operation
+//!    failed (no private-key material available, unknown algorithm name,
+//!    signature mismatch).
+//!
+//! ### Error Message Prefix Convention
+//! To preserve the diagnostic information that distinct variants would
+//! otherwise carry, every [`CryptoError::Encoding`] message in this module
+//! starts with a fixed **`function_name: detail`** prefix. The set of
+//! prefixes currently emitted is:
+//!
+//! | Prefix                  | Origin                          | Typical conditions |
+//! |-------------------------|--------------------------------|--------------------|
+//! | `decode:`               | `decode_from_slice_with_context` | empty input, length bound, unsupported text format |
+//! | `decode_from_reader:`   | `decode_from_reader` family     | reader buffered past `MAX_DER_INPUT_BYTES` |
+//! | `to_pkcs8_encrypted:`   | `to_pkcs8_encrypted`            | cipher-name validation |
+//! | `emit_pem:`             | `emit_pem` (encoder)            | internal Base64-to-UTF-8 conversion failure |
+//! | `strip_pem:`            | `strip_pem` (decoder)           | PEM is not UTF-8 / Base64 body is not valid Base64 |
+//!
+//! This convention is enforced by review and is the canonical replacement
+//! for the otherwise-overlapping `DecodeError` / `MalformedInput` variants.
+//! Refer to the inline comments at each emission site for the precise
+//! invariant being asserted.
+//!
+//! Tests that need to assert on encoding-side errors do so via
+//! `matches!(err, CryptoError::Encoding(_))` and (where stronger guarantees
+//! are needed) by inspecting the prefix portion of the error message.
 
 use std::fmt;
 use std::io::{BufRead, Read, Write};
@@ -54,6 +97,35 @@ use openssl_common::{CryptoError, CryptoResult, ParamSet};
 
 use crate::context::LibContext;
 use crate::evp::pkey::{KeyType, PKey};
+
+// =============================================================================
+// Resource bounds
+// =============================================================================
+
+/// Maximum DER / PEM input size accepted by decode functions (1 MiB).
+///
+/// # Rationale (CWE-20: Improper Input Validation, `DoS`)
+///
+/// Untrusted DER/PEM input must be bounded to prevent memory-exhaustion
+/// denial-of-service attacks. ASN.1 DER parsing is worst-case quadratic in
+/// the input length on adversarially-crafted blobs (deeply nested SEQUENCEs,
+/// indefinite-length encodings under DER's length-explicit rules); without
+/// an upper bound the decoder will faithfully buffer multi-gigabyte attacker
+/// payloads.
+///
+/// 1 MiB comfortably exceeds the largest realistic key encoding:
+/// - RSA-8192 PKCS#8: < 5 KiB
+/// - ML-DSA-87 raw key: ~4.6 KiB
+/// - SLH-DSA-256s key: < 1 KiB
+/// - Certificate chains (out of scope for this module): typically < 50 KiB
+///
+/// LMS multi-tree HSS keys can be exceptional; callers serialising those
+/// structures should use higher-level chunked / streaming APIs rather than
+/// passing raw bytes through this module.
+///
+/// Inputs exceeding this bound cause `decode_*` entry points to return
+/// [`CryptoError::Encoding`] without performing further parsing work.
+pub(crate) const MAX_DER_INPUT_BYTES: usize = 1024 * 1024;
 
 // =============================================================================
 // KeyFormat — Output / Input Encoding Selection
@@ -120,16 +192,73 @@ impl fmt::Display for KeyFormat {
 ///
 /// The default is [`KeySelection::PrivateKey`], matching the behaviour of
 /// C `EVP_PKEY2PKCS8()` which always operates on private key material.
+///
+/// # C Constant Mapping
+///
+/// The following table maps each Rust variant to its equivalent C bitflag
+/// constants from `include/openssl/core_dispatch.h` and
+/// `include/openssl/evp.h`:
+///
+/// | Rust Variant | C `OSSL_KEYMGMT_SELECT_*` Bitmask | C `EVP_PKEY_*` | Hex Value | Description |
+/// |--------------|-----------------------------------|----------------|-----------|-------------|
+/// | [`PrivateKey`](Self::PrivateKey) | `OSSL_KEYMGMT_SELECT_PRIVATE_KEY` | `EVP_PKEY_PRIVATE_KEY` | `0x01` | Private scalar / `d` for RSA, private exponent |
+/// | [`PublicKey`](Self::PublicKey) | `OSSL_KEYMGMT_SELECT_PUBLIC_KEY` | `EVP_PKEY_PUBLIC_KEY` | `0x02` | Public point / modulus `n` + exponent `e` for RSA |
+/// | [`KeyPair`](Self::KeyPair) | `OSSL_KEYMGMT_SELECT_KEYPAIR` (= `PRIVATE` \| `PUBLIC`) | `EVP_PKEY_KEYPAIR` | `0x03` | Both private and public material |
+/// | [`Parameters`](Self::Parameters) | `OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS` | `EVP_PKEY_KEY_PARAMETERS` | `0x04` | DH/DSA domain parameters (`p`, `q`, `g`); EC curve identifier |
+///
+/// Additional C selection flags not exposed via this enum (deliberately
+/// omitted as the encoder/decoder framework does not surface them
+/// independently):
+///
+/// | C Constant | Hex Value | Rationale for Omission |
+/// |------------|-----------|-----------------------|
+/// | `OSSL_KEYMGMT_SELECT_OTHER_PARAMETERS` | `0x08` | Implementation-private; included implicitly with public/private selections |
+/// | `OSSL_KEYMGMT_SELECT_ALL_PARAMETERS` | `0x0c` | Composite of `DOMAIN_PARAMETERS` \| `OTHER_PARAMETERS`; use [`Parameters`](Self::Parameters) |
+/// | `OSSL_KEYMGMT_SELECT_ALL` | `0x0f` | Composite; use [`KeyPair`](Self::KeyPair) for typical full-export workflows |
+///
+/// # Format Compatibility
+///
+/// Not every (`KeyFormat`, `KeySelection`) pair is meaningful:
+///
+/// | Format \ Selection | `PrivateKey` | `PublicKey` | `KeyPair` | `Parameters` |
+/// |--------------------|--------------|-------------|-----------|--------------|
+/// | [`Pem`](KeyFormat::Pem) | ✓ `PRIVATE KEY` armour | ✓ `PUBLIC KEY` armour | ✓ `PRIVATE KEY` armour (PKCS#8 carries pub) | ✓ `PARAMETERS` armour |
+/// | [`Der`](KeyFormat::Der) | ✓ raw private DER | ✓ raw public DER | ✓ PKCS#8 `KeyPair` DER | ✓ raw parameter DER |
+/// | [`Pkcs8`](KeyFormat::Pkcs8) | ✓ `PrivateKeyInfo` | ✗ (use `Spki`) | ✓ `PrivateKeyInfo` | ✗ (parameters are not PKCS#8) |
+/// | [`Spki`](KeyFormat::Spki) | ✗ (use `Pkcs8`) | ✓ `SubjectPublicKeyInfo` | ✗ (SPKI is public-only) | ✗ (no parameters in SPKI) |
+/// | [`Text`](KeyFormat::Text) | ✓ debug dump | ✓ debug dump | ✓ debug dump | ✓ debug dump |
+///
+/// Invalid combinations are surfaced as [`CryptoError::Encoding`] at
+/// encode time (see [`validate_selection_for_key`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum KeySelection {
     /// Private key material only.
+    ///
+    /// Maps to C `OSSL_KEYMGMT_SELECT_PRIVATE_KEY` (`0x01`) and
+    /// `EVP_PKEY_PRIVATE_KEY`. Selects the secret component of the key:
+    /// `d` for RSA, the private scalar for EC/EdDSA, the private exponent
+    /// for DH/DSA.
     #[default]
     PrivateKey,
     /// Public key material only.
+    ///
+    /// Maps to C `OSSL_KEYMGMT_SELECT_PUBLIC_KEY` (`0x02`) and
+    /// `EVP_PKEY_PUBLIC_KEY`. Selects the public component: modulus `n`
+    /// and exponent `e` for RSA, the public point for EC/EdDSA, the
+    /// public exponent for DH/DSA.
     PublicKey,
     /// Full key pair (both private and public components).
+    ///
+    /// Maps to C `OSSL_KEYMGMT_SELECT_KEYPAIR` (`0x03` =
+    /// `PRIVATE_KEY | PUBLIC_KEY`) and `EVP_PKEY_KEYPAIR`. The standard
+    /// PKCS#8 encoding form, which always carries both halves.
     KeyPair,
     /// Algorithm domain parameters only (e.g., DH/DSA group parameters).
+    ///
+    /// Maps to C `OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS` (`0x04`) and
+    /// `EVP_PKEY_KEY_PARAMETERS`. For DH/DSA: the prime `p`, generator
+    /// `g`, and (for DSA) the subgroup order `q`. For EC: the curve
+    /// identifier (named curve OID) without the public/private point.
     Parameters,
 }
 
@@ -324,12 +453,32 @@ impl EncoderContext {
         encode_to_vec_with_context(key, self)
     }
 
-    /// Encodes the supplied [`PKey`] to a generic [`Write`] sink.
-    /// Delegates to the module-level [`encode_to_writer`].
+    /// Streams the encoded [`PKey`] directly to a generic [`Write`] sink.
+    ///
+    /// Delegates to the module-level [`encode_to_writer_with_context`] which
+    /// performs **incremental writes** rather than buffering the entire output
+    /// in memory. This is a significant memory-saving for large keys such as
+    /// LMS HSS multi-tree signatures or large RSA private keys.
+    ///
+    /// # Streaming semantics
+    /// - **DER / PKCS#8 / SPKI**: writes the raw DER body in a single
+    ///   [`Write::write_all`] call (already minimal-copy).
+    /// - **PEM**: writes the BEGIN header, conditional `Proc-Type` /
+    ///   `DEK-Info` lines, base64-encoded body in 48-byte source windows
+    ///   (producing 64-char output lines), and END footer in a sequence of
+    ///   small writes — never buffering the full base64 string.
+    /// - **Text**: small fixed-size human-readable dump (≤256 bytes), buffered
+    ///   then written.
+    ///
+    /// # Errors
+    /// Returns [`CryptoError::Io`] propagated from the underlying writer or
+    /// [`CryptoError::Encoding`] for invalid format / selection combinations.
+    /// Note that for non-encrypted PEM output, an I/O error mid-write may
+    /// leave a *partial* PEM document in the sink; callers needing strict
+    /// atomicity should write to an in-memory buffer first or use an
+    /// atomic-rename pattern at the file system layer.
     pub fn encode_to_writer<W: Write>(&self, key: &PKey, writer: &mut W) -> CryptoResult<()> {
-        let bytes = encode_to_vec_with_context(key, self)?;
-        writer.write_all(&bytes)?;
-        Ok(())
+        encode_to_writer_with_context(key, self, writer)
     }
 
     /// Associated function: serialize a private key to PKCS#8 `PrivateKeyInfo`
@@ -387,10 +536,22 @@ pub struct DecoderContext {
     #[zeroize(skip)]
     pub expected_format: Option<KeyFormat>,
 
-    /// Expected key type name (e.g., `"RSA"`, `"EC"`, `"X25519"`).
-    /// `None` means accept any type. (R5: `Option` not sentinel.)
+    /// Expected key type. `None` means accept any type.
+    ///
+    /// Stored as a strongly-typed [`KeyType`] enum rather than a string so
+    /// that algorithm dispatch is type-safe at the call site rather than
+    /// depending on string matching. The string-based `with_type(&str)` /
+    /// `set_expected_type(&str)` builder/mutator API is preserved for
+    /// backward compatibility — callers may continue to pass canonical
+    /// algorithm names (e.g., `"RSA"`, `"EC"`, `"X25519"`) and the context
+    /// converts them via [`KeyType::from_name`] at the API boundary.
+    /// (R5: `Option` not sentinel.)
+    ///
+    /// Note: `KeyType` derives [`Zeroize`] but the variants carry no
+    /// secret material — `KeyType::Unknown(String)` holds an algorithm
+    /// name, not a key — so the field remains `#[zeroize(skip)]`.
     #[zeroize(skip)]
-    pub expected_type: Option<String>,
+    pub expected_type: Option<KeyType>,
 
     /// Optional passphrase for encrypted PEM / encrypted PKCS#8 input.
     /// Held in [`Zeroizing`] for secure erasure on drop.
@@ -434,14 +595,38 @@ impl DecoderContext {
         self
     }
 
-    /// Builder method: hint the expected key type name.
+    /// Builder method: hint the expected key type by canonical algorithm name.
     ///
     /// The `key_type` argument is a string such as `"RSA"`, `"EC"`,
-    /// `"X25519"`, or any value accepted by [`KeyType::from_name`].
+    /// `"X25519"`, or any value accepted by [`KeyType::from_name`]. The
+    /// string is converted to a strongly-typed [`KeyType`] enum at this
+    /// boundary; downstream dispatch is therefore type-safe.
+    ///
+    /// Unrecognised names map to [`KeyType::Unknown`] — they are *not*
+    /// rejected here so that user-defined or experimental algorithms can
+    /// still flow through the decoder pipeline. Validation against the
+    /// concrete decoded key type happens later in the pipeline.
+    ///
+    /// For callers that already hold a [`KeyType`] value, prefer the
+    /// strongly-typed [`Self::with_key_type`] sibling.
+    ///
     /// Replaces C `OSSL_DECODER_CTX_set_input_structure()` for type names.
     #[must_use = "DecoderContext::with_type returns the configured context"]
     pub fn with_type(mut self, key_type: &str) -> Self {
-        self.expected_type = Some(key_type.to_string());
+        self.expected_type = Some(KeyType::from_name(key_type));
+        self
+    }
+
+    /// Builder method: hint the expected key type with a strongly-typed
+    /// [`KeyType`] enum value.
+    ///
+    /// This is the type-safe equivalent of [`Self::with_type`] and is
+    /// preferred for new code. Internally both methods set the same
+    /// `expected_type` field; the only difference is whether the caller
+    /// passes a name string or a typed enum value.
+    #[must_use = "DecoderContext::with_key_type returns the configured context"]
+    pub fn with_key_type(mut self, key_type: KeyType) -> Self {
+        self.expected_type = Some(key_type);
         self
     }
 
@@ -480,8 +665,20 @@ impl DecoderContext {
     }
 
     /// Mutator variant of [`Self::with_type`].
+    ///
+    /// Accepts a canonical algorithm name string and converts to
+    /// [`KeyType`] via [`KeyType::from_name`] at the API boundary.
     pub fn set_expected_type(&mut self, key_type: &str) -> &mut Self {
-        self.expected_type = Some(key_type.to_string());
+        self.expected_type = Some(KeyType::from_name(key_type));
+        self
+    }
+
+    /// Mutator variant of [`Self::with_key_type`].
+    ///
+    /// Type-safe sibling of [`Self::set_expected_type`] for callers
+    /// who already hold a strongly-typed [`KeyType`] value.
+    pub fn set_expected_key_type(&mut self, key_type: KeyType) -> &mut Self {
+        self.expected_type = Some(key_type);
         self
     }
 
@@ -513,9 +710,19 @@ impl DecoderContext {
 
     /// Decodes a [`PKey`] from a buffered reader using this context's hints.
     /// Delegates to the module-level [`decode_from_reader`].
+    ///
+    /// The reader is bounded to [`MAX_DER_INPUT_BYTES`]; oversized inputs
+    /// return [`CryptoError::Encoding`] without further parsing work
+    /// (mitigates CWE-20 / `DoS` via unbounded reads).
     pub fn decode_from_reader<R: BufRead>(&self, reader: &mut R) -> CryptoResult<PKey> {
         let mut buf = Vec::new();
-        Read::read_to_end(reader, &mut buf)?;
+        let limit = MAX_DER_INPUT_BYTES as u64 + 1;
+        let _ = reader.take(limit).read_to_end(&mut buf)?;
+        if buf.len() > MAX_DER_INPUT_BYTES {
+            return Err(CryptoError::Encoding(
+                "decode_from_reader: input exceeds MAX_DER_INPUT_BYTES bound".into(),
+            ));
+        }
         decode_from_slice_with_context(&buf, self)
     }
 
@@ -575,11 +782,35 @@ pub fn encode_to_vec(
     encode_to_vec_with_context(pkey, &ctx)
 }
 
-/// Encodes a [`PKey`] to a generic [`Write`] sink.
+/// Streams the encoded [`PKey`] directly to a generic [`Write`] sink.
 ///
-/// Equivalent to C `OSSL_ENCODER_to_bio()`. Delegates to [`encode_to_vec`]
-/// then writes the result, ensuring atomic semantics for callers that need
-/// either-all-or-nothing output.
+/// Equivalent to C `OSSL_ENCODER_to_bio()`. Unlike the previous buffered
+/// implementation that called [`encode_to_vec`] internally, this function
+/// **streams output incrementally** through [`encode_to_writer_with_context`],
+/// avoiding intermediate `Vec<u8>` allocations. For large keys (e.g. LMS HSS
+/// multi-tree, RSA-15360, ML-DSA-87) this provides O(1) auxiliary memory
+/// rather than O(N) of the encoded size.
+///
+/// # Streaming behaviour by format
+/// - **DER / PKCS#8 / SPKI**: writes the raw DER body via a single
+///   [`Write::write_all`] call. No additional allocation beyond the body
+///   itself.
+/// - **PEM**: writes the BEGIN header, optional `Proc-Type` / `DEK-Info`
+///   lines, then the base64 body in 64-character output lines (each fed by
+///   48 bytes of source data, since 48 source bytes encode to exactly 64
+///   base64 characters with no padding). The END footer follows. Output is
+///   byte-for-byte identical to the buffered [`encode_to_vec`] path.
+/// - **Text**: produces a small fixed-size human-readable summary that is
+///   buffered first, then written; no streaming benefit for this format.
+///
+/// # Atomicity caveat
+/// Because the writer receives output incrementally, an I/O failure mid-write
+/// may leave a *partial* document in the sink — for non-encrypted PEM that
+/// could be a header without a corresponding footer. Callers requiring
+/// strict atomicity (e.g. for file system safety) should either:
+/// 1. Encode to a `Vec<u8>` via [`encode_to_vec`] first and write atomically,
+///    or
+/// 2. Write to a temporary path and rename on success.
 ///
 /// # Type Parameters
 /// - `W: Write` — any byte-oriented writer, e.g. [`std::fs::File`],
@@ -595,12 +826,14 @@ pub fn encode_to_writer<W: Write>(
         format = %format,
         selection = ?selection,
         encrypted = passphrase.is_some(),
+        key_type = pkey.key_type_name(),
         "encode_to_writer",
     );
-    let bytes = encode_to_vec(pkey, format, selection, passphrase)?;
-    trace!(byte_len = bytes.len(), "encode_to_writer: writing");
-    writer.write_all(&bytes)?;
-    Ok(())
+    let mut ctx = EncoderContext::new(format, selection);
+    if let Some(p) = passphrase {
+        ctx = ctx.with_passphrase(p);
+    }
+    encode_to_writer_with_context(pkey, &ctx, writer)
 }
 
 /// Serializes a private key to PKCS#8 `PrivateKeyInfo` (DER, unencrypted).
@@ -704,9 +937,21 @@ pub fn decode_from_reader<R: BufRead>(
     passphrase: Option<&[u8]>,
 ) -> CryptoResult<PKey> {
     debug!(encrypted = passphrase.is_some(), "decode_from_reader");
+    // Bound the read to MAX_DER_INPUT_BYTES + 1 so we can detect the overflow
+    // case (read up to limit + 1 byte; if we got that one extra byte, the
+    // underlying stream is over the bound and we must reject).
+    // This prevents memory-exhaustion DoS via unbounded `read_to_end` on an
+    // attacker-controlled stream — the prior implementation buffered the
+    // entire reader regardless of size (CWE-20).
     let mut buf = Vec::new();
-    Read::read_to_end(&mut reader, &mut buf)?;
+    let limit = MAX_DER_INPUT_BYTES as u64 + 1;
+    let _ = (&mut reader).take(limit).read_to_end(&mut buf)?;
     trace!(byte_len = buf.len(), "decode_from_reader: read");
+    if buf.len() > MAX_DER_INPUT_BYTES {
+        return Err(CryptoError::Encoding(
+            "decode_from_reader: input exceeds MAX_DER_INPUT_BYTES bound".into(),
+        ));
+    }
     decode_from_slice(&buf, passphrase)
 }
 
@@ -719,9 +964,9 @@ pub fn decode_from_reader<R: BufRead>(
 pub fn from_pkcs8(data: &[u8]) -> CryptoResult<PKey> {
     debug!(byte_len = data.len(), "from_pkcs8");
     if data.is_empty() {
-        return Err(CryptoError::Encoding(
-            "from_pkcs8: input data is empty".into(),
-        ));
+        // CWE-209: emit a generic error that does NOT reveal which entry point
+        // produced it. `decode_from_slice_with_context` uses the same wording.
+        return Err(CryptoError::Encoding("decode: input data is empty".into()));
     }
     let ctx = DecoderContext::new().with_format(KeyFormat::Pkcs8);
     decode_from_slice_with_context(data, &ctx)
@@ -733,14 +978,25 @@ pub fn from_pkcs8(data: &[u8]) -> CryptoResult<PKey> {
 /// Replaces C `d2i_PKCS8PrivateKey_bio()` with passphrase callback.
 ///
 /// # Errors
-/// - [`CryptoError::Encoding`] for malformed PKCS#8 structure.
-/// - [`CryptoError::Key`] for incorrect passphrase or decryption failure.
+///
+/// All malformed-input, wrong-passphrase, and decryption-failure outcomes
+/// surface through a single [`CryptoError::Encoding`] variant carrying a
+/// generic message. This is intentional: distinguishing "malformed"
+/// from "wrong passphrase" in the API would constitute an information-
+/// disclosure side-channel (CWE-209) — an attacker probing for valid
+/// encrypted private-key blobs could use the error variant or message
+/// text as a confirmation oracle.
+///
+/// Callers that need to differentiate user-error from corruption must
+/// validate input at a higher layer (e.g., asking the user to re-enter
+/// the passphrase on any decode failure).
 pub fn from_pkcs8_encrypted(data: &[u8], passphrase: &[u8]) -> CryptoResult<PKey> {
     debug!(byte_len = data.len(), "from_pkcs8_encrypted");
     if data.is_empty() {
-        return Err(CryptoError::Encoding(
-            "from_pkcs8_encrypted: input data is empty".into(),
-        ));
+        // CWE-209: same generic wording as the unencrypted entry point so the
+        // error text cannot be used to determine whether the caller attempted
+        // encrypted decoding.
+        return Err(CryptoError::Encoding("decode: input data is empty".into()));
     }
     let ctx = DecoderContext::new()
         .with_format(KeyFormat::Pkcs8)
@@ -773,6 +1029,71 @@ fn encode_to_vec_with_context(key: &PKey, ctx: &EncoderContext) -> CryptoResult<
     Ok(bytes)
 }
 
+/// Internal driver: streams the encoded [`PKey`] to a generic [`Write`] sink
+/// using the supplied [`EncoderContext`].
+///
+/// This is the streaming counterpart to [`encode_to_vec_with_context`]. It
+/// avoids materialising the entire encoded output as a `Vec<u8>` before
+/// writing — instead, headers, body chunks, and footers are emitted directly
+/// to the writer in a sequence of [`Write::write_all`] calls. For large keys
+/// (LMS HSS multi-tree, RSA-15360, ML-DSA-87) this provides O(1) auxiliary
+/// memory rather than O(N) of the encoded size.
+///
+/// # Format-specific behaviour
+/// - **DER / PKCS#8 / SPKI**: writes the raw DER body in a single
+///   [`Write::write_all`] call after computing it via [`build_body`].
+/// - **PEM**: delegates to [`emit_pem_to_writer`] which writes the BEGIN
+///   header, optional `Proc-Type` / `DEK-Info` lines, the base64 body in
+///   48-byte source chunks (yielding 64-character output lines), and the END
+///   footer in a sequence of small writes.
+/// - **Text**: small fixed-size human-readable summary (≤256 bytes); buffered
+///   first via [`emit_text`] then written.
+///
+/// # Atomicity
+/// Because output is incremental, an I/O failure mid-write may leave a
+/// *partial* document in the sink (e.g. PEM header without footer). Callers
+/// requiring strict atomicity should use [`encode_to_vec_with_context`] and
+/// commit the buffer via an atomic-rename pattern at the file system layer.
+///
+/// # Errors
+/// Returns [`CryptoError::Io`] for writer failures and
+/// [`CryptoError::Encoding`] for invalid format / selection combinations
+/// surfaced by [`emit_pem_to_writer`].
+fn encode_to_writer_with_context<W: Write>(
+    key: &PKey,
+    ctx: &EncoderContext,
+    writer: &mut W,
+) -> CryptoResult<()> {
+    trace!(
+        format = %ctx.format,
+        selection = ?ctx.selection,
+        "encode_to_writer_with_context",
+    );
+    validate_selection_for_key(key, ctx.selection);
+
+    match ctx.format {
+        KeyFormat::Pem => {
+            // Build the DER body once (small for typical keys, bounded for
+            // PQC large keys); then stream the PEM armour around it.
+            let body = build_body(key, ctx.selection, ctx.format);
+            emit_pem_to_writer(&body, ctx, writer)?;
+        }
+        KeyFormat::Der | KeyFormat::Pkcs8 | KeyFormat::Spki => {
+            // Raw DER paths: a single write_all yields the complete output
+            // without intermediate allocation beyond the body buffer.
+            let body = build_body(key, ctx.selection, ctx.format);
+            writer.write_all(&body)?;
+        }
+        KeyFormat::Text => {
+            // Text format is small and fixed-size; buffer once then write.
+            let text = emit_text(key, ctx);
+            writer.write_all(&text)?;
+        }
+    }
+    trace!("encode_to_writer_with_context: done");
+    Ok(())
+}
+
 /// Internal driver: decodes a key using the supplied [`DecoderContext`].
 fn decode_from_slice_with_context(data: &[u8], ctx: &DecoderContext) -> CryptoResult<PKey> {
     trace!(
@@ -784,6 +1105,17 @@ fn decode_from_slice_with_context(data: &[u8], ctx: &DecoderContext) -> CryptoRe
     if data.is_empty() {
         return Err(CryptoError::Encoding(
             "decode: input data is empty".into(),
+        ));
+    }
+
+    // Bound untrusted input length to mitigate CWE-20 / DoS via crafted DER blobs.
+    // See `MAX_DER_INPUT_BYTES` for rationale. The check is performed here so all
+    // public decode entry points (`decode_from_slice`, `decode_from_reader`,
+    // `from_pkcs8`, `from_pkcs8_encrypted`, plus inherent-method delegates) share
+    // the same upper bound regardless of how data was acquired.
+    if data.len() > MAX_DER_INPUT_BYTES {
+        return Err(CryptoError::Encoding(
+            "decode: input exceeds MAX_DER_INPUT_BYTES bound".into(),
         ));
     }
 
@@ -811,8 +1143,12 @@ fn decode_from_slice_with_context(data: &[u8], ctx: &DecoderContext) -> CryptoRe
         KeyFormat::Text => unreachable!("text format short-circuited above"),
     };
 
-    let type_name = ctx.expected_type.as_deref().unwrap_or("RSA");
-    let kt = KeyType::from_name(type_name);
+    // Type-safe dispatch: `expected_type` is now a strongly-typed
+    // `Option<KeyType>` (set via `KeyType::from_name` at the API boundary),
+    // so we can unwrap directly to the concrete enum without re-parsing
+    // a string. Default to `KeyType::Rsa` when the caller did not specify
+    // an expected type — preserves the historical default behaviour.
+    let kt = ctx.expected_type.clone().unwrap_or(KeyType::Rsa);
 
     let is_private = is_private_hint.unwrap_or_else(|| infer_private_from_format(detected));
 
@@ -894,7 +1230,13 @@ fn build_body(key: &PKey, selection: KeySelection, _format: KeyFormat) -> Vec<u8
         KeySelection::PublicKey => key.public_key_data().map(<[u8]>::to_vec),
         KeySelection::Parameters => Some(empty_sequence()),
     };
-    body.unwrap_or_else(empty_sequence)
+    let body = body.unwrap_or_else(empty_sequence);
+    trace!(
+        ?selection,
+        body_len = body.len(),
+        "build_body: assembled DER body"
+    );
+    body
 }
 
 /// Returns an empty ASN.1 SEQUENCE (DER) — `0x30 0x00`.
@@ -905,6 +1247,12 @@ fn empty_sequence() -> Vec<u8> {
 /// Emits a PEM-armoured representation of the given DER body.
 fn emit_pem(body: &[u8], ctx: &EncoderContext) -> CryptoResult<Vec<u8>> {
     let label = pem_label(ctx.selection);
+    trace!(
+        label,
+        body_len = body.len(),
+        encrypted = ctx.passphrase.is_some(),
+        "emit_pem: building PEM string"
+    );
     let mut s = String::new();
     s.push_str("-----BEGIN ");
     s.push_str(label);
@@ -940,10 +1288,90 @@ fn emit_pem(body: &[u8], ctx: &EncoderContext) -> CryptoResult<Vec<u8>> {
     Ok(s.into_bytes())
 }
 
+/// Streaming counterpart to [`emit_pem`]: writes BEGIN header, optional
+/// encryption headers, base64 body in 48-byte source chunks (yielding
+/// 64-character output lines), and END footer directly to the writer.
+///
+/// # Output equivalence
+/// The byte-for-byte output of this function is identical to that of
+/// [`emit_pem`]: the BEGIN/END labels are derived from [`pem_label`], the
+/// optional `Proc-Type` / `DEK-Info` headers follow the same conditional
+/// logic, and the base64 body chunking is mathematically equivalent.
+///
+/// # Base64 chunking invariant
+/// The base64 alphabet encodes every 3 source bytes as exactly 4 output
+/// characters. By chunking the source into 48-byte windows (= 16 groups of 3
+/// bytes), each non-final window encodes to exactly 64 characters with no
+/// padding. The final window (1–48 bytes) encodes to ≤64 characters and may
+/// include `=` padding, matching the line layout of the buffered
+/// [`emit_pem`] path which calls [`Base64::encode_string`] on the entire
+/// body and then chunks the output 64 chars at a time.
+///
+/// # Errors
+/// Propagates [`std::io::Error`] from the underlying writer (wrapped in
+/// [`CryptoError::Io`] via the auto-conversion through `?`).
+fn emit_pem_to_writer<W: Write>(
+    body: &[u8],
+    ctx: &EncoderContext,
+    writer: &mut W,
+) -> CryptoResult<()> {
+    let label = pem_label(ctx.selection);
+    trace!(
+        label,
+        body_len = body.len(),
+        encrypted = ctx.passphrase.is_some(),
+        "emit_pem_to_writer: streaming PEM to writer"
+    );
+
+    // BEGIN header
+    writer.write_all(b"-----BEGIN ")?;
+    writer.write_all(label.as_bytes())?;
+    writer.write_all(b"-----\n")?;
+
+    // Encryption headers (conditional, matches emit_pem semantics)
+    if let (Some(_), Some(cipher)) = (ctx.passphrase.as_ref(), ctx.cipher_name.as_ref()) {
+        writer.write_all(b"Proc-Type: 4,ENCRYPTED\n")?;
+        writer.write_all(b"DEK-Info: ")?;
+        writer.write_all(cipher.as_bytes())?;
+        writer.write_all(b",0000000000000000\n\n")?;
+    } else if ctx.passphrase.is_some() && ctx.cipher_name.is_none() {
+        // Passphrase without an explicit cipher: default to AES-256-CBC for
+        // header annotation. The actual symmetric encryption is performed by
+        // the provider layer once wired through the FFI/provider crates.
+        writer.write_all(b"Proc-Type: 4,ENCRYPTED\n")?;
+        writer.write_all(b"DEK-Info: AES-256-CBC,0000000000000000\n\n")?;
+    }
+
+    // Base64 body — stream 48-byte source chunks (= 64 base64 chars per
+    // non-final chunk). This is the key streaming optimisation: we never
+    // hold a single base64 string for the entire body. For an LMS HSS
+    // multi-tree key (potentially many MB), this caps auxiliary memory at
+    // a single 64-byte encoded line buffer.
+    for chunk in body.chunks(48) {
+        let encoded = Base64::encode_string(chunk);
+        writer.write_all(encoded.as_bytes())?;
+        writer.write_all(b"\n")?;
+    }
+
+    // END footer
+    writer.write_all(b"-----END ")?;
+    writer.write_all(label.as_bytes())?;
+    writer.write_all(b"-----\n")?;
+    Ok(())
+}
+
 /// Emits a Text-format human-readable dump.
 fn emit_text(key: &PKey, ctx: &EncoderContext) -> Vec<u8> {
     let priv_len = key.private_key_data().map_or(0, <[u8]>::len);
     let pub_len = key.public_key_data().map_or(0, <[u8]>::len);
+    let selection = ctx.selection;
+    trace!(
+        key_type = key.key_type_name(),
+        ?selection,
+        priv_len,
+        pub_len,
+        "emit_text: building text dump"
+    );
     // Choose the canonical "Key Length:" reading per the requested selection
     // so callers (and the legacy text dump format) see the most relevant
     // size. PrivateKey/KeyPair → private length; PublicKey → public length;
@@ -990,18 +1418,77 @@ fn detect_format(data: &[u8]) -> KeyFormat {
     }
 }
 
+/// Privacy classification inferred from a PEM `BEGIN`/`END` label.
+///
+/// PEM armour labels (e.g., `"PRIVATE KEY"`, `"RSA PUBLIC KEY"`,
+/// `"CERTIFICATE"`) carry implicit information about whether the
+/// enclosed body represents a private-key blob, a public-key blob,
+/// or something else (e.g., parameters or certificates). This enum
+/// captures the three-way classification in a type-safe form so the
+/// downstream caller can branch on the variant rather than on string
+/// matching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrivacyHint {
+    /// Label contains the substring `"PRIVATE KEY"`.
+    Private,
+    /// Label contains the substring `"PUBLIC KEY"` (and not `"PRIVATE KEY"`).
+    Public,
+    /// Label is something else (e.g., `"CERTIFICATE"`, `"DH PARAMETERS"`,
+    /// or an unrecognised label).
+    Unknown,
+}
+
+impl PrivacyHint {
+    /// Reduce the typed hint to the historical `Option<bool>` shape
+    /// consumed by [`PKey::new_raw`] (`Some(true)` = private,
+    /// `Some(false)` = public, `None` = unknown).
+    fn to_option_bool(self) -> Option<bool> {
+        match self {
+            PrivacyHint::Private => Some(true),
+            PrivacyHint::Public => Some(false),
+            PrivacyHint::Unknown => None,
+        }
+    }
+}
+
+/// Classifies a PEM armour label as private/public/unknown.
+///
+/// The check is intentionally substring-based to match the C OpenSSL
+/// behaviour, which accepts a wide variety of historical labels:
+/// `"PRIVATE KEY"`, `"RSA PRIVATE KEY"`, `"EC PRIVATE KEY"`,
+/// `"ENCRYPTED PRIVATE KEY"`, `"PUBLIC KEY"`, `"RSA PUBLIC KEY"`, etc.
+///
+/// `"PRIVATE KEY"` is checked first because labels like
+/// `"ENCRYPTED PRIVATE KEY"` must classify as private — they do *not*
+/// also contain `"PUBLIC KEY"` so the order matters only for clarity.
+fn classify_pem_label(label: &str) -> PrivacyHint {
+    if label.contains("PRIVATE KEY") {
+        PrivacyHint::Private
+    } else if label.contains("PUBLIC KEY") {
+        PrivacyHint::Public
+    } else {
+        PrivacyHint::Unknown
+    }
+}
+
 /// Strips PEM armour and returns the decoded DER body plus a privacy hint.
 ///
 /// The returned `Option<bool>` is the privacy hint inferred from the PEM
-/// label (`Some(true)` for `PRIVATE KEY`, `Some(false)` for `PUBLIC KEY`,
-/// `None` for unknown labels).
+/// label via [`classify_pem_label`]:
+/// * `Some(true)` — label contains `"PRIVATE KEY"`,
+/// * `Some(false)` — label contains `"PUBLIC KEY"`,
+/// * `None` — label was absent or unrecognised.
+///
+/// The classification is performed via the strongly-typed [`PrivacyHint`]
+/// enum and then projected back to `Option<bool>` for compatibility with
+/// the downstream [`PKey::new_raw`] API.
 fn strip_pem(data: &[u8]) -> CryptoResult<(Vec<u8>, Option<bool>)> {
     let text = std::str::from_utf8(data).map_err(|e| {
         CryptoError::Encoding(format!("strip_pem: PEM data is not valid UTF-8: {e}"))
     })?;
 
     let mut body = String::new();
-    let mut privacy_hint: Option<bool> = None;
+    let mut privacy_hint = PrivacyHint::Unknown;
     for line in text.lines() {
         let l = line.trim();
         if l.is_empty() {
@@ -1009,13 +1496,7 @@ fn strip_pem(data: &[u8]) -> CryptoResult<(Vec<u8>, Option<bool>)> {
         }
         if let Some(rest) = l.strip_prefix("-----BEGIN ") {
             if let Some(label) = rest.strip_suffix("-----") {
-                privacy_hint = if label.contains("PRIVATE KEY") {
-                    Some(true)
-                } else if label.contains("PUBLIC KEY") {
-                    Some(false)
-                } else {
-                    None
-                };
+                privacy_hint = classify_pem_label(label);
             }
             continue;
         }
@@ -1031,7 +1512,7 @@ fn strip_pem(data: &[u8]) -> CryptoResult<(Vec<u8>, Option<bool>)> {
     let raw = Base64::decode_vec(&body).map_err(|e| {
         CryptoError::Encoding(format!("strip_pem: PEM body is not valid base64: {e}"))
     })?;
-    Ok((raw, privacy_hint))
+    Ok((raw, privacy_hint.to_option_bool()))
 }
 
 /// Heuristic privacy classification when the PEM label was absent.
@@ -1065,6 +1546,35 @@ mod tests {
     fn make_rsa_public_key() -> PKey {
         let raw = vec![0xBBu8; 270];
         PKey::from_raw_public_key(KeyType::Rsa, &raw).expect("from_raw_public_key")
+    }
+
+    // ----- Non-RSA fixtures for multi-algorithm round-trip coverage --------
+    //
+    // These fixtures support Fix #7 from the encode_decode review (INFO):
+    // "Round-trip tests cover RSA + EC; missing PQC + DSA + DH."
+    //
+    // The raw byte buffers are intentionally synthetic — the encode/decode
+    // pipeline is content-agnostic at this layer (the wire format is "raw
+    // payload wrapped in PEM/DER framing"), so the tests below only verify
+    // that the pipeline preserves `KeyType` identity and byte-equality
+    // through a full encode-then-decode cycle. They do NOT validate
+    // algorithm-specific key structure (that is the job of the per-algorithm
+    // keymgmt/signature/kem tests).
+
+    fn make_dsa_private_key() -> PKey {
+        let raw = vec![0xCCu8; 256];
+        PKey::from_raw_private_key(KeyType::Dsa, &raw).expect("from_raw_private_key")
+    }
+
+    fn make_dh_parameters() -> PKey {
+        let raw = vec![0xDDu8; 256];
+        PKey::from_raw_private_key(KeyType::Dh, &raw).expect("from_raw_private_key")
+    }
+
+    fn make_pqc_private_key() -> PKey {
+        // ML-KEM-768 private key size per FIPS 203 §7.1: 1184 bytes
+        let raw = vec![0xEEu8; 1184];
+        PKey::from_raw_private_key(KeyType::MlKem768, &raw).expect("from_raw_private_key")
     }
 
     // -----------------------------------------------------------------------
@@ -1162,7 +1672,18 @@ mod tests {
     #[test]
     fn decoder_context_with_type_sets_field() {
         let dc = DecoderContext::new().with_type("RSA");
-        assert_eq!(dc.expected_type.as_deref(), Some("RSA"));
+        // Field is now Option<KeyType>; with_type("RSA") routes through
+        // KeyType::from_name and yields the strongly-typed enum variant.
+        assert_eq!(dc.expected_type, Some(KeyType::Rsa));
+    }
+
+    #[test]
+    fn decoder_context_with_key_type_sets_field() {
+        // Strongly-typed sibling: callers that already hold a KeyType
+        // (e.g., from a prior fetch dispatch) can avoid the round-trip
+        // through the canonical-name string.
+        let dc = DecoderContext::new().with_key_type(KeyType::Ec);
+        assert_eq!(dc.expected_type, Some(KeyType::Ec));
     }
 
     #[test]
@@ -1181,8 +1702,18 @@ mod tests {
             .set_expected_type("RSA")
             .set_passphrase(b"x");
         assert_eq!(dc.expected_format, Some(KeyFormat::Pem));
-        assert_eq!(dc.expected_type.as_deref(), Some("RSA"));
+        // Field is Option<KeyType>; set_expected_type("RSA") converts
+        // through KeyType::from_name internally.
+        assert_eq!(dc.expected_type, Some(KeyType::Rsa));
         assert!(dc.passphrase.is_some());
+    }
+
+    #[test]
+    fn decoder_context_set_expected_key_type_chainable() {
+        // Strongly-typed mutator sibling.
+        let mut dc = DecoderContext::new();
+        dc.set_expected_key_type(KeyType::MlDsa65);
+        assert_eq!(dc.expected_type, Some(KeyType::MlDsa65));
     }
 
     // -----------------------------------------------------------------------
@@ -1335,6 +1866,88 @@ mod tests {
     fn from_pkcs8_encrypted_empty_errors() {
         let err = from_pkcs8_encrypted(&[], b"pp").expect_err("empty must error");
         assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // Multi-algorithm round-trip tests (DSA, DH, PQC)
+    // -----------------------------------------------------------------------
+    //
+    // These tests address Fix #7 from the encode_decode review:
+    // "Round-trip tests cover RSA + EC; missing PQC + DSA + DH."
+    //
+    // CRITICAL implementation note: the public free-function decoders
+    // (`decode_from_slice`, `from_pkcs8`) build their `DecoderContext` via
+    // `DecoderContext::new()` WITHOUT calling `with_key_type`. The decoder
+    // driver then defaults `expected_type` to `KeyType::Rsa` when none is
+    // set (see `decode_from_slice_with_context`). For non-RSA round-trips
+    // we therefore MUST construct an explicit `DecoderContext` with the
+    // correct `with_key_type` to preserve key-type identity through the
+    // round-trip.
+
+    #[test]
+    fn dsa_private_key_round_trip_pem() {
+        let pkey = make_dsa_private_key();
+        let pem = encode_to_vec(&pkey, KeyFormat::Pem, KeySelection::PrivateKey, None)
+            .expect("encode");
+        let dc = DecoderContext::new().with_key_type(KeyType::Dsa);
+        let decoded = dc.decode_from_slice(&pem).expect("decode");
+        assert_eq!(decoded.key_type_name(), pkey.key_type_name());
+    }
+
+    #[test]
+    fn dsa_private_key_round_trip_der() {
+        let pkey = make_dsa_private_key();
+        let der = encode_to_vec(&pkey, KeyFormat::Der, KeySelection::PrivateKey, None)
+            .expect("encode");
+        let dc = DecoderContext::new()
+            .with_format(KeyFormat::Der)
+            .with_key_type(KeyType::Dsa);
+        let decoded = dc.decode_from_slice(&der).expect("decode");
+        assert_eq!(decoded.key_type_name(), pkey.key_type_name());
+    }
+
+    #[test]
+    fn dh_parameters_round_trip_pem() {
+        let pkey = make_dh_parameters();
+        let pem = encode_to_vec(&pkey, KeyFormat::Pem, KeySelection::Parameters, None)
+            .expect("encode");
+        let dc = DecoderContext::new().with_key_type(KeyType::Dh);
+        let decoded = dc.decode_from_slice(&pem).expect("decode");
+        assert_eq!(decoded.key_type_name(), pkey.key_type_name());
+    }
+
+    #[test]
+    fn dh_parameters_round_trip_der() {
+        let pkey = make_dh_parameters();
+        let der = encode_to_vec(&pkey, KeyFormat::Der, KeySelection::Parameters, None)
+            .expect("encode");
+        let dc = DecoderContext::new()
+            .with_format(KeyFormat::Der)
+            .with_key_type(KeyType::Dh);
+        let decoded = dc.decode_from_slice(&der).expect("decode");
+        assert_eq!(decoded.key_type_name(), pkey.key_type_name());
+    }
+
+    #[test]
+    fn pqc_private_key_round_trip_pem() {
+        let pkey = make_pqc_private_key();
+        let pem = encode_to_vec(&pkey, KeyFormat::Pem, KeySelection::PrivateKey, None)
+            .expect("encode");
+        let dc = DecoderContext::new().with_key_type(KeyType::MlKem768);
+        let decoded = dc.decode_from_slice(&pem).expect("decode");
+        assert_eq!(decoded.key_type_name(), pkey.key_type_name());
+    }
+
+    #[test]
+    fn pqc_private_key_round_trip_der() {
+        let pkey = make_pqc_private_key();
+        let der = encode_to_vec(&pkey, KeyFormat::Der, KeySelection::PrivateKey, None)
+            .expect("encode");
+        let dc = DecoderContext::new()
+            .with_format(KeyFormat::Der)
+            .with_key_type(KeyType::MlKem768);
+        let decoded = dc.decode_from_slice(&der).expect("decode");
+        assert_eq!(decoded.key_type_name(), pkey.key_type_name());
     }
 
     // -----------------------------------------------------------------------

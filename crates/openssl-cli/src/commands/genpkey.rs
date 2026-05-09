@@ -871,14 +871,18 @@ fn format_to_key_format(fmt: Format) -> Result<KeyFormat, CryptoError> {
 /// output when `path` is [`None`].
 ///
 /// Mirrors `bio_open_owner(outfile, outformat, private)` at
-/// `apps/genpkey.c:329`.  The C helper opens the file in binary
-/// "owner" mode (0600); the Rust port relies on `File::create`'s
-/// default mode (umask-dependent).  Refining the file mode to 0600
-/// is a follow-on item tracked under [`UNREAD: reserved`] policy.
+/// `apps/genpkey.c:329`: the C helper opens the file in 0600 binary
+/// "owner" mode using `BIO_new_file()` followed by an explicit chmod.
+/// The Rust port uses the central [`crate::lib::opts::create_private_key_file`]
+/// helper which opens the file with `O_WRONLY | O_CREAT | O_TRUNC`
+/// **and** mode `0o600` atomically on Unix.  This closes the
+/// CWE-732 ("Incorrect Permission Assignment for Critical Resource")
+/// regression where the previous `File::create()` honoured the
+/// process umask and created world-readable private-key files.
 fn open_output_writer(path: Option<&Path>) -> Result<Box<dyn Write>, CryptoError> {
     if let Some(path) = path {
-        debug!(path = %path.display(), "genpkey: opening output file");
-        let file = File::create(path).map_err(|err| {
+        debug!(path = %path.display(), "genpkey: opening output file (mode 0600)");
+        let file = crate::lib::opts::create_private_key_file(path).map_err(|err| {
             error!(
                 path = %path.display(),
                 error = %err,

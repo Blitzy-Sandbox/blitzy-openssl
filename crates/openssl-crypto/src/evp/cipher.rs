@@ -50,18 +50,168 @@
 //! - **R9 (Warning-Free):** All public items documented.
 //! - **R10 (Wiring):** Reachable from `openssl_cli::enc` → `evp::cipher::*`.
 
+use std::collections::HashSet;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use base64ct::{Base64, Encoding};
 use bitflags::bitflags;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 use zeroize::Zeroize;
 
 use crate::context::LibContext;
 use openssl_common::{CryptoError, CryptoResult, ParamSet, ParamValue};
 
 use super::EvpError;
+
+// ============================================================================
+// IvUniquenessTracker — IV/nonce reuse detection for AEAD encryption
+// ============================================================================
+
+/// Tracks (key, IV) pairs across encryption operations to detect catastrophic
+/// IV/nonce reuse for AEAD ciphers (CWE-323: Reusing a Nonce, Key Pair).
+///
+/// AEAD modes such as AES-GCM, AES-CCM, AES-OCB and ChaCha20-Poly1305 lose all
+/// confidentiality and authenticity guarantees if the same `(key, IV)` pair is
+/// ever used to encrypt two distinct plaintexts. This tracker maintains a
+/// per-instance set of observed `(key, IV)` pairs and rejects any subsequent
+/// encryption attempt that would reuse one. The tracker is **opt-in** —
+/// callers attach it via [`CipherCtx::with_iv_tracker`] only when they require
+/// reuse-detection guarantees.
+///
+/// ## Design
+///
+/// The tracker stores cloned `(Vec<u8>, Vec<u8>)` pairs in a [`HashSet`]
+/// guarded by a [`Mutex`]. The lock scope is intentionally kept around a
+/// single `insert` operation per encryption so contention is bounded. Cloned
+/// key bytes inside the set are zeroized on drop alongside the tracker.
+///
+/// ## Scope
+///
+/// - **Encryption only:** decryption legitimately reuses IVs (the AEAD
+///   verifier needs the same IV that produced the ciphertext) and is never
+///   tracked.
+/// - **AEAD only:** non-AEAD modes (CBC, CTR, etc.) are not catastrophic on
+///   IV reuse and are skipped to avoid false positives.
+/// - **Encrypt path only:** the check runs inside [`CipherCtx::encrypt_init`]
+///   right after IV-length validation.
+///
+/// ## Thread Safety
+///
+/// Wrap in [`Arc`] to share across multiple [`CipherCtx`] instances and
+/// threads; the inner [`Mutex`] serialises insertions.
+///
+/// ## R7 (Lock Granularity)
+///
+/// `// LOCK-SCOPE:` — the mutex guards a single `HashSet` insertion per
+/// encryption operation. The critical section contains no I/O, no calls into
+/// foreign code, and no `.await` (this type is sync-only). Contention is
+/// bounded by the number of concurrent encryption initialisations sharing the
+/// same tracker, which is rare in practice.
+///
+/// ## Example
+///
+/// ```ignore
+/// use std::sync::Arc;
+/// use openssl_crypto::evp::cipher::{Cipher, CipherCtx, IvUniquenessTracker};
+///
+/// let tracker = Arc::new(IvUniquenessTracker::new());
+/// let mut ctx = CipherCtx::new().with_iv_tracker(Arc::clone(&tracker));
+/// // First call succeeds.
+/// ctx.encrypt_init(&aes_gcm, &key, Some(&iv), None)?;
+/// // Re-using `(key, iv)` for a fresh encryption returns an error.
+/// let mut ctx2 = CipherCtx::new().with_iv_tracker(tracker);
+/// assert!(ctx2.encrypt_init(&aes_gcm, &key, Some(&iv), None).is_err());
+/// # Ok::<(), openssl_common::CryptoError>(())
+/// ```
+pub struct IvUniquenessTracker {
+    seen: Mutex<HashSet<(Vec<u8>, Vec<u8>)>>,
+}
+
+impl IvUniquenessTracker {
+    /// Creates an empty tracker.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            seen: Mutex::new(HashSet::new()),
+        }
+    }
+
+    /// Records `(key, iv)` if previously unseen, or returns
+    /// [`CryptoError::Key`] if the pair has already been observed.
+    ///
+    /// This method is idempotent on the success path — a freshly observed pair
+    /// is inserted exactly once. The poisoned-mutex path returns a
+    /// conservative error rather than panicking, so a panicking concurrent
+    /// caller cannot cause us to silently miss a reuse.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::Key`] if the `(key, iv)` pair has been recorded
+    /// previously by this tracker, or if the internal mutex is poisoned.
+    pub fn check_and_record(&self, key: &[u8], iv: &[u8]) -> CryptoResult<()> {
+        let mut guard = self.seen.lock().map_err(|_| {
+            CryptoError::Key("IvUniquenessTracker mutex poisoned".into())
+        })?;
+        if guard.contains(&(key.to_vec(), iv.to_vec())) {
+            warn!(
+                key_len = key.len(),
+                iv_len = iv.len(),
+                "evp::cipher: AEAD IV reuse detected; rejecting encryption"
+            );
+            return Err(CryptoError::Key(
+                "AEAD IV reuse detected: this (key, IV) pair was previously \
+                 used for encryption; reusing it would break confidentiality \
+                 and authenticity (CWE-323)"
+                    .into(),
+            ));
+        }
+        guard.insert((key.to_vec(), iv.to_vec()));
+        Ok(())
+    }
+
+    /// Returns the number of distinct `(key, IV)` pairs recorded so far.
+    ///
+    /// Returns `0` if the tracker's internal mutex is poisoned (treated as
+    /// best-effort observability rather than a failure mode).
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.seen.lock().map_or(0, |g| g.len())
+    }
+
+    /// Returns `true` if the tracker has not yet observed any encryption.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl Default for IvUniquenessTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Debug for IvUniquenessTracker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IvUniquenessTracker")
+            .field("recorded_pairs", &self.len())
+            .finish()
+    }
+}
+
+// Zeroize cloned key bytes when the tracker is dropped to avoid leaving copies
+// in the heap allocator's freelists.
+impl Drop for IvUniquenessTracker {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.seen.lock() {
+            for (mut k, mut v) in guard.drain() {
+                k.zeroize();
+                v.zeroize();
+            }
+        }
+    }
+}
 
 // ============================================================================
 // CipherMode — block cipher mode of operation
@@ -466,6 +616,12 @@ pub struct CipherCtx {
     aead_ciphertext: Vec<u8>,
     /// Running keystream position counter for stream-like transforms.
     stream_position: u64,
+    /// Optional opt-in tracker for AEAD `(key, IV)` reuse detection.
+    ///
+    /// When attached via [`CipherCtx::with_iv_tracker`], `encrypt_init` for
+    /// AEAD ciphers consults this tracker and rejects any `(key, IV)` pair
+    /// that has already been observed for encryption (CWE-323).
+    iv_tracker: Option<Arc<IvUniquenessTracker>>,
 }
 
 // Manual Zeroize: delegates to Vec fields holding key material.
@@ -504,6 +660,10 @@ impl fmt::Debug for CipherCtx {
             .field("aad", &"[REDACTED]")
             .field("aead_ciphertext", &"[REDACTED]")
             .field("stream_position", &self.stream_position)
+            .field(
+                "iv_tracker",
+                &self.iv_tracker.as_ref().map(|_| "[present]"),
+            )
             .finish()
     }
 }
@@ -518,6 +678,17 @@ impl CipherCtx {
     /// Translates `EVP_CIPHER_CTX_new()` (`evp_enc.c` lines 49-59).
     /// The context must be initialised with [`encrypt_init()`](Self::encrypt_init)
     /// or [`decrypt_init()`](Self::decrypt_init) before data processing.
+    ///
+    /// ## Defaults
+    ///
+    /// - **PKCS#7 padding is ENABLED by default** for block-cipher modes,
+    ///   matching the C `EVP_CIPHER_CTX_set_padding()` semantics where the
+    ///   default is "padding on". Callers that need raw block processing
+    ///   (e.g. CTS, custom padding schemes) must explicitly disable it via
+    ///   the `"padding"` parameter on init or [`build_params`].
+    /// - **No IV uniqueness tracking** is attached. Attach one via
+    ///   [`with_iv_tracker`](Self::with_iv_tracker) to enforce the AEAD
+    ///   nonce-uniqueness invariant.
     pub fn new() -> Self {
         trace!("evp::cipher: creating new CipherCtx");
         Self {
@@ -534,7 +705,38 @@ impl CipherCtx {
             aad: Vec::new(),
             aead_ciphertext: Vec::new(),
             stream_position: 0,
+            iv_tracker: None,
         }
+    }
+
+    /// Attaches an [`IvUniquenessTracker`] to enforce AEAD `(key, IV)` reuse
+    /// detection on subsequent encryption initialisations.
+    ///
+    /// This is the **opt-in** mechanism for catching catastrophic IV reuse
+    /// (CWE-323). The tracker is consulted only on:
+    /// - **Encrypt** initialisations (decrypt legitimately reuses IVs).
+    /// - **AEAD** ciphers (modes such as GCM/CCM/OCB/SIV/ChaCha20-Poly1305).
+    ///
+    /// The tracker is intentionally **not** attached by default because some
+    /// legitimate workloads (e.g. benchmarking, deterministic test vectors)
+    /// drive multiple encryptions with the same `(key, IV)` and need to
+    /// retain that capability. Production code that performs multiple
+    /// encryptions with caller-supplied IVs should always attach a shared
+    /// tracker.
+    ///
+    /// ## Example
+    ///
+    /// ```ignore
+    /// use std::sync::Arc;
+    /// use openssl_crypto::evp::cipher::{CipherCtx, IvUniquenessTracker};
+    ///
+    /// let tracker = Arc::new(IvUniquenessTracker::new());
+    /// let mut ctx = CipherCtx::new().with_iv_tracker(Arc::clone(&tracker));
+    /// ```
+    #[must_use]
+    pub fn with_iv_tracker(mut self, tracker: Arc<IvUniquenessTracker>) -> Self {
+        self.iv_tracker = Some(tracker);
+        self
     }
 
     /// Initialises this context for encryption.
@@ -688,9 +890,23 @@ impl CipherCtx {
     ///
     /// Translates `EVP_CIPHER_CTX_ctrl(EVP_CTRL_AEAD_SET_TAG, ...)`.
     ///
+    /// ## Tag length validation
+    ///
+    /// The tag length is validated against the per-mode allowed set per the
+    /// relevant standards:
+    ///
+    /// - **GCM** (NIST SP 800-38D §5.2.1.1): 4, 8, 12, 13, 14, 15, or 16 bytes.
+    /// - **CCM** (NIST SP 800-38C §6.1): 4, 6, 8, 10, 12, 14, or 16 bytes.
+    /// - **OCB** (RFC 7253 §3.1): 8..=16 bytes.
+    /// - **SIV** (RFC 5297 §2.4): exactly 16 bytes.
+    /// - **Stream-AEAD (e.g. ChaCha20-Poly1305)**: any non-empty length is
+    ///   accepted because Poly1305 produces a fixed 16-byte tag and the
+    ///   bottom-half implementations enforce equality on use.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the cipher is not AEAD or tag is empty.
+    /// Returns [`CryptoError::Key`] if the cipher is not AEAD, the tag is
+    /// empty, or the tag length is invalid for the active mode.
     pub fn set_aead_tag(&mut self, tag: &[u8]) -> CryptoResult<()> {
         self.ensure_initialised()?;
         if !self.cipher_is_aead() {
@@ -703,10 +919,28 @@ impl CipherCtx {
                 "set_aead_tag: tag must not be empty".into(),
             ));
         }
+        let mode = self.cipher_mode()?;
+        let valid = match mode {
+            CipherMode::Gcm => matches!(tag.len(), 4 | 8 | 12 | 13 | 14 | 15 | 16),
+            CipherMode::Ccm => matches!(tag.len(), 4 | 6 | 8 | 10 | 12 | 14 | 16),
+            CipherMode::Ocb => (8..=16).contains(&tag.len()),
+            CipherMode::Siv => tag.len() == 16,
+            // Stream-AEAD and other AEAD modes accept any non-empty tag —
+            // bottom-half implementations enforce algorithm-specific lengths.
+            _ => true,
+        };
+        if !valid {
+            return Err(CryptoError::Key(format!(
+                "set_aead_tag: invalid tag length {} for mode {:?}",
+                tag.len(),
+                mode
+            )));
+        }
         let cipher_name = self.cipher_name_or_unknown();
         debug!(
             cipher = cipher_name.as_str(),
             tag_len = tag.len(),
+            mode = ?mode,
             "evp::cipher: setting AEAD tag"
         );
         self.tag = tag.to_vec();
@@ -717,9 +951,20 @@ impl CipherCtx {
     ///
     /// Translates `EVP_CIPHER_CTX_ctrl(EVP_CTRL_AEAD_GET_TAG, ...)`.
     ///
+    /// ## Length semantics
+    ///
+    /// The C contract requires the requested length to be ≤ the computed tag
+    /// length; requesting a longer tag would expose uninitialised memory in
+    /// the C implementation. In Rust we explicitly reject over-long requests
+    /// rather than silently truncating, which prevents an entire class of
+    /// AEAD verification bugs where a caller asked for 16 bytes but received
+    /// only the first `min(16, computed)` bytes — making partial-tag forgery
+    /// detection harder.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the cipher is not AEAD or not yet finalised.
+    /// Returns [`CryptoError::Key`] if the cipher is not AEAD, the context
+    /// has not been finalised, or `tag_len` exceeds the computed tag length.
     pub fn get_aead_tag(&self, tag_len: usize) -> CryptoResult<Vec<u8>> {
         self.ensure_initialised()?;
         if !self.cipher_is_aead() {
@@ -732,14 +977,20 @@ impl CipherCtx {
                 "get_aead_tag: must finalize before retrieving tag".into(),
             ));
         }
+        if tag_len > self.tag.len() {
+            return Err(CryptoError::Key(format!(
+                "get_aead_tag: requested {} bytes but only {} available",
+                tag_len,
+                self.tag.len()
+            )));
+        }
         let cipher_name = self.cipher_name_or_unknown();
         debug!(
             cipher = cipher_name.as_str(),
             tag_len = tag_len,
             "evp::cipher: getting AEAD tag"
         );
-        let effective_len = tag_len.min(self.tag.len());
-        Ok(self.tag[..effective_len].to_vec())
+        Ok(self.tag[..tag_len].to_vec())
     }
 
     /// Adds additional authenticated data (AAD) for AEAD ciphers.
@@ -780,6 +1031,75 @@ impl CipherCtx {
     /// Returns `true` if [`finalize()`](Self::finalize) has been called.
     pub fn is_finalized(&self) -> bool {
         self.finalized
+    }
+
+    /// Computes the maximum number of output bytes that a subsequent
+    /// [`update`](Self::update) followed by a [`finalize`](Self::finalize)
+    /// could emit for an input of length `input_len`.
+    ///
+    /// Translates the C `EVP_EncryptUpdate(NULL, &outl, in, inl)` "size query"
+    /// idiom that C consumers use to compute their output buffer size before
+    /// allocating. The Rust API is buffer-returning rather than
+    /// buffer-filling, but downstream FFI shims and tooling still need an
+    /// answer to the question "how many bytes might come out?".
+    ///
+    /// ## Semantics
+    ///
+    /// - Stream-like modes (CTR, GCM, CCM, SIV, native stream) emit exactly
+    ///   `input_len` bytes for `update` plus `tag_len` bytes from `finalize`
+    ///   for AEAD; the conservative answer for the combined call is
+    ///   `input_len`.
+    /// - Block modes (ECB, CBC, CFB, OFB, OCB, XTS, Wrap) emit at most
+    ///   `((input_len + buf_len) rounded up to next block) + block_size` bytes
+    ///   when padding is enabled, or `((input_len + buf_len) rounded down to
+    ///   nearest block boundary)` when padding is disabled.
+    /// - The `None` mode behaves as a stream pass-through.
+    ///
+    /// ## Errors
+    ///
+    /// Returns [`EvpError::NotInitialized`] if the context has no bound
+    /// cipher.
+    pub fn output_size(&self, input_len: usize) -> CryptoResult<usize> {
+        let cipher = self
+            .cipher
+            .as_ref()
+            .ok_or(EvpError::NotInitialized)?;
+        let block_size = cipher.block_size.max(1);
+        let mode = cipher.mode;
+        match mode {
+            CipherMode::Ctr
+            | CipherMode::Gcm
+            | CipherMode::Ccm
+            | CipherMode::Siv
+            | CipherMode::Stream
+            | CipherMode::None => Ok(input_len),
+            CipherMode::Cfb | CipherMode::Ofb => {
+                // Stream-like derivatives of block ciphers — same byte-for-byte
+                // input/output.
+                Ok(input_len)
+            }
+            CipherMode::Ecb
+            | CipherMode::Cbc
+            | CipherMode::Ocb
+            | CipherMode::Xts
+            | CipherMode::Wrap => {
+                let total = input_len.saturating_add(self.buf_len);
+                if self.padding_enabled {
+                    // Padding always adds 1..=block_size bytes; round up plus
+                    // a full extra block for the worst-case pad block.
+                    let rounded = total
+                        .checked_add(block_size)
+                        .ok_or_else(|| {
+                            CryptoError::Key(
+                                "output_size: overflow computing padded size".into(),
+                            )
+                        })?;
+                    Ok((rounded / block_size) * block_size)
+                } else {
+                    Ok((total / block_size) * block_size)
+                }
+            }
+        }
     }
 }
 
@@ -825,6 +1145,23 @@ impl CipherCtx {
                     )));
                 }
                 _ => {}
+            }
+        }
+
+        // IV uniqueness enforcement (CWE-323): only on Encrypt + AEAD when an
+        // IvUniquenessTracker has been opt-in attached via
+        // `CipherCtx::with_iv_tracker`. This prevents catastrophic AEAD nonce
+        // reuse for keys where the caller has explicitly chosen to enforce the
+        // single-use invariant. Stream/CTR ciphers without AEAD framing are
+        // not covered because their callers (e.g. TLS record layer, KDFs)
+        // already manage nonce uniqueness through higher-level protocols.
+        if direction == CipherDirection::Encrypt
+            && cipher.flags.contains(CipherFlags::AEAD)
+        {
+            if let Some(tracker) = self.iv_tracker.clone() {
+                if let Some(iv_data) = iv {
+                    tracker.check_and_record(key, iv_data)?;
+                }
             }
         }
 

@@ -1569,7 +1569,13 @@ mod tests {
     fn rsasve_encapsulate_decapsulate_round_trip() {
         let pub_der = shared_pub_der();
         let priv_der = shared_priv_der();
-        let n_bytes = shared_keypair().public_key().key_size_bytes() as usize;
+        // R6 — Lossless Numeric Casts: convert `u32` to `usize` via `try_from`/`expect` instead
+        // of a bare `as` cast. `key_size_bytes()` returns a `u32`; on every supported target
+        // (`u16`/`u32`/`u64`/`usize`-backed pointer widths), this conversion is infallible for
+        // the key sizes we generate here, but `try_from` documents intent and complies with
+        // the workspace lint `clippy::cast_possible_truncation` set to `deny`.
+        let n_bytes = usize::try_from(shared_keypair().public_key().key_size_bytes())
+            .expect("RSA modulus size in bytes always fits in usize for supported targets");
 
         // Encapsulate using a fresh context bound to the public key.
         let mut enc_ctx = RsaKemContext::new();

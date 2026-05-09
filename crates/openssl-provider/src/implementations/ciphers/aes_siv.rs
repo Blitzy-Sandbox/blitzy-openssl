@@ -99,7 +99,10 @@ use openssl_crypto::symmetric::aes::{Aes, AesKeySize, AesSiv, GHashTable};
 // calls of the form `Aes::encrypt_block(&aes, &mut buf)` resolve to the
 // trait method.
 use openssl_crypto::symmetric::SymmetricCipher;
+use std::collections::HashSet;
 use std::fmt;
+use std::sync::{Mutex, OnceLock};
+use tracing::warn;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // `ConstantTimeEq` is the canonical primitive used to compare AEAD tags in a
@@ -266,6 +269,121 @@ impl CipherProvider for AesSivCipher {
 
     fn new_ctx(&self) -> ProviderResult<Box<dyn CipherContext>> {
         AesSivCipher::new_ctx(self)
+    }
+}
+
+// =============================================================================
+// Nonce-Reuse Tracking (AES-SIV / AES-GCM-SIV — Controlled Deterministic Leak)
+// =============================================================================
+
+/// Static tracker for `(algorithm, key, nonce)` triples observed on encryption.
+///
+/// AES-SIV (RFC 5297) and AES-GCM-SIV (RFC 8452) are **nonce-misuse-resistant
+/// AEAD** ciphers: distinct plaintexts encrypted under a reused nonce do not
+/// reveal the keystream, so the catastrophic confidentiality failure of
+/// CTR-mode AEADs (such as AES-GCM) is averted. However, they retain a
+/// **controlled deterministic-encryption leak**: encrypting an identical
+/// `(key, nonce, AAD, plaintext)` tuple twice produces an identical
+/// ciphertext, allowing an observer to detect plaintext repetition.
+///
+/// This tracker records `(algorithm, key, nonce)` pairs seen during encrypt
+/// initialisation and emits a `tracing::warn!` event the second (and any
+/// subsequent) time the same pair is observed under the same algorithm. The
+/// event is informational only — the operation is **not** rejected, mirroring
+/// the upstream OpenSSL semantics that allow nonce reuse for these ciphers.
+///
+/// # Threat Model
+///
+/// The tracker exists to alert operators to a *controlled* leak that may be
+/// undesired in their threat model. It is **not** a security mechanism: it
+/// does not prevent reuse, does not persist across process restarts, and is
+/// best-effort only (mutex poisoning falls back to a recovered guard).
+///
+/// # Memory Behaviour
+///
+/// Each tracked entry stores the algorithm name (static `&str`, no
+/// allocation), a copy of the key, and a copy of the nonce. The tracker grows
+/// monotonically for the lifetime of the process. Operators concerned about
+/// memory growth in long-lived servers performing many distinct AES-SIV /
+/// AES-GCM-SIV encryptions can disable this layer by feature-gating in a
+/// future refactor; for now, the warning is emitted on best-effort detection
+/// and the cost is negligible compared to the cryptographic operation.
+///
+/// # `OnceLock` + `Mutex<HashSet>` Choice
+///
+/// `OnceLock` is used so the tracker is created lazily on first encrypt
+/// initialisation rather than at startup; this avoids any cost for callers
+/// that never touch SIV-family ciphers. The inner [`Mutex<HashSet<...>>`] is a
+/// coarse lock per [`Rule R7`] but contention is bounded because the critical
+/// section is a single `HashSet::insert` — far smaller than the AES-SIV /
+/// AES-GCM-SIV transform itself, which dominates wall-clock time.
+///
+/// Per [`Rule R7`] (Concurrency Lock Granularity), the lock scope here is
+/// justified by the fine-grained, short critical section.
+///
+/// // LOCK-SCOPE: Brief `HashSet::insert` on (algorithm, key, nonce) tuples;
+/// // contention is negligible relative to the surrounding AEAD transform.
+static NONCE_REUSE_TRACKER: OnceLock<Mutex<HashSet<(&'static str, Vec<u8>, Vec<u8>)>>> =
+    OnceLock::new();
+
+/// Check whether `(algorithm, key, nonce)` has been observed previously and
+/// emit a `tracing::warn!` event if so.
+///
+/// This helper is invoked from the encrypt-direction `*_init` paths of both
+/// [`AesSivContext`] and [`AesGcmSivContext`] to alert operators to the
+/// controlled deterministic-encryption leak that occurs when the same
+/// `(key, nonce, AAD, plaintext)` tuple is encrypted twice. The warning is
+/// best-effort observability — it does not error and does not block the
+/// operation.
+///
+/// Mutex poisoning (which can occur if a previous holder panicked while the
+/// lock was held) is downgraded to a `warn!` log entry and the recovered
+/// guard is used; this preserves liveness in the face of unrelated panics
+/// elsewhere in the process.
+fn check_and_warn_nonce_reuse(algorithm: &'static str, key: &[u8], nonce: &[u8]) {
+    let tracker = NONCE_REUSE_TRACKER.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut guard = match tracker.lock() {
+        Ok(g) => g,
+        Err(poisoned) => {
+            warn!(
+                algorithm = algorithm,
+                "nonce-reuse tracker mutex poisoned; recovering and continuing"
+            );
+            poisoned.into_inner()
+        }
+    };
+    let entry = (algorithm, key.to_vec(), nonce.to_vec());
+    if !guard.insert(entry) {
+        warn!(
+            algorithm = algorithm,
+            "nonce reused under same key — AES-SIV / AES-GCM-SIV are \
+             nonce-misuse-resistant but identical (key, nonce, AAD, plaintext) \
+             tuples produce identical ciphertexts (controlled \
+             deterministic-encryption leak)"
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    dead_code,
+    reason = "Test isolation helper retained for future test scenarios that require a \
+              clean tracker. Current tests intentionally avoid calling this helper because \
+              parallel test execution combined with a global tracker creates a race: a \
+              concurrent reset() would wipe entries another running test depends on. \
+              Each test instead uses a unique algorithm-name string to isolate its \
+              state without touching the shared tracker."
+)]
+/// Test-only helper: clear the nonce-reuse tracker so each test starts from a
+/// clean slate. Without this, tests can interact through the global tracker
+/// state (a duplicate insertion in test A would suppress the warning in test
+/// B). Silently ignores poisoned-mutex conditions because test code should
+/// not panic on unrelated lock failures.
+fn reset_nonce_reuse_tracker_for_tests() {
+    if let Some(tracker) = NONCE_REUSE_TRACKER.get() {
+        if let Ok(mut g) = tracker.lock() {
+            g.clear();
+        }
     }
 }
 
@@ -439,6 +557,21 @@ impl AesSivContext {
         let engine = AesSiv::new(key).map_err(|e| {
             ProviderError::Init(format!("AES-SIV {}: engine init failed: {e}", self.name))
         })?;
+
+        // RFC 5297 §1.3: AES-SIV is nonce-misuse-resistant, but identical
+        // (key, nonce, AAD, plaintext) tuples produce identical ciphertexts
+        // — a controlled deterministic-encryption leak. Emit a warning when
+        // the same (key, nonce) pair is observed under the same algorithm
+        // on the encrypt path. Decrypt-direction observations are not
+        // warned (verifying a previously-produced ciphertext is expected to
+        // reuse the same key+nonce). Nonce-less init (synthetic-IV mode) is
+        // skipped; the synthetic IV is derived from the plaintext+AAD and
+        // therefore cannot collide on distinct messages.
+        if encrypting {
+            if let Some(iv_bytes) = iv {
+                check_and_warn_nonce_reuse(self.name, key, iv_bytes);
+            }
+        }
 
         self.encrypting = encrypting;
         self.initialised = true;
@@ -1358,6 +1491,21 @@ impl AesGcmSivContext {
             }
         }
 
+        // RFC 8452 §4: AES-GCM-SIV is nonce-misuse-resistant, but identical
+        // (key, nonce, AAD, plaintext) tuples produce identical ciphertexts
+        // — a controlled deterministic-encryption leak. Emit a warning when
+        // the same (key, nonce) pair is observed under the same algorithm
+        // on the encrypt path. Decrypt-direction observations are not
+        // warned (verifying a previously-produced ciphertext is expected
+        // to reuse the same key+nonce). The 12-byte nonce length has
+        // already been validated above, so any `Some(iv_bytes)` here is
+        // well-formed.
+        if encrypting {
+            if let Some(iv_bytes) = iv {
+                check_and_warn_nonce_reuse(self.name, key, iv_bytes);
+            }
+        }
+
         self.encrypting = encrypting;
         self.initialised = true;
         self.started = false;
@@ -2261,5 +2409,111 @@ mod tests {
             _ => panic!("AEAD_TAG missing"),
         };
         assert_eq!(tag, expected_tag, "tag must match RFC 8452 §C.1 vector");
+    }
+
+    // -------------------------------------------------------------------------
+    // Nonce-reuse tracking warnings — duplicate (key, nonce) detection
+    // -------------------------------------------------------------------------
+
+    /// Verify that AES-SIV's nonce-reuse warning helper records duplicate
+    /// `(algorithm, key, nonce)` invocations in the global tracker.
+    ///
+    /// Per RFC 5297 §1.3, AES-SIV is nonce-misuse-resistant but emits a
+    /// controlled deterministic-encryption leak when the same
+    /// `(key, nonce, AAD, plaintext)` tuple is encrypted twice. The
+    /// `check_and_warn_nonce_reuse` helper records every observed
+    /// `(algorithm, key, nonce)` triple in `NONCE_REUSE_TRACKER` and emits a
+    /// `tracing::warn!` event the second (and any subsequent) time the same
+    /// triple is observed.
+    ///
+    /// This test does **not** call `reset_nonce_reuse_tracker_for_tests()`
+    /// so that it does not race with other tests running in parallel.
+    /// Instead it uses a unique algorithm-name string
+    /// (`"AES-128-SIV-TEST-A"`) that no other test references, which
+    /// guarantees test isolation regardless of scheduling.
+    #[test]
+    fn nonce_reuse_warning_aes_siv_detects_duplicate_under_same_key_and_nonce() {
+        let algo = "AES-128-SIV-TEST-A";
+        let key = vec![0u8; 32]; // RFC 5297 combined key for AES-128-SIV
+        let nonce = vec![0u8; 16];
+
+        // First invocation inserts the (algo, key, nonce) entry — no warn emitted.
+        check_and_warn_nonce_reuse(algo, &key, &nonce);
+        // Second invocation detects duplicate — warn! emitted (observability path).
+        check_and_warn_nonce_reuse(algo, &key, &nonce);
+
+        let tracker = NONCE_REUSE_TRACKER
+            .get()
+            .expect("NONCE_REUSE_TRACKER initialized after at least one call");
+        let guard = tracker.lock().expect("tracker mutex not poisoned");
+        assert!(
+            guard.contains(&(algo, key.clone(), nonce.clone())),
+            "tracker should contain the (algo, key, nonce) entry after duplicate check",
+        );
+    }
+
+    /// Verify that AES-GCM-SIV's nonce-reuse warning helper records duplicate
+    /// `(algorithm, key, nonce)` invocations in the global tracker.
+    ///
+    /// Per RFC 8452 §4, AES-GCM-SIV is nonce-misuse-resistant but the same
+    /// controlled deterministic-encryption leak applies on duplicate nonces
+    /// under a fixed key. RFC 8452 mandates a 12-byte nonce.
+    ///
+    /// As with the AES-SIV variant, this test uses a unique algorithm-name
+    /// string (`"AES-128-GCM-SIV-TEST-A"`) for parallel-test isolation.
+    #[test]
+    fn nonce_reuse_warning_aes_gcm_siv_detects_duplicate_under_same_key_and_nonce() {
+        let algo = "AES-128-GCM-SIV-TEST-A";
+        let key = vec![0u8; 16]; // RFC 8452 AES-128-GCM-SIV key
+        let nonce = vec![0u8; 12]; // RFC 8452 mandates a 12-byte nonce
+
+        check_and_warn_nonce_reuse(algo, &key, &nonce);
+        check_and_warn_nonce_reuse(algo, &key, &nonce);
+
+        let tracker = NONCE_REUSE_TRACKER
+            .get()
+            .expect("NONCE_REUSE_TRACKER initialized after at least one call");
+        let guard = tracker.lock().expect("tracker mutex not poisoned");
+        assert!(
+            guard.contains(&(algo, key.clone(), nonce.clone())),
+            "tracker should contain the (algo, key, nonce) entry after duplicate check",
+        );
+    }
+
+    /// Verify that distinct `(key, nonce)` pairs under the same algorithm
+    /// name register as separate tracker entries — i.e., the duplicate-
+    /// detection logic does not produce false positives when `(key, nonce)`
+    /// differs.
+    ///
+    /// This guards against a regression in which the helper might
+    /// inadvertently hash or compare only one of `(key, nonce)`, causing
+    /// legitimate distinct invocations to be mistakenly treated as
+    /// duplicates.
+    #[test]
+    fn nonce_reuse_warning_distinct_pairs_do_not_collide() {
+        let algo = "AES-128-SIV-TEST-DISTINCT-PAIRS";
+        let key1 = vec![0x01u8; 32];
+        let nonce1 = vec![0x02u8; 16];
+        let key2 = vec![0x03u8; 32];
+        let nonce2 = vec![0x04u8; 16];
+
+        // Two DISTINCT (key, nonce) pairs — neither duplicates the other.
+        // No warn should be emitted by either call (each is the first
+        // observation of its triple).
+        check_and_warn_nonce_reuse(algo, &key1, &nonce1);
+        check_and_warn_nonce_reuse(algo, &key2, &nonce2);
+
+        let tracker = NONCE_REUSE_TRACKER
+            .get()
+            .expect("NONCE_REUSE_TRACKER initialized after at least one call");
+        let guard = tracker.lock().expect("tracker mutex not poisoned");
+        assert!(
+            guard.contains(&(algo, key1.clone(), nonce1.clone())),
+            "tracker should contain the first (algo, key1, nonce1) entry",
+        );
+        assert!(
+            guard.contains(&(algo, key2.clone(), nonce2.clone())),
+            "tracker should contain the second (algo, key2, nonce2) entry",
+        );
     }
 }

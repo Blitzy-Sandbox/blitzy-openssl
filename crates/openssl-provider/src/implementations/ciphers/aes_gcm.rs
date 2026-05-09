@@ -69,9 +69,11 @@ use super::common::{
 use crate::traits::{AlgorithmDescriptor, CipherContext, CipherProvider};
 use openssl_common::error::{ProviderError, ProviderResult};
 use openssl_common::param::{ParamSet, ParamValue};
+use openssl_crypto::evp::cipher::IvUniquenessTracker;
 use openssl_crypto::symmetric::aes::AesGcm;
 use std::fmt;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use std::sync::Arc;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 // `Aes` is referenced via the schema's `members_accessed` for documentation
 // of the underlying primitive; bring it into scope so the dependency is
@@ -130,6 +132,19 @@ pub struct AesGcmCipher {
     name: &'static str,
     /// Key size in bytes (16, 24, or 32).
     key_bytes: usize,
+    /// Optional shared [`IvUniquenessTracker`] propagated to every
+    /// context produced by [`new_ctx`](AesGcmCipher::new_ctx).
+    ///
+    /// When `Some`, the resulting context performs an AEAD `(key, IV)`
+    /// reuse check immediately before invoking `AesGcm::seal()`,
+    /// rejecting duplicates to mitigate CWE-323 IV reuse vulnerabilities.
+    /// When `None` (the default), the tracker is omitted and behaviour
+    /// matches the prior implementation.
+    ///
+    /// The tracker is wrapped in [`Arc`] so it can be shared across
+    /// thousands of contexts produced by the same cipher descriptor —
+    /// IV uniqueness is a per-key, not per-context, invariant.
+    iv_tracker: Option<Arc<IvUniquenessTracker>>,
 }
 
 impl AesGcmCipher {
@@ -146,7 +161,45 @@ impl AesGcmCipher {
     ///   and the runtime check happens in `EVP_CipherInit_ex`.
     #[must_use]
     pub fn new(name: &'static str, key_bytes: usize) -> Self {
-        Self { name, key_bytes }
+        Self {
+            name,
+            key_bytes,
+            iv_tracker: None,
+        }
+    }
+
+    /// Attaches an [`IvUniquenessTracker`] to this descriptor.
+    ///
+    /// After this call, every context returned by
+    /// [`new_ctx`](CipherProvider::new_ctx) will check `(key, IV)`
+    /// uniqueness on encryption and reject duplicates with a
+    /// [`ProviderError::Dispatch`] containing the message
+    /// `"AEAD IV reuse detected: ..."` (see
+    /// [`IvUniquenessTracker::check_and_record`]).
+    ///
+    /// This addresses Code Review Finding CWE-323. The tracker is
+    /// shared across all contexts for the same descriptor — IV
+    /// uniqueness is a property of the key, not of any individual
+    /// session.
+    ///
+    /// Builder pattern: takes `self` by value to support fluent
+    /// construction.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use std::sync::Arc;
+    /// use openssl_crypto::evp::cipher::IvUniquenessTracker;
+    /// use openssl_provider::implementations::ciphers::aes_gcm::AesGcmCipher;
+    ///
+    /// let tracker = Arc::new(IvUniquenessTracker::new());
+    /// let cipher = AesGcmCipher::new("AES-128-GCM", 16)
+    ///     .with_iv_tracker(tracker);
+    /// ```
+    #[must_use]
+    pub fn with_iv_tracker(mut self, tracker: Arc<IvUniquenessTracker>) -> Self {
+        self.iv_tracker = Some(tracker);
+        self
     }
 }
 
@@ -176,7 +229,15 @@ impl CipherProvider for AesGcmCipher {
     }
 
     fn new_ctx(&self) -> ProviderResult<Box<dyn CipherContext>> {
-        Ok(Box::new(AesGcmContext::new(self.name, self.key_bytes)))
+        let mut ctx = AesGcmContext::new(self.name, self.key_bytes);
+        // Propagate the descriptor's optional IV uniqueness tracker so
+        // that AEAD `(key, IV)` reuse is detected and rejected on
+        // encryption (CWE-323 mitigation). When `iv_tracker` is `None`
+        // the context behaves identically to the prior implementation.
+        if let Some(tracker) = self.iv_tracker.as_ref() {
+            ctx.set_iv_tracker(Arc::clone(tracker));
+        }
+        Ok(Box::new(ctx))
     }
 }
 
@@ -248,6 +309,38 @@ pub struct AesGcmContext {
     /// crypto-layer API is one-shot, so we collect all data and process
     /// at `finalize`.
     data_buffer: Vec<u8>,
+
+    // --- IV uniqueness tracking (CWE-323 mitigation) ---
+    /// Optional shared tracker that detects duplicate `(key, IV)` pairs
+    /// presented for AEAD encryption. When `Some`, a check is performed
+    /// in `finalize` immediately before the underlying engine's `seal`
+    /// is invoked. This addresses Code Review Finding CWE-323 — caller
+    /// re-init with same key+IV without warning was previously
+    /// undetected. The check fires only on encrypt (decryption with
+    /// repeated IVs is benign — the shared secret is the AEAD tag, not
+    /// the IV).
+    ///
+    /// `#[zeroize(skip)]` is applied because the `Arc` is shared across
+    /// contexts and must outlive any single context's drop. The tracker
+    /// itself zeroizes the recorded `(key, IV)` pairs in its own `Drop`
+    /// impl when the final reference is released. See
+    /// [`IvUniquenessTracker`] for the full contract.
+    #[zeroize(skip)]
+    iv_tracker: Option<Arc<IvUniquenessTracker>>,
+    /// Cached copy of the key bytes presented at `encrypt_init`. Held in
+    /// a `Zeroizing<Vec<u8>>` so the buffer is wiped on drop. This is
+    /// required because `AesGcm::seal()` does not expose the raw key
+    /// back to us, but the [`IvUniquenessTracker::check_and_record`] API
+    /// keys its uniqueness check on `(key_bytes, iv_bytes)`. The field
+    /// is populated in `init_common` after `validate_key_size` and
+    /// consumed in `finalize` when the tracker is `Some`. `None` until
+    /// init.
+    ///
+    /// `#[zeroize(skip)]` is applied because `Zeroizing<Vec<u8>>`
+    /// already provides drop-time wiping; deriving `Zeroize` on the
+    /// outer `Option` would attempt to zero the wrapper twice.
+    #[zeroize(skip)]
+    key_material: Option<Zeroizing<Vec<u8>>>,
 }
 
 // `fmt::Debug` is implemented manually so that the secret-bearing fields
@@ -271,6 +364,18 @@ impl fmt::Debug for AesGcmContext {
             .field("aad_buffered_bytes", &self.aad_buffer.len())
             .field("data_buffered_bytes", &self.data_buffer.len())
             .field("cipher", &self.cipher.as_ref().map(|_| "<keyed>"))
+            // Reveal whether an IV uniqueness tracker is installed, but
+            // never reveal the recorded `(key, IV)` pairs themselves —
+            // those are already redacted by `IvUniquenessTracker::Debug`,
+            // which only emits `recorded_pairs: usize`.
+            .field("iv_tracker_enabled", &self.iv_tracker.is_some())
+            // The cached key material is fully redacted: emitting the
+            // raw bytes would defeat the `Zeroizing<Vec<u8>>` safety
+            // guarantee. We only reveal whether a copy is held.
+            .field(
+                "key_material_cached",
+                &self.key_material.as_ref().map(|_| "<redacted>"),
+            )
             .finish()
     }
 }
@@ -298,7 +403,26 @@ impl AesGcmContext {
             cipher: None,
             aad_buffer: Vec::new(),
             data_buffer: Vec::new(),
+            // No IV uniqueness tracker by default; descriptors that opt
+            // into IV reuse detection install one via
+            // `AesGcmCipher::with_iv_tracker` and the cipher's
+            // `new_ctx()` propagates it here.
+            iv_tracker: None,
+            // Key material is populated lazily in `init_common` after
+            // `validate_key_size` succeeds, and only used when an
+            // `iv_tracker` is installed.
+            key_material: None,
         }
+    }
+
+    /// Installs an [`IvUniquenessTracker`] on this context.
+    ///
+    /// Called from [`AesGcmCipher::new_ctx`] when the cipher descriptor
+    /// has an attached tracker (set via
+    /// [`AesGcmCipher::with_iv_tracker`]). Idempotent — overwrites any
+    /// previously installed tracker.
+    fn set_iv_tracker(&mut self, tracker: Arc<IvUniquenessTracker>) {
+        self.iv_tracker = Some(tracker);
     }
 
     /// Validates the key length presented at `encrypt_init`/`decrypt_init`.
@@ -333,6 +457,18 @@ impl AesGcmContext {
         params: Option<&ParamSet>,
     ) -> ProviderResult<()> {
         self.validate_key_size(key.len())?;
+
+        // Cache the key material when an IV uniqueness tracker is
+        // installed. The tracker keys its uniqueness check on
+        // `(key_bytes, iv_bytes)` (see [`IvUniquenessTracker::check_and_record`])
+        // but `AesGcm::seal()` does not expose the raw key back to us
+        // after key scheduling, so we keep our own zeroizing copy. The
+        // copy is wiped on context drop via `Zeroizing<Vec<u8>>`'s
+        // built-in `Drop` impl. When no tracker is installed we skip
+        // the copy to avoid the allocation in the hot path.
+        if self.iv_tracker.is_some() {
+            self.key_material = Some(Zeroizing::new(key.to_vec()));
+        }
 
         // Build the keyed engine. Errors from the crypto layer
         // (CryptoError) are mapped to ProviderError::Init manually, since
@@ -681,6 +817,36 @@ impl CipherContext for AesGcmContext {
         }
 
         let iv_slice = self.require_iv()?.to_vec();
+
+        // Enforce AEAD `(key, IV)` uniqueness on the encrypt path
+        // (CWE-323 mitigation). When an [`IvUniquenessTracker`] is
+        // installed on this context — populated by
+        // [`AesGcmCipher::with_iv_tracker`] / [`Self::set_iv_tracker`] —
+        // record the `(key, IV)` pair and reject duplicates with a
+        // [`ProviderError::Dispatch`] whose message is the verbatim text
+        // produced by [`IvUniquenessTracker::check_and_record`]
+        // (begins with `"AEAD IV reuse detected: ..."`).
+        //
+        // The check is restricted to encryption because IV reuse on the
+        // decrypt side is harmless (the tag would simply fail to verify
+        // if the data were ever maliciously rewound). The check is
+        // performed BEFORE the engine seals so that no ciphertext or
+        // authentication tag is produced for a duplicate `(key, IV)`
+        // pair.
+        //
+        // When either `iv_tracker` or `key_material` is `None` the
+        // check is skipped and behaviour matches the prior
+        // implementation.
+        if self.encrypting {
+            if let (Some(tracker), Some(key_material)) =
+                (self.iv_tracker.as_ref(), self.key_material.as_ref())
+            {
+                tracker
+                    .check_and_record(key_material.as_slice(), &iv_slice)
+                    .map_err(|e| ProviderError::Dispatch(format!("{e}")))?;
+            }
+        }
+
         let iv_arr = Self::iv_array(&iv_slice)?;
         let aad: Vec<u8> = self.aad_buffer.clone();
         let data: Vec<u8> = self.data_buffer.clone();
@@ -1091,6 +1257,68 @@ mod tests {
         ctx_dec.update(&ct_out, &mut pt_out).expect("update dec");
         ctx_dec.finalize(&mut pt_out).expect("finalize dec");
         assert_eq!(pt_out.as_slice(), plaintext);
+    }
+
+    /// IV uniqueness tracker rejects duplicate `(key, IV)` pairs on the
+    /// encrypt path with a [`ProviderError::Dispatch`] whose `Display`
+    /// representation contains the substring `"AEAD IV reuse detected"`.
+    ///
+    /// Mitigates CWE-323: identical `(key, nonce)` pairs in AES-GCM
+    /// trivially leak the XOR of two plaintexts and disclose the
+    /// authentication-key derivation, completely defeating both
+    /// confidentiality and integrity. The tracker is wired into
+    /// [`CipherProvider::new_ctx`] via [`AesGcmCipher::with_iv_tracker`]
+    /// and consulted on the encrypt path inside
+    /// [`AesGcmContext::finalize`] before the underlying AEAD seal is
+    /// invoked, so no ciphertext or authentication tag is emitted for a
+    /// duplicate `(key, IV)` pair.
+    #[test]
+    fn iv_reuse_rejected() {
+        let tracker = Arc::new(IvUniquenessTracker::new());
+        let key = [0x55u8; 16];
+        let iv = [0x77u8; GCM_DEFAULT_IV_LEN];
+        let plaintext = b"first encryption";
+
+        // First encryption: succeeds and records (key, IV) in tracker.
+        let cipher_a =
+            AesGcmCipher::new("AES-128-GCM", 16).with_iv_tracker(Arc::clone(&tracker));
+        let mut ctx1 = cipher_a.new_ctx().expect("new_ctx 1");
+        ctx1.encrypt_init(&key, Some(&iv), None)
+            .expect("encrypt_init 1");
+        let mut ct_out = Vec::new();
+        ctx1.update(plaintext, &mut ct_out).expect("update 1");
+        ctx1.finalize(&mut ct_out)
+            .expect("finalize 1 must succeed (first use of (key, IV))");
+
+        // Tracker should now contain exactly one recorded pair.
+        assert_eq!(tracker.len(), 1, "tracker must record the first pair");
+
+        // Second encryption: SAME (key, IV) — the tracker must reject
+        // this with a `ProviderError::Dispatch` whose message contains
+        // "AEAD IV reuse detected".
+        let cipher_b =
+            AesGcmCipher::new("AES-128-GCM", 16).with_iv_tracker(Arc::clone(&tracker));
+        let mut ctx2 = cipher_b.new_ctx().expect("new_ctx 2");
+        ctx2.encrypt_init(&key, Some(&iv), None)
+            .expect("encrypt_init 2");
+        let mut ct_out2 = Vec::new();
+        ctx2.update(plaintext, &mut ct_out2).expect("update 2");
+        let err = ctx2
+            .finalize(&mut ct_out2)
+            .expect_err("finalize 2 must reject duplicate (key, IV)");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("AEAD IV reuse detected"),
+            "expected error message to contain 'AEAD IV reuse detected', got: {msg}"
+        );
+
+        // Tracker count must remain at 1 (the rejected pair was not
+        // re-inserted because it was already present in the set).
+        assert_eq!(
+            tracker.len(),
+            1,
+            "tracker count must remain at 1 after rejection"
+        );
     }
 
     /// AES-256-GCM round-trip with non-empty AAD (set via the

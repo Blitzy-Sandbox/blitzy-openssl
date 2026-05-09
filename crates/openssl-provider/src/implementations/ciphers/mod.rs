@@ -378,13 +378,19 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
 /// cipher list. Legacy ciphers are tagged with `property = "provider=legacy"`
 /// and require explicit activation of the legacy provider.
 ///
-/// Legacy ciphers include: Blowfish, CAST5, IDEA, SEED, RC2, RC4, RC5.
+/// Legacy ciphers include: Blowfish, CAST5, IDEA, SEED, RC2, RC4, RC5,
+/// single-key DES (`DES-ECB`/`DES-CBC`/`DES-OFB`/`DES-CFB`/`DES-CFB1`/`DES-CFB8`),
+/// and DESX (`DESX-CBC`).  Single-DES and DESX are formally deprecated by
+/// NIST SP 800-131A; relegating them to the legacy provider makes their use
+/// an explicit, auditable opt-in rather than a silent default.
 ///
 /// # Returns
 ///
 /// A `Vec<AlgorithmDescriptor>` containing descriptors for all legacy cipher
-/// implementations (approximately 25 descriptors covering all mode/key-size
-/// variants).
+/// implementations (approximately 32 descriptors: ~25 from `legacy::descriptors()`
+/// — Blowfish/CAST5/IDEA/SEED/RC2/RC4/RC5 — plus 7 from
+/// `des::legacy_descriptors()` — 6 single-DES modes and DESX-CBC, gated behind
+/// the `des` feature).
 ///
 /// # Wiring Path (Rule R10)
 ///
@@ -392,12 +398,16 @@ pub fn descriptors() -> Vec<AlgorithmDescriptor> {
 /// LegacyProvider::query_operation(OperationType::Cipher)
 ///   → implementations::all_legacy_cipher_descriptors()
 ///     → ciphers::legacy_descriptors()  // this function
-///       → legacy::descriptors()
+///       → legacy::descriptors()           (Blowfish, CAST5, IDEA, SEED, RC2, RC4, RC5)
+///       → des::legacy_descriptors()       (single-DES variants, DESX-CBC; #[cfg(feature = "des")])
 /// ```
 #[cfg(feature = "legacy")]
 #[must_use]
 pub fn legacy_descriptors() -> Vec<AlgorithmDescriptor> {
-    legacy::descriptors()
+    let mut descs = legacy::descriptors();
+    #[cfg(feature = "des")]
+    descs.extend(des::legacy_descriptors());
+    descs
 }
 
 // =============================================================================

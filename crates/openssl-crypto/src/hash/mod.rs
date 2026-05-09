@@ -452,6 +452,61 @@ impl DigestAlgorithm {
             Self::Sha1 | Self::Md5 | Self::Md5Sha1 | Self::Md2 | Self::Md4 | Self::Mdc2
         )
     }
+
+    /// Exhaustive array of every [`DigestAlgorithm`] variant.
+    ///
+    /// Provides a stable, ordered enumeration of all 24 supported digest
+    /// algorithms.  The primary consumer is the CLI `dgst -list` command
+    /// which mirrors `EVP_MD_do_all_provided` from `apps/dgst.c` line 178
+    /// — the C source iterates over the method store at runtime; the Rust
+    /// port iterates this constant at compile time, eliminating the need
+    /// for a runtime registry walk.
+    ///
+    /// The order matches the variant declaration order in this enum and
+    /// is **not** sorted alphabetically; callers requiring an alphabetical
+    /// listing must sort the result of `.iter().map(|d| d.name())`.
+    ///
+    /// This constant is `const` (compile-time evaluated) and incurs zero
+    /// runtime cost.  It exists because `DigestAlgorithm` does not derive
+    /// the unstable `EnumIter` trait from the `strum` crate — adding
+    /// `strum` as a dependency to the workspace foundation crate would
+    /// introduce a transitive dependency just to enumerate 24 variants
+    /// that change at most once per FIPS specification update.
+    ///
+    /// # Rule compliance
+    ///
+    /// * **R5** — array length matches variant count exactly; no sentinel
+    ///   "unset" entries.
+    /// * **R6** — fixed-size array `[T; 24]` requires no narrowing casts.
+    /// * **R10** — consumed by
+    ///   `crates/openssl-cli/src/commands/dgst.rs::supported_digests` to
+    ///   surface every supported algorithm via the public CLI surface.
+    pub const ALL: [DigestAlgorithm; 24] = [
+        DigestAlgorithm::Sha1,
+        DigestAlgorithm::Sha224,
+        DigestAlgorithm::Sha256,
+        DigestAlgorithm::Sha384,
+        DigestAlgorithm::Sha512,
+        DigestAlgorithm::Sha512_224,
+        DigestAlgorithm::Sha512_256,
+        DigestAlgorithm::Sha3_224,
+        DigestAlgorithm::Sha3_256,
+        DigestAlgorithm::Sha3_384,
+        DigestAlgorithm::Sha3_512,
+        DigestAlgorithm::Shake128,
+        DigestAlgorithm::Shake256,
+        DigestAlgorithm::Md5,
+        DigestAlgorithm::Md5Sha1,
+        DigestAlgorithm::Md2,
+        DigestAlgorithm::Md4,
+        DigestAlgorithm::Mdc2,
+        DigestAlgorithm::Ripemd160,
+        DigestAlgorithm::Whirlpool,
+        DigestAlgorithm::Sm3,
+        DigestAlgorithm::Blake2b256,
+        DigestAlgorithm::Blake2b512,
+        DigestAlgorithm::Blake2s256,
+    ];
 }
 
 // =============================================================================

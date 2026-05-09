@@ -77,7 +77,6 @@
 //! [`apps/genrsa.c`]: ../../../../../apps/genrsa.c
 //! [`private_key_to_der`]: openssl_crypto::rsa::private_key_to_der
 
-use std::fs::File;
 use std::io::{stdout, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -679,14 +678,17 @@ fn resolve_password(
 /// output when `path` is [`None`].
 ///
 /// Mirrors `bio_open_owner(outfile, FORMAT_PEM, private)` at
-/// `apps/genrsa.c:178–180`.  The C helper opens the file in binary
-/// "owner" mode (0600); the Rust port relies on `File::create`'s
-/// default mode (umask-dependent).  Refining the file mode to 0600
-/// is a follow-on item tracked under [`UNREAD: reserved`] policy.
+/// `apps/genrsa.c:178–180`: the C helper opens the file in binary
+/// "owner" mode (0600); the Rust port now uses
+/// [`crate::lib::opts::create_private_key_file`], which opens the file
+/// with `O_WRONLY | O_CREAT | O_TRUNC` *and* mode `0o600` atomically
+/// on Unix.  This closes the CWE-732 regression where the previous
+/// `File::create()` honoured the process umask and produced
+/// world-readable private-key files.
 fn open_output_writer(path: Option<&Path>) -> Result<Box<dyn Write>, CryptoError> {
     if let Some(path) = path {
-        debug!(path = %path.display(), "genrsa: opening output file");
-        let file = File::create(path).map_err(|err| {
+        debug!(path = %path.display(), "genrsa: opening output file (mode 0600)");
+        let file = crate::lib::opts::create_private_key_file(path).map_err(|err| {
             error!(
                 path = %path.display(),
                 error = %err,

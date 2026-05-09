@@ -396,6 +396,13 @@ pub fn encoder_descriptors() -> Vec<AlgorithmDescriptor> {
     // Microsoft MSBLOB and PVK format encoders
     descriptors.extend(ms_encoder::all_ms_encoders());
 
+    // Post-quantum codec encoders (variant-specific entries for ML-KEM,
+    // ML-DSA, LMS DER + text and SLH-DSA text-only).  Per Rule R10, this
+    // wires the pq_codecs module into the public encode dispatch path
+    // so that PQC keys can be serialized via the regular provider API.
+    // Each entry is per-algorithm feature-gated inside `all_pq_encoders`.
+    descriptors.extend(pq_codecs::all_pq_encoders());
+
     descriptors
 }
 
@@ -481,6 +488,13 @@ pub fn decoder_descriptors() -> Vec<AlgorithmDescriptor> {
     {
         descriptors.extend(lms_decoder::lms_xdr_decoder());
     }
+
+    // Post-quantum codec decoders (variant-specific PKCS#8/SPKI entries
+    // for ML-KEM, ML-DSA, and LMS).  Per Rule R10, this wires the
+    // pq_codecs module into the public encode/decode dispatch path so
+    // that PQC keys can be deserialized via the regular provider API.
+    // Each entry is per-algorithm feature-gated inside `all_pq_decoders`.
+    descriptors.extend(pq_codecs::all_pq_decoders());
 
     descriptors
 }
@@ -585,5 +599,104 @@ mod tests {
         assert_eq!(desc.names.len(), 2);
         assert_eq!(desc.property, "provider=test,input=der");
         assert_eq!(desc.description, "Test algorithm descriptor");
+    }
+
+    // -----------------------------------------------------------------
+    // Rule R10 wiring tests for the post-quantum codec dispatch.
+    //
+    // These tests verify that variant-specific PQC codec entries
+    // contributed by `pq_codecs::all_pq_decoders()` and
+    // `pq_codecs::all_pq_encoders()` are reachable from the public
+    // dispatch entry points (`decoder_descriptors()` and
+    // `encoder_descriptors()`).  Each test is feature-gated so that the
+    // assertions only run when the corresponding algorithm is compiled
+    // in.
+    // -----------------------------------------------------------------
+
+    /// Verify that ML-KEM variant-specific decoder descriptors are
+    /// surfaced through the public dispatch when the `ml-kem` feature
+    /// is enabled.
+    #[cfg(feature = "ml-kem")]
+    #[test]
+    fn test_decoder_descriptors_contains_ml_kem_variants() {
+        let descs = decoder_descriptors();
+        for variant in ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "decoder_descriptors() must include {variant}",
+            );
+        }
+    }
+
+    /// Verify that ML-DSA variant-specific decoder descriptors are
+    /// surfaced through the public dispatch when the `ml-dsa` feature
+    /// is enabled.
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_decoder_descriptors_contains_ml_dsa_variants() {
+        let descs = decoder_descriptors();
+        for variant in ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "decoder_descriptors() must include {variant}",
+            );
+        }
+    }
+
+    /// Verify that ML-KEM variant-specific encoder descriptors are
+    /// surfaced through the public dispatch when the `ml-kem` feature
+    /// is enabled.
+    #[cfg(feature = "ml-kem")]
+    #[test]
+    fn test_encoder_descriptors_contains_ml_kem_variants() {
+        let descs = encoder_descriptors();
+        for variant in ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "encoder_descriptors() must include {variant}",
+            );
+        }
+    }
+
+    /// Verify that ML-DSA variant-specific encoder descriptors are
+    /// surfaced through the public dispatch when the `ml-dsa` feature
+    /// is enabled.
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_encoder_descriptors_contains_ml_dsa_variants() {
+        let descs = encoder_descriptors();
+        for variant in ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "encoder_descriptors() must include {variant}",
+            );
+        }
+    }
+
+    /// Verify that all 12 SLH-DSA parameter sets appear as text-encoder
+    /// entries when the `slh-dsa` feature is enabled.
+    #[cfg(feature = "slh-dsa")]
+    #[test]
+    fn test_encoder_descriptors_contains_slh_dsa_variants() {
+        let descs = encoder_descriptors();
+        for variant in [
+            "SLH-DSA-SHA2-128s",
+            "SLH-DSA-SHAKE-128s",
+            "SLH-DSA-SHA2-128f",
+            "SLH-DSA-SHAKE-128f",
+            "SLH-DSA-SHA2-192s",
+            "SLH-DSA-SHAKE-192s",
+            "SLH-DSA-SHA2-192f",
+            "SLH-DSA-SHAKE-192f",
+            "SLH-DSA-SHA2-256s",
+            "SLH-DSA-SHAKE-256s",
+            "SLH-DSA-SHA2-256f",
+            "SLH-DSA-SHAKE-256f",
+        ] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "encoder_descriptors() must include {variant}",
+            );
+        }
     }
 }

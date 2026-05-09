@@ -33,7 +33,8 @@
 //! |       | `set_signature_digest`                             | `EVP_PKEY_CTX_set_signature_md`                           |
 //! | 14    | `PKeyCtx::set_param` / `get_param` round-trip      | `crypto/evp/pmeth_lib.c::EVP_PKEY_CTX_set_params`         |
 //! | 15    | `SignContext` sign / verify with RSA               | `crypto/evp/signature.c::evp_signature_init`,             |
-//! |       | (XOR-fold output, init mutual exclusion)           | `crypto/rsa/rsa_pmeth.c::pkey_rsa_sign`                   |
+//! |       | (deterministic HMAC, constant-time verify,         | `crypto/rsa/rsa_pmeth.c::pkey_rsa_sign`                   |
+//! |       | init mutual exclusion)                             |                                                           |
 //! | 16    | `DigestSignContext` / `DigestVerifyContext`        | `crypto/evp/m_sigver.c::EVP_DigestSign*`,                 |
 //! |       | (RSA + SHA-256 round-trip)                         | `EVP_DigestVerify*`                                       |
 //! | 17    | `AsymCipherContext` encrypt / decrypt              | `crypto/rsa/rsa_pmeth.c::pkey_rsa_encrypt`,               |
@@ -698,18 +699,80 @@ fn test_pkey_ctx_keygen_with_bits_4096() {
     assert_eq!(priv_data.len(), 512);
 }
 
-/// Byte-length floor: keygen with very small `bits` (e.g. 64) clamps
-/// to the 32-byte minimum.
+/// Sub-2048-bit RSA keygen is unconditionally rejected per FIPS 186-5
+/// §A.1.1 — the minimum-modulus security control implemented in
+/// `pkey.rs::keygen()` (around L858-864).  This replaces a legacy
+/// "byte-length floor of 32" clamp test (`test_pkey_ctx_keygen_byte_len_min_32`)
+/// whose contract — accepting `bits=64` and silently expanding to a
+/// 32-byte buffer — directly contradicts the new security control.
+///
+/// Rationale for the contract change:
+///
+/// * The C reference implementation (`crypto/rsa/rsa_gen.c::rsa_keygen_pairwise_test()`)
+///   rejects sub-2048-bit moduli when the FIPS provider is active and
+///   emits a deprecation warning otherwise.
+/// * The Rust refactor makes the rejection unconditional to align with
+///   the security-by-default principle stated in AAP §0.7 (Refactoring
+///   Goals: "Translates the post-FIPS 186-5 hardening introduced by
+///   `crypto/rsa/rsa_gen.c`").
+/// * Legacy callers needing sub-2048 generation must explicitly opt in
+///   via the legacy provider path (out of scope for the default
+///   provider that this test exercises).
+///
+/// Test contract:
+///
+/// * `keygen_init()` succeeds (parameters are validated, not enforced,
+///   at init time).
+/// * `set_param("bits", 64)` succeeds (raw merge into the parameter
+///   bag — `set_param` does not perform algorithm-level validation).
+/// * `keygen()` returns `Err(CryptoError::Common(InvalidArgument(_)))`
+///   carrying both the literal "FIPS 186-5" citation and the bound
+///   "2048" so that downstream consumers (CLI error reporting,
+///   structured logs) can surface the precise standards reference to
+///   end users.
 #[test]
-fn test_pkey_ctx_keygen_byte_len_min_32() {
+fn test_pkey_ctx_keygen_rejects_sub_2048_bits() {
     let ctx = LibContext::get_default();
     let mut pkc = PKeyCtx::new_from_name(ctx.clone(), "RSA", None).expect("RSA PKeyCtx");
     pkc.keygen_init().expect("keygen_init");
     pkc.set_param("bits", &ParamValue::UInt32(64))
         .expect("set bits=64");
-    let key = pkc.keygen().expect("keygen 64");
-    let priv_data = key.raw_private_key().expect("private");
-    assert!(priv_data.len() >= 32, "byte_len must be at least 32");
+    let err = pkc
+        .keygen()
+        .expect_err("sub-2048-bit RSA keygen must be rejected per FIPS 186-5 §A.1.1");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("FIPS 186-5"),
+        "error message must cite FIPS 186-5; got: {msg}"
+    );
+    assert!(
+        msg.contains("2048"),
+        "error message must surface the 2048-bit minimum bound; got: {msg}"
+    );
+    assert!(
+        msg.contains("64"),
+        "error message must echo the rejected `bits` value (64); got: {msg}"
+    );
+}
+
+/// Boundary case: `bits = 2047` is rejected (one bit below the FIPS
+/// 186-5 §A.1.1 minimum).  Pairs with `test_pkey_ctx_keygen_default_bits_2048`
+/// which exercises the inclusive lower bound (2048 accepted).
+#[test]
+fn test_pkey_ctx_keygen_rejects_2047_bits() {
+    let ctx = LibContext::get_default();
+    let mut pkc = PKeyCtx::new_from_name(ctx.clone(), "RSA", None).expect("RSA PKeyCtx");
+    pkc.keygen_init().expect("keygen_init");
+    pkc.set_param("bits", &ParamValue::UInt32(2047))
+        .expect("set bits=2047");
+    let err = pkc
+        .keygen()
+        .expect_err("bits=2047 must be rejected — exclusive upper boundary of the rejected band");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("FIPS 186-5") && msg.contains("2048"),
+        "error must reference FIPS 186-5 and the 2048-bit minimum; got: {msg}"
+    );
 }
 
 /// Keygen produces deterministic marker bytes — private key starts
@@ -973,10 +1036,14 @@ fn test_pkey_ctx_set_param_overwrites() {
 // =========================================================================
 // Phase 15 — SignContext sign / verify with RSA.
 //
-// The simulated sign output is a fixed-length XOR-fold (256 bytes for
-// RSA, 64 for Ed25519, etc.). The verify is permissive: returns true
-// for any non-empty (data, sig) pair. The init state is mutually
-// exclusive: sign_init resets verify state, and vice versa.
+// The sign output is a deterministic HMAC-SHA256 PRF expansion of fixed
+// length per algorithm (256 bytes for RSA, 64 for Ed25519, etc.). The
+// verify path recomputes the expected bytes and uses a constant-time
+// comparison (`subtle::ConstantTimeEq`) against the supplied signature,
+// closing the timing-oracle window described in the EVP signature review
+// finding. Empty data or empty signature inputs are rejected with
+// `CryptoError::Verification`. The init state is mutually exclusive:
+// sign_init resets verify state, and vice versa.
 // =========================================================================
 
 fn rsa_sign_context() -> SignContext {
@@ -1045,30 +1112,94 @@ fn test_sign_rsa_produces_256_bytes() {
     assert_eq!(sig.len(), 256);
 }
 
-/// RSA `sign` follows the documented XOR-fold pattern: each byte of the
-/// input is XOR'd into `sig[i % 256]`. This makes the output
-/// deterministic and verifies the simulation contract.
+/// RSA `sign` is deterministic: signing identical `(key, data)` yields
+/// byte-for-byte identical signatures. This is the HMAC-SHA256 PRF
+/// contract that backs the constant-time verify path — a non-deterministic
+/// signing primitive would make recompute-and-compare verify impossible.
+///
+/// This replaces the legacy XOR-fold simulation contract: the new
+/// implementation derives signature bytes from `HMAC-SHA256(key_material
+/// ‖ counter, data)` per finding [`evp/signature.rs:hash_dispatch`], so
+/// the output is no longer an XOR fold but it remains deterministic for
+/// any fixed `(key, data)` pair.
 #[test]
-fn test_sign_rsa_xor_fold_pattern() {
+fn test_sign_rsa_deterministic() {
     let mut sctx = rsa_sign_context();
     sctx.sign_init(None).expect("sign_init");
     let data = b"abcdefghij";
-    let sig = sctx.sign(data).expect("sign");
+    let sig1 = sctx.sign(data).expect("sign 1");
+    let sig2 = sctx.sign(data).expect("sign 2");
+    assert_eq!(
+        sig1, sig2,
+        "RSA sign must be deterministic for the same (key, data)"
+    );
+    assert_eq!(sig1.len(), 256, "RSA signature length is 256 bytes");
 
-    let mut expected = vec![0u8; 256];
-    for (i, b) in data.iter().enumerate() {
-        expected[i % 256] ^= *b;
-    }
-    assert_eq!(sig, expected);
+    // A different message must produce a different signature.
+    let sig_other = sctx.sign(b"abcdefghik").expect("sign other");
+    assert_ne!(
+        sig1, sig_other,
+        "different inputs must produce different signatures"
+    );
 }
 
-/// `verify` is permissive — accepts any non-empty (data, sig) pair.
+/// RSA round-trip: a signature produced by `sign` MUST verify as valid,
+/// and any single-byte mutation MUST be rejected by the constant-time
+/// verify path. This replaces the legacy "permissive verify" simulation
+/// (which accepted any non-empty pair) per finding
+/// [`evp/signature.rs:verify`] (CWE-203 timing oracle).
 #[test]
-fn test_verify_rsa_accepts_nonempty() {
+fn test_verify_rsa_round_trip() {
+    // Sign with one context.
+    let mut signer = rsa_sign_context();
+    signer.sign_init(None).expect("sign_init");
+    let sig = signer.sign(b"data").expect("sign");
+    assert_eq!(sig.len(), 256);
+
+    // Verify with a fresh context (same Signature/PKey).
+    let mut verifier = rsa_sign_context();
+    verifier.verify_init(None).expect("verify_init");
+    assert!(
+        verifier.verify(b"data", &sig).expect("verify"),
+        "round-trip signature must verify"
+    );
+
+    // Mutate one byte → constant-time verify must reject.
+    let mut tampered = sig.clone();
+    tampered[0] ^= 0xFF;
+    assert!(
+        !verifier
+            .verify(b"data", &tampered)
+            .expect("verify tampered"),
+        "constant-time verify must reject tampered signatures"
+    );
+
+    // Mutate the data → constant-time verify must reject.
+    assert!(
+        !verifier
+            .verify(b"datb", &sig)
+            .expect("verify wrong data"),
+        "constant-time verify must reject signatures bound to different data"
+    );
+}
+
+/// Empty data or empty signature inputs error rather than silently
+/// returning false. This guards against caller code that might forget
+/// to check the result and treat a `Ok(false)` as "invalid signature"
+/// when the actual problem is a malformed input. See finding
+/// [`evp/signature.rs:verify`] resolution.
+#[test]
+fn test_verify_rsa_rejects_empty_inputs() {
     let mut sctx = rsa_sign_context();
     sctx.verify_init(None).expect("verify_init");
-    let result = sctx.verify(b"data", b"sig").expect("verify");
-    assert!(result, "permissive verify must accept any non-empty pair");
+    assert!(
+        sctx.verify(b"", b"any_sig").is_err(),
+        "empty data must error"
+    );
+    assert!(
+        sctx.verify(b"data", b"").is_err(),
+        "empty signature must error"
+    );
 }
 
 // =========================================================================
@@ -1108,8 +1239,12 @@ fn test_digest_sign_incremental_rsa_sha256() {
     assert_eq!(sig.len(), 256);
 }
 
-/// `DigestVerifyContext`: init + update + verify_final. There is no
-/// `one_shot_verify`, so the multi-call composition is the only path.
+/// `DigestVerifyContext` round-trip: a signature produced by
+/// `DigestSignContext::one_shot_sign` over the same `(signature, key,
+/// digest, payload)` tuple MUST be accepted by an incremental
+/// `DigestVerifyContext` that processes the same payload. This replaces
+/// the legacy permissive verify (which accepted `b"dummy_sig"`) per
+/// finding [`evp/signature.rs:verify`] (CWE-203).
 #[test]
 fn test_digest_verify_init_update_final_rsa() {
     let ctx = LibContext::get_default();
@@ -1117,10 +1252,34 @@ fn test_digest_verify_init_update_final_rsa() {
     let md = MessageDigest::fetch(&ctx, "SHA2-256", None).expect("SHA2-256");
     let key = Arc::new(PKey::new_raw(KeyType::Rsa, &[0u8; 32], true));
 
+    // Produce a real signature first.
+    let real_sig = DigestSignContext::one_shot_sign(&signature, &key, &md, b"payload")
+        .expect("one_shot_sign");
+    assert_eq!(real_sig.len(), 256);
+
+    // Verify the real signature via incremental DigestVerifyContext.
     let mut dvc = DigestVerifyContext::init(&signature, &key, &md).expect("init");
     dvc.update(b"payload").expect("update");
-    let valid = dvc.verify_final(b"dummy_sig").expect("verify_final");
-    assert!(valid);
+    let valid = dvc
+        .verify_final(&real_sig)
+        .expect("verify_final");
+    assert!(
+        valid,
+        "DigestVerifyContext must accept a signature produced by DigestSignContext"
+    );
+
+    // A tampered signature must be rejected by the constant-time path.
+    let mut dvc_tampered = DigestVerifyContext::init(&signature, &key, &md).expect("init");
+    dvc_tampered.update(b"payload").expect("update");
+    let mut tampered = real_sig.clone();
+    tampered[0] ^= 0xFF;
+    let tampered_valid = dvc_tampered
+        .verify_final(&tampered)
+        .expect("verify_final tampered");
+    assert!(
+        !tampered_valid,
+        "DigestVerifyContext must reject tampered signatures"
+    );
 }
 
 // =========================================================================

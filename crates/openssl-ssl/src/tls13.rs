@@ -66,6 +66,54 @@
 //! workspace KDF dispatch yet; this module exposes that limitation cleanly via
 //! [`SslError::Handshake`] error returns when an unsupported digest is requested.
 //!
+//! ### Anti-replay and 0-RTT replay protection
+//!
+//! This module implements only the TLS 1.3 **key-schedule primitives**
+//! (HKDF-Extract, HKDF-Expand, HKDF-Expand-Label, Derive-Secret, Finished
+//! MAC, key updates, and the regular / early exporter interface). It
+//! deliberately does **not** implement the anti-replay protections that
+//! RFC 8446 §8 mandates for session resumption and 0-RTT (early) data:
+//!
+//! * **Single-Use Tickets** (RFC 8446 §8.1) — servers SHOULD bind each
+//!   PSK or `NewSessionTicket` to a single use so that a 0-RTT
+//!   `ClientHello` cannot be successfully replayed against the same
+//!   server. Tracking ticket consumption requires session-cache state
+//!   that lives in the higher-level handshake state machinery, not in
+//!   the key schedule.
+//! * **`ClientHello` recording** (RFC 8446 §8.2) — bounded recording of
+//!   recent `ClientHello` values or their PSK binders is also a
+//!   handshake-layer concern, with timing-window and storage policies
+//!   that this module has no access to.
+//!
+//! The deferral is intentional and matches the workspace's separation
+//! of concerns: this module produces the traffic, exporter, and
+//! resumption secrets, while the handshake state machine (mapped to
+//! `ssl/statem/*.c` upstream) is responsible for deciding whether a
+//! given resumption attempt or early-data record is admissible. The
+//! `resumption_master_secret` derived in [`KeySchedule::derive_application_secrets`]
+//! is therefore the *input* to that policy, not its enforcement point.
+//!
+//! Related anti-replay infrastructure that **does** live in `openssl-ssl`
+//! today (and which this module is intentionally distinct from):
+//!
+//! * [`record::dtls::ReplayWindow`] — sliding-window replay detection
+//!   for the **DTLS** record layer per RFC 6347 §4.1.2.6, with a
+//!   64-bit `bitmap` and 48-bit sequence-number tracking. This is a
+//!   different threat model: per-record sequence-number replay rather
+//!   than 0-RTT handshake replay. Note that DTLS 1.3 in this workspace
+//!   does not currently support 0-RTT — see
+//!   [`record::dtls::Tls13Parameters::max_early_data`], which is
+//!   retained only for TLS API parity.
+//! * [`record::ProtectionLevel::Early`] — the encryption level used
+//!   for 0-RTT records once the upper-layer handshake admits them. The
+//!   protection-level abstraction itself does not enforce replay
+//!   limits; it only routes records to the correct key.
+//! * [`quic::ack::PnSpace::Application`] — the QUIC packet-number
+//!   space that carries 0-RTT and 1-RTT application data per
+//!   RFC 9001 §4.6. QUIC's own packet-number-based replay protection
+//!   is independent of, and complementary to, the TLS-level
+//!   Single-Use-Ticket mechanism described here.
+//!
 //! [`ssl/tls13_enc.c`]: https://github.com/openssl/openssl/blob/master/ssl/tls13_enc.c
 //! [`ssl/t1_enc.c`]: https://github.com/openssl/openssl/blob/master/ssl/t1_enc.c
 //! [`Zeroizing<Vec<u8>>`]: zeroize::Zeroizing

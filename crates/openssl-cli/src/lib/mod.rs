@@ -91,7 +91,7 @@ pub mod http;
 // instead of: `use crate::lib::opts::Format;`
 
 // From opts module: format handling, verification parameters, column layout
-pub use opts::{DisplayColumns, Format, FormatFlags, VerifyParams};
+pub use opts::{create_private_key_file, DisplayColumns, Format, FormatFlags, VerifyParams};
 
 // From password module: passphrase handling
 pub use password::{PasswordCallbackData, PasswordError, PasswordHandler};

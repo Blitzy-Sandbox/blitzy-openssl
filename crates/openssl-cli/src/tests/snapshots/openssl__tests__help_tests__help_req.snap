@@ -4,7 +4,46 @@ expression: stdout
 ---
 Certificate signing request (CSR) operations
 
-Usage: openssl req
+Usage: openssl req [OPTIONS]
 
 Options:
-  -h, --help  Print help
+      --in <FILE>             Input file (CSR for display/verify operations).  Absence triggers the dispatch fallback when no other significant flag is set
+      --out <FILE>            Output file (CSR for `-new`, certificate for `-x509`)
+      --inform <FORMAT>       Input format: `PEM` or `DER` (default: sniffed)
+      --outform <FORMAT>      Output format: `PEM` (default) or `DER`
+      --noout                 Suppress encoded output even when other display flags are set
+      --newhdr                Use legacy `NEW CERTIFICATE REQUEST` PEM header
+      --key <FILE>            Existing private key file used to sign the CSR
+      --keyout <FILE>         Output file for a freshly-generated key.  Defaults to `out_path` when `-newkey` is given without a separate `-keyout`
+      --keyform <FORMAT>      Format of `-key` (PEM / DER).  Currently parsed and propagated verbatim into the loader; only PEM is fully implemented
+      --newkey <SPEC>         Generate a new key per spec `[alg:]nbits` or `alg[:paramfile]` (e.g. `rsa:2048`, `ec:secp256r1`)
+      --pkeyopt <OPT>         Repeated `-pkeyopt name:value` pairs forwarded to keygen
+      --sigopt <OPT>          Repeated `-sigopt name:value` pairs forwarded to the signer
+      --vfyopt <OPT>          Repeated `-vfyopt name:value` pairs forwarded to the verifier
+      --noenc                 Disable encryption of the new private key (legacy alias `-nodes`)
+      --passin <ARG>          Password source for the input key (e.g. `pass:secret`, `file:/path/passwd`, `env:VAR`, `stdin`)
+      --passout <ARG>         Password source for the output key
+      --subj <ARG>            Subject DN as a `/type=value/...` string.  Skips interactive prompts when present
+      --batch                 Run in batch mode (default behaviour in the Rust port: the Rust implementation never prompts interactively)
+      --no-prompt             Disable interactive prompts (alias `-no-prompt`)
+      --addext <ARG>          Repeated `-addext oid=value` extensions to attach to the CSR
+      --new                   Generate a new CSR (implies `-new`-style behaviour)
+      --x509                  Output a self-signed certificate instead of a CSR
+      --x509v1                Force X.509 v1 output when combined with `-x509`
+      --precert               Output a TLS pre-certificate (poison extension included)
+      --CA <FILE>             CA certificate (when issuing with `-x509`)
+      --CAkey <FILE>          CA private key (defaults to `-CA` value when omitted)
+      --days <DAYS>           Validity period in days for `-x509` certificates
+      --set_serial <VALUE>    Serial-number source file for `-x509`
+      --md <ALG>              Message-digest algorithm name (`sha256`, `sha384`, …)
+      --extensions <SECTION>  Repeated `-extensions <section>` selector for X.509v3 extensions
+      --config <FILE>         Path to a config file with prompts/extensions
+      --section <SECTION>     Section name within the config file (default: `req`)
+      --text                  Print the CSR (or X.509 certificate) in human-readable form
+      --modulus               Print the public-key modulus (RSA / RSA-PSS only)
+      --subject               Print the subject DN in `subject=…` form
+      --pubkey                Print the `SubjectPublicKeyInfo` PEM block
+      --verify                Verify the self-signature of an input CSR
+      --verbose               Verbose output (parsed but currently informational)
+      --quiet                 Quiet output (parsed but currently informational)
+  -h, --help                  Print help

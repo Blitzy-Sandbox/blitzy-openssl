@@ -854,6 +854,69 @@ pub fn opt_printf_stderr(msg: &str) {
 /// Provides a tracing-integrated wrapper for non-fatal diagnostic messages
 /// during option parsing or parameter inspection. Complements
 /// `opt_printf_stderr` for non-error conditions.
+/// Create a file for writing a *private* artifact (private key, encrypted
+/// keystore, or any sensitive secret material) with restrictive permissions.
+///
+/// On Unix the file is created with mode `0o600` (read/write for the owner
+/// only) using [`std::os::unix::fs::OpenOptionsExt::mode`].  This mirrors the
+/// behaviour of `bio_open_owner(file, fmt, 1)` in `apps/lib/apps.c` which
+/// invokes `BIO_new_file()` with the `"w"` mode followed by an explicit
+/// `chmod(0600)` so that the resulting key file is *not* world-readable.
+///
+/// On non-Unix platforms (Windows / WASI / `target_family` != "unix") the
+/// helper falls back to [`std::fs::File::create`] because the `mode` flag
+/// is not portable; on Windows the analogous protection is achieved via
+/// the platform default ACL inheritance (the user's home directory is
+/// only readable by the owner by default).
+///
+/// # Why this matters (CWE-732)
+///
+/// `File::create()` honours the process *umask* on Unix — a typical
+/// developer or CI environment uses `0022`, producing files with mode
+/// `0644` (world-readable).  Writing a private key to a world-readable
+/// file is a CRITICAL security regression versus the C `apps/genpkey.c`,
+/// `apps/genrsa.c`, `apps/pkey.c` behaviour, which always uses 0600 mode.
+///
+/// # Errors
+///
+/// Returns the underlying [`std::io::Error`] if the file cannot be
+/// created or its mode cannot be set.  On Unix the open and the mode
+/// are set atomically via `O_CREAT | O_WRONLY | O_TRUNC` plus the
+/// `mode_t` argument, so there is *no* TOCTOU window where the file
+/// could appear with the looser umask-derived mode.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::io::Write;
+/// use openssl_cli::lib::opts::create_private_key_file;
+///
+/// let mut file = create_private_key_file("/tmp/key.pem")?;
+/// file.write_all(b"-----BEGIN PRIVATE KEY-----\n...")?;
+/// # Ok::<(), std::io::Error>(())
+/// ```
+pub fn create_private_key_file<P: AsRef<std::path::Path>>(
+    path: P,
+) -> io::Result<std::fs::File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows / WASI fallback. The Windows analogue requires the
+        // CreateFile + SetSecurityInfo pair which is well beyond the
+        // scope of this CLI port; rely on the user profile ACL.
+        std::fs::File::create(path)
+    }
+}
+
 pub fn opt_warn_diagnostic(msg: &str) {
     warn!("{}", msg);
 }

@@ -42,6 +42,38 @@
 //! | `EVP_PBE_scrypt()`              | [`scrypt_derive()`]         |
 //! | `EVP_PBE_CipherInit_ex()`       | [`pbe_cipher_init()`]       |
 //!
+//! # Supported KDF Algorithms
+//!
+//! The following table summarises every KDF algorithm name accepted by
+//! [`Kdf::fetch()`], the standard or RFC that defines it, the parameter keys
+//! consumed via [`KdfCtx::set_params()`], and the maximum supported output
+//! length.  All bounds are enforced eagerly in [`KdfCtx::derive()`] and in the
+//! free-function wrappers — a request that exceeds the bound is rejected with
+//! [`CryptoError::Common`] / [`openssl_common::CommonError::InvalidArgument`]
+//! rather than silently truncated.
+//!
+//! | Algorithm    | Specification                | Required parameters                       | Output bound (bytes)         |
+//! |--------------|------------------------------|-------------------------------------------|------------------------------|
+//! | `HKDF`       | RFC 5869                     | `digest`, `key` (IKM), `salt`*, `info`*   | `255 * hash_len` (8160)      |
+//! | `TLS13-KDF`  | RFC 8446 §7.1                | `digest`, `key`, `salt`*, `info`*         | `255 * hash_len` (8160)      |
+//! | `PBKDF2`     | RFC 8018 §5.2                | `digest`, `pass`/`password`, `salt`, `iter` | `(2³² − 1) * hash_len`     |
+//! | `SCRYPT`     | RFC 7914                     | `pass`/`password`, `salt`, `n`, `r`, `p`, `maxmem_bytes`* | `(2³² − 1) * 32` |
+//! | `ARGON2I`    | RFC 9106                     | `pass`/`password`, `salt`, `time_cost`, `mem_cost`, `parallelism` | `2³² − 1` |
+//! | `ARGON2D`    | RFC 9106                     | `pass`/`password`, `salt`, `time_cost`, `mem_cost`, `parallelism` | `2³² − 1` |
+//! | `ARGON2ID`   | RFC 9106                     | `pass`/`password`, `salt`, `time_cost`, `mem_cost`, `parallelism` | `2³² − 1` |
+//! | `KBKDF`      | NIST SP 800-108              | `key`, `salt`*, `info`*, `digest`*        | provider-defined             |
+//! | `SSKDF`      | NIST SP 800-56C              | `key`, `salt`*, `info`*, `digest`*        | provider-defined             |
+//! | `X963KDF`    | ANSI X9.63                   | `key`, `info`*, `digest`*                 | provider-defined             |
+//! | `TLS1-PRF`   | RFC 5246 §5                  | `key`, `salt`*, `digest`*                 | provider-defined             |
+//! | `SSHKDF`     | RFC 4253 §7.2                | `key`, `salt`*, `info`*, `digest`*        | provider-defined             |
+//!
+//! \* Optional — defaults to empty when omitted (RFC 5869 §2.2 for HKDF salt).
+//!
+//! In addition, Argon2 `mem_cost` (KiB) is capped at 4 GiB worth of memory
+//! (4 194 304 KiB) to prevent OOM/swap-thrash attacks via crafted parameter
+//! sets.  Callers that legitimately need more memory must build with their own
+//! provider; the EVP layer rejects unreasonable allocations early.
+//!
 //! # Cryptographic Implementation
 //!
 //! All key-derivation primitives delegate to [`crate::kdf`], which provides
@@ -458,6 +490,10 @@ impl KdfCtx {
             param_count = params.len(),
             "evp::kdf: applying parameters"
         );
+        // Eagerly validate the supplied parameter types so that callers get
+        // immediate feedback at the API boundary instead of opaque errors
+        // surfacing inside the backend during `derive()`.
+        validate_kdf_params(params)?;
         self.params.merge(params);
         Ok(())
     }
@@ -532,6 +568,8 @@ impl KdfCtx {
             HKDF | TLS13_KDF => {
                 // HKDF-based derivation. Supports `TLS13-KDF` as an alias since
                 // TLS 1.3 key schedules are HKDF-Expand-Label-based (RFC 8446).
+                // RFC 5869 §2.3 mandates output length <= 255 * HashLen.
+                check_output_length(algo.as_str(), key_length, HKDF_SHA256_MAX_OUT)?;
                 let digest = self.required_digest_param()?;
                 require_sha256_alias(&digest)?;
                 let ikm = self.required_octets("key")?;
@@ -540,6 +578,8 @@ impl KdfCtx {
                 core_kdf::hkdf_derive(&ikm, &salt, &info, key_length)?
             }
             PBKDF2 => {
+                // RFC 8018 §5.2: dkLen <= (2^32 - 1) * hLen.
+                check_output_length(PBKDF2, key_length, PBKDF2_SHA256_MAX_OUT)?;
                 let digest = self.required_digest_param()?;
                 require_sha256_alias(&digest)?;
                 let password = self.required_password()?;
@@ -548,6 +588,8 @@ impl KdfCtx {
                 core_kdf::pbkdf2_derive(&password, &salt, iterations, key_length)?
             }
             SCRYPT => {
+                // RFC 7914 §2: dkLen is at most (2^32 - 1) * 32.
+                check_output_length(SCRYPT, key_length, SCRYPT_MAX_OUT)?;
                 let password = self.required_password()?;
                 let salt = self.required_octets("salt")?;
                 let n = self.required_u64("n")?;
@@ -562,11 +604,16 @@ impl KdfCtx {
                 core_kdf::scrypt_derive(&password, &salt, n, r, p, key_length)?
             }
             ARGON2I | ARGON2D | ARGON2ID => {
+                // RFC 9106 §3.1: tag length is at most (2^32 - 1) bytes.
+                check_output_length(algo.as_str(), key_length, ARGON2_MAX_OUT)?;
                 let password = self.required_password()?;
                 let salt = self.required_octets("salt")?;
                 let time_cost = self.required_u32("time_cost")?;
                 let mem_cost = self.required_u32("mem_cost")?;
                 let parallelism = self.required_u32("parallelism")?;
+                // Cap mem_cost to prevent OOM/swap-thrash via crafted params,
+                // and enforce RFC 9106 §3.1 minimum (mem_cost >= 8 * parallelism).
+                enforce_argon2_mem_cost(mem_cost, parallelism)?;
                 let variant = match algo.as_str() {
                     ARGON2I => core_kdf::KdfType::Argon2i,
                     ARGON2D => core_kdf::KdfType::Argon2d,
@@ -940,6 +987,236 @@ fn enforce_scrypt_max_mem(n: u64, r: u32, _p: u32, max_mem: u64) -> CryptoResult
     Ok(())
 }
 
+/// Hard cap on Argon2 `mem_cost` (KiB).  Argon2 expresses memory in 1 KiB
+/// blocks (RFC 9106 §3.1), so this cap corresponds to 4 GiB of RAM
+/// (`4 * 1024 * 1024 = 4_194_304` KiB).  Requests beyond this limit would
+/// trigger swap-thrash or OOM kills — common attack surfaces for crafted
+/// parameter sets — and are rejected eagerly with an informative error.
+const ARGON2_MEM_COST_KIB_CAP: u32 = 4 * 1024 * 1024;
+
+/// Validates the Argon2 `mem_cost` parameter against the workspace-wide cap
+/// and the algorithm's specification.
+///
+/// RFC 9106 §3.1 requires `mem_cost ≥ 8 * parallelism` (each lane needs at
+/// least eight blocks).  In addition this helper rejects any `mem_cost` that
+/// exceeds [`ARGON2_MEM_COST_KIB_CAP`] to prevent OOM/swap thrash from
+/// pathological inputs.  The helper is the Argon2 analogue of
+/// [`enforce_scrypt_max_mem`] and is called from the
+/// [`KdfCtx::derive`](#method.derive) Argon2 branch BEFORE any cryptographic
+/// work is performed.
+///
+/// Rule R6: the `mem_cost * 1024` byte footprint is computed via
+/// [`u64::checked_mul`] to avoid silent overflow on 32-bit hosts.
+fn enforce_argon2_mem_cost(mem_cost: u32, parallelism: u32) -> CryptoResult<()> {
+    // Argon2 minimum: each lane requires at least 8 KiB.
+    let min_required = parallelism.checked_mul(8).ok_or_else(|| {
+        CryptoError::Common(openssl_common::CommonError::ArithmeticOverflow {
+            operation: "Argon2 minimum memory (8 * parallelism)",
+        })
+    })?;
+    if mem_cost < min_required {
+        return Err(CryptoError::Common(
+            openssl_common::CommonError::InvalidArgument(format!(
+                "Argon2 mem_cost {mem_cost} KiB is below the per-lane minimum \
+                 {min_required} KiB (RFC 9106 §3.1 requires mem_cost >= 8 * parallelism)"
+            )),
+        ));
+    }
+    if mem_cost > ARGON2_MEM_COST_KIB_CAP {
+        return Err(CryptoError::Common(
+            openssl_common::CommonError::InvalidArgument(format!(
+                "Argon2 mem_cost {mem_cost} KiB exceeds the workspace cap of \
+                 {ARGON2_MEM_COST_KIB_CAP} KiB (4 GiB) — refusing to allocate"
+            )),
+        ));
+    }
+    // Verify the byte footprint does not overflow on 32-bit systems.  On 64-bit
+    // hosts u64::checked_mul is effectively a no-op given the KiB cap above,
+    // but we keep the check for portability and to satisfy Rule R6.
+    u64::from(mem_cost)
+        .checked_mul(1024)
+        .ok_or_else(|| {
+            CryptoError::Common(openssl_common::CommonError::ArithmeticOverflow {
+                operation: "Argon2 byte footprint (mem_cost * 1024)",
+            })
+        })?;
+    Ok(())
+}
+
+// ----------------------------------------------------------------------------
+// Per-algorithm output-length bounds.
+//
+// Each KDF specification imposes a maximum number of output bytes that may be
+// derived from a single invocation.  Exceeding the bound is a contract
+// violation — RFC 5869 explicitly says "An output length larger than 255 *
+// HashLen is not allowed" — and silently producing fewer bytes (or producing
+// bytes that no longer satisfy the security analysis) is a serious defect.
+//
+// These constants are evaluated against the requested `key_length` BEFORE any
+// cryptographic work is performed in [`KdfCtx::derive`] and the corresponding
+// free-function wrappers.  When a request is out of range the helpers return
+// [`CryptoError::Common`] / [`openssl_common::CommonError::InvalidArgument`]
+// so that callers can distinguish parameter errors from genuine cryptographic
+// failures.
+// ----------------------------------------------------------------------------
+
+/// Maximum HKDF / TLS13-KDF output for SHA-256 (`255 * HashLen = 255 * 32`),
+/// per RFC 5869 §2.3 and RFC 8446 §7.1.
+const HKDF_SHA256_MAX_OUT: usize = 255 * 32;
+
+/// Maximum PBKDF2 output for SHA-256 (`(2^32 - 1) * HashLen`), per
+/// RFC 8018 §5.2.  We saturate at `usize::MAX` on 32-bit hosts because
+/// allocations larger than `isize::MAX` are impossible anyway.
+const PBKDF2_SHA256_MAX_OUT: usize =
+    if (u32::MAX as u64).saturating_mul(32) > usize::MAX as u64 {
+        usize::MAX
+    } else {
+        (u32::MAX as usize) * 32
+    };
+
+/// Maximum scrypt output (`(2^32 - 1) * 32` bytes), per RFC 7914 §6.
+const SCRYPT_MAX_OUT: usize = if (u32::MAX as u64).saturating_mul(32) > usize::MAX as u64 {
+    usize::MAX
+} else {
+    (u32::MAX as usize) * 32
+};
+
+/// Maximum Argon2 output (`2^32 - 1` bytes), per RFC 9106 §3.1.
+const ARGON2_MAX_OUT: usize = u32::MAX as usize;
+
+/// Validates a requested output length against an algorithm-specific cap.
+///
+/// Returns an informative [`CryptoError::Common`] /
+/// [`openssl_common::CommonError::InvalidArgument`] when `length` exceeds
+/// `max`, naming both the algorithm and the bound for diagnostic clarity.
+fn check_output_length(algorithm: &str, length: usize, max: usize) -> CryptoResult<()> {
+    if length > max {
+        return Err(CryptoError::Common(
+            openssl_common::CommonError::InvalidArgument(format!(
+                "{algorithm} output length {length} exceeds maximum {max} bytes"
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// Eagerly validates the [`ParamValue`] variants of every well-known
+/// [`KdfCtx::set_params`] key.
+///
+/// OpenSSL's C `EVP_KDF_CTX_set_params()` API performs lazy parameter
+/// validation: invalid types only surface inside the algorithm backend
+/// during `derive()`, often as opaque errors.  The Rust implementation
+/// rejects mismatched parameter types eagerly at the API boundary so that
+/// callers get immediate, structured feedback via
+/// [`CommonError::ParamTypeMismatch`].
+///
+/// # Recognised parameter keys
+///
+/// | Key            | Expected variant(s)              | Used by                |
+/// |----------------|----------------------------------|------------------------|
+/// | `pass`         | `OctetString` or `Utf8String`    | PBKDF2, scrypt, Argon2 |
+/// | `password`     | `OctetString` or `Utf8String`    | PBKDF2, scrypt, Argon2 |
+/// | `key`          | `OctetString` or `Utf8String`    | HKDF (IKM)             |
+/// | `salt`         | `OctetString` or `Utf8String`    | all                    |
+/// | `info`         | `OctetString` or `Utf8String`    | HKDF                   |
+/// | `digest`       | `Utf8String`                     | HKDF, PBKDF2           |
+/// | `iter`         | `UInt32`                         | PBKDF2                 |
+/// | `iterations`   | `UInt32`                         | PBKDF2 (alias)         |
+/// | `n`            | `UInt64`                         | scrypt                 |
+/// | `r`            | `UInt32`                         | scrypt                 |
+/// | `p`            | `UInt32`                         | scrypt                 |
+/// | `maxmem_bytes` | `UInt64`                         | scrypt                 |
+/// | `time_cost`    | `UInt32`                         | Argon2                 |
+/// | `mem_cost`     | `UInt32`                         | Argon2                 |
+/// | `parallelism`  | `UInt32`                         | Argon2                 |
+///
+/// Unknown keys are silently accepted to remain forward-compatible with
+/// provider-specific extensions; the type check is only enforced for the
+/// well-known set above.
+///
+/// # Octet-string vs. UTF-8 lenience
+///
+/// The five well-known octet-string parameters (`pass`, `password`, `key`,
+/// `salt`, `info`) accept *both* [`ParamValue::OctetString`] and
+/// [`ParamValue::Utf8String`].  This mirrors the lenience built into
+/// [`KdfCtx::optional_octets`] and [`KdfCtx::required_password`], which
+/// transparently coerce a UTF-8 string to its byte representation via
+/// `String::as_bytes()`.  Accepting both variants here keeps eager validation
+/// strictly compatible with the documented helper contract — callers that
+/// pass `Utf8String` salts or passwords (a common pattern in C consumers
+/// that store these as null-terminated strings) continue to work.
+///
+/// In contrast, `digest` is an *algorithm name selector* and must be a
+/// proper [`ParamValue::Utf8String`].  Passing octet bytes for `digest`
+/// is a programming error (the bytes would have to be ASCII anyway) and
+/// is rejected eagerly so callers receive a structured error instead of
+/// an opaque "unknown digest" failure deep inside the backend.
+///
+/// # Errors
+///
+/// Returns [`CryptoError::Common`] /
+/// [`openssl_common::CommonError::ParamTypeMismatch`] when a recognised
+/// key carries a value of an unexpected variant.
+fn validate_kdf_params(params: &ParamSet) -> CryptoResult<()> {
+    /// Helper to construct a [`ParamTypeMismatch`] error.
+    fn mismatch(key: &str, expected: &'static str, actual: &'static str) -> CryptoError {
+        CryptoError::Common(openssl_common::CommonError::ParamTypeMismatch {
+            key: key.to_string(),
+            expected,
+            actual,
+        })
+    }
+
+    for (key, value) in params.iter() {
+        match key {
+            // Octet-string parameters.  Per the documented contract of the
+            // `optional_octets` and `required_password` helpers, both
+            // `OctetString` and `Utf8String` are accepted: the latter is
+            // coerced to bytes via `String::as_bytes()` at consumption time.
+            // Eager validation here must therefore mirror that lenience or
+            // it would regress callers that legitimately pass UTF-8 strings
+            // for these parameters.
+            "pass" | "password" | "key" | "salt" | "info" => {
+                if !matches!(
+                    value,
+                    ParamValue::OctetString(_) | ParamValue::Utf8String(_)
+                ) {
+                    return Err(mismatch(
+                        key,
+                        "OctetString or Utf8String",
+                        value.param_type_name(),
+                    ));
+                }
+            }
+            // UTF-8 string parameters.  `digest` selects an algorithm by
+            // name and must be a proper `Utf8String`; raw octets are not a
+            // valid algorithm identifier and are rejected eagerly.
+            "digest" => {
+                if !matches!(value, ParamValue::Utf8String(_)) {
+                    return Err(mismatch(key, "Utf8String", value.param_type_name()));
+                }
+            }
+            // 32-bit unsigned integer parameters.
+            "iter" | "iterations" | "r" | "p" | "time_cost" | "mem_cost" | "parallelism" => {
+                if !matches!(value, ParamValue::UInt32(_)) {
+                    return Err(mismatch(key, "UInt32", value.param_type_name()));
+                }
+            }
+            // 64-bit unsigned integer parameters.
+            "n" | "maxmem_bytes" => {
+                if !matches!(value, ParamValue::UInt64(_)) {
+                    return Err(mismatch(key, "UInt64", value.param_type_name()));
+                }
+            }
+            // Forward-compatibility: silently accept unknown keys so that
+            // provider-specific extensions can travel through `set_params`
+            // unimpeded.  Backend-specific validation kicks in at derive time.
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 // =============================================================================
 // Free-function convenience wrappers (Phase 6 of the agent_prompt).
 //
@@ -1012,6 +1289,13 @@ pub fn pbkdf2_derive(
         "pbkdf2_derive invoked",
     );
     require_sha256_alias(digest_name)?;
+    if password.is_empty() {
+        return Err(CryptoError::Common(
+            openssl_common::CommonError::InvalidArgument(
+                "PBKDF2 password must not be empty".to_string(),
+            ),
+        ));
+    }
     if iterations == 0 {
         return Err(CryptoError::Common(
             openssl_common::CommonError::InvalidArgument(
@@ -1026,6 +1310,8 @@ pub fn pbkdf2_derive(
             ),
         ));
     }
+    // RFC 8018 §5.2: dkLen <= (2^32 - 1) * hLen.
+    check_output_length("PBKDF2", length, PBKDF2_SHA256_MAX_OUT)?;
     let raw = core_kdf::pbkdf2_derive(password, salt, iterations, length)?;
     debug!(
         target: "openssl_crypto::evp::kdf",
@@ -1083,6 +1369,13 @@ pub fn scrypt_derive(
         length,
         "scrypt_derive invoked",
     );
+    if password.is_empty() {
+        return Err(CryptoError::Common(
+            openssl_common::CommonError::InvalidArgument(
+                "scrypt password must not be empty".to_string(),
+            ),
+        ));
+    }
     if length == 0 {
         return Err(CryptoError::Common(
             openssl_common::CommonError::InvalidArgument(
@@ -1090,6 +1383,8 @@ pub fn scrypt_derive(
             ),
         ));
     }
+    // RFC 7914 §2: dkLen is at most (2^32 - 1) * 32.
+    check_output_length("SCRYPT", length, SCRYPT_MAX_OUT)?;
     // Only enforce the memory cap if a non-zero max_mem was supplied
     // (matching EVP_PBE_scrypt's behaviour where max_mem=0 disables the
     // check).
@@ -1159,6 +1454,8 @@ pub fn hkdf_derive(
             ),
         ));
     }
+    // RFC 5869 §2.3: HKDF output length must not exceed 255 * HashLen.
+    check_output_length("HKDF", length, HKDF_SHA256_MAX_OUT)?;
     let raw = core_kdf::hkdf_derive(ikm, salt, info, length)?;
     debug!(
         target: "openssl_crypto::evp::kdf",
@@ -1768,6 +2065,143 @@ mod tests {
             enforce_scrypt_max_mem(u64::MAX, u32::MAX, 1, u64::MAX).expect_err("must overflow");
         match err {
             CryptoError::Common(openssl_common::CommonError::ArithmeticOverflow { .. }) => {}
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Edit 9 — Coverage for the eager parameter validation, output-length caps,
+    // Argon2 mem_cost guard rails, and empty-password defenses introduced by
+    // Edits 2–8 of the kdf review.
+    // -------------------------------------------------------------------------
+
+    /// `KdfCtx::derive` must reject an HKDF request whose key length would
+    /// silently truncate (RFC 5869 §2.3 forbids `length > 255 * HashLen`).
+    /// Confirms the [`check_output_length`] guard wired into the HKDF branch
+    /// of [`KdfCtx::derive`] (Edit 3).
+    #[test]
+    fn derive_rejects_oversized_hkdf_output() {
+        let ctx = LibContext::get_default();
+        let kdf = Kdf::fetch(&ctx, HKDF, None).expect("HKDF must resolve");
+        let mut kctx = KdfCtx::new(&kdf);
+        let mut params = ParamSet::new();
+        params.set("digest", ParamValue::Utf8String("SHA-256".to_string()));
+        params.set("key", ParamValue::OctetString(b"input keying material".to_vec()));
+        params.set("salt", ParamValue::OctetString(b"salt".to_vec()));
+        params.set("info", ParamValue::OctetString(b"context".to_vec()));
+        kctx.set_params(&params).expect("valid params accepted");
+        // 8161 = HKDF_SHA256_MAX_OUT (8160) + 1.
+        let err = kctx
+            .derive(HKDF_SHA256_MAX_OUT + 1)
+            .expect_err("oversized HKDF output must be rejected");
+        match err {
+            CryptoError::Common(openssl_common::CommonError::InvalidArgument(_)) => {}
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// The free-function [`hkdf_derive`] wrapper enforces the same
+    /// `255 * HashLen` cap independently of [`KdfCtx`].  Confirms Edit 5.
+    #[test]
+    fn hkdf_derive_rejects_oversized_length() {
+        let err = hkdf_derive("SHA-256", b"ikm", b"salt", b"info", HKDF_SHA256_MAX_OUT + 1)
+            .expect_err("oversized HKDF output must be rejected");
+        match err {
+            CryptoError::Common(openssl_common::CommonError::InvalidArgument(_)) => {}
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// `KdfCtx::set_params` must reject a `digest` value whose `ParamValue`
+    /// variant is not [`ParamValue::Utf8String`].  Confirms the eager
+    /// [`validate_kdf_params`] check wired into [`KdfCtx::set_params`]
+    /// (Edit 6).
+    #[test]
+    fn set_params_rejects_invalid_digest_type() {
+        let ctx = LibContext::get_default();
+        let kdf = Kdf::fetch(&ctx, HKDF, None).expect("HKDF must resolve");
+        let mut kctx = KdfCtx::new(&kdf);
+        let mut params = ParamSet::new();
+        // Wrong variant on purpose: `digest` must be Utf8String.
+        params.set("digest", ParamValue::OctetString(vec![1, 2, 3]));
+        let err = kctx
+            .set_params(&params)
+            .expect_err("invalid digest variant must be rejected");
+        match err {
+            CryptoError::Common(openssl_common::CommonError::ParamTypeMismatch {
+                key,
+                expected,
+                actual,
+            }) => {
+                assert_eq!(key, "digest");
+                assert_eq!(expected, "Utf8String");
+                assert_eq!(actual, "OctetString");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// [`enforce_argon2_mem_cost`] must accept a reasonable in-budget
+    /// configuration without error.  Confirms the happy path of Edit 2.
+    #[test]
+    fn enforce_argon2_mem_cost_accepts_within_budget() {
+        // 64 MiB / 1 lane is well below the 4 GiB workspace cap and well
+        // above the 8-KiB-per-lane minimum.
+        enforce_argon2_mem_cost(65_536, 1).expect("64 MiB / parallelism=1 is in budget");
+    }
+
+    /// [`enforce_argon2_mem_cost`] must reject `mem_cost` values that would
+    /// allocate beyond the 4 GiB workspace cap.  Confirms the OOM-prevention
+    /// guard introduced by Edit 2.
+    #[test]
+    fn enforce_argon2_mem_cost_rejects_over_cap() {
+        // ARGON2_MEM_COST_KIB_CAP = 4 * 1024 * 1024 = 4_194_304 KiB.
+        let err = enforce_argon2_mem_cost(ARGON2_MEM_COST_KIB_CAP + 1, 1)
+            .expect_err("mem_cost over cap must be rejected");
+        match err {
+            CryptoError::Common(openssl_common::CommonError::InvalidArgument(_)) => {}
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// [`enforce_argon2_mem_cost`] must surface a structured arithmetic
+    /// overflow when `parallelism * 8` would not fit in `u32`.  Confirms
+    /// Rule R6 compliance baked into Edit 2.
+    #[test]
+    fn enforce_argon2_mem_cost_detects_overflow() {
+        // u32::MAX * 8 overflows u32, so the `parallelism.checked_mul(8)`
+        // branch must trip the ArithmeticOverflow path BEFORE any other
+        // validation runs.  `mem_cost = 0` is irrelevant here.
+        let err = enforce_argon2_mem_cost(0, u32::MAX)
+            .expect_err("parallelism=u32::MAX must overflow 8 * parallelism");
+        match err {
+            CryptoError::Common(openssl_common::CommonError::ArithmeticOverflow { .. }) => {}
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// The free-function [`pbkdf2_derive`] wrapper must reject an empty
+    /// password.  Confirms Edit 7's empty-password rejection.
+    #[test]
+    fn pbkdf2_derive_rejects_empty_password() {
+        let err = pbkdf2_derive(b"", b"salt-bytes", 1024, "SHA-256", 32)
+            .expect_err("empty password must be rejected");
+        match err {
+            CryptoError::Common(openssl_common::CommonError::InvalidArgument(_)) => {}
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// The free-function [`scrypt_derive`] wrapper must reject an empty
+    /// password.  Confirms Edit 8's empty-password rejection.
+    #[test]
+    fn scrypt_derive_rejects_empty_password() {
+        // n=16384, r=8, p=1, max_mem=0 (cap disabled), length=32 are all
+        // valid choices — only the empty password should trip the guard.
+        let err = scrypt_derive(b"", b"salt-bytes", 16_384, 8, 1, 0, 32)
+            .expect_err("empty password must be rejected");
+        match err {
+            CryptoError::Common(openssl_common::CommonError::InvalidArgument(_)) => {}
             other => panic!("unexpected error: {other:?}"),
         }
     }

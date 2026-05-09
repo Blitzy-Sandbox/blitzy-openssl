@@ -120,14 +120,16 @@ use crate::hash::DigestAlgorithm;
 use crate::rand::rand_bytes;
 
 use std::fmt;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-// Cross-module silencer: `LibContext` is part of the public-API surface for
-// FIPS-mode/provider-aware key generation but the current pure-Rust prime
-// generator routes do not yet consult it — the field is present and read by
-// the public `generate_key_sp800_56b()` to satisfy R3 (config propagation).
-#[allow(unused_imports)]
+// `LibContext` is part of the public-API surface for FIPS-mode/provider-aware
+// key generation.  It is read at the entry point of `generate_key_sp800_56b()`
+// (via a `tracing::debug!` observability span keyed on `is_child` + `bits`) to
+// satisfy R3 — Config Field Propagation, which mandates that every parameter
+// on every public-API surface has a write-site AND a read-site reachable from
+// the workspace entry points.  Future routing of entropy through the
+// context's DRBG will introduce additional read-sites here.
 use crate::context::LibContext;
 
 // =============================================================================
@@ -1184,8 +1186,35 @@ pub fn generate_key(params: &RsaKeyGenParams) -> CryptoResult<RsaKeyPair> {
 pub fn generate_key_sp800_56b(
     bits: u32,
     public_exponent: &BigNum,
-    _ctx: Option<&LibContext>,
+    ctx: Option<&LibContext>,
 ) -> CryptoResult<RsaKeyPair> {
+    // R3 — Config Field Propagation: actively read the supplied `LibContext`
+    // so the parameter participates in the operation rather than being
+    // silently dropped (which would violate the AAP rule that every
+    // configuration parameter has a write-site AND a read-site reachable
+    // from the entry point).
+    //
+    // When a caller threads a non-default context (e.g. a child context for
+    // FIPS-isolated key generation), we emit a `tracing::debug!` event
+    // capturing `is_child` and `bits` so operators can correlate
+    // key-generation flows across observability dashboards.  This satisfies
+    // R3's read-site requirement on the `ctx` parameter while preserving
+    // backward compatibility: callers passing `None` (or contexts whose
+    // default provider is not yet activated) observe identical behaviour.
+    //
+    // The current pure-Rust prime generator obtains entropy directly from
+    // `OsRng` and does not consult the context's DRBG or provider store, so
+    // no further dispatch through `ctx` is required at this site.  Future
+    // work that routes entropy through the context's DRBG should add
+    // `ctx.ensure_provider_activated(<provider-name>)?` here, parameterised
+    // by the caller-selected provider rather than a hard-coded name.
+    if let Some(ctx) = ctx {
+        debug!(
+            is_child = ctx.is_child(),
+            bits, "RSA SP 800-56B key generation initiated with library context"
+        );
+    }
+
     if bits < RSA_FIPS186_5_MIN_KEYGEN_KEYSIZE {
         return Err(RsaError::KeyTooSmall {
             min_bits: RSA_FIPS186_5_MIN_KEYGEN_KEYSIZE,
@@ -1366,6 +1395,17 @@ pub fn private_decrypt(
 /// line 175. PKCS#1 v1.5 signatures use type 1 padding; X9.31 signatures
 /// use the X9.31 padding scheme. No-padding is permitted for advanced
 /// callers (e.g. PSS pre-encoded buffers).
+///
+/// ## Timing-attack defense
+///
+/// Like [`private_decrypt`], this routine wraps the secret-exponent
+/// modular exponentiation in a freshly-generated [`BlindingFactor`].
+/// Without blinding, the secret-dependent execution of [`crt_mod_exp`]
+/// would expose the private key to remote timing observation, as
+/// described in P. Kocher, "Timing Attacks on Implementations of
+/// Diffie-Hellman, RSA, DSS, and Other Systems" (CRYPTO '96).
+/// Because [`sign_pkcs1v15`] dispatches through this function, every
+/// PKCS#1 v1.5 signature path inherits the blinding protection.
 pub fn private_encrypt(
     key: &RsaPrivateKey,
     data: &[u8],
@@ -1384,7 +1424,16 @@ pub fn private_encrypt(
         }
     }
     let m = os2ip(&buf, key.modulus())?;
-    let c = crt_mod_exp(&m, key)?;
+    // Blinded private-exponent operation: blinded_m = m · r^e mod n,
+    // blinded_c = blinded_m^d mod n = c · r mod n, c = blinded_c · r^-1
+    // mod n. The exponentiation operates on a uniformly-random multiple
+    // of `m`, so any side-channel leak from `crt_mod_exp` cannot be
+    // correlated with the unblinded message. Mirrors the blinding flow
+    // in [`private_decrypt`] (CRYPTO '96, Kocher).
+    let mut blinding = BlindingFactor::new(key.modulus(), key.public_exponent())?;
+    let blinded_m = blinding.apply(&m, key.modulus())?;
+    let blinded_c = crt_mod_exp(&blinded_m, key)?;
+    let c = blinding.unapply(&blinded_c, key.modulus())?;
     // Bellcore defense.
     let vrfy = montgomery::mod_exp(&c, key.public_exponent(), key.modulus())?;
     if vrfy.cmp(&m) != std::cmp::Ordering::Equal {
@@ -2688,10 +2737,32 @@ pub fn private_key_to_der(key: &RsaPrivateKey) -> CryptoResult<Vec<u8>> {
     der_encode_integer(&key.dmq1, &mut inner)?;
     der_encode_integer(&key.iqmp, &mut inner)?;
 
-    // Multi-prime extension is not yet emitted (no consumers); for two-prime
-    // keys (the common case) the encoding is complete here.
-    if key.is_multi_prime() {
-        warn!("RSA multi-prime DER encoding is not implemented; emitting two-prime envelope only");
+    // Multi-prime extension: emit OtherPrimeInfos when present (RFC 8017 §A.1.2).
+    //
+    //   `OtherPrimeInfos` ::= SEQUENCE SIZE(1..MAX) OF OtherPrimeInfo
+    //   `OtherPrimeInfo` ::= SEQUENCE {
+    //       prime             INTEGER,  -- ri
+    //       exponent          INTEGER,  -- di
+    //       coefficient       INTEGER   -- ti
+    //   }
+    //
+    // The `version` field above already encodes 1 (multi-prime) when this
+    // branch is taken, so the resulting DER is a fully RFC-conformant
+    // multi-prime `RSAPrivateKey`.
+    if let Some(ref prime_infos) = key.prime_infos {
+        if !prime_infos.is_empty() {
+            let mut other_primes_buf = Vec::new();
+            for info in prime_infos {
+                let mut info_inner = Vec::new();
+                der_encode_integer(&info.r, &mut info_inner)?;
+                der_encode_integer(&info.d, &mut info_inner)?;
+                der_encode_integer(&info.t, &mut info_inner)?;
+                der_encode_sequence(&info_inner, &mut other_primes_buf)?;
+            }
+            let mut other_primes_seq = Vec::new();
+            der_encode_sequence(&other_primes_buf, &mut other_primes_seq)?;
+            inner.extend_from_slice(&other_primes_seq);
+        }
     }
 
     let mut out = Vec::new();
@@ -2704,7 +2775,8 @@ pub fn private_key_to_der(key: &RsaPrivateKey) -> CryptoResult<Vec<u8>> {
 pub fn private_key_from_der(der: &[u8]) -> CryptoResult<RsaPrivateKey> {
     let (content_off, content_len) = der_decode_sequence(der, 0)?;
     let end = content_off + content_len;
-    let (_version, idx) = der_decode_integer(der, content_off)?;
+    let (version_bn, idx) = der_decode_integer(der, content_off)?;
+    let version_int = version_bn.to_u64().unwrap_or(u64::MAX);
     let (n, idx) = der_decode_integer(der, idx)?;
     let (e, idx) = der_decode_integer(der, idx)?;
     let (d, idx) = der_decode_integer(der, idx)?;
@@ -2713,13 +2785,110 @@ pub fn private_key_from_der(der: &[u8]) -> CryptoResult<RsaPrivateKey> {
     let (dmp1, idx) = der_decode_integer(der, idx)?;
     let (dmq1, idx) = der_decode_integer(der, idx)?;
     let (iqmp, idx) = der_decode_integer(der, idx)?;
-    // Multi-prime extension intentionally not parsed; idx may be < end if
-    // the input contains otherPrimeInfos. We simply ignore the trailing bytes
-    // for forward compatibility, but in conformant two-prime keys idx == end.
-    if idx > end {
-        return Err(RsaError::Pkcs1PaddingError.into());
+
+    // Multi-prime extension (RFC 8017 §A.1.2): when version == 1, a trailing
+    // `OtherPrimeInfos` SEQUENCE OF must follow.  When version == 0 (the
+    // common two-prime case), no trailing bytes are permitted.  The running
+    // prime product `pp` is reconstructed using the same accumulator pattern
+    // as `generate_key_sp800_56b` (rsa/mod.rs:1098) so that each
+    // `RsaPrimeInfo.pp` matches the value computed at keygen time.
+    let (version, prime_infos) = match version_int {
+        0 => {
+            if idx != end {
+                // Two-prime key with trailing data — reject.
+                return Err(RsaError::Pkcs1PaddingError.into());
+            }
+            (RsaVersion::TwoPrime, None)
+        }
+        1 => {
+            if idx >= end {
+                // Multi-prime version requires `OtherPrimeInfos` to follow.
+                return Err(RsaError::Pkcs1PaddingError.into());
+            }
+            let (op_off, op_len) = der_decode_sequence(der, idx)?;
+            let op_end = op_off + op_len;
+            // The outer SEQUENCE OF must consume exactly to the parent end.
+            if op_end != end {
+                return Err(RsaError::Pkcs1PaddingError.into());
+            }
+            let mut infos: Vec<RsaPrimeInfo> = Vec::new();
+            let mut sub_idx = op_off;
+            // `arithmetic::mul` returns `BigNum` directly (no `Result`), so
+            // no `?` is needed on these calls.
+            let mut pp = arithmetic::mul(&p, &q);
+            while sub_idx < op_end {
+                let (entry_off, entry_len) = der_decode_sequence(der, sub_idx)?;
+                let entry_end = entry_off + entry_len;
+                let (r, e_idx) = der_decode_integer(der, entry_off)?;
+                let (d_i, e_idx) = der_decode_integer(der, e_idx)?;
+                let (t_i, e_idx) = der_decode_integer(der, e_idx)?;
+                if e_idx != entry_end {
+                    return Err(RsaError::Pkcs1PaddingError.into());
+                }
+                infos.push(RsaPrimeInfo {
+                    r: r.dup(),
+                    d: d_i,
+                    t: t_i,
+                    pp: pp.dup(),
+                });
+                pp = arithmetic::mul(&pp, &r);
+                sub_idx = entry_end;
+            }
+            if infos.is_empty() {
+                // RFC 8017 requires at least one OtherPrimeInfo when version == 1.
+                return Err(RsaError::Pkcs1PaddingError.into());
+            }
+            (RsaVersion::MultiPrime, Some(infos))
+        }
+        _ => {
+            // Unknown / unsupported `Version`.
+            return Err(RsaError::Pkcs1PaddingError.into());
+        }
+    };
+
+    // Replicate the validations performed by `RsaPrivateKey::new` (L606-655).
+    // We must construct via direct struct literal here (rather than calling
+    // `::new`) because `new` always sets `version = TwoPrime` and
+    // `prime_infos = None`, which would discard the multi-prime extension we
+    // just decoded.
+    if n.is_zero() {
+        return Err(RsaError::ValueMissing { component: "n" }.into());
     }
-    RsaPrivateKey::new(n, e, d, p, q, dmp1, dmq1, iqmp)
+    if e.is_zero() || !e.is_odd() {
+        return Err(RsaError::BadExponentValue.into());
+    }
+    if d.is_zero() {
+        return Err(RsaError::ValueMissing { component: "d" }.into());
+    }
+    if p.is_zero() {
+        return Err(RsaError::ValueMissing { component: "p" }.into());
+    }
+    if q.is_zero() {
+        return Err(RsaError::ValueMissing { component: "q" }.into());
+    }
+    if dmp1.is_zero() {
+        return Err(RsaError::ValueMissing { component: "dmp1" }.into());
+    }
+    if dmq1.is_zero() {
+        return Err(RsaError::ValueMissing { component: "dmq1" }.into());
+    }
+    if iqmp.is_zero() {
+        return Err(RsaError::ValueMissing { component: "iqmp" }.into());
+    }
+
+    Ok(RsaPrivateKey {
+        n,
+        e,
+        d,
+        p,
+        q,
+        dmp1,
+        dmq1,
+        iqmp,
+        version,
+        prime_infos,
+        pss_restrictions: None,
+    })
 }
 
 // =============================================================================

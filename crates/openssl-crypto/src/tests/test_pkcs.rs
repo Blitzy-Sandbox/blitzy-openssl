@@ -283,15 +283,23 @@ fn set_params_rejects_wrong_type_for_digest() {
         ParamValue::OctetString(b"input-keying-material".to_vec()),
     );
 
-    // set_params merges raw parameters; the type mismatch surfaces only
-    // when the helper validates the digest at derive() time.
-    kctx.set_params(&p).expect("set_params accepts raw merge");
-    let err = kctx.derive(32).unwrap_err();
+    // `KdfCtx::set_params` performs *eager* type validation via
+    // `validate_kdf_params` so that callers receive a structured
+    // `ParamTypeMismatch` error at the API boundary instead of an opaque
+    // backend failure later in `derive()`.  See the `validate_kdf_params`
+    // documentation for the per-key type contract.  In particular, `digest`
+    // is a UTF-8 algorithm-name selector and must not be supplied as raw
+    // octets, even when those octets happen to be valid ASCII.
+    let err = kctx.set_params(&p).unwrap_err();
     let msg = err.to_string();
-    // Helper produces ParamTypeMismatch with `expected: "Utf8String"`.
+    // The eager validator emits ParamTypeMismatch with `expected: "Utf8String"`.
     assert!(
         msg.contains("Utf8String"),
         "expected Utf8String mismatch substring; got: {msg}"
+    );
+    assert!(
+        msg.contains("digest"),
+        "expected the offending key name in the error message; got: {msg}"
     );
 }
 

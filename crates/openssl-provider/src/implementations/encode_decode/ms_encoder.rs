@@ -39,6 +39,16 @@
 
 use crate::traits::{AlgorithmDescriptor, EncoderProvider, KeyData, KeySelection};
 use openssl_common::{CommonError, ProviderError, ProviderResult};
+// `RSA_DEFAULT_PUBLIC_EXPONENT` is the canonical 65 537 (RSA F4) constant
+// defined once in `openssl-crypto::rsa::mod.rs:155` and re-used here for
+// the MSBLOB/PVK encoder default-pubexp placeholders (CIP minor finding —
+// "Public exponent default 65537 is hardcoded across multiple files").
+// Defined as `u64`; the MSBLOB pubexp wire field is `u32`, so we apply a
+// `u32::try_from(...).map_err(...)?` per AAP rule R6 (no bare `as` casts
+// for narrowing conversions).  The `.map_err(...)?` form is required
+// because `openssl-provider` denies `clippy::expect_used` at
+// `lib.rs:172`; the propagation pattern matches `kem/rsa.rs:488-494`.
+use openssl_crypto::rsa::RSA_DEFAULT_PUBLIC_EXPONENT;
 use tracing::{debug, warn};
 use zeroize::Zeroize;
 
@@ -534,8 +544,22 @@ impl EncoderProvider for MsBlobEncoder {
         // bytes) would be extracted from the concrete KeyData implementation
         // via the KeyMgmtProvider export path. The BLOBHEADER and structure
         // format are correct; concrete key bytes come from the keymgmt layer.
+        //
+        // The pubexp default uses the workspace-canonical RSA F4 constant
+        // (`RSA_DEFAULT_PUBLIC_EXPONENT = 65_537`).  The constant is `u64`
+        // and the MSBLOB wire field is `u32`; we use `u32::try_from(...)`
+        // per AAP rule R6 (no bare `as` for narrowing).  The value
+        // `0x0001_0001` fits trivially in `u32::MAX = 0xFFFF_FFFF`, so the
+        // error path is unreachable in practice — but openssl-provider denies
+        // `clippy::expect_used`, so we propagate via `.map_err(...)?` matching
+        // the established pattern at `implementations/kem/rsa.rs:488-494`.
         let default_bitlen: u32 = 0;
-        let default_pubexp: u32 = 65537;
+        let default_pubexp: u32 = u32::try_from(RSA_DEFAULT_PUBLIC_EXPONENT).map_err(|_| {
+            ProviderError::Dispatch(format!(
+                "RSA F4 default public exponent {RSA_DEFAULT_PUBLIC_EXPONENT} \
+                 exceeds u32::MAX (unreachable for the canonical 65 537 constant)"
+            ))
+        })?;
 
         self.build_msblob(&[], default_bitlen, default_pubexp, is_private, output)
     }
@@ -739,10 +763,20 @@ impl EncoderProvider for PvkEncoder {
         // the same key type. In a full integration, the key material
         // (bitlen, pubexp, raw component bytes) would be extracted from
         // the concrete KeyData via the KeyMgmtProvider export path.
+        //
+        // Same `RSA_DEFAULT_PUBLIC_EXPONENT` constant + R6 try_from
+        // pattern as `MsBlobEncoder::encode` (see top-of-file import).
+        // Uses `.map_err(...)?` instead of `.expect(...)` because
+        // `openssl-provider` denies `clippy::expect_used` (`lib.rs:172`).
         let msblob = MsBlobEncoder::new(self.key_type);
         let mut inner_blob = Vec::with_capacity(BLOBHEADER_SIZE + 12);
         let default_bitlen: u32 = 0;
-        let default_pubexp: u32 = 65537;
+        let default_pubexp: u32 = u32::try_from(RSA_DEFAULT_PUBLIC_EXPONENT).map_err(|_| {
+            ProviderError::Dispatch(format!(
+                "RSA F4 default public exponent {RSA_DEFAULT_PUBLIC_EXPONENT} \
+                 exceeds u32::MAX (unreachable for the canonical 65 537 constant)"
+            ))
+        })?;
         msblob.build_msblob(&[], default_bitlen, default_pubexp, true, &mut inner_blob)?;
 
         // Wrap the inner PRIVATEKEYBLOB in PVK format.

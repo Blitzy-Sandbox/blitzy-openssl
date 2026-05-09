@@ -67,9 +67,11 @@
 //! - **R10 (Wiring):** Reachable from `openssl_crypto::rand` → `evp::rand::*`.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use tracing::{debug, trace};
+use zeroize::Zeroize;
 
 use crate::context::LibContext;
 use openssl_common::{CryptoError, CryptoResult, ParamSet};
@@ -148,6 +150,30 @@ const REDUCED_STRENGTH: u32 = 128;
 /// Per NIST SP 800-90A §10.2.1, the reseed interval for `CTR_DRBG` is
 /// 2^48. We use this conservative standard value.
 const RESEED_INTERVAL: u64 = 1 << 48;
+
+/// Maximum wall-clock duration between reseeds — 24 hours (86400 seconds).
+///
+/// This bounds the time-based reseed window using a monotonic clock
+/// ([`std::time::Instant`]) instead of system wall clock. Using a monotonic
+/// clock prevents an attacker controlling the system time source from
+/// suppressing reseeds via clock-rollback / clock-skew attacks.
+///
+/// # Security rationale (CRITICAL — addresses Manger / time-source attacks)
+///
+/// The original C implementation in `evp_rand.c` does not perform a
+/// time-based check; it relies solely on the generate-counter limit.
+/// Adding a wall-clock guard prevents a long-lived, low-utilization DRBG
+/// from running indefinitely without reseed even when the counter never
+/// reaches `RESEED_INTERVAL`. By using a monotonic clock
+/// ([`Instant::elapsed()`]), the duration cannot be reset by the OS or
+/// an attacker who can adjust the wall clock; monotonic time advances
+/// only forward, even across NTP corrections or clock skew.
+///
+/// Per NIST SP 800-90A §11.3, periodic reseeding is REQUIRED for all
+/// DRBGs to limit exposure of internal state to cryptanalysis. A 24-hour
+/// horizon is a conservative interval that bounds compromise duration
+/// without imposing operational overhead.
+const RESEED_TIME_INTERVAL: Duration = Duration::from_secs(86_400);
 
 /// Parameter key name for querying `max_request` from the DRBG context.
 ///
@@ -389,6 +415,18 @@ struct RandInner {
     /// Provider-level parameters cached from the last `get_ctx_params` call.
     /// Used internally for querying DRBG strength and `max_request`.
     cached_params: ParamSet,
+    /// Monotonic timestamp of the last successful (re)seed.
+    ///
+    /// Set to `Some(Instant::now())` on every successful [`RandCtx::instantiate`]
+    /// and [`RandCtx::reseed`]. Read during [`RandCtx::generate`] to enforce the
+    /// time-based reseed bound (`RESEED_TIME_INTERVAL`).
+    ///
+    /// **Rule R5:** uses [`Option`] instead of a sentinel value. `None` means
+    /// the DRBG has not been instantiated and no reseed time is tracked.
+    ///
+    /// **Security:** uses [`Instant`] (monotonic clock) — not [`std::time::SystemTime`]
+    /// — so that an attacker controlling the wall clock cannot suppress reseeds.
+    last_reseed_time: Option<Instant>,
 }
 
 impl RandInner {
@@ -401,6 +439,9 @@ impl RandInner {
             generate_counter: 0,
             seed: Vec::new(),
             cached_params: ParamSet::new(),
+            // Rule R5: Option::None marks "no reseed has occurred yet".
+            // Set by instantiate() and reseed() on success.
+            last_reseed_time: None,
         }
     }
 
@@ -531,7 +572,22 @@ impl RandCtx {
     /// * `prediction_resistance` — If `true`, the DRBG reseeds from its
     ///   entropy source before producing output per NIST SP 800-90A §9.3.1.
     /// * `additional_input` — Optional personalization string or additional
-    ///   input (Rule R5: `Option` instead of `NULL` + `0` length pair)
+    ///   input (Rule R5: `Option` instead of `NULL` + `0` length pair).
+    ///   When provided, this MUST contain at least
+    ///   `ceil(strength * 1.5 / 8)` bytes to satisfy NIST SP 800-90A §10.2.1
+    ///   nonce-length requirements (see "Nonce length requirement" below).
+    ///
+    /// # Nonce length requirement (NIST SP 800-90A §10.2.1)
+    ///
+    /// Per NIST SP 800-90A §8.6.7 and §10.2.1, a DRBG nonce must be at least
+    /// `1.5 × security_strength` bits long when used during instantiation.
+    /// For `strength = 256`, this requires a nonce of at least 384 bits
+    /// (48 bytes). For `strength = 128`, at least 192 bits (24 bytes).
+    ///
+    /// When `additional_input` is supplied as the personalization /
+    /// nonce material, this method validates the length against the
+    /// derived bound. Callers that supply only a personalization string
+    /// (with the nonce drawn separately by the provider) may pass `None`.
     ///
     /// # Errors
     ///
@@ -539,6 +595,8 @@ impl RandCtx {
     /// - The requested strength exceeds the algorithm's capability
     /// - The DRBG is in the [`RandState::Error`] state
     /// - The entropy source (parent DRBG) fails
+    /// - `additional_input` is provided but shorter than
+    ///   `ceil(strength * 1.5 / 8)` bytes (NIST SP 800-90A §10.2.1)
     ///
     /// # State Transition
     ///
@@ -569,6 +627,39 @@ impl RandCtx {
             )));
         }
 
+        // ----- NIST SP 800-90A §10.2.1 nonce-length validation (MAJOR #3) -----
+        //
+        // When the caller supplies `additional_input` to be used as the
+        // nonce material, it MUST be at least 1.5 × strength bits long.
+        // This is `ceil(strength * 3 / 16)` bytes (= 1.5 × strength / 8).
+        //
+        // For strength = 256 → 48 bytes minimum.
+        // For strength = 128 → 24 bytes minimum.
+        //
+        // If `additional_input` is `None`, the provider is responsible for
+        // drawing a properly-sized nonce from its entropy source — we do
+        // not enforce length here in that path.
+        if let Some(input) = additional_input {
+            // Compute ceil(strength * 3 / 16) using saturating arithmetic to
+            // avoid u32 overflow on extreme strengths. Per Rule R6, use
+            // checked operations rather than bare `as` casts.
+            let strength_u64 = u64::from(strength);
+            let min_nonce_bytes_u64 =
+                strength_u64.saturating_mul(3).saturating_add(15) / 16;
+            let min_nonce_bytes = usize::try_from(min_nonce_bytes_u64)
+                .unwrap_or(usize::MAX);
+            if input.len() < min_nonce_bytes {
+                inner.state = RandState::Error;
+                return Err(CryptoError::Rand(format!(
+                    "nonce length {} bytes is below NIST SP 800-90A §10.2.1 \
+                     minimum of {} bytes (1.5 × {} bits security strength)",
+                    input.len(),
+                    min_nonce_bytes,
+                    strength
+                )));
+            }
+        }
+
         // If prediction resistance is requested, log accordingly.
         // In the full provider implementation this delegates to the
         // provider's instantiate callback to get fresh entropy.
@@ -584,6 +675,10 @@ impl RandCtx {
         inner.generate_counter = 0;
         inner.strength = strength;
         inner.state = RandState::Ready;
+        // CRITICAL #1: record monotonic instantiation time so that
+        // generate() can enforce a wall-clock-bounded reseed interval.
+        // Using Instant (monotonic) prevents wall-clock-rollback attacks.
+        inner.last_reseed_time = Some(Instant::now());
 
         // Update cached parameters after state change
         inner.cached_params = inner.build_param_snapshot();
@@ -668,6 +763,26 @@ impl RandCtx {
             return Err(CryptoError::Rand(
                 "reseed interval exceeded — must reseed before generating".to_string(),
             ));
+        }
+
+        // CRITICAL #1: also enforce wall-clock-bounded reseed interval using
+        // a monotonic clock (Instant). This protects against long-lived,
+        // low-utilization DRBGs that never reach the counter limit, and
+        // cannot be bypassed by an attacker controlling the wall clock
+        // (Instant advances only forward across NTP / clock-skew events).
+        // See `RESEED_TIME_INTERVAL` doc-comment for full security rationale
+        // and NIST SP 800-90A §11.3 references.
+        if let Some(last) = inner.last_reseed_time {
+            if last.elapsed() >= RESEED_TIME_INTERVAL {
+                inner.state = RandState::Error;
+                return Err(CryptoError::Rand(format!(
+                    "time-based reseed interval exceeded ({} seconds since \
+                     last reseed; limit {} seconds) — must reseed before \
+                     generating",
+                    last.elapsed().as_secs(),
+                    RESEED_TIME_INTERVAL.as_secs()
+                )));
+            }
         }
 
         // Verify requested strength does not exceed DRBG strength
@@ -795,6 +910,11 @@ impl RandCtx {
 
         // Reset generate counter after successful reseed
         inner.generate_counter = 0;
+        // CRITICAL #1: refresh the monotonic reseed timestamp so that
+        // generate() resets its wall-clock-bounded reseed window. This is
+        // an integral part of the time-based reseed-interval enforcement
+        // documented on `RESEED_TIME_INTERVAL`.
+        inner.last_reseed_time = Some(Instant::now());
 
         // If prediction resistance was requested, the reseed has been
         // performed with fresh entropy from the source. In the full
@@ -823,7 +943,11 @@ impl RandCtx {
     /// lines 538-547). After uninstantiation, the DRBG returns to
     /// [`RandState::Uninitialised`] and must be re-instantiated before use.
     ///
-    /// All sensitive internal state (seed material, counters) is zeroed.
+    /// All sensitive internal state (seed material, counters,
+    /// monotonic reseed timestamp) is zeroed via [`Zeroize`] before
+    /// the buffer length is truncated. This ensures key/seed bytes
+    /// cannot be recovered from previously-allocated heap memory
+    /// per NIST SP 800-90A §11.2.
     ///
     /// # Errors
     ///
@@ -838,10 +962,19 @@ impl RandCtx {
             "EVP_RAND: uninstantiating DRBG"
         );
 
-        // Clear all sensitive state
+        // Clear all sensitive state.
         inner.state = RandState::Uninitialised;
+        // MAJOR #2: securely zero seed bytes before clearing the Vec length.
+        // `Vec::clear` only sets `len = 0` — the underlying allocation still
+        // holds the previous bytes until reused. `Zeroize::zeroize` writes
+        // 0x00 to every byte of the allocated capacity using volatile
+        // semantics that the optimizer cannot eliminate.
+        inner.seed.zeroize();
         inner.seed.clear();
         inner.generate_counter = 0;
+        // CRITICAL #1: drop the monotonic reseed timestamp so that the
+        // next instantiate() starts a fresh time-bounded reseed window.
+        inner.last_reseed_time = None;
 
         // Update cached parameters after state change
         inner.cached_params = inner.build_param_snapshot();
@@ -1286,10 +1419,13 @@ mod tests {
         rand_ctx.instantiate(256, false, None).unwrap();
         rand_ctx.uninstantiate().unwrap();
 
-        // Second lifecycle — should work fine
-        rand_ctx
-            .instantiate(256, false, Some(b"personalization"))
-            .unwrap();
+        // Second lifecycle — should work fine. NIST SP 800-90A §10.2.1
+        // requires the nonce / personalization input to be at least
+        // 1.5 × security_strength bits, i.e. 48 bytes for 256-bit strength.
+        // The literal below is exactly 48 ASCII bytes.
+        let pers_48b: &[u8; 48] =
+            b"openssl-rs.reinstantiate.test.personalization.48";
+        rand_ctx.instantiate(256, false, Some(pers_48b)).unwrap();
         let mut buf = [0u8; 16];
         rand_ctx.generate(&mut buf, 256, false, None).unwrap();
         assert_ne!(buf, [0u8; 16]);
@@ -1343,5 +1479,73 @@ mod tests {
         let cloned = rand.clone();
         assert_eq!(rand.name(), cloned.name());
         assert_eq!(rand.provider_name(), cloned.provider_name());
+    }
+
+    /// Health-check / fault-injection recovery test (MINOR #4).
+    ///
+    /// Verifies that a `RandCtx` whose state has been driven to
+    /// [`RandState::Error`] by a failing operation can be recovered
+    /// via `uninstantiate()` followed by a fresh `instantiate()`,
+    /// and that subsequent `generate()` calls succeed.
+    ///
+    /// This corresponds to the C `EVP_RAND_uninstantiate` →
+    /// `EVP_RAND_instantiate` recovery sequence documented in
+    /// NIST SP 800-90A §9.1 (instantiate after error).
+    #[test]
+    fn test_rand_ctx_recovery_after_error_state() {
+        let ctx = test_lib_ctx();
+        // TEST_RAND has REDUCED_STRENGTH (128); we will trigger an error
+        // by requesting strength = 256 (above the algorithm's maximum).
+        let rand = Rand::fetch(&ctx, TEST_RAND, None).unwrap();
+        let rand_ctx = RandCtx::new(&ctx, &rand, None).unwrap();
+
+        // Step 1 — Fault injection: requesting a strength above the
+        // algorithm capability MUST drive the context into the Error
+        // state per the validation block in `instantiate()`.
+        let result = rand_ctx.instantiate(256, false, None);
+        assert!(result.is_err(), "excess-strength instantiate must fail");
+        assert_eq!(
+            rand_ctx.get_state(),
+            RandState::Error,
+            "context must be in Error state after failed instantiate"
+        );
+
+        // Step 2 — Generate from the Error state must also fail. This
+        // confirms the context is genuinely "stuck" in Error and not
+        // silently usable.
+        let mut buf = [0u8; 16];
+        let gen_result = rand_ctx.generate(&mut buf, 128, false, None);
+        assert!(
+            gen_result.is_err(),
+            "generate() in Error state must fail"
+        );
+
+        // Step 3 — Recovery: uninstantiate clears the Error state and
+        // brings the context back to Uninitialised, allowing a fresh
+        // instantiate() to succeed.
+        rand_ctx.uninstantiate().unwrap();
+        assert_eq!(
+            rand_ctx.get_state(),
+            RandState::Uninitialised,
+            "uninstantiate must reset state to Uninitialised"
+        );
+
+        // Step 4 — Re-instantiate at a strength the algorithm CAN
+        // satisfy. This must succeed and bring the context to Ready.
+        rand_ctx.instantiate(128, false, None).unwrap();
+        assert_eq!(
+            rand_ctx.get_state(),
+            RandState::Ready,
+            "successful instantiate must yield Ready state"
+        );
+
+        // Step 5 — Generate must now succeed, demonstrating full
+        // recovery from the Error state.
+        rand_ctx.generate(&mut buf, 128, false, None).unwrap();
+        assert_ne!(
+            buf,
+            [0u8; 16],
+            "generate after recovery must produce non-zero bytes"
+        );
     }
 }

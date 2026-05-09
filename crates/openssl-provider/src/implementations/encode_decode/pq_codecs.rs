@@ -58,21 +58,21 @@
 // =============================================================================
 // Rule R9 justification — module-scoped `#[allow(dead_code)]`
 //
-// Every public item exported by this module (codec structs, format-table
+// This module exports four codec structs (`MlKemCodec`, `MlDsaCodec`,
+// `LmsCodec`, `SlhDsaCodec`) along with their associated format-table
 // constants, ordering helpers, DER round-trip helpers, magic-payload
-// matchers, error mappers) is a *codec entry point* designed to be invoked
-// by the per-algorithm keymgmt and encoder/decoder dispatch tables that
-// wrap this module.  Those dispatch tables are themselves not yet wired
-// into the runtime provider registry within the scope of the post-quantum
-// codec AAP — this module supplies the codec primitives only.
+// matchers, and error mappers.  The codec entry points are now wired
+// into the provider's encoder/decoder dispatch tables via the
+// `all_pq_decoders()` and `all_pq_encoders()` aggregation functions
+// at the bottom of this module.  Those aggregation functions are in
+// turn invoked from `encode_decode/mod.rs::decoder_descriptors()` and
+// `encode_decode/mod.rs::encoder_descriptors()` (per Rule R10).
 //
-// The downstream wiring (per-algorithm keymgmt providers, encoder dispatch,
-// decoder dispatch) is delivered by separate modules in
-// `crates/openssl-provider/src/implementations/keymgmt/` and
-// `crates/openssl-provider/src/implementations/encode_decode/` and is
-// outside the scope of THIS file.  Until that wiring lands, the codec
-// surface here is structurally "dead code" from the compiler's
-// perspective even though every exported item is REQUIRED by the schema
+// However, several internal helpers (e.g., per-format SPKI prefix
+// arrays, intermediate validation routines, and helper accessors used
+// only by integration tests or sibling provider modules) remain
+// structurally "dead code" from the compiler's perspective even
+// though every exported item is REQUIRED by the schema
 // (members_exposed) and is consumed by manual integration tests.
 //
 // Adding 40+ individual `#[allow(dead_code)]` annotations would clutter
@@ -97,7 +97,7 @@ use openssl_crypto::LibContext;
 use crate::implementations::encode_decode::common::{
     format_hex_dump, format_labeled_hex, EndecoderError,
 };
-use crate::traits::KeySelection;
+use crate::traits::{AlgorithmDescriptor, KeySelection};
 
 // =============================================================================
 // Common PKCS#8 Format Infrastructure (from `ml_common_codecs.c`)
@@ -2635,6 +2635,363 @@ impl SlhDsaCodec {
         }
 
         Ok(())
+    }
+}
+
+// =============================================================================
+// Dispatch Aggregation (Rule R10 wiring)
+//
+// The following aggregation functions wire the post-quantum codec entry
+// points into the provider's encoder/decoder dispatch tables.  They are
+// invoked from `encode_decode/mod.rs::decoder_descriptors()` and
+// `encode_decode/mod.rs::encoder_descriptors()` so that PQC keys can be
+// serialized/deserialized through the public encode/decode API.
+//
+// The entries here are VARIANT-SPECIFIC (e.g. `"ML-KEM-512"`, `"ML-DSA-65"`,
+// `"SLH-DSA-SHA2-128s"`) and structure-tagged
+// (`structure=PrivateKeyInfo` / `structure=SubjectPublicKeyInfo`) to
+// differentiate them from the GENERIC family-level entries already
+// present in `der_decoder::all_der_decoders()` (`["ML-KEM"]`, `["ML-DSA"]`,
+// `["SLH-DSA"]`) which carry only `provider=default,input=der`.
+//
+// Each entry is wrapped in a per-algorithm `#[cfg(feature = "...")]`
+// gate so the dispatch table omits codecs whose backing keymgmt
+// implementation has been compiled out.
+//
+// Variant strings match the canonical names emitted by the
+// `openssl-crypto` PQC modules (see `pqc::ml_kem::MlKemVariant::Display`,
+// `pqc::ml_dsa::MlDsaVariant::Display`, `pqc::slh_dsa::SlhDsaVariant::Display`).
+// =============================================================================
+
+/// Aggregate descriptors for all post-quantum DECODERS provided by this
+/// module.
+///
+/// Returns variant-specific PKCS#8/SPKI decoder descriptors for ML-KEM,
+/// ML-DSA, and LMS.  SLH-DSA does NOT appear here because its codec is
+/// text-output only (see [`all_pq_encoders`] for the SLH-DSA entries).
+///
+/// Each descriptor is structurally tagged with a `structure=...` property
+/// so providers can locate the variant-specific codec when deserializing
+/// a `PrivateKeyInfo` or `SubjectPublicKeyInfo` carrying a particular OID.
+#[must_use]
+#[allow(unused_mut)]
+pub fn all_pq_decoders() -> Vec<AlgorithmDescriptor> {
+    let mut descriptors: Vec<AlgorithmDescriptor> = Vec::new();
+
+    // -------------------------------------------------------------------
+    // ML-KEM (FIPS 203) — three variants × {SPKI public, PKCS#8 private}
+    // -------------------------------------------------------------------
+    #[cfg(feature = "ml-kem")]
+    {
+        for name in ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"] {
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,input=der,structure=PrivateKeyInfo",
+                description: "DER PKCS#8 PrivateKeyInfo to ML-KEM key decoder (FIPS 203)",
+            });
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,input=der,structure=SubjectPublicKeyInfo",
+                description: "DER SPKI SubjectPublicKeyInfo to ML-KEM key decoder (FIPS 203)",
+            });
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // ML-DSA (FIPS 204) — three variants × {SPKI public, PKCS#8 private}
+    // -------------------------------------------------------------------
+    #[cfg(feature = "ml-dsa")]
+    {
+        for name in ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"] {
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,input=der,structure=PrivateKeyInfo",
+                description: "DER PKCS#8 PrivateKeyInfo to ML-DSA key decoder (FIPS 204)",
+            });
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,input=der,structure=SubjectPublicKeyInfo",
+                description: "DER SPKI SubjectPublicKeyInfo to ML-DSA key decoder (FIPS 204)",
+            });
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // LMS / HSS (RFC 8554, NIST SP 800-208) — public-key-only DER decoder.
+    //
+    // Note: the XDR-format LMS public key decoder is registered separately
+    // in `lms_decoder::lms_xdr_decoder()`.  This entry covers the DER
+    // (SubjectPublicKeyInfo) representation handled by
+    // [`LmsCodec::d2i_pubkey`].
+    // -------------------------------------------------------------------
+    #[cfg(feature = "lms")]
+    {
+        descriptors.push(AlgorithmDescriptor {
+            names: vec!["LMS"],
+            property: "provider=default,input=der,structure=SubjectPublicKeyInfo",
+            description: "DER SPKI SubjectPublicKeyInfo to LMS/HSS public key decoder \
+                          (RFC 8554, NIST SP 800-208)",
+        });
+    }
+
+    descriptors
+}
+
+/// Aggregate descriptors for all post-quantum ENCODERS provided by this
+/// module.
+///
+/// Returns variant-specific encoders for:
+///   * ML-KEM (FIPS 203) — `i2d_pubkey` (SPKI), `i2d_prvkey` (PKCS#8),
+///     and human-readable text via [`MlKemCodec::key_to_text`].
+///   * ML-DSA (FIPS 204) — `i2d_pubkey` (SPKI), `i2d_prvkey` (PKCS#8),
+///     and human-readable text via [`MlDsaCodec::key_to_text`].
+///   * LMS / HSS — `i2d_pubkey` (SPKI) and human-readable text via
+///     [`LmsCodec::key_to_text`] (public-key-only).
+///   * SLH-DSA (FIPS 205) — human-readable text only via
+///     [`SlhDsaCodec::key_to_text`] (12 parameter sets).
+#[must_use]
+#[allow(unused_mut)]
+pub fn all_pq_encoders() -> Vec<AlgorithmDescriptor> {
+    let mut descriptors: Vec<AlgorithmDescriptor> = Vec::new();
+
+    // -------------------------------------------------------------------
+    // ML-KEM (FIPS 203) — three variants × {SPKI public, PKCS#8 private,
+    // text}
+    // -------------------------------------------------------------------
+    #[cfg(feature = "ml-kem")]
+    {
+        for name in ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"] {
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,output=der,structure=SubjectPublicKeyInfo",
+                description: "ML-KEM public key to DER SPKI encoder (FIPS 203)",
+            });
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,output=der,structure=PrivateKeyInfo",
+                description: "ML-KEM private key to DER PKCS#8 PrivateKeyInfo encoder (FIPS 203)",
+            });
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,output=text",
+                description: "ML-KEM key to human-readable text encoder (FIPS 203)",
+            });
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // ML-DSA (FIPS 204) — three variants × {SPKI public, PKCS#8 private,
+    // text}
+    // -------------------------------------------------------------------
+    #[cfg(feature = "ml-dsa")]
+    {
+        for name in ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"] {
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,output=der,structure=SubjectPublicKeyInfo",
+                description: "ML-DSA public key to DER SPKI encoder (FIPS 204)",
+            });
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,output=der,structure=PrivateKeyInfo",
+                description: "ML-DSA private key to DER PKCS#8 PrivateKeyInfo encoder (FIPS 204)",
+            });
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,output=text",
+                description: "ML-DSA key to human-readable text encoder (FIPS 204)",
+            });
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // LMS / HSS (RFC 8554, NIST SP 800-208) — public-key-only.
+    // -------------------------------------------------------------------
+    #[cfg(feature = "lms")]
+    {
+        descriptors.push(AlgorithmDescriptor {
+            names: vec!["LMS"],
+            property: "provider=default,output=der,structure=SubjectPublicKeyInfo",
+            description: "LMS/HSS public key to DER SPKI encoder \
+                          (RFC 8554, NIST SP 800-208)",
+        });
+        descriptors.push(AlgorithmDescriptor {
+            names: vec!["LMS"],
+            property: "provider=default,output=text",
+            description: "LMS/HSS key to human-readable text encoder \
+                          (RFC 8554, NIST SP 800-208)",
+        });
+    }
+
+    // -------------------------------------------------------------------
+    // SLH-DSA (FIPS 205) — text-only encoder, 12 parameter sets.
+    //
+    // SLH-DSA's DER serialization in OpenSSL relies on the generic key
+    // encoder for the family OID; only the human-readable text dump is
+    // provided by this codec module.  All 12 parameter sets are surfaced
+    // individually so that property queries like
+    // `name=SLH-DSA-SHA2-128s,output=text` resolve to the correct codec.
+    // -------------------------------------------------------------------
+    #[cfg(feature = "slh-dsa")]
+    {
+        for name in [
+            "SLH-DSA-SHA2-128s",
+            "SLH-DSA-SHAKE-128s",
+            "SLH-DSA-SHA2-128f",
+            "SLH-DSA-SHAKE-128f",
+            "SLH-DSA-SHA2-192s",
+            "SLH-DSA-SHAKE-192s",
+            "SLH-DSA-SHA2-192f",
+            "SLH-DSA-SHAKE-192f",
+            "SLH-DSA-SHA2-256s",
+            "SLH-DSA-SHAKE-256s",
+            "SLH-DSA-SHA2-256f",
+            "SLH-DSA-SHAKE-256f",
+        ] {
+            descriptors.push(AlgorithmDescriptor {
+                names: vec![name],
+                property: "provider=default,output=text",
+                description: "SLH-DSA key to human-readable text encoder (FIPS 205)",
+            });
+        }
+    }
+
+    descriptors
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::{all_pq_decoders, all_pq_encoders};
+
+    #[test]
+    fn pq_decoder_descriptors_have_well_formed_metadata() {
+        let descs = all_pq_decoders();
+        // When all PQC features are disabled, the list may be empty —
+        // that is acceptable.  When any feature is enabled, every entry
+        // must carry non-empty names/property/description.
+        for d in &descs {
+            assert!(
+                !d.names.is_empty(),
+                "decoder descriptor must have at least one name"
+            );
+            for n in &d.names {
+                assert!(!n.is_empty(), "decoder descriptor name must be non-empty");
+            }
+            assert!(
+                !d.property.is_empty(),
+                "decoder descriptor property must be non-empty"
+            );
+            assert!(
+                !d.description.is_empty(),
+                "decoder descriptor description must be non-empty"
+            );
+        }
+    }
+
+    #[test]
+    fn pq_encoder_descriptors_have_well_formed_metadata() {
+        let descs = all_pq_encoders();
+        for d in &descs {
+            assert!(
+                !d.names.is_empty(),
+                "encoder descriptor must have at least one name"
+            );
+            for n in &d.names {
+                assert!(!n.is_empty(), "encoder descriptor name must be non-empty");
+            }
+            assert!(
+                !d.property.is_empty(),
+                "encoder descriptor property must be non-empty"
+            );
+            assert!(
+                !d.description.is_empty(),
+                "encoder descriptor description must be non-empty"
+            );
+        }
+    }
+
+    #[cfg(feature = "ml-kem")]
+    #[test]
+    fn pq_decoder_descriptors_contain_ml_kem_variants() {
+        let descs = all_pq_decoders();
+        for variant in ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "decoder dispatch must include {variant}",
+            );
+        }
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn pq_decoder_descriptors_contain_ml_dsa_variants() {
+        let descs = all_pq_decoders();
+        for variant in ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "decoder dispatch must include {variant}",
+            );
+        }
+    }
+
+    #[cfg(feature = "ml-kem")]
+    #[test]
+    fn pq_encoder_descriptors_contain_ml_kem_variants() {
+        let descs = all_pq_encoders();
+        for variant in ["ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "encoder dispatch must include {variant}",
+            );
+        }
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn pq_encoder_descriptors_contain_ml_dsa_variants() {
+        let descs = all_pq_encoders();
+        for variant in ["ML-DSA-44", "ML-DSA-65", "ML-DSA-87"] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "encoder dispatch must include {variant}",
+            );
+        }
+    }
+
+    #[cfg(feature = "slh-dsa")]
+    #[test]
+    fn pq_encoder_descriptors_contain_slh_dsa_variants() {
+        let descs = all_pq_encoders();
+        // All 12 parameter sets must appear at least once.
+        for variant in [
+            "SLH-DSA-SHA2-128s",
+            "SLH-DSA-SHAKE-128s",
+            "SLH-DSA-SHA2-128f",
+            "SLH-DSA-SHAKE-128f",
+            "SLH-DSA-SHA2-192s",
+            "SLH-DSA-SHAKE-192s",
+            "SLH-DSA-SHA2-192f",
+            "SLH-DSA-SHAKE-192f",
+            "SLH-DSA-SHA2-256s",
+            "SLH-DSA-SHAKE-256s",
+            "SLH-DSA-SHA2-256f",
+            "SLH-DSA-SHAKE-256f",
+        ] {
+            assert!(
+                descs.iter().any(|d| d.names.contains(&variant)),
+                "encoder dispatch must include {variant}",
+            );
+        }
+    }
+
+    #[cfg(feature = "lms")]
+    #[test]
+    fn pq_decoder_descriptors_contain_lms() {
+        let descs = all_pq_decoders();
+        assert!(
+            descs.iter().any(|d| d.names.contains(&"LMS")),
+            "decoder dispatch must include LMS"
+        );
     }
 }
 

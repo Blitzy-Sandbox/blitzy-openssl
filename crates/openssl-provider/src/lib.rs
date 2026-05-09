@@ -88,9 +88,10 @@
 //! ## Design Principles (Refactor Rules R1–R10)
 //!
 //! - **Zero unsafe (Rule R8):** This crate contains zero `unsafe` code.
-//!   The crate-level `#![deny(unsafe_code)]` attribute makes any
-//!   accidental introduction a compile-time error.  All FFI surfaces
-//!   live in `openssl-ffi`.
+//!   The crate-level `#![forbid(unsafe_code)]` attribute makes any
+//!   accidental introduction a compile-time error that *cannot* be
+//!   silenced via `#[allow(unsafe_code)]` on a child item.  All FFI
+//!   surfaces live in `openssl-ffi`.
 //! - **Synchronous only (AAP §0.4.4):** No async / `tokio` dependency.
 //!   The provider system is fully synchronous; async behavior is layered
 //!   on top by `openssl-ssl::quic`.
@@ -141,7 +142,15 @@
 //          compile error here.  The `openssl-ffi` crate is the only place
 //          unsafe is permitted (and even there each block must carry a
 //          `// SAFETY:` comment).
-#![deny(unsafe_code)]
+//
+//          We use `forbid` rather than `deny` for consistency with the
+//          other five non-FFI crates (`openssl-common`, `openssl-crypto`,
+//          `openssl-ssl`, `openssl-fips`, `openssl-cli`) and because
+//          `forbid` cannot be silenced by a downstream
+//          `#[allow(unsafe_code)]` attribute on a nested item — only
+//          `forbid` provides the guaranteed lock-down required by the
+//          R8 audit story.
+#![forbid(unsafe_code)]
 //
 // Rule R6: No bare narrowing casts.  `value as u8` is rejected by the
 //          compiler — callers must use `u8::try_from(value)?` or

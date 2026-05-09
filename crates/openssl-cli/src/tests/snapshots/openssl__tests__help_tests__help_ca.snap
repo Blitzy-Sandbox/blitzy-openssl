@@ -4,7 +4,60 @@ expression: stdout
 ---
 Certificate authority (CA) management
 
-Usage: openssl ca
+Usage: openssl ca [OPTIONS]
 
 Options:
-  -h, --help  Print help
+  -v, --verbose                   Verbose output
+      --quiet                     Suppress informational output (more aggressive than `--no-verbose`)
+      --outdir <DIR>              Output directory for newly-signed certificates
+      --in <FILE>                 Input file — a single PEM/DER CSR to sign, an X.509 certificate (with `-revoke`), or a CRL (with `-gencrl -in`). Use `-` to read from stdin
+      --inform <FORMAT>           Input format (PEM | DER) for `-in`
+      --out <FILE>                Output file for the generated certificate or CRL.  Defaults to stdout
+      --outform <FORMAT>          Output format (PEM | DER) for `-out`
+      --dateopt <FORMAT>          Date format used in printed output (`rfc_822` or `iso_8601`)
+      --notext                    Suppress textual decoration of the output certificate (PEM `-----BEGIN CERTIFICATE-----` block only)
+      --batch                     Run in batch mode (do not prompt for confirmation when signing)
+      --ss_cert <FILE>            Input is a self-signed certificate to be re-signed by the CA (preserves SubjectName but replaces issuer / validity)
+      --spkac <FILE>              Input is a Netscape Signed Public Key And Challenge (`SPKAC`) blob — a legacy browser-keygen format
+      --config <FILE>             Path to the `openssl.cnf` configuration file
+      --name <SECTION>            Section name within the configuration file describing the CA. `apps/ca.c` accepts both `-name` and `-section` as aliases
+      --policy <POLICY>           Section name describing the policy (`policy_anything`, `policy_match`, `policy_default`)
+      --subj <SUBJ>               Subject DN, slash-separated (`/CN=foo/O=Example`)
+      --utf8                      Treat `-subj` and other DN inputs as UTF-8 (forces UTF-8String encoding for DirectoryString attributes)
+      --create_serial             Generate a new serial number for each issued certificate by reading the `serial` file
+      --rand_serial               Generate a 159-bit random serial number per issued certificate
+      --multivalue-rdn            Allow multivalued RDNs in `-subj` (deprecated upstream)
+      --startdate <DATE>          Validity start date (YYYYMMDDHHMMSSZ).  `apps/ca.c` accepts `-startdate` and the alias `-not_before`
+      --enddate <DATE>            Validity end date (YYYYMMDDHHMMSSZ).  `apps/ca.c` accepts `-enddate` and the alias `-not_after`
+      --days <DAYS>               Validity period in days (mutually exclusive with `-enddate`)
+      --extensions <SECTION>      Section name for X.509 v3 extensions to add
+      --extfile <FILE>            Path to a separate file containing extension definitions
+      --preserveDN                Preserve the order of attributes in the SubjectDN (upstream `-preserveDN`)
+      --noemailDN                 Do not include `emailAddress` in the SubjectDN (upstream `-noemailDN`)
+      --md <DIGEST>               Digest algorithm name (e.g. `sha256`, `sha384`)
+      --keyfile <FILE>            Path to the CA private key
+      --keyform <FORMAT>          Format of `-keyfile` (PEM | DER | ENGINE)
+      --passin <ARG>              Passphrase source for the CA private key (`pass:`, `env:`, `file:`, `stdin`, `fd:N`)
+      --key <PASSWORD>            CA private-key passphrase (deprecated upstream — use `-passin` instead)
+      --cert <FILE>               Path to the CA certificate
+      --certform <FORMAT>         Format of `-cert` (PEM | DER | P12)
+      --selfsign                  Self-sign the issued certificate using its own private key rather than the CA key (used during CA bootstrap)
+      --sigopt <PARAM>            Signature algorithm parameters (e.g. `rsa_padding_mode:pss`, `rsa_pss_saltlen:digest`).  May be repeated
+      --vfyopt <PARAM>            Verification parameters used when checking incoming CSR signatures.  May be repeated
+      --gencrl                    Generate a Certificate Revocation List using the issuer's `crlnumber` counter
+      --valid <FILE>              Mark a certificate as valid in the CA database.  Argument is the path to the certificate
+      --status <SERIAL>           Display the revocation status of a certificate by serial number (hex)
+      --updatedb                  Update the CA database, marking expired certificates as such
+      --crlexts <SECTION>         Section name for CRL extensions
+      --crl_reason <REASON>       CRL revocation reason code (e.g. `keyCompromise`, `affiliationChanged`)
+      --crl_hold <OID>            `instructionCode` extension value for `-revoke -crl_reason holdInstruction`
+      --crl_compromise <TIME>     Time of compromise for `-revoke -crl_reason keyCompromise` (`YYYYMMDDHHMMSSZ`)
+      --crl_CA_compromise <TIME>  Time of CA-key compromise for `-revoke -crl_reason CACompromise`
+      --crl_lastupdate <TIME>     Override `lastUpdate` field in the generated CRL
+      --crl_nextupdate <TIME>     Override `nextUpdate` field in the generated CRL
+      --crldays <DAYS>            Days until next CRL is required (sets `nextUpdate`)
+      --crlhours <HOURS>          Hours until next CRL
+      --crlsec <SECONDS>          Seconds until next CRL
+      --revoke <FILE>             Revoke a single certificate by file path
+      --infiles <FILE>...         One or more CSRs to sign (mirrors upstream's `-infiles` trailing-arg semantics)
+  -h, --help                      Print help

@@ -182,10 +182,29 @@ pub struct OaepParams {
     /// hash and MGF1 hash to differ.
     pub mgf1_digest: Option<DigestAlgorithm>,
 
-    /// OAEP label (called "L" in RFC 8017 §7.1.1; an empty label is
-    /// permitted and is the most common case). The label is hashed once
-    /// to produce `lHash` and bound into the encoded message; decoders
-    /// MUST supply the same label or decoding will fail.
+    /// OAEP label (called "L" in RFC 8017 §7.1.1).
+    ///
+    /// # Empty vs. absent label semantics
+    ///
+    /// RFC 8017 §7.1.1 step 1.b describes the label `L` as an optional
+    /// input that "if not provided, is set to the empty string". The
+    /// underlying primitive treats "absent" and "empty" identically:
+    /// both produce `lHash = Hash("")` per the same step.
+    ///
+    /// In this Rust API the label is always represented as a `Vec<u8>`,
+    /// so "absent" is not a distinguishable state — the most-common
+    /// "no label" case is encoded as an empty vector (`Vec::new()`),
+    /// which is the value used by [`OaepParams::default`] and
+    /// [`OaepParams::new_default`]. This matches the C reference
+    /// (`crypto/rsa/rsa_oaep.c`) where passing `param == NULL` and
+    /// `paramlen == 0` (or a non-NULL pointer with `paramlen == 0`)
+    /// both compute `lHash = Hash("")`.
+    ///
+    /// The label is hashed once during encoding to produce `lHash` and
+    /// bound into the encoded message. Decoders MUST supply the same
+    /// label bytes or decoding will fail with a uniform
+    /// [`OaepError::OaepDecodingError`] (no information leak about
+    /// which check failed).
     pub label: Vec<u8>,
 }
 
@@ -228,6 +247,11 @@ impl OaepParams {
     ///
     /// The label is hashed once during encoding and bound to the
     /// ciphertext; decoders MUST supply the same label.
+    ///
+    /// Pass `Vec::new()` (or simply omit this builder method) to use
+    /// the default empty label — see the field-level docs on
+    /// [`Self::label`] for the empty-vs-absent semantics in this
+    /// Rust API.
     #[must_use]
     pub fn with_label(mut self, label: Vec<u8>) -> Self {
         self.label = label;
@@ -326,6 +350,14 @@ fn oaep_decode_error() -> CryptoError {
 /// the feature is disabled. The signature is preserved unconditionally
 /// so that downstream callers do not need conditional compilation.
 #[cfg(feature = "fips_module")]
+#[allow(
+    clippy::match_same_arms,
+    reason = "Each rejection arm documents a distinct FIPS rejection class \
+              (cryptographically broken legacy hashes per SP 800-131A vs. \
+              extendable-output XOFs that lack the fixed-length output \
+              structure required by RFC 8017 §7.1) — merging would erase the \
+              audit-relevant rationale comments."
+)]
 fn validate_oaep_digest_fips(digest: DigestAlgorithm) -> Result<(), OaepError> {
     match digest {
         // Legacy hashes are not approved under SP 800-131A.
@@ -342,6 +374,14 @@ fn validate_oaep_digest_fips(digest: DigestAlgorithm) -> Result<(), OaepError> {
 /// [`validate_oaep_digest_fips`] but emits
 /// [`OaepError::InvalidMgf1Digest`] for unapproved MGF1 hashes.
 #[cfg(feature = "fips_module")]
+#[allow(
+    clippy::match_same_arms,
+    reason = "Each rejection arm documents a distinct FIPS rejection class \
+              for MGF1 (cryptographically broken legacy hashes per \
+              SP 800-131A vs. extendable-output XOFs that fall outside the \
+              FIPS-approved MGF1 hash set per FIPS 186-5 §A.1.1) — \
+              merging would erase the audit-relevant rationale comments."
+)]
 fn validate_mgf1_digest_fips(digest: DigestAlgorithm) -> Result<(), OaepError> {
     match digest {
         DigestAlgorithm::Md2 | DigestAlgorithm::Md4 | DigestAlgorithm::Md5 => {
@@ -1354,6 +1394,52 @@ mod tests {
         let err = oaep_decode(&em, &OaepParams::default(), k)
             .expect_err("non-zero first byte must fail");
         assert!(matches!(err, CryptoError::Encoding(_)));
+    }
+
+    #[test]
+    fn oaep_decode_manger_attack_first_byte_regression() {
+        // Manger's attack (CRYPTO 2001) recovers the plaintext from an
+        // OAEP-padded RSA ciphertext when the implementation leaks
+        // whether the high-order byte of the decrypted EM is zero. Our
+        // defense folds the result of this check into a single `good`
+        // mask alongside all other checks (lHash equality, separator
+        // index, padding bytes), so every non-zero high byte must
+        // produce the same uniform `OaepDecodingError` as a label
+        // mismatch — without leaking *which* check failed.
+        //
+        // This regression test sweeps every non-zero byte value in the
+        // high-order position and asserts:
+        //   1. Decoding fails with `CryptoError::Encoding(_)` (the
+        //      uniform OAEP error variant).
+        //   2. The error message is identical to the canonical
+        //      `oaep_decode_error()` so callers cannot distinguish
+        //      between a Manger probe and an unrelated decode failure.
+        let k = 256;
+        let canonical_err = oaep_decode_error();
+        let canonical_msg = match canonical_err {
+            CryptoError::Encoding(ref s) => s.clone(),
+            _ => panic!("canonical OAEP error must map to CryptoError::Encoding"),
+        };
+
+        for first_byte in 1u8..=255 {
+            let mut em = vec![0u8; k];
+            oaep_encode(&mut em, b"manger probe", &OaepParams::default())
+                .expect("encode should succeed");
+            em[0] = first_byte;
+            let err = oaep_decode(&em, &OaepParams::default(), k)
+                .expect_err("non-zero high byte must reject");
+            match err {
+                CryptoError::Encoding(msg) => assert_eq!(
+                    msg, canonical_msg,
+                    "Manger defense leaked: high byte {first_byte:#x} produced \
+                     a distinguishable error message"
+                ),
+                other => panic!(
+                    "Manger defense returned wrong error variant: \
+                     first_byte={first_byte:#x}, err={other:?}"
+                ),
+            }
+        }
     }
 
     #[test]
