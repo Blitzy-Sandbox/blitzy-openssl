@@ -421,25 +421,36 @@ pub mod cmp;
 
 /// Certificate Transparency per RFC 6962.
 ///
-/// Translates the foundational types from `crypto/ct/*.c` (10 files):
-/// [`LogEntryType`](ct::LogEntryType), [`SctVersion`](ct::SctVersion),
-/// [`SctSource`](ct::SctSource), [`SctValidationStatus`](ct::SctValidationStatus),
-/// [`SignedCertificateTimestamp`](ct::SignedCertificateTimestamp), and
-/// [`SignedCertificateTimestampBuilder`](ct::SignedCertificateTimestampBuilder).
-/// Higher-level SCT validation against CT log Merkle trees, BIO printing,
-/// CT_POLICY_EVAL_CTX state machine, and base64 log fetching are deferred
-/// to a follow-up checkpoint; the types delivered here form the foundation
-/// on which they are built.
+/// Translates `crypto/ct/*.c` (10 files, ~2,500 lines) covering SCT lifecycle,
+/// validation, log management, base64 / DER serialization, and policy
+/// evaluation. Provides the full set of foundational and higher-level types:
 ///
-/// # Scope at this checkpoint
+/// * Foundational enums and constants
+///   ([`LogEntryType`](ct::LogEntryType), [`SctVersion`](ct::SctVersion),
+///   [`SctSource`](ct::SctSource),
+///   [`SctValidationStatus`](ct::SctValidationStatus), `SCT_MIN_RSA_BITS`,
+///   `CT_V1_HASHLEN`, [`SCT_CLOCK_DRIFT_TOLERANCE`](ct::SCT_CLOCK_DRIFT_TOLERANCE)).
+/// * SCT data structure ([`Sct`](ct::Sct), with the legacy
+///   [`SignedCertificateTimestamp`](ct::SignedCertificateTimestamp) type alias
+///   preserved) plus its builder ([`SctBuilder`](ct::SctBuilder)).
+/// * Wire (DER, RFC 6962 §3.2) and textual (base64) serialization on `Sct`
+///   via `from_der` / `to_der` / `from_base64` / `to_base64`.
+/// * CT log management ([`CtLog`](ct::CtLog), [`CtLogStore`](ct::CtLogStore)).
+/// * SCT validation ([`SctValidationContext`](ct::SctValidationContext),
+///   [`validate_sct`](ct::validate_sct)).
+/// * Policy evaluation ([`evaluate_policy`](ct::evaluate_policy)).
 ///
-/// * **In scope:** Log entry type / SCT version / SCT source / validation
-///   status enums, `SCT_MIN_RSA_BITS` / `CT_V1_HASHLEN` constants,
-///   [`SignedCertificateTimestamp`](ct::SignedCertificateTimestamp) type with
-///   builder, RFC 6962 length validations, helper accessors.
-/// * **Out of scope:** Full SCT validation against CT log Merkle tree, BIO
-///   printing, `CT_POLICY_EVAL_CTX` state machine, log fetching from URL,
-///   base64 log decoding.
+/// # Out of scope
+///
+/// * Full provider-based digital signature verification of SCTs against
+///   CT log public keys (the validate_sct flow performs structural
+///   verification and resolves the signature algorithm; the EVP signature
+///   call is deferred to the EVP signature crate, which already supports
+///   ECDSA / RSA verification).
+/// * BIO-based printing helpers from `ct_prn.c`; `Display` / `Debug`
+///   impls cover the equivalent functionality.
+/// * Octet-string ASN.1 encoders from `ct_oct.c`; `to_der` / `from_der`
+///   subsume that responsibility for the SCT structure itself.
 #[cfg(feature = "ct")]
 pub mod ct;
 

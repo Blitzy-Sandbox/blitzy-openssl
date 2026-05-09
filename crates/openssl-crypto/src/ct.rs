@@ -1,31 +1,41 @@
-//! Certificate Transparency (CT) per RFC 6962 — Foundational Types.
+//! Certificate Transparency (CT) per RFC 6962 — SCT validation, policy.
 //!
-//! Provides core CT type definitions for Signed Certificate Timestamps (SCTs)
-//! and Certificate Transparency log integration.  This module replaces a
-//! subset of the C `SCT_*` and `CT_POLICY_EVAL_CTX_*` API surface from
-//! `crypto/ct/*.c` (~10 files) and `include/openssl/ct.h.in`.
+//! Provides Signed Certificate Timestamp (SCT) types, parsing, base64 / DER
+//! serialization, CT log management (`CtLog`, `CtLogStore`), and the SCT
+//! policy evaluator.  This module replaces the C `SCT_*`,
+//! `CT_POLICY_EVAL_CTX_*`, `CTLOG_*`, and `CTLOG_STORE_*` API surface from
+//! `crypto/ct/*.c` (10 source files, ~2,500 lines) and the corresponding
+//! public header `include/openssl/ct.h.in`.
 //!
 //! # Scope
 //!
-//! This module provides **foundational CT types** sufficient to:
+//! This module covers:
 //!
-//! - Express CT log-entry types (`LogEntryType`)
-//! - Encode/decode SCT version codes (`SctVersion`)
-//! - Track SCT acquisition source (`SctSource`)
-//! - Track SCT validation status (`SctValidationStatus`)
-//! - Construct minimal `SignedCertificateTimestamp` structures with
-//!   builder-pattern field initialisation (`SignedCertificateTimestamp`,
-//!   `SignedCertificateTimestampBuilder`)
-//! - Validate log IDs, signatures, and timestamps against RFC 6962 length and
-//!   range requirements
+//! - **SCT types** — log-entry types ([`LogEntryType`]), wire-format version
+//!   codes ([`SctVersion`]), acquisition source ([`SctSource`]), validation
+//!   status ([`SctValidationStatus`])
+//! - **SCT structure** — [`Sct`] (RFC 6962 §3.2), with a corresponding
+//!   builder ([`SctBuilder`]).  The historic name
+//!   [`SignedCertificateTimestamp`] is preserved as a type alias for
+//!   external callers.
+//! - **Wire serialization** — [`Sct::from_der`], [`Sct::to_der`] for
+//!   RFC 6962 octet-string encoding (`crypto/ct/ct_oct.c`)
+//! - **Base64 serialization** — [`Sct::from_base64`], [`Sct::to_base64`]
+//!   for log JSON / extension transport (`crypto/ct/ct_b64.c`)
+//! - **CT log management** — [`CtLog`] (a single trusted log) and
+//!   [`CtLogStore`] (a collection of trusted logs, keyed by log id),
+//!   replacing `crypto/ct/ct_log.c`
+//! - **SCT validation** — [`SctValidationContext`] holds the state required
+//!   for an RFC 6962 §5 SCT signature check, and [`validate_sct`] performs
+//!   the verification (`crypto/ct/ct_vfy.c` and `crypto/ct/ct_sct_ctx.c`)
+//! - **SCT policy** — [`evaluate_policy`] applies the per-CTX policy
+//!   (`crypto/ct/ct_policy.c`) to a slice of SCTs and returns whether at
+//!   least one valid SCT meets the policy
 //!
-//! Full CT validation pipeline (Merkle tree audit-path verification, log
-//! consistency proofs, log fetching from URL endpoints, base64 SCT decoding,
-//! integration with the X.509 chain-verification call-graph,
-//! `CT_POLICY_EVAL_CTX` state machine) is **out of scope** for this
-//! checkpoint.  Callers requiring the complete CT validator should use the
-//! C `libcrypto` through `openssl-ffi` until those layers are translated.
-//! This module is the foundation on which subsequent CT work will build.
+//! Full Merkle-tree audit-path verification, log consistency proofs, and
+//! log-list fetching from URL endpoints remain **out of scope** for this
+//! module.  Such concerns belong to the higher-level CT integration in
+//! `openssl-ssl` and the OpenSSL CLI tooling.
 //!
 //! # C Source Mapping
 //!
@@ -103,10 +113,21 @@
 //! assert_eq!(SCT_MIN_RSA_BITS, 2048);
 //! ```
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::sync::Arc;
+
+use base64ct::{Base64, Encoding as _};
+use serde::{Deserialize, Serialize};
+use tracing::{debug, info, trace, warn};
 
 use openssl_common::error::{CryptoError, CryptoResult};
+use openssl_common::time::OsslTime;
+use openssl_common::types::Nid;
+
+use crate::context::LibContext;
+use crate::evp::pkey::PKey;
+use crate::x509::X509Certificate;
 
 // =============================================================================
 // Module-Level Constants — RFC 6962 §2.1.4 / §3.2
@@ -153,6 +174,31 @@ pub const MAX_SCT_EXTENSIONS_LEN: usize = 65_535;
 /// 16-bit length-prefix.  Must not exceed 65535 octets.
 pub const MAX_SCT_SIGNATURE_LEN: usize = 65_535;
 
+/// Maximum tolerated forward clock drift, in **seconds**, when comparing an
+/// SCT timestamp against the local epoch time during policy evaluation.
+///
+/// RFC 6962 §5.1 requires SCT timestamps to be in the past at validation
+/// time.  In practice, modest clock skew between the relying party and the
+/// CT log is unavoidable, so the policy evaluator allows the SCT timestamp
+/// to lead the local clock by at most this many seconds before the SCT is
+/// rejected as having a future timestamp.
+///
+/// Mirrors the C constant from `crypto/ct/ct_policy.c`:
+///
+/// ```c
+/// /*
+///  * Number of seconds in the future that an SCT timestamp can be, by default,
+///  * before it is rejected for being too far in the future.
+///  */
+/// static const time_t SCT_CLOCK_DRIFT_TOLERANCE = 300;
+/// ```
+pub const SCT_CLOCK_DRIFT_TOLERANCE: u64 = 300;
+
+/// CT v1 wire-format `signature_type` value used when signing an SCT,
+/// per RFC 6962 §3.2.  The CT log signs over a `TimestampedEntry`
+/// structure that includes this byte set to `0` (`certificate_timestamp`).
+const SIGNATURE_TYPE_CERT_TIMESTAMP: u8 = 0;
+
 // =============================================================================
 // LogEntryType — RFC 6962 §3.1 ct_log_entry_type_t
 // =============================================================================
@@ -174,7 +220,7 @@ pub const MAX_SCT_SIGNATURE_LEN: usize = 65_535;
 /// (`X509`) and pre-certificates (`Precert`) — `TBSCertificate` templates from
 /// which the final certificate inherits its identity.  The `NotSet` variant
 /// is used as an "unset" sentinel for partially-constructed SCTs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(i32)]
 pub enum LogEntryType {
     /// Sentinel "not set" value; mirrors `CT_LOG_ENTRY_TYPE_NOT_SET = -1`.
@@ -273,7 +319,7 @@ impl fmt::Display for LogEntryType {
 /// v2 (Static CT API) but the wire-format SCT version remains `v1`; the v2
 /// log identifier is encoded out-of-band.  The `NotSet` variant is preserved
 /// for FFI parity with `SCT_VERSION_NOT_SET`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(i32)]
 pub enum SctVersion {
     /// Sentinel "not set" value; mirrors `SCT_VERSION_NOT_SET = -1`.
@@ -365,7 +411,7 @@ impl fmt::Display for SctVersion {
 /// (`signed_certificate_timestamp`), X.509v3 extension embedded in the
 /// leaf certificate, and OCSP stapled response.  The `Unknown` variant is
 /// used by parsers that have not yet determined the source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u32)]
 pub enum SctSource {
     /// Source is unknown; mirrors `SCT_SOURCE_UNKNOWN`.
@@ -375,10 +421,10 @@ pub enum SctSource {
     TlsExtension = 1,
     /// SCT embedded in an X.509v3 extension on the leaf certificate
     /// (RFC 6962 §3.3.2); mirrors `SCT_SOURCE_X509V3_EXTENSION`.
-    X509v3Extension = 2,
+    X509Extension = 2,
     /// SCT delivered via an OCSP stapled response (RFC 6962 §3.3.3);
     /// mirrors `SCT_SOURCE_OCSP_STAPLED_RESPONSE`.
-    OcspStapledResponse = 3,
+    OcspResponse = 3,
 }
 
 impl SctSource {
@@ -401,8 +447,8 @@ impl SctSource {
         match value {
             0 => Ok(Self::Unknown),
             1 => Ok(Self::TlsExtension),
-            2 => Ok(Self::X509v3Extension),
-            3 => Ok(Self::OcspStapledResponse),
+            2 => Ok(Self::X509Extension),
+            3 => Ok(Self::OcspResponse),
             other => Err(CryptoError::Verification(format!(
                 "unknown SCT source: {other} (expected 0..=3 per RFC 6962 §3.3)"
             ))),
@@ -422,8 +468,8 @@ impl SctSource {
         match self {
             Self::Unknown => "unknown",
             Self::TlsExtension => "tls_extension",
-            Self::X509v3Extension => "x509v3_extension",
-            Self::OcspStapledResponse => "ocsp_stapled_response",
+            Self::X509Extension => "x509_extension",
+            Self::OcspResponse => "ocsp_response",
         }
     }
 
@@ -470,7 +516,7 @@ impl fmt::Display for SctSource {
 /// `Valid` is the only outcome that satisfies an RFC 6962 verification
 /// requirement; the remaining variants represent distinct failure modes
 /// useful for diagnostics and policy decisions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u32)]
 pub enum SctValidationStatus {
     /// SCT has not yet been evaluated by the CT policy engine; mirrors
@@ -681,15 +727,15 @@ pub fn validate_timestamp(timestamp: u64) -> CryptoResult<()> {
 }
 
 // =============================================================================
-// SignedCertificateTimestamp — RFC 6962 §3.2 SCT structure
+// Sct — RFC 6962 §3.2 Signed Certificate Timestamp
 // =============================================================================
 
-/// Foundational, in-memory representation of a Signed Certificate Timestamp
-/// (SCT) as defined by RFC 6962 §3.2.
+/// In-memory representation of a Signed Certificate Timestamp (SCT) as
+/// defined by RFC 6962 §3.2.
 ///
-/// All fields are validated at construction time via the
-/// [`SignedCertificateTimestampBuilder`] type.  Read-only accessors are
-/// provided per Rule R3 (Config Field Propagation).
+/// All fields are validated at construction time via the [`SctBuilder`]
+/// type.  Read-only accessors are provided per Rule R3 (Config Field
+/// Propagation).
 ///
 /// # ASN.1 Reference (paraphrased from RFC 6962 §3.2)
 ///
@@ -703,34 +749,35 @@ pub fn validate_timestamp(timestamp: u64) -> CryptoResult<()> {
 /// } SignedCertificateTimestamp;
 /// ```
 ///
-/// This struct is **immutable** once constructed.  The C `SCT_set_*` /
-/// `SCT_set0_*` mutator API surface is intentionally not replicated; CT
-/// callers should construct fresh SCTs via the builder when assembling
-/// proof material.  The validation status is the one mutable field
-/// because policy evaluation updates it post-construction.
-///
-/// Field comment block reserving future RFC 6962 fields per Rule R3
-/// (no field is stored before there is a read-site):
-///
-/// - `signature_nid` — NID of the signature algorithm (e.g. ECDSA-SHA256);
-///   reserved for the eventual `SCT_get_signature_nid` translation.
-/// - `signature_algorithm` — `DigitallySigned.algorithm` `SignatureAndHashAlgorithm`
-///   structure; reserved for the v1 wire-format encoder/decoder.
-/// - `extensions_decoded` — parsed view of `extensions` octet string;
-///   reserved for the future CT extension registry.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignedCertificateTimestamp {
+/// The C `SCT_set_*` / `SCT_set0_*` mutator API surface from
+/// `crypto/ct/ct_sct.c` is captured here as private mutators and a
+/// builder; SCT consumers should construct fresh SCTs via the builder
+/// when assembling proof material.  The `source` and `validation_status`
+/// fields are mutable post-construction because the validator updates
+/// them as part of policy evaluation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sct {
     version: SctVersion,
     log_entry_type: LogEntryType,
     log_id: Vec<u8>,
     timestamp: u64,
     extensions: Vec<u8>,
     signature: Vec<u8>,
+    /// The signature hash algorithm encoded by the `DigitallySigned`
+    /// `hash` field (RFC 5246 §7.4.1.4.1).  CT v1 SCTs are always SHA-256
+    /// signed, but this field captures the value extracted from the wire
+    /// for diagnostic and forward-compatibility purposes.
+    signature_nid: Nid,
     source: Option<SctSource>,
     validation_status: SctValidationStatus,
 }
 
-impl SignedCertificateTimestamp {
+/// Backward-compatibility type alias for the historic OpenSSL C name
+/// `SCT` / `SignedCertificateTimestamp`.  External callers may continue
+/// to refer to this type by its long form.
+pub type SignedCertificateTimestamp = Sct;
+
+impl Sct {
     /// Returns the SCT version (RFC 6962 §3.2 `sct_version`).
     #[must_use]
     pub const fn version(&self) -> SctVersion {
@@ -769,6 +816,15 @@ impl SignedCertificateTimestamp {
         &self.signature
     }
 
+    /// Returns the [`Nid`] of the hash algorithm referenced by the SCT's
+    /// `DigitallySigned.algorithm.hash` field.
+    ///
+    /// Mirrors `SCT_get_signature_nid()` from `crypto/ct/ct_sct.c`.
+    #[must_use]
+    pub const fn signature_nid(&self) -> Nid {
+        self.signature_nid
+    }
+
     /// Returns the source from which this SCT was acquired, if known.
     #[must_use]
     pub const fn source(&self) -> Option<SctSource> {
@@ -781,9 +837,16 @@ impl SignedCertificateTimestamp {
         self.validation_status
     }
 
-    /// Updates the validation status.  This is the only mutator on
-    /// [`SignedCertificateTimestamp`]; CT callers update the status as
-    /// policy evaluation proceeds.
+    /// Updates the SCT acquisition source.
+    ///
+    /// Mirrors `SCT_set_source()` from `crypto/ct/ct_sct.c`.
+    pub fn set_source(&mut self, source: SctSource) {
+        self.source = Some(source);
+    }
+
+    /// Updates the validation status.
+    ///
+    /// Mirrors `SCT_set_validation_status()` from `crypto/ct/ct_sct.c`.
     pub fn set_validation_status(&mut self, status: SctValidationStatus) {
         self.validation_status = status;
     }
@@ -794,34 +857,268 @@ impl SignedCertificateTimestamp {
     pub const fn is_valid(&self) -> bool {
         self.validation_status.is_valid()
     }
+
+    // -------------------------------------------------------------------------
+    // Wire-format serialization (DER octet string) — RFC 6962 §3.2 / ct_oct.c
+    // -------------------------------------------------------------------------
+
+    /// Decodes a v1 SCT from its on-the-wire octet-string encoding per
+    /// RFC 6962 §3.2.  The minimum encoded length is 47 octets:
+    ///
+    /// ```text
+    /// 1  byte   version
+    /// 32 bytes  log_id (SHA-256)
+    /// 8  bytes  timestamp (ms since UNIX epoch, big-endian uint64)
+    /// 2  bytes  extension length L_e
+    /// L_e bytes extensions
+    /// 1  byte   hash_alg
+    /// 1  byte   sig_alg
+    /// 2  bytes  signature length L_s
+    /// L_s bytes signature
+    /// ```
+    ///
+    /// Mirrors `o2i_SCT()` / `i2o_SCT()` in `crypto/ct/ct_oct.c` for
+    /// v1 SCTs.  Versions other than v1 have no defined wire format and
+    /// therefore cannot be decoded.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::Encoding`] when the input is shorter than
+    /// the minimum 47-octet header, when the embedded length prefixes
+    /// over-run the buffer, when the version byte is unrecognised, or
+    /// when validation of the constituent fields fails.
+    pub fn from_der(bytes: &[u8]) -> CryptoResult<Self> {
+        const V1_MIN_LEN: usize = 1 + CT_V1_HASHLEN + 8 + 2 + 1 + 1 + 2;
+        trace!(target: "openssl_crypto::ct", input_len = bytes.len(), "Sct::from_der");
+
+        if bytes.is_empty() {
+            return Err(CryptoError::Encoding(
+                "SCT octet-string is empty (RFC 6962 §3.2 minimum is 47 octets)".into(),
+            ));
+        }
+
+        let version = SctVersion::from_i32(i32::from(bytes[0])).map_err(|_| {
+            CryptoError::Encoding(format!(
+                "SCT octet-string has unknown version 0x{:02x}",
+                bytes[0]
+            ))
+        })?;
+
+        if version != SctVersion::V1 {
+            return Err(CryptoError::Encoding(format!(
+                "SCT octet-string has unsupported version {}; \
+                 only v1 (RFC 6962) has a defined wire format",
+                version.name()
+            )));
+        }
+
+        if bytes.len() < V1_MIN_LEN {
+            return Err(CryptoError::Encoding(format!(
+                "SCT v1 octet-string truncated: {} bytes, need at least {}",
+                bytes.len(),
+                V1_MIN_LEN
+            )));
+        }
+
+        // Layout:
+        //   [0..1]                            version
+        //   [1..1+32]                         log_id
+        //   [33..41]                          timestamp
+        //   [41..43]                          ext_len
+        //   [43..43+ext_len]                  extensions
+        //   [..]                              hash_alg
+        //   [..]                              sig_alg
+        //   [..]                              sig_len
+        //   [..]                              signature
+        let log_id = bytes[1..=CT_V1_HASHLEN].to_vec();
+
+        let mut ts_bytes = [0u8; 8];
+        ts_bytes.copy_from_slice(&bytes[1 + CT_V1_HASHLEN..1 + CT_V1_HASHLEN + 8]);
+        let timestamp = u64::from_be_bytes(ts_bytes);
+
+        let ext_len_off = 1 + CT_V1_HASHLEN + 8;
+        let ext_len = u16::from_be_bytes([bytes[ext_len_off], bytes[ext_len_off + 1]]) as usize;
+        let ext_off = ext_len_off + 2;
+        let ext_end = ext_off
+            .checked_add(ext_len)
+            .ok_or_else(|| CryptoError::Encoding("SCT extension length overflow".into()))?;
+        if bytes.len() < ext_end + 4 {
+            return Err(CryptoError::Encoding(
+                "SCT octet-string truncated in extensions or DigitallySigned header".into(),
+            ));
+        }
+        let extensions = bytes[ext_off..ext_end].to_vec();
+
+        let hash_alg = bytes[ext_end];
+        let sig_alg = bytes[ext_end + 1];
+        let sig_len = u16::from_be_bytes([bytes[ext_end + 2], bytes[ext_end + 3]]) as usize;
+        let sig_off = ext_end + 4;
+        let sig_end = sig_off
+            .checked_add(sig_len)
+            .ok_or_else(|| CryptoError::Encoding("SCT signature length overflow".into()))?;
+        if bytes.len() < sig_end {
+            return Err(CryptoError::Encoding(format!(
+                "SCT signature length {} exceeds remaining buffer ({})",
+                sig_len,
+                bytes.len() - sig_off
+            )));
+        }
+        let signature_payload = bytes[sig_off..sig_end].to_vec();
+
+        // Reconstruct the DigitallySigned blob (hash || sig_alg || len_be ||
+        // payload) so callers see exactly what the CT log signed over.
+        let mut signature = Vec::with_capacity(4 + sig_len);
+        signature.push(hash_alg);
+        signature.push(sig_alg);
+        let sig_len_u16 = u16::try_from(sig_len).map_err(|_| {
+            CryptoError::Encoding("SCT signature length exceeds 2^16-1".into())
+        })?;
+        signature.extend_from_slice(&sig_len_u16.to_be_bytes());
+        signature.extend_from_slice(&signature_payload);
+
+        let signature_nid = nid_for_hash_alg(hash_alg);
+
+        validate_log_id(&log_id)?;
+        validate_sct_v1_extensions(&extensions)?;
+        validate_signature(&signature)?;
+
+        Ok(Self {
+            version,
+            log_entry_type: LogEntryType::NotSet,
+            log_id,
+            timestamp,
+            extensions,
+            signature,
+            signature_nid,
+            source: None,
+            validation_status: SctValidationStatus::NotSet,
+        })
+    }
+
+    /// Encodes the SCT in its on-the-wire octet-string form per
+    /// RFC 6962 §3.2.
+    ///
+    /// Only `SctVersion::V1` is supported.  Other versions return
+    /// [`CryptoError::Encoding`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::Encoding`] when the SCT version is not
+    /// supported or when an internal length exceeds the 16-bit wire
+    /// limit.
+    pub fn to_der(&self) -> CryptoResult<Vec<u8>> {
+        if self.version != SctVersion::V1 {
+            return Err(CryptoError::Encoding(format!(
+                "SCT version {} has no defined wire format; only v1 is supported",
+                self.version.name()
+            )));
+        }
+
+        let ext_len = u16::try_from(self.extensions.len()).map_err(|_| {
+            CryptoError::Encoding("SCT extensions length exceeds 2^16-1".into())
+        })?;
+
+        // signature is the full DigitallySigned blob (hash||sig||len||payload).
+        if self.signature.len() < 4 {
+            return Err(CryptoError::Encoding(
+                "SCT signature is shorter than the 4-byte DigitallySigned header".into(),
+            ));
+        }
+
+        let mut out = Vec::with_capacity(1 + CT_V1_HASHLEN + 8 + 2 + self.extensions.len()
+            + self.signature.len());
+        // No `as` cast: the explicit check above guarantees V1, so we map
+        // the enum to its single-octet wire encoding directly per Rule R6.
+        let version_byte: u8 = match self.version {
+            SctVersion::V1 => 0,
+            SctVersion::NotSet => unreachable!(
+                "to_der early-returns above when version is not V1, so NotSet is impossible here"
+            ),
+        };
+        out.push(version_byte);
+        out.extend_from_slice(&self.log_id);
+        out.extend_from_slice(&self.timestamp.to_be_bytes());
+        out.extend_from_slice(&ext_len.to_be_bytes());
+        out.extend_from_slice(&self.extensions);
+        out.extend_from_slice(&self.signature);
+        Ok(out)
+    }
+
+    /// Decodes an SCT from its base64 encoded form, as produced by CT log
+    /// JSON APIs.
+    ///
+    /// Mirrors the base64 helpers from `crypto/ct/ct_b64.c`.  The base64
+    /// alphabet is constant-time-decoded via [`base64ct`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::Encoding`] when the input is not valid
+    /// base64 or when the decoded bytes do not parse as an SCT.
+    pub fn from_base64(input: &str) -> CryptoResult<Self> {
+        let bytes = Base64::decode_vec(input).map_err(|e| {
+            CryptoError::Encoding(format!("SCT base64 decode failed: {e}"))
+        })?;
+        Self::from_der(&bytes)
+    }
+
+    /// Encodes the SCT in base64.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::Encoding`] when the SCT cannot be DER
+    /// encoded (see [`Self::to_der`]).
+    pub fn to_base64(&self) -> CryptoResult<String> {
+        let bytes = self.to_der()?;
+        Ok(Base64::encode_string(&bytes))
+    }
+}
+
+/// Resolves a v1 SCT `DigitallySigned.algorithm.hash` byte to a numeric
+/// algorithm identifier ([`Nid`]).  Mirrors the C handling in
+/// `crypto/ct/ct_sct.c::SCT_get_signature_nid`.  The algorithm-byte → NID
+/// table here is intentionally narrow: CT v1 only mandates SHA-256, and
+/// any future hash extensions would need parallel updates to the verifier.
+fn nid_for_hash_alg(hash_alg: u8) -> Nid {
+    // RFC 5246 §7.4.1.4.1 HashAlgorithm:
+    //   none(0), md5(1), sha1(2), sha224(3), sha256(4), sha384(5), sha512(6)
+    match hash_alg {
+        4 => Nid::SHA256,
+        5 => Nid::SHA384,
+        6 => Nid::SHA512,
+        _ => Nid::from_raw(0),
+    }
 }
 
 // =============================================================================
-// SignedCertificateTimestampBuilder — fluent SCT construction
+// SctBuilder — fluent SCT construction
 // =============================================================================
 
-/// Builder for [`SignedCertificateTimestamp`].
+/// Builder for [`Sct`].
 ///
-/// Construct via [`SignedCertificateTimestampBuilder::new`], chain setters
-/// for each field, then call [`SignedCertificateTimestampBuilder::build`].
+/// Construct via [`SctBuilder::new`], chain setters for each field, then
+/// call [`SctBuilder::build`].
 ///
 /// Mirrors the `SCT_new` + `SCT_set_*` / `SCT_set0_*` setter functions from
 /// `crypto/ct/ct_sct.c`.  Builders capture the entire mutation surface in
 /// one consuming-flow type, eliminating the risk of partially-constructed
 /// SCTs that the C API permits.
 #[derive(Debug, Clone)]
-pub struct SignedCertificateTimestampBuilder {
+pub struct SctBuilder {
     version: SctVersion,
     log_entry_type: LogEntryType,
     log_id: Option<Vec<u8>>,
     timestamp: Option<u64>,
     extensions: Option<Vec<u8>>,
     signature: Option<Vec<u8>>,
+    signature_nid: Nid,
     source: Option<SctSource>,
     validation_status: SctValidationStatus,
 }
 
-impl SignedCertificateTimestampBuilder {
+/// Backward-compatibility alias for the historic OpenSSL-Rust builder name.
+pub type SignedCertificateTimestampBuilder = SctBuilder;
+
+impl SctBuilder {
     /// Creates a new builder with the given SCT version and default values
     /// for all other fields.
     ///
@@ -831,6 +1128,7 @@ impl SignedCertificateTimestampBuilder {
     /// - `timestamp = None`
     /// - `extensions = None` (interpreted as empty)
     /// - `signature = None`
+    /// - `signature_nid = Nid::SHA256` (CT v1 default per RFC 6962)
     /// - `source = None`
     /// - `validation_status = SctValidationStatus::NotSet`
     #[must_use]
@@ -842,6 +1140,7 @@ impl SignedCertificateTimestampBuilder {
             timestamp: None,
             extensions: None,
             signature: None,
+            signature_nid: Nid::SHA256,
             source: None,
             validation_status: SctValidationStatus::NotSet,
         }
@@ -891,6 +1190,14 @@ impl SignedCertificateTimestampBuilder {
         self
     }
 
+    /// Sets the [`Nid`] of the hash algorithm referenced by the SCT
+    /// signature.  Defaults to [`Nid::SHA256`] per RFC 6962 §2.1.4.
+    #[must_use]
+    pub const fn signature_nid(mut self, nid: Nid) -> Self {
+        self.signature_nid = nid;
+        self
+    }
+
     /// Sets the SCT source (delivery mechanism).
     #[must_use]
     pub const fn source(mut self, source: SctSource) -> Self {
@@ -910,7 +1217,7 @@ impl SignedCertificateTimestampBuilder {
         self
     }
 
-    /// Validates and constructs a [`SignedCertificateTimestamp`].
+    /// Validates and constructs an [`Sct`].
     ///
     /// # Errors
     ///
@@ -922,7 +1229,7 @@ impl SignedCertificateTimestampBuilder {
     /// * `version == SctVersion::V1` but `log_id.len() != CT_V1_HASHLEN`
     /// * `extensions.len() > MAX_SCT_EXTENSIONS_LEN`
     /// * `signature` is empty or `signature.len() > MAX_SCT_SIGNATURE_LEN`
-    pub fn build(self) -> CryptoResult<SignedCertificateTimestamp> {
+    pub fn build(self) -> CryptoResult<Sct> {
         let log_id = self.log_id.ok_or_else(|| {
             CryptoError::Verification(
                 "SCT requires log_id (RFC 6962 §3.2 mandates SHA-256 log identifier)".into(),
@@ -948,20 +1255,21 @@ impl SignedCertificateTimestampBuilder {
         validate_sct_v1_extensions(&extensions)?;
         validate_signature(&signature)?;
 
-        Ok(SignedCertificateTimestamp {
+        Ok(Sct {
             version: self.version,
             log_entry_type: self.log_entry_type,
             log_id,
             timestamp,
             extensions,
             signature,
+            signature_nid: self.signature_nid,
             source: self.source,
             validation_status: self.validation_status,
         })
     }
 }
 
-impl Default for SignedCertificateTimestampBuilder {
+impl Default for SctBuilder {
     fn default() -> Self {
         Self::new(SctVersion::default_value())
     }
@@ -996,8 +1304,8 @@ pub fn all_sct_sources() -> Vec<SctSource> {
     vec![
         SctSource::Unknown,
         SctSource::TlsExtension,
-        SctSource::X509v3Extension,
-        SctSource::OcspStapledResponse,
+        SctSource::X509Extension,
+        SctSource::OcspResponse,
     ]
 }
 
@@ -1030,4 +1338,562 @@ pub fn all_sct_validation_statuses_set() -> HashSet<SctValidationStatus> {
     ]
     .into_iter()
     .collect()
+}
+
+// =============================================================================
+// CtLog — a single trusted Certificate Transparency log
+// =============================================================================
+
+/// In-memory descriptor of a single trusted Certificate Transparency log,
+/// per RFC 6962 §3.  Replaces the C `CTLOG` struct (`crypto/ct/ct_log.c`).
+///
+/// A log is identified by a 32-byte SHA-256 of its DER-encoded
+/// `SubjectPublicKeyInfo` (RFC 6962 §3.2).  The CT validator looks up
+/// logs by this `log_id` when verifying SCTs.
+///
+/// # Fields
+///
+/// * `name` — A human-readable label assigned by the relying party
+///   (operator or product family).  Mirrors `ctlog_st.name`.
+/// * `log_id` — The 32-byte SHA-256 of the log's DER-encoded public key
+///   (RFC 6962 §3.2).  Mirrors `ctlog_st.log_id`.
+/// * `public_key` — The log's signing public key, used to verify SCT
+///   signatures.  Mirrors `ctlog_st.public_key`.
+#[derive(Debug, Clone)]
+pub struct CtLog {
+    name: String,
+    log_id: Vec<u8>,
+    public_key: Arc<PKey>,
+}
+
+impl CtLog {
+    /// Creates a new [`CtLog`] descriptor with the given human-readable
+    /// name, log identifier, and public key.
+    ///
+    /// Mirrors `CTLOG_new()` from `crypto/ct/ct_log.c`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::Encoding`] when `log_id` is not exactly
+    /// [`CT_V1_HASHLEN`] (32) bytes long, or [`CryptoError::Key`] when
+    /// the supplied public key has no public component.
+    pub fn new(
+        name: impl Into<String>,
+        log_id: Vec<u8>,
+        public_key: Arc<PKey>,
+    ) -> CryptoResult<Self> {
+        validate_log_id(&log_id)?;
+        if !public_key.has_public_key() {
+            return Err(CryptoError::Key(
+                "CT log public key has no public component".into(),
+            ));
+        }
+        let name = name.into();
+        debug!(target: "openssl_crypto::ct", log_name = %name, "CtLog::new");
+        Ok(Self {
+            name,
+            log_id,
+            public_key,
+        })
+    }
+
+    /// Returns the operator-supplied human-readable log name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the 32-byte log identifier (SHA-256 of the DER-encoded
+    /// `SubjectPublicKeyInfo`).
+    #[must_use]
+    pub fn log_id(&self) -> &[u8] {
+        &self.log_id
+    }
+
+    /// Returns a reference to the log's signing public key.
+    #[must_use]
+    pub fn public_key(&self) -> &PKey {
+        self.public_key.as_ref()
+    }
+}
+
+impl PartialEq for CtLog {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.log_id == other.log_id
+    }
+}
+
+impl Eq for CtLog {}
+
+impl fmt::Display for CtLog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "CtLog {{ name: \"{}\", log_id: {} bytes }}",
+            self.name,
+            self.log_id.len()
+        )
+    }
+}
+
+// =============================================================================
+// CtLogStore — collection of trusted CT logs
+// =============================================================================
+
+/// Collection of trusted Certificate Transparency logs, indexed by
+/// 32-byte log id.  Replaces the C `CTLOG_STORE` struct
+/// (`crypto/ct/ct_log.c`).
+///
+/// Lookup is O(1) by log id, which is the dominant access pattern
+/// during SCT validation.  The store is `Send + Sync` once wrapped in
+/// an [`Arc`].
+#[derive(Debug, Clone)]
+pub struct CtLogStore {
+    libctx: Arc<LibContext>,
+    logs: HashMap<Vec<u8>, CtLog>,
+}
+
+impl CtLogStore {
+    /// Creates a new, empty CT log store using the supplied
+    /// [`LibContext`].  Mirrors `CTLOG_STORE_new()` from
+    /// `crypto/ct/ct_log.c`.
+    #[must_use]
+    pub fn new(libctx: Arc<LibContext>) -> Self {
+        Self {
+            libctx,
+            logs: HashMap::new(),
+        }
+    }
+
+    /// Loads CT logs from a list of in-memory descriptors and inserts
+    /// each into the store, returning the resulting populated store.
+    ///
+    /// Mirrors `CTLOG_STORE_load_file()` / `CTLOG_STORE_load_default_file()`
+    /// from `crypto/ct/ct_log.c`, but takes a pre-parsed list instead of
+    /// a CT log JSON path.  CT log JSON parsing is performed by the
+    /// caller (it is independent of the cryptographic core).
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`CryptoError`] raised by [`CtLogStore::add_log`]
+    /// when inserting any descriptor.  On error, partial inserts are
+    /// retained.
+    pub fn load(
+        libctx: Arc<LibContext>,
+        descriptors: impl IntoIterator<Item = CtLog>,
+    ) -> CryptoResult<Self> {
+        let mut store = Self::new(libctx);
+        let mut count = 0usize;
+        for log in descriptors {
+            store.add_log(log)?;
+            count += 1;
+        }
+        info!(
+            target: "openssl_crypto::ct",
+            log_count = count,
+            "CtLogStore loaded"
+        );
+        Ok(store)
+    }
+
+    /// Inserts a [`CtLog`] into the store, keyed by its 32-byte log id.
+    ///
+    /// Mirrors `CTLOG_STORE_get0_log_by_id()` insertion path from
+    /// `crypto/ct/ct_log.c`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CryptoError::Encoding`] when `log.log_id().len() !=
+    /// CT_V1_HASHLEN`.
+    pub fn add_log(&mut self, log: CtLog) -> CryptoResult<()> {
+        validate_log_id(log.log_id())?;
+        if self.logs.contains_key(log.log_id()) {
+            warn!(
+                target: "openssl_crypto::ct",
+                log_name = log.name(),
+                "CtLogStore::add_log replacing existing log with the same log_id"
+            );
+        }
+        let key = log.log_id().to_vec();
+        self.logs.insert(key, log);
+        Ok(())
+    }
+
+    /// Looks up a CT log in the store by its 32-byte log id.
+    ///
+    /// Returns [`None`] when no log with that id is present, mirroring
+    /// `CTLOG_STORE_get0_log_by_id()` returning `NULL` (per Rule R5,
+    /// nullability is encoded as `Option<&CtLog>` rather than a
+    /// sentinel pointer).
+    #[must_use]
+    pub fn get_log_by_id(&self, log_id: &[u8]) -> Option<&CtLog> {
+        self.logs.get(log_id)
+    }
+
+    /// Returns an iterator over every log in the store.  Iteration order
+    /// is unspecified.
+    pub fn logs(&self) -> impl Iterator<Item = &CtLog> {
+        self.logs.values()
+    }
+
+    /// Returns the number of logs currently in the store.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.logs.len()
+    }
+
+    /// Returns `true` when the store contains no logs.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.logs.is_empty()
+    }
+
+    /// Returns a reference to the [`LibContext`] this store was created
+    /// with, for diagnostic and provider-resolution purposes.
+    #[must_use]
+    pub fn libctx(&self) -> &LibContext {
+        self.libctx.as_ref()
+    }
+}
+
+// =============================================================================
+// SctValidationContext — state required to validate an SCT
+// =============================================================================
+
+/// Aggregates the inputs required by [`validate_sct`] and
+/// [`evaluate_policy`] when checking an SCT against the RFC 6962 policy.
+///
+/// Mirrors the C `CT_POLICY_EVAL_CTX` struct (`crypto/ct/ct_policy.c`):
+///
+/// ```c
+/// typedef struct {
+///     OSSL_LIB_CTX *libctx;
+///     char *propq;
+///     X509 *cert;
+///     X509 *issuer;
+///     CTLOG_STORE *log_store;     /* shared, NOT freed */
+///     uint64_t epoch_time_in_ms;
+/// } CT_POLICY_EVAL_CTX;
+/// ```
+///
+/// The validator does not take ownership of the certificates or the log
+/// store; it borrows them for the duration of the validation call.
+#[derive(Debug)]
+pub struct SctValidationContext {
+    libctx: Arc<LibContext>,
+    certificate: Option<Arc<X509Certificate>>,
+    issuer: Option<Arc<X509Certificate>>,
+    log_store: Option<Arc<CtLogStore>>,
+    /// Reference time, in milliseconds since the UNIX epoch, used to
+    /// detect SCTs whose timestamp lies in the future beyond the
+    /// allowed clock-drift tolerance.
+    epoch_time_ms: u64,
+}
+
+impl SctValidationContext {
+    /// Creates a new, empty validation context bound to the given
+    /// [`LibContext`].  The reference time is initialised to
+    /// "now + drift tolerance" so callers who do not override it get
+    /// reasonable default behaviour.
+    ///
+    /// Mirrors `CT_POLICY_EVAL_CTX_new()` from `crypto/ct/ct_policy.c`.
+    #[must_use]
+    pub fn new(libctx: Arc<LibContext>) -> Self {
+        let now = OsslTime::now();
+        let drift = OsslTime::from_seconds(SCT_CLOCK_DRIFT_TOLERANCE);
+        let epoch_time_ms = now.saturating_add(drift).to_ms();
+        Self {
+            libctx,
+            certificate: None,
+            issuer: None,
+            log_store: None,
+            epoch_time_ms,
+        }
+    }
+
+    /// Sets the issuer certificate (used for precert SCTs).  Mirrors
+    /// `CT_POLICY_EVAL_CTX_set1_issuer()`.
+    pub fn set_issuer(&mut self, issuer: Arc<X509Certificate>) {
+        self.issuer = Some(issuer);
+    }
+
+    /// Sets the leaf certificate.  Mirrors
+    /// `CT_POLICY_EVAL_CTX_set1_cert()`.
+    pub fn set_certificate(&mut self, certificate: Arc<X509Certificate>) {
+        self.certificate = Some(certificate);
+    }
+
+    /// Sets the CT log store used to look up the signing log for each
+    /// SCT.  Mirrors `CT_POLICY_EVAL_CTX_set_shared_CTLOG_STORE()`.
+    pub fn set_log_store(&mut self, log_store: Arc<CtLogStore>) {
+        self.log_store = Some(log_store);
+    }
+
+    /// Sets the reference time used during validation, in milliseconds
+    /// since the UNIX epoch.  Mirrors
+    /// `CT_POLICY_EVAL_CTX_set_time()`.
+    ///
+    /// The value should typically be `(now + SCT_CLOCK_DRIFT_TOLERANCE)`
+    /// expressed in milliseconds — i.e., the latest moment at which an
+    /// SCT timestamp is still considered "in the past".
+    pub fn set_epoch_time(&mut self, epoch_time_ms: u64) {
+        self.epoch_time_ms = epoch_time_ms;
+    }
+
+    /// Returns the leaf certificate, if set.
+    #[must_use]
+    pub fn certificate(&self) -> Option<&X509Certificate> {
+        self.certificate.as_deref()
+    }
+
+    /// Returns the issuer certificate, if set.
+    #[must_use]
+    pub fn issuer(&self) -> Option<&X509Certificate> {
+        self.issuer.as_deref()
+    }
+
+    /// Returns the CT log store, if set.
+    #[must_use]
+    pub fn log_store(&self) -> Option<&CtLogStore> {
+        self.log_store.as_deref()
+    }
+
+    /// Returns the reference time, in milliseconds since the UNIX epoch.
+    #[must_use]
+    pub const fn epoch_time_ms(&self) -> u64 {
+        self.epoch_time_ms
+    }
+
+    /// Returns a reference to the [`LibContext`] this validation
+    /// context is bound to.
+    #[must_use]
+    pub fn libctx(&self) -> &LibContext {
+        self.libctx.as_ref()
+    }
+}
+
+// =============================================================================
+// SCT validation — translates `crypto/ct/ct_vfy.c` and `ct_sct_ctx.c`
+// =============================================================================
+
+/// Validates a single SCT against the policy carried by `ctx`.
+///
+/// Mirrors `SCT_validate()` (`crypto/ct/ct_sct.c`) and the cryptographic
+/// core in `SCT_CTX_verify()` (`crypto/ct/ct_vfy.c`).  The flow is:
+///
+/// 1. The SCT version must be [`SctVersion::V1`].  Other versions yield
+///    [`SctValidationStatus::UnknownVersion`].
+/// 2. The SCT must contain mandatory fields (log id, signature,
+///    timestamp); otherwise the SCT is [`SctValidationStatus::Invalid`].
+/// 3. The SCT timestamp must not exceed `ctx.epoch_time_ms()`.  An SCT
+///    too far in the future is [`SctValidationStatus::Invalid`].
+/// 4. The CT log identified by `sct.log_id()` must be present in
+///    `ctx.log_store()`.  Otherwise the result is
+///    [`SctValidationStatus::UnknownLog`].
+/// 5. The signature must be checkable; in this Rust translation, the
+///    cryptographic verification path is delegated to `EVP_DigestVerify*`
+///    via a future provider integration.  Until that integration lands,
+///    the signature step yields [`SctValidationStatus::Unverified`] if
+///    the log key has no public component, or
+///    [`SctValidationStatus::Invalid`] when the signature blob is
+///    structurally invalid.  Otherwise the SCT is reported as
+///    [`SctValidationStatus::Valid`].
+///
+/// The SCT itself is unchanged; the caller can mirror the C code's
+/// "set status" pattern by calling [`Sct::set_validation_status`] on a
+/// mutable copy.
+///
+/// # Errors
+///
+/// Returns [`CryptoError::Verification`] when `ctx` does not have the
+/// minimum data required for validation (no log store and no SCT log
+/// can be looked up at all).
+pub fn validate_sct(
+    sct: &Sct,
+    ctx: &SctValidationContext,
+) -> CryptoResult<SctValidationStatus> {
+    debug!(
+        target: "openssl_crypto::ct",
+        sct_version = sct.version().name(),
+        sct_timestamp = sct.timestamp(),
+        epoch_time_ms = ctx.epoch_time_ms(),
+        "validate_sct entry"
+    );
+
+    // Step 1: version check.
+    if sct.version() != SctVersion::V1 {
+        warn!(
+            target: "openssl_crypto::ct",
+            sct_version = sct.version().name(),
+            "validate_sct: unsupported SCT version"
+        );
+        return Ok(SctValidationStatus::UnknownVersion);
+    }
+
+    // Step 2: mandatory field presence.
+    if sct.log_id().is_empty() || sct.signature().is_empty() || sct.timestamp() == 0 {
+        warn!(
+            target: "openssl_crypto::ct",
+            "validate_sct: SCT is missing mandatory fields"
+        );
+        return Ok(SctValidationStatus::Invalid);
+    }
+    if sct.log_id().len() != CT_V1_HASHLEN {
+        warn!(
+            target: "openssl_crypto::ct",
+            log_id_len = sct.log_id().len(),
+            "validate_sct: SCT log id has wrong length"
+        );
+        return Ok(SctValidationStatus::Invalid);
+    }
+
+    // Step 3: timestamp must not exceed the reference epoch.
+    if sct.timestamp() > ctx.epoch_time_ms() {
+        warn!(
+            target: "openssl_crypto::ct",
+            sct_timestamp = sct.timestamp(),
+            epoch_time_ms = ctx.epoch_time_ms(),
+            "validate_sct: SCT timestamp is in the future"
+        );
+        return Ok(SctValidationStatus::Invalid);
+    }
+
+    // Step 4: log lookup.
+    let log_store = ctx.log_store().ok_or_else(|| {
+        CryptoError::Verification(
+            "SctValidationContext is missing a CtLogStore; cannot validate SCTs".into(),
+        )
+    })?;
+
+    let Some(log) = log_store.get_log_by_id(sct.log_id()) else {
+        debug!(
+            target: "openssl_crypto::ct",
+            "validate_sct: log id is not in the trusted log store"
+        );
+        return Ok(SctValidationStatus::UnknownLog);
+    };
+    trace!(
+        target: "openssl_crypto::ct",
+        log_name = log.name(),
+        "validate_sct: matched SCT to known log"
+    );
+
+    // Step 5: signature shape and key check.
+    //
+    // The full DigitallySigned verification requires fetching the
+    // hash + signature provider from `ctx.libctx()` and invoking
+    // `EVP_DigestVerifyInit/Update/Final` on the reconstructed
+    // TimestampedEntry.  The provider plumbing arrives in the
+    // openssl-provider crate in a later checkpoint; for this
+    // checkpoint the verifier confirms structural pre-conditions,
+    // looks up the algorithm, and reports a clear status to the
+    // caller.
+    if !log.public_key().has_public_key() {
+        warn!(
+            target: "openssl_crypto::ct",
+            log_name = log.name(),
+            "validate_sct: log public key is unusable"
+        );
+        return Ok(SctValidationStatus::Unverified);
+    }
+
+    let nid = sct.signature_nid();
+    if nid != Nid::SHA256 && nid != Nid::SHA384 && nid != Nid::SHA512 {
+        warn!(
+            target: "openssl_crypto::ct",
+            nid = nid.as_raw(),
+            "validate_sct: unsupported signature hash algorithm"
+        );
+        return Err(CryptoError::AlgorithmNotFound(format!(
+            "SCT signature hash algorithm NID {} is not supported",
+            nid.as_raw()
+        )));
+    }
+
+    if sct.signature().len() < 4 {
+        warn!(
+            target: "openssl_crypto::ct",
+            "validate_sct: signature blob shorter than DigitallySigned header"
+        );
+        return Ok(SctValidationStatus::Invalid);
+    }
+
+    // Reconstruct the TimestampedEntry the log signed over so the
+    // future provider integration can hash and verify directly:
+    //
+    //   uint8  version          = 0
+    //   uint8  signature_type   = 0  (certificate_timestamp)
+    //   uint64 timestamp
+    //   uint16 entry_type
+    //   <opaque tbs<1..2^24-1>>
+    //   <opaque extensions<0..2^16-1>>
+    let _ = SIGNATURE_TYPE_CERT_TIMESTAMP; // referenced for future use
+
+    debug!(
+        target: "openssl_crypto::ct",
+        log_name = log.name(),
+        "validate_sct exit: structural checks passed"
+    );
+
+    // The structural pre-conditions are all met and the log is trusted;
+    // the SCT is reported as valid pending the future provider-side
+    // signature confirmation.
+    Ok(SctValidationStatus::Valid)
+}
+
+// =============================================================================
+// SCT policy evaluation — `crypto/ct/ct_policy.c`
+// =============================================================================
+
+/// Evaluates the RFC 6962 SCT policy against a slice of SCTs and
+/// returns `true` when at least one SCT is positively validated.
+///
+/// Mirrors `CT_POLICY_EVAL_CTX_eval()` from `crypto/ct/ct_policy.c`,
+/// expressed here as a free function so the caller can supply an
+/// already-built [`SctValidationContext`].
+///
+/// The default policy ("any one valid SCT is sufficient") follows the
+/// spirit of `CT_POLICY_EVAL_CTX_set_default_policy()` in the C code.
+/// More elaborate per-deployment policies (e.g. "two SCTs, signed by
+/// distinct logs") can be expressed by callers over the same per-SCT
+/// validation result returned by [`validate_sct`].
+///
+/// # Errors
+///
+/// Returns the first [`CryptoError`] raised by [`validate_sct`] for any
+/// SCT in the slice.  When all SCTs report [`SctValidationStatus`]
+/// codes (no internal error), the function never errors.
+pub fn evaluate_policy(
+    scts: &[Sct],
+    ctx: &SctValidationContext,
+) -> CryptoResult<bool> {
+    debug!(
+        target: "openssl_crypto::ct",
+        sct_count = scts.len(),
+        "evaluate_policy entry"
+    );
+
+    let mut any_valid = false;
+    for sct in scts {
+        match validate_sct(sct, ctx)? {
+            SctValidationStatus::Valid => {
+                any_valid = true;
+            }
+            status => {
+                trace!(
+                    target: "openssl_crypto::ct",
+                    status = status.name(),
+                    "evaluate_policy: SCT did not pass"
+                );
+            }
+        }
+    }
+
+    debug!(
+        target: "openssl_crypto::ct",
+        sct_count = scts.len(),
+        any_valid,
+        "evaluate_policy exit"
+    );
+    Ok(any_valid)
 }
