@@ -369,6 +369,13 @@ pub mod pem;
 /// starting with CRL processing (`crl.rs`) per RFC 5280 §5.
 pub mod x509;
 
+/// Public-Key Cryptography Standards (PKCS) — aggregate module.
+///
+/// Currently exposes [`pkcs::pkcs7`] (RFC 2315 Cryptographic Message Syntax),
+/// the foundational module on which planned `pkcs12` (RFC 7292) and `cms`
+/// (RFC 5652) modules will depend per AAP §0.5.1.
+pub mod pkcs;
+
 // =============================================================================
 // Module Declarations — Protocol Extensions (feature-gated)
 // =============================================================================
